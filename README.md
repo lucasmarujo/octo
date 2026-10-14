@@ -8,18 +8,37 @@ para Windows, Linux e macOS.
 
 ## Instalação
 
-Requer o toolchain Rust (1.88+).
+Baixe o binário da sua plataforma na release
+[`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest), renomeie para
+`orkai` (`orkai.exe` no Windows) e coloque numa pasta do `PATH`:
 
-```sh
-git clone https://github.com/lucasmarujo/orkai-cli
-cd orkai-cli
-cargo install --path .
-```
+| Plataforma | Arquivo |
+| --- | --- |
+| Windows x64 | `orkai-x86_64-pc-windows-msvc.exe` |
+| Linux x64 (estático, qualquer distro) | `orkai-x86_64-unknown-linux-musl` |
+| macOS Apple Silicon | `orkai-aarch64-apple-darwin` |
+| macOS Intel | `orkai-x86_64-apple-darwin` |
 
-O binário vai para `~/.cargo/bin/orkai` (Windows: `%USERPROFILE%\.cargo\bin\orkai.exe`).
+Ou compile com Rust 1.88+: `cargo install --path .` (vai para `~/.cargo/bin`).
 Depois é só digitar `orkai` no PowerShell, Bash ou zsh.
 
 Para usar agentes de IA, `claude` e/ou `codex` precisam estar no `PATH`.
+
+## Atualização automática
+
+Cada push no `main` passa pelos testes nos três sistemas e vira uma nova build na release
+`latest`, com um `manifest.json` contendo o commit e o SHA-256 de cada binário.
+
+Toda vez que você abre `orkai`, ele consulta esse manifesto (timeout curto; sem internet,
+abre direto). Se houver uma build mais nova, ele baixa o binário da sua plataforma, confere
+tamanho e SHA-256, substitui o próprio executável e abre já atualizado. Os agentes em
+execução não são afetados, porque rodam de cópias próprias do binário.
+
+- `orkai update` atualiza na hora (também converte uma build local em build oficial);
+- `orkai --version` mostra a versão e o commit (`dev` para builds locais, que não se
+  auto-atualizam);
+- `ORKAI_NO_UPDATE=1` desliga a verificação; `ORKAI_UPDATE_URL` aponta para outro
+  servidor de builds.
 
 ## Uso
 
@@ -83,6 +102,7 @@ orkai logs <id> [-n linhas]      transcrição gravada do agente
 orkai kill <id> · orkai rm <id>
 orkai recover [-s sessão]        relança agentes interrompidos retomando a conversa
 orkai sessions · orkai home
+orkai update                     baixa e instala a build mais nova
 ```
 
 ## Persistência e recuperação

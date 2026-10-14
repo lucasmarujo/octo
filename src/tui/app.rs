@@ -24,6 +24,7 @@ use crate::tui::keys;
 use crate::tui::line::LineInput;
 use crate::tui::render;
 use crate::tui::view::TermView;
+use crate::update;
 use crate::util::now_ms;
 
 const RESCAN_EVERY: Duration = Duration::from_secs(2);
@@ -258,6 +259,9 @@ impl App {
         let ids: Vec<AgentId> = self.agents.keys().copied().collect();
         for id in ids {
             self.refresh_link(id);
+        }
+        if let Ok(commit) = std::env::var(update::UPDATED_ENV) {
+            self.set_notice(Tone::Success, format!("orkai updated to {}", update::short_commit(&commit)));
         }
         let lost = self.agents.values().filter(|e| matches!(e.link, Link::Lost)).count();
         if lost > 0 {

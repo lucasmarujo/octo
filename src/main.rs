@@ -8,10 +8,14 @@ use orkai::launch::Launcher;
 use orkai::model::{AgentId, AgentKind, DEFAULT_SESSION};
 use orkai::paths::Home;
 use orkai::store::Store;
-use orkai::{cli, holder, tui};
+use orkai::{cli, holder, tui, update};
 
 #[derive(Parser)]
-#[command(name = "orkai", version, about = "Orchestrate many AI coding agents across many projects from one terminal")]
+#[command(
+    name = "orkai",
+    version = update::VERSION.as_str(),
+    about = "Orchestrate many AI coding agents across many projects from one terminal"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -66,6 +70,8 @@ enum Command {
     },
     #[command(about = "Print the data directory")]
     Home,
+    #[command(about = "Download and install the latest orkai build now")]
+    Update,
     #[command(name = "__holder", hide = true)]
     Holder { id: AgentId },
 }
@@ -102,12 +108,19 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
             println!("{}", store.home().root().display());
             Ok(())
         }
+        Some(Command::Update) => update::update_now(),
         Some(Command::Holder { .. }) => Ok(()),
     }
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if cli.command.is_none() {
+        let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+        if let Some(code) = update::on_launch(&args) {
+            return code;
+        }
+    }
     match run(cli.command) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {

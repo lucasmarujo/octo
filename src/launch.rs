@@ -29,6 +29,7 @@ const ENV_REMOVE: &[&str] = &[
     "CLAUDE_PID",
     "TERM_PROGRAM",
     "TERM_PROGRAM_VERSION",
+    crate::update::UPDATED_ENV,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -10,4 +10,5 @@ pub mod protocol;
 pub mod store;
 pub mod termfmt;
 pub mod tui;
+pub mod update;
 pub mod util;
