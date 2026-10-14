@@ -632,7 +632,13 @@ impl App {
                 self.connect_agent(id, START_WAIT);
             }
             Err(err) => {
-                let name = self.agents.get(&id).map(|e| e.record.name.clone()).unwrap_or_default();
+                let exit = self.launcher.store().read_exit(id).ok().flatten();
+                let Some(entry) = self.agents.get_mut(&id) else { return };
+                entry.link = match exit {
+                    Some(info) => Link::Exited(info),
+                    None => Link::Lost,
+                };
+                let name = entry.record.name.clone();
                 self.set_notice(Tone::Error, format!("could not recover {name}: {err}"));
             }
         }
@@ -697,6 +703,8 @@ impl App {
             self.selected = Some(id);
         }
         self.show_help = false;
+        self.prompt = None;
+        self.candidates.clear();
         self.attach(id);
         self.persist_ui();
     }

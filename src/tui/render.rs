@@ -533,12 +533,20 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
     let Some(entry) = app.agents.get(&id) else { return };
     let right = area.right();
     let y = area.y;
-    let mut x = area.x + 1;
-    let (glyph, glyph_color) = theme::glyph(entry.record.kind, entry.state(), app.tick);
-    x = put(buf, x, y, glyph, fg(glyph_color), right);
-    x = put(buf, x + 1, y, &entry.record.name, fg(theme::TEXT).add_modifier(Modifier::BOLD), right);
-    x = put(buf, x + 2, y, entry.record.kind.label(), fg(theme::kind_color(entry.record.kind)), right);
-    x = put(buf, x + 2, y, &app.display(&entry.record.cwd), fg(theme::LINK), right);
+    let scrolled = entry.term.as_ref().is_some_and(|t| t.is_scrolled());
+    let hint = if entry.is_dead() {
+        "enter restart · esc back · pgup/pgdn scroll"
+    } else if scrolled {
+        "scrollback · type to return · ctrl+] overview"
+    } else {
+        "ctrl+] overview · shift+pgup scroll"
+    };
+    let hint_width = u16::try_from(width(hint)).unwrap_or(0);
+    let hint_x = right.saturating_sub(hint_width + 1);
+    let limit = if hint_x > area.x + 20 { hint_x.saturating_sub(2) } else { right };
+    if limit < right {
+        put(buf, hint_x, y, hint, fg(theme::FAINT), right);
+    }
     let (state_text, state_color) = match &entry.link {
         Link::Exited(info) => (info.describe(), theme::MUTED),
         Link::Lost => ("interrupted".to_string(), theme::RED),
@@ -553,21 +561,18 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
             (state.label().to_string(), color)
         }
     };
+    let mut x = area.x + 1;
+    let (glyph, glyph_color) = theme::glyph(entry.record.kind, entry.state(), app.tick);
+    x = put(buf, x, y, glyph, fg(glyph_color), limit);
+    x = put(buf, x + 1, y, &entry.record.name, fg(theme::TEXT).add_modifier(Modifier::BOLD), limit);
+    x = put(buf, x + 2, y, entry.record.kind.label(), fg(theme::kind_color(entry.record.kind)), limit);
     if entry.record.kind.is_ai() || entry.is_dead() {
-        x = put(buf, x + 2, y, &state_text, fg(state_color), right);
+        x = put(buf, x + 2, y, &state_text, fg(state_color), limit);
     }
-    let scrolled = entry.term.as_ref().is_some_and(|t| t.is_scrolled());
-    let hint = if entry.is_dead() {
-        "enter restart · esc back · pgup/pgdn scroll"
-    } else if scrolled {
-        "scrollback · type to return · ctrl+] overview"
-    } else {
-        "ctrl+] overview · shift+pgup scroll"
-    };
-    let hint_width = u16::try_from(width(hint)).unwrap_or(0);
-    let hint_x = right.saturating_sub(hint_width + 1);
-    if hint_x > x + 2 {
-        put(buf, hint_x, y, hint, fg(theme::FAINT), right);
+    let path_x = x + 2;
+    if path_x < limit {
+        let path = truncate(&app.display(&entry.record.cwd), usize::from(limit - path_x));
+        put(buf, path_x, y, &path, fg(theme::LINK), limit);
     }
 }
 

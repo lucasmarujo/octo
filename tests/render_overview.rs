@@ -232,3 +232,27 @@ fn help_overlay_and_small_screens_render() {
     let mut terminal = Terminal::new(TestBackend::new(30, 8)).unwrap();
     terminal.draw(|frame| render::draw(frame, &mut scenario.app)).unwrap();
 }
+
+#[test]
+fn failed_recovery_returns_agent_to_interrupted() {
+    let mut scenario = scenario();
+    let id = *scenario.app.agents.keys().next().unwrap();
+    scenario.app.handle(orkai::tui::app::AppEvent::Restarted { id, result: Err("directory missing".into()) });
+    assert_eq!(scenario.app.agents[&id].state(), AgentState::Lost);
+    let notice = scenario.app.notice.as_ref().unwrap();
+    assert!(notice.text.contains("could not recover"), "{}", notice.text);
+}
+
+#[test]
+fn agent_view_keeps_navigation_hint_with_long_paths() {
+    let mut scenario = scenario();
+    let id = *scenario.app.agents.keys().next().unwrap();
+    let long =
+        std::path::PathBuf::from("/private/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T/a/very/long/project/path");
+    scenario.app.agents.get_mut(&id).unwrap().record.cwd = long;
+    scenario.app.view = orkai::tui::app::View::Agent(id);
+    let screen = text(&render(&mut scenario.app));
+    let status = screen.lines().last().unwrap();
+    assert!(status.contains("ctrl+] overview"), "{status}");
+    assert!(status.contains('…'), "{status}");
+}
