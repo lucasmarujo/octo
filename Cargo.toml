@@ -1,0 +1,40 @@
+[package]
+name = "orkai"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Terminal orchestrator for multiple AI coding agents across many projects"
+repository = "https://github.com/lucasmarujo/orkai-cli"
+readme = "README.md"
+keywords = ["tui", "agents", "claude", "codex", "terminal"]
+categories = ["command-line-utilities"]
+
+[lib]
+name = "orkai"
+path = "src/lib.rs"
+
+[[bin]]
+name = "orkai"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+gethostname = "1"
+getrandom = "0.3"
+portable-pty = "0.9"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm_0_29"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-width = "0.2"
+vt100 = "0.16"
+which = "8"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
