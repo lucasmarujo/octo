@@ -117,10 +117,10 @@ impl Store {
             let Some(id) = entry.file_name().to_str().and_then(|n| n.parse::<AgentId>().ok()) else {
                 continue;
             };
-            if let Ok(Some(record)) = fsutil::read_json_opt::<AgentRecord>(&self.home.agent_file(id)) {
-                if record.id == id {
-                    records.push(record);
-                }
+            if let Ok(Some(record)) = fsutil::read_json_opt::<AgentRecord>(&self.home.agent_file(id))
+                && record.id == id
+            {
+                records.push(record);
             }
         }
         records.sort_by_key(|r| r.id);
@@ -305,6 +305,7 @@ mod tests {
             who: AgentKind::Codex,
             where_dir: Some(PathBuf::from("/x")),
             tabs: vec![3, 1],
+            session_dirs: [("work".to_string(), PathBuf::from("/x/y"))].into(),
         };
         store.save_ui(&state).unwrap();
         assert_eq!(store.load_ui(), state);

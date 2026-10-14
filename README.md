@@ -43,7 +43,7 @@ Estados: `⠋` trabalhando · `‖` pausado esperando sua aprovação · `✔` t
 | --- | --- |
 | digitar + `enter` | inicia um agente com a tarefa digitada |
 | `tab` / `shift+tab` | escolhe quem executa: claude, codex ou terminal |
-| `ctrl+l` | escolhe a pasta (`tab` completa diretórios); clicar no nome de um projeto também |
+| `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja abaixo); clicar no nome de um projeto também |
 | `↑` `↓` / mouse | seleciona; `enter` ou clique abre o agente numa aba |
 | `ctrl+]` | sai da aba do agente e volta para a visão geral |
 | `shift+pgup` / roda do mouse | histórico do agente |
@@ -52,8 +52,22 @@ Estados: `⠋` trabalhando · `‖` pausado esperando sua aprovação · `✔` t
 | `ctrl+x` | encerra um agente em execução / remove um encerrado |
 | `ctrl+r` | recupera os agentes interrompidos da sessão |
 | `ctrl+n` · `alt+↑↓` | nova sessão · troca de sessão |
-| `/` | comandos: `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/help`, `/quit` |
+| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/help`, `/quit` |
 | `ctrl+c` / `ctrl+q` | sai do orkai; os agentes continuam rodando |
+
+### Escolhendo a pasta (`/where`)
+
+Digite `/where ` (ou `/cd `) no "write a task". A linha de baixo mostra, ao vivo, as pastas
+de onde você está (`where` atual) e vai filtrando conforme você digita. Caminhos relativos partem
+do `where` atual; `~` é a sua pasta de usuário.
+
+- `tab` com uma única pasta possível entra nela e já lista as subpastas;
+- `tab` com várias completa o prefixo comum e, apertado de novo, percorre as opções
+  (`shift+tab` volta);
+- `enter` define a pasta. Cada sessão lembra a sua: ao trocar de sessão, o `where` volta para
+  a pasta daquela sessão.
+
+`ctrl+l` (ou clicar em `where`) abre o mesmo seletor já preenchido com a pasta atual.
 
 Dentro da aba de um agente todas as teclas vão para ele (Claude Code, Codex, PowerShell, bash…),
 inclusive `esc`, setas, colagem e mouse quando o programa usa mouse.

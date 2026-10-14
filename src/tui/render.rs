@@ -7,7 +7,8 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget};
 
 use crate::model::{AgentId, AgentKind, AgentState};
 use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, Prompt, Tone, View};
-use crate::tui::format::{duration_short, pad, pad_left, truncate, width};
+use crate::tui::complete::COMMANDS;
+use crate::tui::format::{duration_short, pad, pad_left, truncate, truncate_start, width};
 use crate::tui::sprite;
 use crate::tui::theme;
 use crate::util::now_ms;
@@ -424,21 +425,57 @@ fn confirm_text(app: &App, confirm: &Confirm) -> String {
     }
 }
 
-const COMMANDS: &[&str] = &[
-    "/cd <path>",
-    "/who <claude|codex|terminal>",
-    "/session <name>",
-    "/new-session [name]",
-    "/rename-session <name>",
-    "/delete-session",
-    "/rename <name>",
-    "/kill",
-    "/restart",
-    "/recover",
-    "/open <n>",
-    "/help",
-    "/quit",
-];
+const MORE_RESERVED: usize = 6;
+
+fn first_visible(labels: &[String], selected: Option<usize>, available: usize) -> usize {
+    let Some(selected) = selected else { return 0 };
+    let mut used = 0;
+    let mut start = selected + 1;
+    while start > 0 {
+        let needed = width(&labels[start - 1]) + 2;
+        if used + needed > available {
+            break;
+        }
+        used += needed;
+        start -= 1;
+    }
+    start.min(selected)
+}
+
+fn draw_path_suggestions(app: &App, x: u16, y: u16, right: u16, buf: &mut Buffer) {
+    let listing = app.paths.listing().map(|dir| app.display(dir)).unwrap_or_default();
+    let mut cx = put(buf, x, y, &truncate_start(&listing, 48), fg(theme::FAINT), right);
+    cx = put(buf, cx, y, " › ", fg(theme::FAINT), right);
+    let suggestions = app.paths.suggestions();
+    if suggestions.is_empty() {
+        put(buf, cx, y, "no folders here", fg(theme::FAINT), right);
+        return;
+    }
+    let labels: Vec<String> = suggestions.iter().map(|name| format!("{name}/")).collect();
+    let available = usize::from(right.saturating_sub(cx)).saturating_sub(MORE_RESERVED);
+    let selected = app.paths.selected();
+    let start = first_visible(&labels, selected, available);
+    let limit = right.saturating_sub(u16::try_from(MORE_RESERVED).unwrap_or(0));
+    let mut shown = start;
+    for (index, label) in labels.iter().enumerate().skip(start) {
+        let needed = u16::try_from(width(label)).unwrap_or(u16::MAX);
+        if cx.saturating_add(needed) > limit {
+            break;
+        }
+        let style = if selected == Some(index) {
+            fg(theme::ACCENT).bg(theme::TAB_ACTIVE_BG).add_modifier(Modifier::BOLD)
+        } else {
+            fg(theme::LINK)
+        };
+        cx = put(buf, cx, y, label, style, right);
+        cx = put(buf, cx, y, "  ", Style::default(), right);
+        shown = index + 1;
+    }
+    let hidden = labels.len() - shown + start;
+    if hidden > 0 {
+        put(buf, cx, y, &format!("+{hidden}"), fg(theme::FAINT), right);
+    }
+}
 
 fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position> {
     if area.height == 0 {
@@ -490,8 +527,8 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
         return cursor;
     }
     let y = area.y + 2;
-    if !app.candidates.is_empty() {
-        put(buf, x, y, &app.candidates.join("  "), fg(theme::MUTED), right);
+    if app.paths.is_active() {
+        draw_path_suggestions(app, x, y, right, buf);
     } else if app.prompt.is_none() && app.task.text().starts_with('/') {
         let typed = app.task.text();
         let word = typed.split_whitespace().next().unwrap_or("/");
@@ -579,7 +616,7 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
 const HELP: &[(&str, &str)] = &[
     ("type + enter", "start an agent with that task"),
     ("tab / shift+tab", "who runs it: claude, codex or terminal"),
-    ("ctrl+l", "where it runs (tab completes folders)"),
+    ("/where · ctrl+l", "folder for this session: type, tab enters or cycles"),
     ("↑ ↓ / mouse", "select agent · click or enter opens it"),
     ("alt+1..9", "jump to an open tab"),
     ("ctrl+]", "leave an agent and return to the overview"),

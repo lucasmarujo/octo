@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -195,11 +196,19 @@ pub struct UiState {
     pub where_dir: Option<PathBuf>,
     #[serde(default)]
     pub tabs: Vec<AgentId>,
+    #[serde(default)]
+    pub session_dirs: BTreeMap<String, PathBuf>,
 }
 
 impl Default for UiState {
     fn default() -> Self {
-        Self { session: DEFAULT_SESSION.to_string(), who: AgentKind::Claude, where_dir: None, tabs: Vec::new() }
+        Self {
+            session: DEFAULT_SESSION.to_string(),
+            who: AgentKind::Claude,
+            where_dir: None,
+            tabs: Vec::new(),
+            session_dirs: BTreeMap::new(),
+        }
     }
 }
 

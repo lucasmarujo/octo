@@ -74,10 +74,10 @@ impl TermState {
     pub fn new(kind: AgentKind, size: TermSize, started_at: u64, task: String, initial_input: Option<String>) -> Self {
         let pending_input = initial_input.filter(|text| !text.trim().is_empty());
         let mut tracker = LineTracker::default();
-        if kind == AgentKind::Terminal {
-            if let Some(command) = &pending_input {
-                tracker.set_last(command);
-            }
+        if kind == AgentKind::Terminal
+            && let Some(command) = &pending_input
+        {
+            tracker.set_last(command);
         }
         Self {
             parser: vt100::Parser::new_with_callbacks(size.rows, size.cols, HOLDER_SCROLLBACK, Responder::default()),

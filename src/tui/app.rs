@@ -16,8 +16,9 @@ use crate::model::{
     AgentId, AgentKind, AgentRecord, AgentState, DEFAULT_SESSION, ExitInfo, NewAgent, Session, StatusReport, UiState,
     validate_agent_name,
 };
-use crate::paths::{complete_directory, expand_tilde, normalize_for_compare, user_home};
+use crate::paths::{expand_tilde, normalize_for_compare, separator_for, user_home};
 use crate::protocol::{ClientMsg, HolderMsg, TermSize};
+use crate::tui::complete::{COMMANDS, PathCompleter, where_argument};
 use crate::tui::format::{display_path, project_label, slugify};
 use crate::tui::keys;
 use crate::tui::line::LineInput;
@@ -181,7 +182,7 @@ pub struct App {
     pub where_dir: PathBuf,
     pub prompt: Option<Prompt>,
     pub notice: Option<Notice>,
-    pub candidates: Vec<String>,
+    pub paths: PathCompleter,
     pub show_help: bool,
     pub hits: Vec<(Rect, Hit)>,
     pub tick: usize,
@@ -193,6 +194,7 @@ pub struct App {
     last_rescan: Instant,
     pending_input: Vec<(AgentId, Vec<u8>)>,
     attached_size: Option<TermSize>,
+    session_dirs: BTreeMap<String, PathBuf>,
 }
 
 impl App {
@@ -207,8 +209,10 @@ impl App {
             DEFAULT_SESSION.to_string()
         };
         let where_dir = ui
-            .where_dir
-            .clone()
+            .session_dirs
+            .get(&session)
+            .or(ui.where_dir.as_ref())
+            .cloned()
             .filter(|p| p.is_dir())
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."));
@@ -232,7 +236,7 @@ impl App {
             where_dir,
             prompt: None,
             notice: None,
-            candidates: Vec::new(),
+            paths: PathCompleter::default(),
             show_help: false,
             hits: Vec::new(),
             tick: 0,
@@ -244,6 +248,7 @@ impl App {
             last_rescan: Instant::now(),
             pending_input: Vec::new(),
             attached_size: None,
+            session_dirs: ui.session_dirs,
         };
         app.ensure_selection();
         Ok(app)
@@ -290,6 +295,7 @@ impl App {
             who: self.who,
             where_dir: Some(self.where_dir.clone()),
             tabs: self.tabs.clone(),
+            session_dirs: self.session_dirs.clone(),
         };
         let _ = self.launcher.store().save_ui(&state);
     }
@@ -420,10 +426,10 @@ impl App {
                 }
             }
         });
-        if spawned.is_err() {
-            if let Some(entry) = self.agents.get_mut(&id) {
-                entry.link = Link::Lost;
-            }
+        if spawned.is_err()
+            && let Some(entry) = self.agents.get_mut(&id)
+        {
+            entry.link = Link::Lost;
         }
     }
 
@@ -436,14 +442,15 @@ impl App {
             AppEvent::Launched { result } => self.on_launched(result),
             AppEvent::Restarted { id, result } => self.on_restarted(id, result),
             AppEvent::Replayed { id, parser } => {
-                if let Some(entry) = self.agents.get_mut(&id) {
-                    if entry.is_dead() && entry.term.is_none() {
-                        entry.term = Some(match parser {
-                            Some(parser) => TermView::from_parser(*parser),
-                            None => TermView::from_snapshot(TermSize::new(3, 40), b"(no output was recorded)"),
-                        });
-                        self.dirty = true;
-                    }
+                if let Some(entry) = self.agents.get_mut(&id)
+                    && entry.is_dead()
+                    && entry.term.is_none()
+                {
+                    entry.term = Some(match parser {
+                        Some(parser) => TermView::from_parser(*parser),
+                        None => TermView::from_snapshot(TermSize::new(3, 40), b"(no output was recorded)"),
+                    });
+                    self.dirty = true;
                 }
             }
         }
@@ -451,7 +458,7 @@ impl App {
 
     fn on_tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
-        if self.any_working() || self.tick % 8 == 0 {
+        if self.any_working() || self.tick.is_multiple_of(8) {
             self.dirty = true;
         }
         if self.last_rescan.elapsed() >= RESCAN_EVERY {
@@ -493,14 +500,14 @@ impl App {
         for id in refresh {
             self.refresh_link(id);
         }
-        if let Ok(sessions) = store.load_sessions_with(&records) {
-            if sessions != self.sessions {
-                self.sessions = sessions;
-                if !self.sessions.iter().any(|s| s.name == self.session) {
-                    self.session = DEFAULT_SESSION.to_string();
-                }
-                self.dirty = true;
+        if let Ok(sessions) = store.load_sessions_with(&records)
+            && sessions != self.sessions
+        {
+            self.sessions = sessions;
+            if !self.sessions.iter().any(|s| s.name == self.session) {
+                self.session = DEFAULT_SESSION.to_string();
             }
+            self.dirty = true;
         }
         self.ensure_selection();
     }
@@ -565,10 +572,11 @@ impl App {
             Some(HolderMsg::Status(status)) => {
                 let finished = status.state == AgentState::Done
                     && entry.status.as_ref().is_none_or(|s| s.state != AgentState::Done);
-                if finished && viewing {
-                    if let Some(conn) = entry.conn() {
-                        let _ = conn.send(&ClientMsg::Seen);
-                    }
+                if finished
+                    && viewing
+                    && let Some(conn) = entry.conn()
+                {
+                    let _ = conn.send(&ClientMsg::Seen);
                 }
                 let needs_you = status.state == AgentState::Paused
                     && entry.status.as_ref().is_some_and(|s| s.state != AgentState::Paused);
@@ -704,7 +712,7 @@ impl App {
         }
         self.show_help = false;
         self.prompt = None;
-        self.candidates.clear();
+        self.paths.clear();
         self.attach(id);
         self.persist_ui();
     }
@@ -722,10 +730,10 @@ impl App {
             self.show_overview();
         }
         self.tabs.retain(|t| *t != id);
-        if let Some(entry) = self.agents.get_mut(&id) {
-            if entry.is_dead() {
-                entry.term = None;
-            }
+        if let Some(entry) = self.agents.get_mut(&id)
+            && entry.is_dead()
+        {
+            entry.term = None;
         }
         self.persist_ui();
         self.dirty = true;
@@ -738,6 +746,9 @@ impl App {
         }
         self.show_overview();
         self.session = name.to_string();
+        if let Some(dir) = self.session_dirs.get(name).filter(|dir| dir.is_dir()) {
+            self.where_dir = dir.clone();
+        }
         self.selected = None;
         self.list_offset = 0;
         self.ensure_selection();
@@ -911,6 +922,9 @@ impl App {
                     entry.record.session = new.clone();
                 }
                 self.sessions = store.load_sessions().unwrap_or_else(|_| self.sessions.clone());
+                if let Some(dir) = self.session_dirs.remove(&old) {
+                    self.session_dirs.insert(new.clone(), dir);
+                }
                 self.session = new.clone();
                 self.persist_ui();
                 self.set_notice(Tone::Success, format!("session {old} is now {new}"));
@@ -924,6 +938,7 @@ impl App {
         match store.delete_session(name) {
             Ok(()) => {
                 self.sessions = store.load_sessions().unwrap_or_else(|_| self.sessions.clone());
+                self.session_dirs.remove(name);
                 self.switch_session(DEFAULT_SESSION);
                 self.set_notice(Tone::Info, format!("session {name} deleted"));
             }
@@ -935,13 +950,59 @@ impl App {
         let path = expand_tilde(input);
         let path = if path.is_relative() { self.where_dir.join(path) } else { path };
         match path.canonicalize() {
-            Ok(dir) if dir.is_dir() => {
-                self.where_dir = strip_verbatim(dir);
-                self.persist_ui();
-                self.dirty = true;
-            }
+            Ok(dir) if dir.is_dir() => self.apply_where(strip_verbatim(dir)),
             _ => self.set_notice(Tone::Error, format!("{input} is not a directory")),
         }
+    }
+
+    fn apply_where(&mut self, dir: PathBuf) {
+        let text = self.display(&dir);
+        self.session_dirs.insert(self.session.clone(), dir.clone());
+        self.where_dir = dir;
+        self.persist_ui();
+        self.set_notice(Tone::Info, format!("new tasks in {} will run in {text}", self.session));
+    }
+
+    fn open_where_prompt(&mut self) {
+        let text = self.display(&self.where_dir);
+        let separator = separator_for(&text);
+        let text = if text.ends_with(['/', '\\']) { text } else { format!("{text}{separator}") };
+        self.prompt = Some(Prompt::Where(LineInput::with_text(&text)));
+    }
+
+    fn sync_suggestions(&mut self) {
+        if let Some(Prompt::Where(input)) = &self.prompt {
+            let text = input.text();
+            self.paths.refresh(&text, &self.where_dir);
+            return;
+        }
+        let text = self.task.text();
+        match where_argument(&text) {
+            Some((_, arg)) => self.paths.refresh(arg, &self.where_dir),
+            None => self.paths.clear(),
+        }
+    }
+
+    fn on_composer_tab(&mut self, backwards: bool) {
+        let text = self.task.text();
+        if let Some((head, arg)) = where_argument(&text) {
+            if let Some(completed) = self.paths.tab(arg, &self.where_dir, backwards) {
+                self.task.set(&format!("{head}{completed}"));
+            }
+            return;
+        }
+        if text.starts_with('/') && !text.contains(' ') {
+            let matches: Vec<&str> =
+                COMMANDS.iter().copied().filter(|usage| usage.starts_with(text.as_str())).collect();
+            if let [usage] = matches.as_slice() {
+                let name = usage.split_whitespace().next().unwrap_or(usage);
+                let spacer = if usage.contains(' ') { " " } else { "" };
+                self.task.set(&format!("{name}{spacer}"));
+            }
+            return;
+        }
+        self.who = if backwards { self.who.prev() } else { self.who.next() };
+        self.persist_ui();
     }
 
     fn queue_input(&mut self, id: AgentId, bytes: Vec<u8>) {
@@ -966,10 +1027,10 @@ impl App {
         if !entry.attached {
             return;
         }
-        if let Some(term) = entry.term.as_mut() {
-            if term.size() != size {
-                term.resize(size);
-            }
+        if let Some(term) = entry.term.as_mut()
+            && term.size() != size
+        {
+            term.resize(size);
         }
         if self.attached_size != Some(size) {
             if let Some(conn) = entry.conn() {
@@ -1006,15 +1067,18 @@ impl App {
                             self.queue_input(id, keys::encode_paste(&text, bracketed));
                         }
                     }
-                    View::Overview => match self.prompt.as_mut() {
-                        Some(
-                            Prompt::Where(input)
-                            | Prompt::Rename(_, input)
-                            | Prompt::NewSession(input)
-                            | Prompt::RenameSession(input),
-                        ) => input.insert_str(&text),
-                        _ => self.task.insert_str(&text),
-                    },
+                    View::Overview => {
+                        match self.prompt.as_mut() {
+                            Some(
+                                Prompt::Where(input)
+                                | Prompt::Rename(_, input)
+                                | Prompt::NewSession(input)
+                                | Prompt::RenameSession(input),
+                            ) => input.insert_str(&text),
+                            _ => self.task.insert_str(&text),
+                        }
+                        self.sync_suggestions();
+                    }
                 }
             }
             Event::Resize(width, height) => {
@@ -1090,15 +1154,13 @@ impl App {
         match prompt {
             Prompt::Confirm(_) => {}
             Prompt::Where(mut input) => match key.code {
-                KeyCode::Esc => self.candidates.clear(),
-                KeyCode::Enter => {
-                    self.candidates.clear();
-                    self.set_where(&input.text());
-                }
-                KeyCode::Tab => {
-                    let completion = complete_directory(&input.text());
-                    input.set(&completion.text);
-                    self.candidates = completion.candidates;
+                KeyCode::Esc => {}
+                KeyCode::Enter => self.set_where(&input.text()),
+                KeyCode::Tab | KeyCode::BackTab => {
+                    let backwards = key.code == KeyCode::BackTab;
+                    if let Some(completed) = self.paths.tab(&input.text(), &self.where_dir, backwards) {
+                        input.set(&completed);
+                    }
                     self.prompt = Some(Prompt::Where(input));
                 }
                 _ => {
@@ -1136,8 +1198,13 @@ impl App {
     fn on_overview_key(&mut self, key: KeyEvent) {
         if self.prompt.is_some() {
             self.on_prompt_key(key);
-            return;
+        } else {
+            self.on_composer_key(key);
         }
+        self.sync_suggestions();
+    }
+
+    fn on_composer_key(&mut self, key: KeyEvent) {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         match key.code {
@@ -1151,10 +1218,7 @@ impl App {
             KeyCode::Char('q') | KeyCode::Char('d') if ctrl && !alt && self.task.is_empty() => {
                 self.should_quit = true;
             }
-            KeyCode::Char('l') if ctrl && !alt => {
-                let text = self.display(&self.where_dir);
-                self.prompt = Some(Prompt::Where(LineInput::with_text(&text)));
-            }
+            KeyCode::Char('l') if ctrl && !alt => self.open_where_prompt(),
             KeyCode::Char('n') if ctrl && !alt => {
                 let name = self.launcher.store().next_session_name().unwrap_or_default();
                 self.prompt = Some(Prompt::NewSession(LineInput::with_text(&name)));
@@ -1190,18 +1254,11 @@ impl App {
             KeyCode::Down => self.move_selection(1),
             KeyCode::PageUp => self.move_selection(-10),
             KeyCode::PageDown => self.move_selection(10),
-            KeyCode::Tab => {
-                self.who = self.who.next();
-                self.persist_ui();
-            }
-            KeyCode::BackTab => {
-                self.who = self.who.prev();
-                self.persist_ui();
-            }
+            KeyCode::Tab => self.on_composer_tab(false),
+            KeyCode::BackTab => self.on_composer_tab(true),
             KeyCode::Esc => {
                 self.task.clear();
                 self.notice = None;
-                self.candidates.clear();
             }
             KeyCode::Enter => self.submit(),
             _ => edit_line(&mut self.task, &key, ctrl),
@@ -1209,10 +1266,10 @@ impl App {
     }
 
     fn begin_rename(&mut self) {
-        if let Some(id) = self.selected {
-            if let Some(entry) = self.agents.get(&id) {
-                self.prompt = Some(Prompt::Rename(id, LineInput::with_text(&entry.record.name)));
-            }
+        if let Some(id) = self.selected
+            && let Some(entry) = self.agents.get(&id)
+        {
+            self.prompt = Some(Prompt::Rename(id, LineInput::with_text(&entry.record.name)));
         }
     }
 
@@ -1241,8 +1298,8 @@ impl App {
             "quit" | "q" | "exit" => self.should_quit = true,
             "cd" | "where" => {
                 if arg.is_empty() {
-                    let text = self.display(&self.where_dir);
-                    self.prompt = Some(Prompt::Where(LineInput::with_text(&text)));
+                    self.open_where_prompt();
+                    self.sync_suggestions();
                 } else {
                     self.set_where(&arg);
                 }
@@ -1316,12 +1373,11 @@ impl App {
 
     fn on_mouse(&mut self, mouse: MouseEvent) {
         let hit = self.hit_at(mouse.column, mouse.row);
-        if hit == Some(Hit::Terminal) {
-            if let View::Agent(id) = self.view {
-                if self.forward_mouse(id, &mouse) {
-                    return;
-                }
-            }
+        if hit == Some(Hit::Terminal)
+            && let View::Agent(id) = self.view
+            && self.forward_mouse(id, &mouse)
+        {
+            return;
         }
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => {
@@ -1348,15 +1404,10 @@ impl App {
                         self.persist_ui();
                     }
                     Some(Hit::Where) => {
-                        let text = self.display(&self.where_dir);
-                        self.prompt = Some(Prompt::Where(LineInput::with_text(&text)));
+                        self.open_where_prompt();
+                        self.sync_suggestions();
                     }
-                    Some(Hit::Project(cwd)) => {
-                        let text = self.display(&cwd);
-                        self.where_dir = cwd;
-                        self.persist_ui();
-                        self.set_notice(Tone::Info, format!("new tasks will run in {text}"));
-                    }
+                    Some(Hit::Project(cwd)) => self.apply_where(cwd),
                     Some(Hit::Recover) => {
                         let lost = self.lost_in_session();
                         if !lost.is_empty() {

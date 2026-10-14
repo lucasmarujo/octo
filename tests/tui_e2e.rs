@@ -25,10 +25,10 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         for store in [&self.inner, &self.outer] {
             for record in store.list_agents().unwrap_or_default() {
-                if let Ok(Some(runtime)) = store.read_runtime(record.id) {
-                    if let Ok((conn, _, _)) = client::connect(&runtime) {
-                        let _ = conn.send(&ClientMsg::Kill);
-                    }
+                if let Ok(Some(runtime)) = store.read_runtime(record.id)
+                    && let Ok((conn, _, _)) = client::connect(&runtime)
+                {
+                    let _ = conn.send(&ClientMsg::Kill);
                 }
             }
         }
@@ -51,6 +51,7 @@ struct Session {
     conn: Connection,
     rx: Receiver<Option<HolderMsg>>,
     screen: vt100::Parser,
+    title: String,
 }
 
 fn start_tui(fx: &Fixture) -> Session {
@@ -85,7 +86,7 @@ fn start_tui(fx: &Fixture) -> Session {
     let (tx, rx) = mpsc::channel();
     client::spawn_reader(reader, move |msg| tx.send(msg).is_ok()).unwrap();
     conn.send(&ClientMsg::Attach(TermSize { rows: ROWS, cols: COLS })).unwrap();
-    Session { conn, rx, screen: vt100::Parser::new(ROWS, COLS, 0) }
+    Session { conn, rx, screen: vt100::Parser::new(ROWS, COLS, 0), title: String::new() }
 }
 
 impl Session {
@@ -100,8 +101,20 @@ impl Session {
                 self.screen.process(&bytes);
                 true
             }
+            Ok(Some(HolderMsg::Status(status))) => {
+                self.title = status.title;
+                true
+            }
             Ok(Some(HolderMsg::Exited(_))) | Ok(None) => false,
             Ok(Some(_)) | Err(_) => true,
+        }
+    }
+
+    fn wait_for_title(&mut self, expected: &str) {
+        let deadline = Instant::now() + TIMEOUT;
+        while self.title != expected {
+            assert!(Instant::now() < deadline, "window title is {:?}, expected {expected:?}", self.title);
+            assert!(self.pump(Duration::from_millis(100)), "tui exited before setting the window title");
         }
     }
 
@@ -174,6 +187,7 @@ fn tui_launches_agent_opens_it_and_agent_survives_restart() {
     let mut tui = start_tui(&fx);
     tui.wait_for("write a task");
     tui.wait_for("who claude");
+    tui.wait_for_title(orkai::tui::WINDOW_TITLE);
 
     tui.send(b"\t");
     tui.send(b"\t");

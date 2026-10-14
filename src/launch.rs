@@ -265,10 +265,11 @@ static STAGED: OnceLock<Mutex<Option<(PathBuf, PathBuf)>>> = OnceLock::new();
 pub fn holder_executable(home: &Home, source: &Path) -> io::Result<PathBuf> {
     let cache = STAGED.get_or_init(|| Mutex::new(None));
     let mut guard = crate::util::lock(cache);
-    if let Some((cached_source, target)) = guard.as_ref() {
-        if cached_source == source && target.exists() {
-            return Ok(target.clone());
-        }
+    if let Some((cached_source, target)) = guard.as_ref()
+        && cached_source == source
+        && target.exists()
+    {
+        return Ok(target.clone());
     }
     let data = fs::read(source)?;
     let name =
@@ -494,10 +495,11 @@ impl Launcher {
     }
 
     fn stop_stale_holder(&self, id: AgentId) {
-        if let Ok(Some(runtime)) = self.store.read_runtime(id) {
-            if runtime.holder_pid != std::process::id() && process_is_holder(runtime.holder_pid) {
-                kill_process_tree(runtime.holder_pid);
-            }
+        if let Ok(Some(runtime)) = self.store.read_runtime(id)
+            && runtime.holder_pid != std::process::id()
+            && process_is_holder(runtime.holder_pid)
+        {
+            kill_process_tree(runtime.holder_pid);
         }
     }
 }

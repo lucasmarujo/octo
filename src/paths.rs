@@ -106,23 +106,32 @@ pub fn user_home() -> Option<PathBuf> {
 
 pub fn expand_tilde(input: &str) -> PathBuf {
     let trimmed = input.trim();
-    if trimmed == "~" {
-        if let Some(home) = user_home() {
-            return home;
-        }
+    if trimmed == "~"
+        && let Some(home) = user_home()
+    {
+        return home;
     }
-    if let Some(rest) = trimmed.strip_prefix("~/").or_else(|| trimmed.strip_prefix("~\\")) {
-        if let Some(home) = user_home() {
-            return home.join(rest);
-        }
+    if let Some(rest) = trimmed.strip_prefix("~/").or_else(|| trimmed.strip_prefix("~\\"))
+        && let Some(home) = user_home()
+    {
+        return home.join(rest);
     }
     PathBuf::from(trimmed)
 }
+
+pub const MAX_DIRECTORY_SUGGESTIONS: usize = 200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Completion {
     pub text: String,
     pub candidates: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectoryQuery {
+    pub typed_base: String,
+    pub dir: PathBuf,
+    pub prefix: String,
 }
 
 fn starts_with_prefix(name: &str, prefix: &str) -> bool {
@@ -145,40 +154,62 @@ fn common_prefix(names: &[String]) -> String {
     first[..end].to_string()
 }
 
-pub fn complete_directory(input: &str) -> Completion {
-    let unchanged = || Completion { text: input.to_string(), candidates: Vec::new() };
-    let typed = if input.trim() == "~" { format!("~{}", std::path::MAIN_SEPARATOR) } else { input.to_string() };
-    let ends_with_separator = typed.ends_with('/') || typed.ends_with('\\');
-    let expanded = expand_tilde(&typed);
-    let (dir, prefix) = if ends_with_separator {
-        (expanded, String::new())
+fn is_separator(c: char) -> bool {
+    c == '/' || c == '\\'
+}
+
+pub fn separator_for(typed: &str) -> char {
+    if typed.contains('\\') && !typed.contains('/') { '\\' } else { '/' }
+}
+
+pub fn directory_query(input: &str, base: &Path) -> DirectoryQuery {
+    let typed = if input.trim() == "~" { "~/".to_string() } else { input.to_string() };
+    let split = typed.rfind(is_separator).map_or(0, |i| i + 1);
+    let (typed_base, prefix) = typed.split_at(split);
+    let dir = if typed_base.is_empty() {
+        base.to_path_buf()
     } else {
-        match (expanded.parent(), expanded.file_name()) {
-            (Some(parent), Some(name)) => (parent.to_path_buf(), name.to_string_lossy().into_owned()),
-            _ => return unchanged(),
-        }
+        let expanded = expand_tilde(typed_base);
+        if expanded.is_relative() { base.join(expanded) } else { expanded }
     };
-    let Ok(entries) = std::fs::read_dir(if dir.as_os_str().is_empty() { Path::new(".") } else { &dir }) else {
-        return unchanged();
-    };
+    DirectoryQuery { typed_base: typed_base.to_string(), dir, prefix: prefix.to_string() }
+}
+
+pub fn matching_directories(dir: &Path, prefix: &str) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
     let mut names: Vec<String> = entries
         .flatten()
-        .filter(|e| e.path().is_dir())
-        .filter_map(|e| e.file_name().to_str().map(str::to_string))
-        .filter(|name| starts_with_prefix(name, &prefix))
-        .filter(|name| prefix.starts_with('.') || !name.starts_with('.'))
+        .filter_map(|entry| {
+            let name = entry.file_name().to_str()?.to_string();
+            if !starts_with_prefix(&name, prefix) || (name.starts_with('.') && !prefix.starts_with('.')) {
+                return None;
+            }
+            let is_dir = match entry.file_type() {
+                Ok(kind) if kind.is_symlink() => entry.path().is_dir(),
+                Ok(kind) => kind.is_dir(),
+                Err(_) => false,
+            };
+            is_dir.then_some(name)
+        })
         .collect();
     names.sort_by_key(|n| n.to_lowercase());
-    if names.is_empty() || !typed.ends_with(&prefix) {
-        return unchanged();
+    names.truncate(MAX_DIRECTORY_SUGGESTIONS);
+    names
+}
+
+pub fn complete_directory(input: &str, base: &Path) -> Completion {
+    let query = directory_query(input, base);
+    let names = matching_directories(&query.dir, &query.prefix);
+    let separator = separator_for(&query.typed_base);
+    match names.len() {
+        0 => Completion { text: input.to_string(), candidates: Vec::new() },
+        1 => Completion { text: format!("{}{}{separator}", query.typed_base, names[0]), candidates: Vec::new() },
+        _ => {
+            let common = common_prefix(&names);
+            let extended = if common.chars().count() > query.prefix.chars().count() { common } else { query.prefix };
+            Completion { text: format!("{}{extended}", query.typed_base), candidates: names }
+        }
     }
-    let base = &typed[..typed.len() - prefix.len()];
-    if names.len() == 1 {
-        return Completion { text: format!("{base}{}{}", names[0], std::path::MAIN_SEPARATOR), candidates: Vec::new() };
-    }
-    let common = common_prefix(&names);
-    let extended = if common.chars().count() > prefix.chars().count() { common } else { prefix.clone() };
-    Completion { text: format!("{base}{extended}"), candidates: names }
 }
 
 pub fn normalize_for_compare(path: &Path) -> String {
@@ -226,22 +257,58 @@ mod tests {
         std::fs::create_dir_all(dir.join("beta-two")).unwrap();
         std::fs::create_dir_all(dir.join(".hidden")).unwrap();
         std::fs::write(dir.join("afile"), b"").unwrap();
-        let root = format!("{}{}", dir.display(), std::path::MAIN_SEPARATOR);
+        let separator = separator_for(&dir.display().to_string());
+        let root = format!("{}{separator}", dir.display());
+        let elsewhere = std::env::temp_dir();
 
-        let unique = complete_directory(&format!("{root}al"));
-        assert_eq!(unique.text, format!("{root}alpha{}", std::path::MAIN_SEPARATOR));
+        let unique = complete_directory(&format!("{root}al"), &elsewhere);
+        assert_eq!(unique.text, format!("{root}alpha{separator}"));
         assert!(unique.candidates.is_empty());
 
-        let shared = complete_directory(&format!("{root}b"));
+        let shared = complete_directory(&format!("{root}b"), &elsewhere);
         assert_eq!(shared.text, format!("{root}beta-"));
         assert_eq!(shared.candidates, vec!["beta-one".to_string(), "beta-two".to_string()]);
 
-        let listing = complete_directory(&root);
-        assert_eq!(listing.candidates.len(), 3);
+        let listing = complete_directory(&root, &elsewhere);
+        assert_eq!(listing.candidates, vec!["alpha".to_string(), "beta-one".to_string(), "beta-two".to_string()]);
 
-        let none = complete_directory(&format!("{root}zzz"));
+        let hidden = complete_directory(&format!("{root}.h"), &elsewhere);
+        assert_eq!(hidden.text, format!("{root}.hidden{separator}"));
+
+        let none = complete_directory(&format!("{root}zzz"), &elsewhere);
         assert_eq!(none.text, format!("{root}zzz"));
+        assert!(none.candidates.is_empty());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn relative_input_is_resolved_against_the_base_directory() {
+        let dir = std::env::temp_dir().join(format!("orkai-relative-{}-{}", std::process::id(), crate::util::now_ms()));
+        std::fs::create_dir_all(dir.join("src").join("tui")).unwrap();
+        std::fs::create_dir_all(dir.join("docs")).unwrap();
+        assert_eq!(complete_directory("sr", &dir).text, "src/");
+        assert_eq!(complete_directory("src/t", &dir).text, "src/tui/");
+        assert_eq!(complete_directory("", &dir).candidates, vec!["docs".to_string(), "src".to_string()]);
+        let query = directory_query("src/t", &dir);
+        assert_eq!(query.typed_base, "src/");
+        assert_eq!(query.prefix, "t");
+        assert_eq!(query.dir, dir.join("src/"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn tilde_lists_the_home_directory() {
+        let query = directory_query("~", Path::new("/unused"));
+        assert_eq!(query.typed_base, "~/");
+        assert_eq!(query.prefix, "");
+        assert_eq!(query.dir, user_home().unwrap());
+    }
+
+    #[test]
+    fn separator_follows_the_typed_style() {
+        assert_eq!(separator_for(r"C:\Users\me\"), '\\');
+        assert_eq!(separator_for("~/work/"), '/');
+        assert_eq!(separator_for(""), '/');
     }
 
     #[test]

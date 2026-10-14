@@ -127,6 +127,26 @@ pub fn truncate(text: &str, max_width: usize) -> String {
     out
 }
 
+pub fn truncate_start(text: &str, max_width: usize) -> String {
+    if width(text) <= max_width {
+        return text.to_string();
+    }
+    if max_width == 0 {
+        return String::new();
+    }
+    let mut tail = Vec::new();
+    let mut used = 0;
+    for c in text.chars().rev() {
+        let w = UnicodeWidthChar::width(c).unwrap_or(0);
+        if used + w > max_width - 1 {
+            break;
+        }
+        tail.push(c);
+        used += w;
+    }
+    std::iter::once('…').chain(tail.into_iter().rev()).collect()
+}
+
 pub fn pad(text: &str, target: usize) -> String {
     let mut out = truncate(text, target);
     let w = width(&out);
@@ -190,5 +210,14 @@ mod tests {
         assert_eq!(pad("ab", 4), "ab  ");
         assert_eq!(pad_left("ab", 4), "  ab");
         assert_eq!(pad("abcdef", 4), "abc…");
+    }
+
+    #[test]
+    fn start_truncation_keeps_the_end_of_paths() {
+        assert_eq!(truncate_start("~/projects/studio/", 10), "…s/studio/");
+        assert_eq!(width(&truncate_start("~/projects/studio/", 10)), 10);
+        assert_eq!(truncate_start("short", 10), "short");
+        assert_eq!(truncate_start("漢字漢字", 5), "…漢字");
+        assert_eq!(truncate_start("abc", 0), "");
     }
 }

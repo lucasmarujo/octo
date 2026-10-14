@@ -55,10 +55,10 @@ impl Clients {
     }
 
     fn send_to(&mut self, id: u64, frame: Frame) {
-        if let Some(index) = self.slots.iter().position(|s| s.id == id) {
-            if self.slots[index].tx.try_send(frame).is_err() {
-                self.slots.remove(index);
-            }
+        if let Some(index) = self.slots.iter().position(|s| s.id == id)
+            && self.slots[index].tx.try_send(frame).is_err()
+        {
+            self.slots.remove(index);
         }
     }
 
@@ -132,10 +132,10 @@ impl Shared {
         if !replies.is_empty() {
             self.write_pty(&replies);
         }
-        if let Some(log) = lock(&self.log).as_mut() {
-            if let Err(err) = log.output(chunk) {
-                self.diag(&format!("log write failed: {err}"));
-            }
+        if let Some(log) = lock(&self.log).as_mut()
+            && let Err(err) = log.output(chunk)
+        {
+            self.diag(&format!("log write failed: {err}"));
         }
     }
 
@@ -369,10 +369,10 @@ fn tick(shared: &Arc<Shared>) {
             lock(&shared.clients).broadcast(&frame, false);
             last = Some(report);
         }
-        if ticks % LOG_FLUSH_EVERY_TICKS == 0 {
-            if let Some(log) = lock(&shared.log).as_mut() {
-                let _ = log.flush();
-            }
+        if ticks.is_multiple_of(LOG_FLUSH_EVERY_TICKS)
+            && let Some(log) = lock(&shared.log).as_mut()
+        {
+            let _ = log.flush();
         }
     }
 }
@@ -382,10 +382,10 @@ fn accept_clients(shared: &Arc<Shared>, listener: TcpListener) {
         let Ok(stream) = stream else { continue };
         let shared = Arc::clone(shared);
         let _ = spawn_named("orkai-client", move || {
-            if let Err(err) = serve_client(&shared, stream) {
-                if err.kind() != io::ErrorKind::UnexpectedEof {
-                    shared.diag(&format!("client error: {err}"));
-                }
+            if let Err(err) = serve_client(&shared, stream)
+                && err.kind() != io::ErrorKind::UnexpectedEof
+            {
+                shared.diag(&format!("client error: {err}"));
             }
         });
     }

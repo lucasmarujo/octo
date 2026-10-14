@@ -1,4 +1,5 @@
 pub mod app;
+pub mod complete;
 pub mod format;
 pub mod keys;
 pub mod line;
@@ -7,7 +8,8 @@ pub mod sprite;
 pub mod theme;
 pub mod view;
 
-use std::io::{self, Stdout};
+use std::io::{self, Stdout, Write};
+use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -18,7 +20,9 @@ use ratatui::crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
 };
 use ratatui::crossterm::execute;
-use ratatui::crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
+use ratatui::crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, SetTitle, disable_raw_mode, enable_raw_mode,
+};
 use ratatui::layout::Rect;
 
 use crate::launch::Launcher;
@@ -29,10 +33,55 @@ const MIN_FRAME: Duration = Duration::from_millis(16);
 
 type Term = Terminal<CrosstermBackend<Stdout>>;
 
+pub const WINDOW_TITLE: &str = "Orkai";
+const PUSH_TITLE: &str = "\x1b[22;0t";
+const POP_TITLE: &str = "\x1b[23;0t";
+
+static SAVED_TITLE: OnceLock<Option<String>> = OnceLock::new();
+
+#[cfg(windows)]
+fn current_title() -> Option<String> {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetConsoleTitleW(title: *mut u16, size: u32) -> u32;
+    }
+    let mut buffer = vec![0u16; 1024];
+    let size = u32::try_from(buffer.len()).unwrap_or(0);
+    let len = usize::try_from(unsafe { GetConsoleTitleW(buffer.as_mut_ptr(), size) }).unwrap_or(0);
+    (len > 0).then(|| String::from_utf16_lossy(&buffer[..len.min(buffer.len())]))
+}
+
+#[cfg(not(windows))]
+fn current_title() -> Option<String> {
+    None
+}
+
+fn set_window_title() -> io::Result<()> {
+    let mut stdout = io::stdout();
+    if SAVED_TITLE.get_or_init(current_title).is_none() {
+        stdout.write_all(PUSH_TITLE.as_bytes())?;
+    }
+    execute!(stdout, SetTitle(WINDOW_TITLE))
+}
+
+fn restore_window_title() {
+    let Some(saved) = SAVED_TITLE.get() else { return };
+    let mut stdout = io::stdout();
+    match saved {
+        Some(title) => {
+            let _ = execute!(stdout, SetTitle(title));
+        }
+        None => {
+            let _ = stdout.write_all(POP_TITLE.as_bytes()).and_then(|()| stdout.flush());
+        }
+    }
+}
+
 fn restore_terminal() {
     let _ = disable_raw_mode();
     let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste, LeaveAlternateScreen);
     let _ = execute!(io::stdout(), ratatui::crossterm::cursor::Show);
+    restore_window_title();
 }
 
 struct TerminalGuard;
@@ -47,6 +96,7 @@ fn setup_terminal() -> io::Result<(Term, TerminalGuard)> {
     enable_raw_mode()?;
     let guard = TerminalGuard;
     execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture, EnableBracketedPaste)?;
+    set_window_title()?;
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         restore_terminal();

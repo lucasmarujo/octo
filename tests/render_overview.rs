@@ -5,6 +5,7 @@ use std::sync::mpsc;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
+use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
 
@@ -13,7 +14,7 @@ use orkai::launch::Launcher;
 use orkai::model::{AgentKind, AgentState, NewAgent, StatusReport};
 use orkai::paths::Home;
 use orkai::store::Store;
-use orkai::tui::app::{App, Link};
+use orkai::tui::app::{App, AppEvent, Link, Prompt};
 use orkai::tui::render;
 use orkai::util::now_ms;
 
@@ -255,4 +256,105 @@ fn agent_view_keeps_navigation_hint_with_long_paths() {
     let status = screen.lines().last().unwrap();
     assert!(status.contains("ctrl+] overview"), "{status}");
     assert!(status.contains('…'), "{status}");
+}
+
+fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    app.handle(AppEvent::Input(Event::Key(KeyEvent::new(code, modifiers))));
+}
+
+fn type_text(app: &mut App, text: &str) {
+    for c in text.chars() {
+        press(app, KeyCode::Char(c), KeyModifiers::NONE);
+    }
+}
+
+#[test]
+fn where_command_suggests_completes_and_cycles_folders() {
+    let mut scenario = scenario();
+    let root = scenario.dir.clone();
+    scenario.app.where_dir = root.clone();
+    let app = &mut scenario.app;
+
+    type_text(app, "/wh");
+    press(app, KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(app.task.text(), "/wh");
+    type_text(app, "e");
+    press(app, KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(app.task.text(), "/where ");
+    assert!(app.paths.is_active());
+    assert_eq!(app.paths.listing(), Some(root.as_path()));
+    assert!(app.paths.suggestions().contains(&"studio".to_string()));
+    assert!(app.paths.suggestions().contains(&"acme".to_string()));
+
+    type_text(app, "st");
+    assert_eq!(app.paths.suggestions(), ["studio"]);
+    press(app, KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(app.task.text(), "/where studio/");
+    assert_eq!(app.paths.suggestions(), ["assets", "game"]);
+
+    let buffer = render(app);
+    if let Ok(path) = std::env::var("ORKAI_RENDER_DUMP_WHERE") {
+        dump(&buffer, &path);
+    }
+    let screen = text(&buffer);
+    let hints = screen.lines().last().unwrap();
+    assert!(hints.contains("assets/") && hints.contains("game/"), "{hints}");
+
+    press(app, KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(app.task.text(), "/where studio/assets/");
+    assert_eq!(app.paths.selected(), Some(0));
+    press(app, KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(app.task.text(), "/where studio/game/");
+    press(app, KeyCode::BackTab, KeyModifiers::SHIFT);
+    assert_eq!(app.task.text(), "/where studio/assets/");
+    press(app, KeyCode::Tab, KeyModifiers::NONE);
+
+    press(app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(app.where_dir.ends_with("studio/game"), "{}", app.where_dir.display());
+    assert!(app.task.is_empty());
+    assert!(!app.paths.is_active());
+    assert!(app.notice.as_ref().unwrap().text.contains("new tasks in default"));
+}
+
+#[test]
+fn where_is_remembered_per_session() {
+    let mut scenario = scenario();
+    let root = scenario.dir.clone();
+    scenario.app.where_dir = root.clone();
+    let app = &mut scenario.app;
+    app.run_command("/where studio/game");
+    app.run_command("/session session-2");
+    assert!(app.where_dir.ends_with("studio/game"));
+    app.run_command(&format!("/where {}", root.join("acme").join("web").display()));
+    assert!(app.where_dir.ends_with("acme/web"));
+    app.run_command("/session default");
+    assert!(app.where_dir.ends_with("studio/game"), "{}", app.where_dir.display());
+    app.run_command("/session session-2");
+    assert!(app.where_dir.ends_with("acme/web"));
+}
+
+#[test]
+fn where_prompt_lists_and_completes_folders() {
+    let mut scenario = scenario();
+    let root = scenario.dir.clone();
+    scenario.app.where_dir = root.join("studio");
+    let app = &mut scenario.app;
+    press(app, KeyCode::Char('l'), KeyModifiers::CONTROL);
+    assert!(matches!(app.prompt, Some(Prompt::Where(_))));
+    assert_eq!(app.paths.suggestions(), ["assets", "game"]);
+    type_text(app, "g");
+    assert_eq!(app.paths.suggestions(), ["game"]);
+    press(app, KeyCode::Tab, KeyModifiers::NONE);
+    press(app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(app.prompt.is_none());
+    assert!(app.where_dir.ends_with("studio/game"), "{}", app.where_dir.display());
+}
+
+#[test]
+fn unknown_folder_reports_error_and_keeps_where() {
+    let mut scenario = scenario();
+    let before = scenario.app.where_dir.clone();
+    scenario.app.run_command("/where does-not-exist");
+    assert_eq!(scenario.app.where_dir, before);
+    assert!(scenario.app.notice.as_ref().unwrap().text.contains("is not a directory"));
 }
