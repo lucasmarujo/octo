@@ -8,7 +8,7 @@ para Windows, Linux e macOS.
 
 ## Instalação
 
-Requer o toolchain Rust (1.85+).
+Requer o toolchain Rust (1.88+).
 
 ```sh
 git clone https://github.com/lucasmarujo/orkai-cli
