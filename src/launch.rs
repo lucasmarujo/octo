@@ -139,12 +139,11 @@ pub fn is_safe_session_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 128 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-pub fn find_codex_session(codex_home: &Path, cwd: &Path, since_ms: u64, exclude: &[String]) -> Option<String> {
+pub fn recent_codex_rollouts(codex_home: &Path, since_ms: u64) -> Vec<PathBuf> {
     let root = codex_home.join("sessions");
     let (y, m, d) = civil_date_from_ms(since_ms.saturating_sub(DAY_MS));
     let floor = format!("{y:04}/{m:02}/{d:02}");
     let threshold = since_ms.saturating_sub(CODEX_CLOCK_SKEW_MS);
-    let target = normalize_for_compare(cwd);
     let mut files: Vec<PathBuf> = Vec::new();
     for year in sorted_dir_names(&root) {
         for month in sorted_dir_names(&root.join(&year)) {
@@ -171,7 +170,12 @@ pub fn find_codex_session(codex_home: &Path, cwd: &Path, since_ms: u64, exclude:
             }
         }
     }
-    for path in files {
+    files
+}
+
+pub fn find_codex_session(codex_home: &Path, cwd: &Path, since_ms: u64, exclude: &[String]) -> Option<String> {
+    let target = normalize_for_compare(cwd);
+    for path in recent_codex_rollouts(codex_home, since_ms) {
         let Ok(text) = fs::read_to_string(&path) else { continue };
         let Some((id, session_cwd)) = text.lines().next().and_then(codex_meta) else { continue };
         if normalize_for_compare(Path::new(&session_cwd)) == target && !exclude.contains(&id) && is_safe_session_id(&id)

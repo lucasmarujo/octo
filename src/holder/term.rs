@@ -7,6 +7,7 @@ use crate::termfmt;
 pub const HOLDER_SCROLLBACK: usize = 1_000;
 pub const INPUT_QUIET_MS: u64 = 900;
 pub const INPUT_NO_OUTPUT_TIMEOUT_MS: u64 = 20_000;
+pub const INPUT_READY_TIMEOUT_MS: u64 = 20_000;
 pub const ACTIVITY_MAX_CHARS: usize = 160;
 pub const SUBMIT_MIN_MS: u64 = 500;
 pub const SUBMIT_QUIET_MS: u64 = 350;
@@ -166,7 +167,7 @@ impl TermState {
 
     pub fn take_ready_input(&mut self, now: u64) -> Option<Vec<u8>> {
         self.pending_input.as_ref()?;
-        if self.signals.waiting || self.signals.busy {
+        if self.signals.waiting || self.signals.busy || !self.input_ready(now) {
             return None;
         }
         let quiet = self.last_output_at > 0 && now.saturating_sub(self.last_output_at) >= INPUT_QUIET_MS;
@@ -178,6 +179,15 @@ impl TermState {
         let text = self.pending_input.take()?;
         self.submit_after = Some(now);
         Some(encode_typed_text(&text, self.parser.screen().bracketed_paste()))
+    }
+
+    fn input_ready(&self, now: u64) -> bool {
+        if !self.kind.is_ai() {
+            return true;
+        }
+        let screen = self.parser.screen();
+        let drawn = screen.bracketed_paste() && !screen.contents().trim().is_empty();
+        drawn || now.saturating_sub(self.started_at) >= INPUT_READY_TIMEOUT_MS
     }
 
     pub fn take_submit(&mut self, now: u64) -> bool {
@@ -286,7 +296,7 @@ mod tests {
             "fix".into(),
             Some("fix the bug".into()),
         );
-        t.process(b"> ", 1_000);
+        t.process(b"\x1b[?2004h> ", 1_000);
         t.evaluate(1_000);
         assert!(t.take_ready_input(1_200).is_none());
         let typed_at = 1_000 + INPUT_QUIET_MS;
@@ -303,13 +313,42 @@ mod tests {
     #[test]
     fn submit_is_forced_when_output_never_settles() {
         let mut t = TermState::new(AgentKind::Codex, TermSize { rows: 6, cols: 40 }, 0, "x".into(), Some("x".into()));
-        t.process(b"ready", 1_000);
+        t.process(b"\x1b[?2004hready", 1_000);
         t.evaluate(1_000);
         let typed = t.take_ready_input(5_000).unwrap();
         assert_eq!(typed, b"x");
         t.process(b"spinner", 5_000 + SUBMIT_MAX_MS - 1);
         assert!(!t.take_submit(5_000 + SUBMIT_MAX_MS - 1));
         assert!(t.take_submit(5_000 + SUBMIT_MAX_MS));
+    }
+
+    #[test]
+    fn initial_input_waits_until_the_agent_input_is_drawn() {
+        let mut t = TermState::new(
+            AgentKind::Claude,
+            TermSize { rows: 6, cols: 40 },
+            0,
+            "fix".into(),
+            Some("fix the bug".into()),
+        );
+        t.process(b"\x1b[?2004h\x1b[?u\x1b]7501;?\x07", 100);
+        t.process(b"\x1b[<u\x1b[?2031l\x1b[?2004l", 300);
+        t.evaluate(300);
+        assert!(t.take_ready_input(300 + INPUT_QUIET_MS * 4).is_none());
+        t.process(b"\x1b[?2004h\x1b[?1049h\x1b[2J Claude Code\r\n> ", 5_000);
+        t.evaluate(5_000);
+        assert!(t.take_ready_input(5_000 + INPUT_QUIET_MS - 1).is_none());
+        assert_eq!(t.take_ready_input(5_000 + INPUT_QUIET_MS).unwrap(), b"fix the bug");
+    }
+
+    #[test]
+    fn initial_input_falls_back_when_bracketed_paste_is_never_enabled() {
+        let mut t =
+            TermState::new(AgentKind::Codex, TermSize { rows: 6, cols: 40 }, 0, "fix".into(), Some("fix".into()));
+        t.process(b"> ", 1_000);
+        t.evaluate(1_000);
+        assert!(t.take_ready_input(1_000 + INPUT_QUIET_MS).is_none());
+        assert_eq!(t.take_ready_input(INPUT_READY_TIMEOUT_MS).unwrap(), b"fix");
     }
 
     #[test]

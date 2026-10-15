@@ -13,6 +13,10 @@ const WAITING_MARKERS: &[&str] = &[
     "allow command",
     "approve this",
     "press enter to continue",
+    "press enter to confirm",
+    "enter to select",
+    "enter to submit answer",
+    "enter to submit all",
     "(y/n)",
     "[y/n]",
     "❯ 1. yes",
@@ -175,6 +179,9 @@ mod tests {
     const CLAUDE_PERMISSION: &str = " Bash command\n   npm test\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n";
     const CLAUDE_TRUST: &str = " Do you trust the files in this folder?\n ❯ 1. Yes, proceed\n";
     const CLAUDE_IDLE: &str = "● Done. All tests pass.\n> \n  ? for shortcuts\n";
+    const CLAUDE_QUESTION: &str = " ☐ Delete  ☐ Popup  ✔ Submit  →\n Which behavior?\n ❯ 1. Stop and remove\n   2. Same as ctrl+x\n   3. Type something.\n Enter to select · Tab/Arrow keys to navigate · Esc to cancel\n";
+    const CODEX_QUESTION: &str =
+        " Question 1/2\n  › 1. Keep the API\n    2. Replace it\n  enter to submit answer · esc to interrupt\n";
 
     #[test]
     fn detects_claude_working_from_screen() {
@@ -207,6 +214,13 @@ mod tests {
     fn codex_markers_are_detected() {
         assert!(analyze(AgentKind::Codex, "", "• Working (3s • Esc to interrupt)").busy);
         assert!(analyze(AgentKind::Codex, "", "Would you like to run the following command?").waiting);
+    }
+
+    #[test]
+    fn questions_waiting_for_a_choice_are_not_reported_as_working() {
+        assert_eq!(analyze(AgentKind::Claude, "⠐ Plan", CLAUDE_QUESTION), Signals { busy: false, waiting: true });
+        assert_eq!(analyze(AgentKind::Codex, "", CODEX_QUESTION), Signals { busy: false, waiting: true });
+        assert!(analyze(AgentKind::Codex, "", "Press enter to confirm or esc to cancel").waiting);
     }
 
     #[test]

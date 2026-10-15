@@ -1,13 +1,13 @@
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Position, Rect};
+use ratatui::layout::{Alignment, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap};
 
 use crate::model::{AgentId, AgentKind, AgentState};
 use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, Prompt, Tone, View};
-use crate::tui::complete::COMMANDS;
+use crate::tui::complete::matching_commands;
 use crate::tui::format::{duration_short, pad, pad_left, truncate, truncate_start, width};
 use crate::tui::sprite;
 use crate::tui::theme;
@@ -20,8 +20,14 @@ const NAME_MIN: usize = 14;
 const NAME_MAX: usize = 30;
 const TIME_WIDTH: usize = 6;
 const KIND_WIDTH: usize = 9;
+const SUBAGENT_LABEL: &str = "subagent";
+const SUBAGENT_INDENT: u16 = 6;
 const TAB_NAME_MAX: usize = 18;
-const HINT: &str = "↑↓ select · enter open · tab who · ^l where · ^n session · ^e rename · ^x kill · f1 help";
+pub const MAX_COMPOSER_ROWS: u16 = 6;
+const HINT: &str = "↑↓ select · enter open · tab who · ^l where · ^n session · ^e rename · del delete · f1 help";
+const CONFIRM_WIDTH: u16 = 64;
+const CONFIRM_HEIGHT: u16 = 8;
+const CONFIRM_HINT: &str = "y / enter confirm  ·  any other key cancels";
 
 pub struct Areas {
     pub sidebar: Option<Rect>,
@@ -32,8 +38,8 @@ pub struct Areas {
     pub bottom: Rect,
 }
 
-pub fn areas(screen: Rect, agent_view: bool, has_tabs: bool) -> Areas {
-    let bottom_height = (if agent_view { 1 } else { 3 }).min(screen.height);
+pub fn areas(screen: Rect, agent_view: bool, has_tabs: bool, input_rows: u16) -> Areas {
+    let bottom_height = (if agent_view { 1 } else { 2 + input_rows.clamp(1, MAX_COMPOSER_ROWS) }).min(screen.height);
     let rule_height = u16::from(screen.height > bottom_height);
     let top_height = screen.height.saturating_sub(bottom_height + rule_height);
     let top = Rect::new(screen.x, screen.y, screen.width, top_height);
@@ -72,7 +78,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     app.hits.clear();
     let screen = frame.area();
     let agent_view = matches!(app.view, View::Agent(_));
-    let layout = areas(screen, agent_view, agent_view || !app.tabs.is_empty());
+    let layout = areas(screen, agent_view, agent_view || !app.tabs.is_empty(), composer_rows(app));
     let cursor = {
         let buf = frame.buffer_mut();
         if let Some(sidebar) = layout.sidebar {
@@ -106,6 +112,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         };
         if app.show_help {
             draw_help(screen, buf);
+            None
+        } else if let Some(Prompt::Confirm(confirm)) = app.prompt.as_ref()
+            && confirm.is_popup()
+        {
+            draw_confirm(app, confirm, screen, buf);
             None
         } else {
             cursor
@@ -248,6 +259,7 @@ fn draw_overview(app: &mut App, area: Rect, buf: &mut Buffer) {
 enum ListLine {
     Header(String, std::path::PathBuf, usize),
     Agent(AgentId),
+    Subagent(AgentId, usize),
 }
 
 fn time_columns(entry: &AgentEntry, now: u64) -> (Option<(String, Color)>, Option<String>) {
@@ -263,7 +275,7 @@ fn time_columns(entry: &AgentEntry, now: u64) -> (Option<(String, Color)>, Optio
             let start = status.turn_started_ms.unwrap_or(status.state_since_ms);
             Some((duration_short(now.saturating_sub(start)), theme::YELLOW))
         }
-        AgentState::Paused => Some((duration_short(now.saturating_sub(status.state_since_ms)), theme::RED)),
+        AgentState::Paused => Some((duration_short(now.saturating_sub(status.state_since_ms)), theme::YELLOW)),
         AgentState::Done | AgentState::Idle if status.last_turn_ms.is_some() => {
             Some((duration_short(now.saturating_sub(status.state_since_ms)), theme::DIM))
         }
@@ -284,13 +296,13 @@ fn activity(entry: &AgentEntry) -> (String, Color) {
             let text = status
                 .map(|s| s.activity.clone())
                 .filter(|t| !t.is_empty())
-                .unwrap_or_else(|| entry.record.task.clone());
+                .unwrap_or_else(|| entry.record.task.split_whitespace().collect::<Vec<_>>().join(" "));
             let color = match entry.state() {
                 AgentState::Working => theme::TEXT,
-                AgentState::Paused => theme::RED,
+                AgentState::Paused => theme::YELLOW,
                 _ => theme::MUTED,
             };
-            let text = if entry.state() == AgentState::Paused { format!("needs approval · {text}") } else { text };
+            let text = if entry.state() == AgentState::Paused { format!("waiting for you · {text}") } else { text };
             (text, color)
         }
     }
@@ -315,7 +327,11 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
     let mut lines = Vec::new();
     for group in &groups {
         lines.push(ListLine::Header(group.label.clone(), group.cwd.clone(), group.ids.len()));
-        lines.extend(group.ids.iter().map(|id| ListLine::Agent(*id)));
+        for id in &group.ids {
+            lines.push(ListLine::Agent(*id));
+            let count = app.agents.get(id).map_or(0, |e| e.subagents.len());
+            lines.extend((0..count).map(|index| ListLine::Subagent(*id, index)));
+        }
     }
     let height = usize::from(area.height);
     let selected_line =
@@ -394,6 +410,31 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
                 put(buf, x, y, &truncate(&text, available), fg(color), right);
                 app.hits.push((Rect::new(area.x, y, area.width, 1), Hit::Agent(*id)));
             }
+            ListLine::Subagent(parent, index) => {
+                let Some(sub) = app.agents.get(parent).and_then(|e| e.subagents.get(*index)) else { continue };
+                let mut x = area.x + SUBAGENT_INDENT;
+                x = put(buf, x, y, "↳ ", fg(theme::FAINT), right);
+                x = put(buf, x, y, theme::SPINNER[app.tick % theme::SPINNER.len()], fg(theme::YELLOW), right);
+                x = put(buf, x, y, " ", Style::default(), right);
+                let role_width = name_width.saturating_sub(2);
+                x = put(buf, x, y, &pad(&truncate(&sub.role, role_width), role_width), fg(theme::MUTED), right);
+                x = put(buf, x, y, "  ", Style::default(), right);
+                let elapsed = duration_short(now.saturating_sub(sub.started_at_ms));
+                x = put(buf, x, y, &pad_left(&elapsed, TIME_WIDTH), fg(theme::DIM), right);
+                if show_uptime {
+                    x = put(buf, x, y, &" ".repeat(TIME_WIDTH + 1), Style::default(), right);
+                }
+                x = put(buf, x, y, "  ", Style::default(), right);
+                x = put(buf, x, y, &pad(SUBAGENT_LABEL, KIND_WIDTH), fg(theme::FAINT), right);
+                let text = match (sub.description.is_empty(), sub.activity.is_empty()) {
+                    (false, false) => format!("{} · {}", sub.description, sub.activity),
+                    (false, true) => sub.description.clone(),
+                    _ => sub.activity.clone(),
+                };
+                let available = usize::from(right.saturating_sub(x));
+                put(buf, x, y, &truncate(&text, available), fg(theme::MUTED), right);
+                app.hits.push((Rect::new(area.x, y, area.width, 1), Hit::Agent(*parent)));
+            }
         }
     }
 }
@@ -418,8 +459,11 @@ fn prompt_prefix(app: &App) -> Option<(String, Color, String, usize)> {
 fn confirm_text(app: &App, confirm: &Confirm) -> String {
     let name = |id: &AgentId| app.agents.get(id).map(|e| e.record.name.clone()).unwrap_or_default();
     match confirm {
-        Confirm::Kill(id) => format!("stop agent {}? the process will be terminated  [y/N]", name(id)),
-        Confirm::Remove(id) => format!("remove {} and its recorded output?  [y/N]", name(id)),
+        Confirm::Kill(id) => format!("stop agent {}? the process will be terminated", name(id)),
+        Confirm::Remove(id) => format!("remove {} and its recorded output?", name(id)),
+        Confirm::Delete(id) => {
+            format!("delete {}? the process will be stopped and removed with its recorded output", name(id))
+        }
         Confirm::DeleteSession(session) => format!("delete session {session}?  [y/N]"),
         Confirm::Recover(ids) => format!("recover {} interrupted agent(s) in their folders?  [Y/n]", ids.len()),
     }
@@ -477,14 +521,46 @@ fn draw_path_suggestions(app: &App, x: u16, y: u16, right: u16, buf: &mut Buffer
     }
 }
 
+fn composer_rows(app: &App) -> u16 {
+    match &app.prompt {
+        Some(Prompt::Confirm(confirm)) if confirm.is_popup() => {}
+        Some(_) => return 1,
+        None => {}
+    }
+    u16::try_from(app.task.line_count()).unwrap_or(MAX_COMPOSER_ROWS).clamp(1, MAX_COMPOSER_ROWS)
+}
+
+fn draw_task(app: &App, x: u16, y: u16, rows: u16, right: u16, buf: &mut Buffer) -> Position {
+    let text = app.task.text();
+    let before = app.task.before_cursor();
+    let cursor_row = before.matches('\n').count();
+    let cursor_width = width(before.rsplit('\n').next().unwrap_or_default());
+    let rows = usize::from(rows.max(1));
+    let first = (cursor_row + 1).saturating_sub(rows);
+    let visible = usize::from(right.saturating_sub(x + 1));
+    let skip = cursor_width.saturating_sub(visible);
+    let color = if text.starts_with('/') { theme::LINK } else { theme::TEXT };
+    for (index, line) in text.split('\n').enumerate().skip(first).take(rows) {
+        let row = y + u16::try_from(index - first).unwrap_or(0);
+        let shown: String = line.chars().skip(if index == cursor_row { skip } else { 0 }).collect();
+        put(buf, x, row, &shown, fg(color), right);
+    }
+    let column = x + u16::try_from(cursor_width - skip).unwrap_or(0);
+    let row = y + u16::try_from(cursor_row - first).unwrap_or(0);
+    Position::new(column.min(right.saturating_sub(1)), row)
+}
+
 fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position> {
     if area.height == 0 {
         return None;
     }
     let x = area.x + 1;
     let right = area.right();
+    let rows = composer_rows(app).min(area.height);
     let mut cursor = None;
-    if let Some(Prompt::Confirm(confirm)) = app.prompt.as_ref() {
+    if let Some(Prompt::Confirm(confirm)) = app.prompt.as_ref()
+        && !confirm.is_popup()
+    {
         let text = confirm_text(app, confirm);
         put(buf, x, area.y, &text, fg(theme::YELLOW).add_modifier(Modifier::BOLD), right);
     } else if let Some((prefix, color, text, before)) = prompt_prefix(app) {
@@ -496,20 +572,12 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
         put(buf, x, area.y, "write a task", fg(theme::FAINT), right);
         cursor = Some(Position::new(x, area.y));
     } else {
-        let text = app.task.text();
-        let before = width(&app.task.before_cursor());
-        let visible = usize::from(right.saturating_sub(x + 1));
-        let skip = before.saturating_sub(visible);
-        let shown: String = text.chars().skip(skip).collect();
-        let color = if text.starts_with('/') { theme::LINK } else { theme::TEXT };
-        put(buf, x, area.y, &shown, fg(color), right);
-        let column = x + u16::try_from(before - skip).unwrap_or(0);
-        cursor = Some(Position::new(column.min(right.saturating_sub(1)), area.y));
+        cursor = Some(draw_task(app, x, area.y, rows, right, buf));
     }
-    if area.height < 2 {
+    if area.height <= rows {
         return cursor;
     }
-    let y = area.y + 1;
+    let y = area.y + rows;
     let mut cx = put(buf, x, y, "pc ", fg(theme::DIM), right);
     cx = put(buf, cx, y, &app.hostname, fg(theme::HOST), right);
     cx = put(buf, cx, y, "   ", Style::default(), right);
@@ -523,17 +591,24 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
     let where_text = app.display(&app.where_dir);
     cx = put(buf, cx, y, &where_text, fg(theme::LINK), right);
     app.hits.push((Rect::new(where_start, y, cx - where_start, 1), Hit::Where));
-    if area.height < 3 {
+    if area.height <= rows + 1 {
         return cursor;
     }
-    let y = area.y + 2;
+    let y = area.y + rows + 1;
     if app.paths.is_active() {
         draw_path_suggestions(app, x, y, right, buf);
     } else if app.prompt.is_none() && app.task.text().starts_with('/') {
         let typed = app.task.text();
         let word = typed.split_whitespace().next().unwrap_or("/");
-        let matches: Vec<&str> = COMMANDS.iter().copied().filter(|c| c.starts_with(word)).collect();
-        put(buf, x, y, &matches.join("  "), fg(theme::MUTED), right);
+        let commands = matching_commands(word).join("  ");
+        let mut cx = put(buf, x, y, &commands, fg(theme::MUTED), right);
+        let skills = app.skills.matching(app.who, word);
+        if !skills.is_empty() {
+            if !commands.is_empty() {
+                cx = put(buf, cx, y, "  ", Style::default(), right);
+            }
+            put(buf, cx, y, &skills.join("  "), fg(theme::kind_color(app.who)), right);
+        }
     } else if let Some(notice) = app.notice.as_ref() {
         let color = match notice.tone {
             Tone::Info => theme::TEXT,
@@ -591,7 +666,7 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
             let state = entry.state();
             let color = match state {
                 AgentState::Working => theme::YELLOW,
-                AgentState::Paused => theme::RED,
+                AgentState::Paused => theme::YELLOW,
                 AgentState::Done => theme::GREEN,
                 _ => theme::MUTED,
             };
@@ -613,8 +688,44 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
     }
 }
 
+fn draw_confirm(app: &App, confirm: &Confirm, screen: Rect, buf: &mut Buffer) {
+    let (title, color) = match confirm {
+        Confirm::Delete(_) => (" delete agent ", theme::RED),
+        Confirm::Remove(_) => (" remove agent ", theme::RED),
+        _ => (" stop agent ", theme::YELLOW),
+    };
+    let width = CONFIRM_WIDTH.min(screen.width.saturating_sub(4));
+    let height = CONFIRM_HEIGHT.min(screen.height.saturating_sub(2));
+    let area = Rect::new(
+        screen.x + screen.width.saturating_sub(width) / 2,
+        screen.y + screen.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    Clear.render(area, buf);
+    let lines = vec![
+        Line::default(),
+        Line::styled(confirm_text(app, confirm), fg(theme::TEXT).add_modifier(Modifier::BOLD)),
+        Line::default(),
+        Line::styled(CONFIRM_HINT, fg(theme::DIM)),
+    ];
+    Paragraph::new(lines)
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true })
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(fg(color))
+                .title(title)
+                .title_style(fg(color).add_modifier(Modifier::BOLD)),
+        )
+        .render(area, buf);
+}
+
 const HELP: &[(&str, &str)] = &[
     ("type + enter", "start an agent with that task"),
+    ("shift+enter", "new line in the task (alt+enter also works)"),
     ("tab / shift+tab", "who runs it: claude, codex or terminal"),
     ("/where · ctrl+l", "folder for this session: type, tab enters or cycles"),
     ("↑ ↓ / mouse", "select agent · click or enter opens it"),
@@ -623,6 +734,7 @@ const HELP: &[(&str, &str)] = &[
     ("shift+pgup/pgdn", "scroll an agent's history (or mouse wheel)"),
     ("ctrl+e / f2", "rename selected agent"),
     ("ctrl+x", "stop a running agent / remove a stopped one"),
+    ("delete", "stop and remove the selected agent (asks first)"),
     ("ctrl+r", "recover interrupted agents of this session"),
     ("ctrl+n · alt+↑↓", "new session · switch session"),
     ("/", "commands: /cd /who /session /restart /recover …"),
@@ -667,13 +779,13 @@ mod tests {
     #[test]
     fn layout_reserves_sidebar_composer_and_tabs() {
         let screen = Rect::new(0, 0, 120, 40);
-        let overview = areas(screen, false, false);
+        let overview = areas(screen, false, false, 1);
         assert_eq!(overview.bottom.height, 3);
         assert_eq!(overview.rule.y, 36);
         assert!(overview.sidebar.is_some());
         assert_eq!(overview.body.x, SIDEBAR_WIDTH + MAIN_GAP);
         assert!(overview.tabs.is_none());
-        let agent = areas(screen, true, true);
+        let agent = areas(screen, true, true, 1);
         assert_eq!(agent.bottom.height, 1);
         assert_eq!(agent.tabs.unwrap().height, 1);
         assert_eq!(agent.body.height, 40 - 1 - 1 - 1);
@@ -681,8 +793,17 @@ mod tests {
     }
 
     #[test]
+    fn composer_grows_with_task_lines_up_to_a_limit() {
+        let screen = Rect::new(0, 0, 120, 40);
+        assert_eq!(areas(screen, false, false, 3).bottom.height, 5);
+        assert_eq!(areas(screen, false, false, 40).bottom.height, 2 + MAX_COMPOSER_ROWS);
+        assert_eq!(areas(screen, false, false, 0).bottom.height, 3);
+        assert_eq!(areas(screen, true, true, 5).bottom.height, 1);
+    }
+
+    #[test]
     fn narrow_screens_hide_the_sidebar() {
-        let layout = areas(Rect::new(0, 0, 60, 20), false, false);
+        let layout = areas(Rect::new(0, 0, 60, 20), false, false, 1);
         assert!(layout.sidebar.is_none());
         assert_eq!(layout.body.x, 1);
     }
@@ -690,8 +811,8 @@ mod tests {
     #[test]
     fn tiny_screens_do_not_panic() {
         for (w, h) in [(0, 0), (1, 1), (5, 2), (10, 4)] {
-            let _ = areas(Rect::new(0, 0, w, h), true, true);
-            let _ = areas(Rect::new(0, 0, w, h), false, true);
+            let _ = areas(Rect::new(0, 0, w, h), true, true, 1);
+            let _ = areas(Rect::new(0, 0, w, h), false, true, MAX_COMPOSER_ROWS);
         }
     }
 }

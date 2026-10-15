@@ -47,6 +47,25 @@ impl LineInput {
         }
     }
 
+    pub fn insert_newline(&mut self) {
+        self.chars.insert(self.cursor, '\n');
+        self.cursor += 1;
+    }
+
+    pub fn insert_multiline(&mut self, text: &str) {
+        for c in text.replace("\r\n", "\n").chars() {
+            match c {
+                '\n' | '\r' => self.insert_newline(),
+                '\t' => self.insert(' '),
+                c => self.insert(c),
+            }
+        }
+    }
+
+    pub fn line_count(&self) -> usize {
+        self.chars.iter().filter(|c| **c == '\n').count() + 1
+    }
+
     pub fn backspace(&mut self) {
         if self.cursor > 0 {
             self.cursor -= 1;
@@ -126,6 +145,22 @@ mod tests {
         input.insert('\u{7}');
         assert_eq!(input.text(), "a b c");
         assert_eq!(LineInput::with_text("x\u{1b}y").text(), "xy");
+    }
+
+    #[test]
+    fn multiline_input_keeps_line_breaks() {
+        let mut input = LineInput::with_text("fix");
+        input.insert_newline();
+        input.insert_multiline("a\r\nb\rc\td\u{7}");
+        assert_eq!(input.text(), "fix\na\nb\nc d");
+        assert_eq!(input.line_count(), 4);
+        input.backspace();
+        input.backspace();
+        input.backspace();
+        input.backspace();
+        assert_eq!(input.text(), "fix\na\nb");
+        assert_eq!(LineInput::with_text("x\ny").text(), "xy");
+        assert_eq!(LineInput::default().line_count(), 1);
     }
 
     #[test]

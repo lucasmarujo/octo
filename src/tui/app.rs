@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{self, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -18,7 +18,9 @@ use crate::model::{
 };
 use crate::paths::{expand_tilde, normalize_for_compare, separator_for, user_home};
 use crate::protocol::{ClientMsg, HolderMsg, TermSize};
-use crate::tui::complete::{COMMANDS, PathCompleter, where_argument};
+use crate::skills;
+use crate::subagents::{Parent, Subagent, SubagentWatcher};
+use crate::tui::complete::{PathCompleter, SkillCatalog, complete_command, where_argument};
 use crate::tui::format::{display_path, project_label, slugify};
 use crate::tui::keys;
 use crate::tui::line::LineInput;
@@ -42,6 +44,7 @@ pub enum AppEvent {
     Launched { result: Result<AgentRecord, String> },
     Restarted { id: AgentId, result: Result<AgentRecord, String> },
     Replayed { id: AgentId, parser: Option<Box<vt100::Parser>> },
+    Subagents(BTreeMap<AgentId, Vec<Subagent>>),
 }
 
 pub enum Link {
@@ -57,12 +60,21 @@ pub struct AgentEntry {
     pub status: Option<StatusReport>,
     pub term: Option<TermView>,
     pub attached: bool,
+    pub subagents: Vec<Subagent>,
     failed_runtime: Option<u64>,
 }
 
 impl AgentEntry {
     fn new(record: AgentRecord) -> Self {
-        Self { record, link: Link::Lost, status: None, term: None, attached: false, failed_runtime: None }
+        Self {
+            record,
+            link: Link::Lost,
+            status: None,
+            term: None,
+            attached: false,
+            subagents: Vec::new(),
+            failed_runtime: None,
+        }
     }
 
     pub fn state(&self) -> AgentState {
@@ -120,8 +132,15 @@ pub enum Prompt {
 pub enum Confirm {
     Kill(AgentId),
     Remove(AgentId),
+    Delete(AgentId),
     DeleteSession(String),
     Recover(Vec<AgentId>),
+}
+
+impl Confirm {
+    pub fn is_popup(&self) -> bool {
+        matches!(self, Confirm::Kill(_) | Confirm::Remove(_) | Confirm::Delete(_))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -184,6 +203,7 @@ pub struct App {
     pub prompt: Option<Prompt>,
     pub notice: Option<Notice>,
     pub paths: PathCompleter,
+    pub skills: SkillCatalog,
     pub show_help: bool,
     pub hits: Vec<(Rect, Hit)>,
     pub tick: usize,
@@ -196,6 +216,8 @@ pub struct App {
     pending_input: Vec<(AgentId, Vec<u8>)>,
     attached_size: Option<TermSize>,
     session_dirs: BTreeMap<String, PathBuf>,
+    removing: HashSet<AgentId>,
+    subagent_requests: Option<Sender<Vec<Parent>>>,
 }
 
 impl App {
@@ -238,6 +260,7 @@ impl App {
             prompt: None,
             notice: None,
             paths: PathCompleter::default(),
+            skills: SkillCatalog::default(),
             show_help: false,
             hits: Vec::new(),
             tick: 0,
@@ -250,6 +273,8 @@ impl App {
             pending_input: Vec::new(),
             attached_size: None,
             session_dirs: ui.session_dirs,
+            removing: HashSet::new(),
+            subagent_requests: None,
         };
         app.ensure_selection();
         Ok(app)
@@ -260,6 +285,8 @@ impl App {
         for id in ids {
             self.refresh_link(id);
         }
+        self.spawn_subagent_watcher();
+        self.request_subagents();
         if let Ok(commit) = std::env::var(update::UPDATED_ENV) {
             self.set_notice(Tone::Success, format!("orkai updated to {}", update::short_commit(&commit)));
         }
@@ -269,6 +296,54 @@ impl App {
                 Tone::Warn,
                 format!("{lost} agent(s) were interrupted (crash or reboot) — ctrl+r recovers this session, `orkai recover --all` recovers everything"),
             );
+        }
+    }
+
+    fn spawn_subagent_watcher(&mut self) {
+        let (requests, rx) = mpsc::channel::<Vec<Parent>>();
+        let tx = self.tx.clone();
+        let spawned = thread::Builder::new().name("orkai-subagents".into()).spawn(move || {
+            let mut watcher = SubagentWatcher::new(launch::claude_home(), launch::codex_home());
+            while let Ok(mut parents) = rx.recv() {
+                while let Ok(latest) = rx.try_recv() {
+                    parents = latest;
+                }
+                if tx.send(AppEvent::Subagents(watcher.scan(&parents, now_ms()))).is_err() {
+                    return;
+                }
+            }
+        });
+        if spawned.is_ok() {
+            self.subagent_requests = Some(requests);
+        }
+    }
+
+    fn request_subagents(&self) {
+        let Some(requests) = &self.subagent_requests else { return };
+        let parents = self
+            .agents
+            .values()
+            .filter(|e| e.record.kind.is_ai() && !e.is_dead())
+            .map(|e| Parent {
+                id: e.record.id,
+                kind: e.record.kind,
+                conversation_id: e.record.conversation_id.clone(),
+                cwd: e.record.cwd.clone(),
+                created_at_ms: e.record.created_at_ms,
+                busy: matches!(e.state(), AgentState::Working | AgentState::Paused),
+            })
+            .collect();
+        let _ = requests.send(parents);
+    }
+
+    fn on_subagents(&mut self, mut found: BTreeMap<AgentId, Vec<Subagent>>) {
+        for entry in self.agents.values_mut() {
+            let subagents =
+                if entry.is_dead() { Vec::new() } else { found.remove(&entry.record.id).unwrap_or_default() };
+            if entry.subagents != subagents {
+                entry.subagents = subagents;
+                self.dirty = true;
+            }
         }
     }
 
@@ -372,7 +447,7 @@ impl App {
     }
 
     pub fn agent_term_size(&self) -> TermSize {
-        let areas = render::areas(self.screen, true, true);
+        let areas = render::areas(self.screen, true, true, 1);
         TermSize::new(areas.body.height, areas.body.width)
     }
 
@@ -445,6 +520,7 @@ impl App {
             AppEvent::Holder { id, generation, msg } => self.on_holder(id, generation, msg),
             AppEvent::Launched { result } => self.on_launched(result),
             AppEvent::Restarted { id, result } => self.on_restarted(id, result),
+            AppEvent::Subagents(found) => self.on_subagents(found),
             AppEvent::Replayed { id, parser } => {
                 if let Some(entry) = self.agents.get_mut(&id)
                     && entry.is_dead()
@@ -468,6 +544,30 @@ impl App {
         if self.last_rescan.elapsed() >= RESCAN_EVERY {
             self.last_rescan = Instant::now();
             self.rescan();
+        }
+        self.sweep_removals();
+    }
+
+    fn sweep_removals(&mut self) {
+        if self.removing.is_empty() {
+            return;
+        }
+        let store = self.launcher.store().clone();
+        let ready: Vec<AgentId> = self
+            .removing
+            .iter()
+            .copied()
+            .filter(|id| match self.agents.get(id).map(|e| &e.link) {
+                Some(Link::Exited(_)) => store.read_runtime(*id).ok().flatten().is_none(),
+                Some(Link::Lost) | None => true,
+                Some(_) => false,
+            })
+            .collect();
+        for id in ready {
+            self.removing.remove(&id);
+            if self.agents.contains_key(&id) {
+                self.remove_agent(id);
+            }
         }
     }
 
@@ -514,6 +614,7 @@ impl App {
             self.dirty = true;
         }
         self.ensure_selection();
+        self.request_subagents();
     }
 
     fn forget(&mut self, id: AgentId) {
@@ -522,6 +623,7 @@ impl App {
         }
         self.tabs.retain(|t| *t != id);
         self.agents.remove(&id);
+        self.removing.remove(&id);
         self.ensure_selection();
         self.dirty = true;
     }
@@ -887,6 +989,22 @@ impl App {
         self.dirty = true;
     }
 
+    fn request_delete(&mut self, id: AgentId) {
+        let Some(entry) = self.agents.get(&id) else { return };
+        self.prompt = Some(Prompt::Confirm(if entry.is_dead() { Confirm::Remove(id) } else { Confirm::Delete(id) }));
+        self.dirty = true;
+    }
+
+    fn delete_agent(&mut self, id: AgentId) {
+        let Some(entry) = self.agents.get(&id) else { return };
+        if entry.is_dead() {
+            self.remove_agent(id);
+            return;
+        }
+        self.removing.insert(id);
+        self.kill_agent(id);
+    }
+
     fn rename_agent(&mut self, id: AgentId, name: &str) {
         let name = match validate_agent_name(name) {
             Ok(name) => name,
@@ -981,6 +1099,9 @@ impl App {
             return;
         }
         let text = self.task.text();
+        if text.starts_with('/') && !text.contains(char::is_whitespace) {
+            self.skills.refresh(self.who, &self.where_dir);
+        }
         match where_argument(&text) {
             Some((_, arg)) => self.paths.refresh(arg, &self.where_dir),
             None => self.paths.clear(),
@@ -995,13 +1116,11 @@ impl App {
             }
             return;
         }
-        if text.starts_with('/') && !text.contains(' ') {
-            let matches: Vec<&str> =
-                COMMANDS.iter().copied().filter(|usage| usage.starts_with(text.as_str())).collect();
-            if let [usage] = matches.as_slice() {
-                let name = usage.split_whitespace().next().unwrap_or(usage);
-                let spacer = if usage.contains(' ') { " " } else { "" };
-                self.task.set(&format!("{name}{spacer}"));
+        if text.starts_with('/') && !text.contains(char::is_whitespace) {
+            self.skills.refresh(self.who, &self.where_dir);
+            let skills = self.skills.matching(self.who, &text);
+            if let Some(completed) = complete_command(&text, &skills) {
+                self.task.set(&completed);
             }
             return;
         }
@@ -1079,7 +1198,7 @@ impl App {
                                 | Prompt::NewSession(input)
                                 | Prompt::RenameSession(input),
                             ) => input.insert_str(&text),
-                            _ => self.task.insert_str(&text),
+                            _ => self.task.insert_multiline(&text),
                         }
                         self.sync_suggestions();
                     }
@@ -1148,6 +1267,7 @@ impl App {
                 KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => match confirm {
                     Confirm::Kill(id) => self.kill_agent(id),
                     Confirm::Remove(id) => self.remove_agent(id),
+                    Confirm::Delete(id) => self.delete_agent(id),
                     Confirm::DeleteSession(name) => self.delete_session(&name),
                     Confirm::Recover(ids) => self.restart_agents(ids),
                 },
@@ -1211,6 +1331,7 @@ impl App {
     fn on_composer_key(&mut self, key: KeyEvent) {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         match key.code {
             KeyCode::Char('c') if ctrl && !alt => {
                 if self.task.is_empty() {
@@ -1241,6 +1362,11 @@ impl App {
                 }
             }
             KeyCode::Char('e') if ctrl && !alt => self.begin_rename(),
+            KeyCode::Delete if self.task.is_empty() => {
+                if let Some(id) = self.selected {
+                    self.request_delete(id);
+                }
+            }
             KeyCode::Char('w') if ctrl && !alt => self.task.delete_word(),
             KeyCode::Char('u') if ctrl && !alt => self.task.clear(),
             KeyCode::F(2) => self.begin_rename(),
@@ -1264,6 +1390,7 @@ impl App {
                 self.task.clear();
                 self.notice = None;
             }
+            KeyCode::Enter if shift || alt => self.task.insert_newline(),
             KeyCode::Enter => self.submit(),
             _ => edit_line(&mut self.task, &key, ctrl),
         }
@@ -1365,7 +1492,14 @@ impl App {
                 _ => self.set_notice(Tone::Error, "usage: /open <agent number>"),
             },
             "" => {}
-            other => self.set_notice(Tone::Error, format!("unknown command /{other} — try /help")),
+            other => {
+                self.skills.refresh(self.who, &self.where_dir);
+                if self.skills.contains(self.who, other) {
+                    self.launch_task(skills::invocation(self.who, line));
+                } else {
+                    self.set_notice(Tone::Error, format!("unknown command /{other} — try /help"));
+                }
+            }
         }
         self.dirty = true;
     }
@@ -1390,6 +1524,11 @@ impl App {
                     self.show_help = false;
                     return;
                 }
+                if matches!(&self.prompt, Some(Prompt::Confirm(confirm)) if confirm.is_popup()) {
+                    self.prompt = None;
+                    self.set_notice(Tone::Info, "cancelled");
+                    return;
+                }
                 match hit {
                     Some(Hit::Session(name)) => self.switch_session(&name),
                     Some(Hit::NewSession) => {
@@ -1406,6 +1545,7 @@ impl App {
                     Some(Hit::Who) => {
                         self.who = self.who.next();
                         self.persist_ui();
+                        self.sync_suggestions();
                     }
                     Some(Hit::Where) => {
                         self.open_where_prompt();
@@ -1438,7 +1578,7 @@ impl App {
     }
 
     fn forward_mouse(&mut self, id: AgentId, mouse: &MouseEvent) -> bool {
-        let body = render::areas(self.screen, true, true).body;
+        let body = render::areas(self.screen, true, true, 1).body;
         let Some(entry) = self.agents.get(&id) else { return false };
         let Some(term) = entry.term.as_ref() else { return false };
         if entry.conn().is_none() || term.is_scrolled() {

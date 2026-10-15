@@ -138,7 +138,7 @@ fn starts_with_prefix(name: &str, prefix: &str) -> bool {
     if cfg!(windows) { name.to_lowercase().starts_with(&prefix.to_lowercase()) } else { name.starts_with(prefix) }
 }
 
-fn common_prefix(names: &[String]) -> String {
+pub fn common_prefix(names: &[String]) -> String {
     let Some(first) = names.first() else { return String::new() };
     let mut end = first.len();
     for name in &names[1..] {

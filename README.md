@@ -50,10 +50,10 @@ orkai
 | --- | --- |
 | Lateral | máquina, sessões com o número de agentes ativos em cada uma, `+ new session` |
 | Topo | o homenzinho pixelado e os contadores `agents`, `working`, `paused` e `done` da sessão |
-| Lista | agentes agrupados por pasta (com a contagem de cada uma): número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `terminal`) e a frase do que o agente está fazendo |
+| Lista | agentes agrupados por pasta (com a contagem de cada uma): número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
 | Rodapé | `write a task`, `pc`, `who` e `where` para lançar novos agentes |
 
-Estados: `⠋` trabalhando · `‖` pausado esperando sua aprovação · `✔` terminou (ainda não visto) ·
+Estados: `⠋` trabalhando · `‖` em amarelo, esperando você responder (aprovação, pergunta ou escolha dentro do agente) · `✔` terminou (ainda não visto) ·
 `●` ocioso · `$` terminal · `↻` interrompido (crash/reboot) · `✗` encerrado.
 
 ### Teclas
@@ -61,6 +61,7 @@ Estados: `⠋` trabalhando · `‖` pausado esperando sua aprovação · `✔` t
 | Tecla | Ação |
 | --- | --- |
 | digitar + `enter` | inicia um agente com a tarefa digitada |
+| `shift+enter` (ou `alt+enter`) | quebra de linha na tarefa, sem enviar; colar um texto com várias linhas também mantém as quebras |
 | `tab` / `shift+tab` | escolhe quem executa: claude, codex ou terminal |
 | `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja abaixo); clicar no nome de um projeto também |
 | `↑` `↓` / mouse | seleciona; `enter` ou clique abre o agente numa aba |
@@ -68,10 +69,11 @@ Estados: `⠋` trabalhando · `‖` pausado esperando sua aprovação · `✔` t
 | `shift+pgup` / roda do mouse | histórico do agente |
 | `alt+1..9` | pula para uma aba aberta |
 | `ctrl+e` / `f2` | renomeia o agente |
-| `ctrl+x` | encerra um agente em execução / remove um encerrado |
+| `delete` | para e remove o agente selecionado (com o texto vazio), após confirmar no popup |
+| `ctrl+x` | encerra um agente em execução / remove um encerrado (também pede confirmação no popup) |
 | `ctrl+r` | recupera os agentes interrompidos da sessão |
 | `ctrl+n` · `alt+↑↓` | nova sessão · troca de sessão |
-| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/help`, `/quit` |
+| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/help`, `/quit`, além das skills do `who` atual (veja abaixo) |
 | `ctrl+c` / `ctrl+q` | sai do orkai; os agentes continuam rodando |
 
 ### Escolhendo a pasta (`/where`)
@@ -87,6 +89,20 @@ do `where` atual; `~` é a sua pasta de usuário.
   a pasta daquela sessão.
 
 `ctrl+l` (ou clicar em `where`) abre o mesmo seletor já preenchido com a pasta atual.
+
+### Skills do Claude Code e do Codex (`/skill`)
+
+Com `who` em `claude` ou `codex`, o `/` também sugere as skills que esse agente tem, lidas do disco
+e atualizadas sozinhas (instale uma skill e ela aparece em segundos):
+
+- **Claude Code**: `~/.claude/skills`, `~/.claude/commands`, `.claude/skills` e `.claude/commands`
+  da pasta do `where` até a raiz do repositório, e as skills dos plugins habilitados (`/plugin:skill`);
+- **Codex**: `.agents/skills` da pasta até a raiz do repositório, `~/.agents/skills` e
+  `~/.codex/skills` (incluindo as skills de sistema).
+
+`tab` completa (ou estende o prefixo comum), e `/skill argumentos` + `enter` inicia um agente já
+invocando a skill. No Codex o orkai envia no formato dele (`$skill argumentos`).
+Os comandos do próprio orkai têm prioridade quando o nome coincide.
 
 Dentro da aba de um agente todas as teclas vão para ele (Claude Code, Codex, PowerShell, bash…),
 inclusive `esc`, setas, colagem e mouse quando o programa usa mouse.

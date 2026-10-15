@@ -1,8 +1,12 @@
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
-use crate::paths::{complete_directory, directory_query, matching_directories, separator_for};
+use crate::model::AgentKind;
+use crate::paths::{common_prefix, complete_directory, directory_query, matching_directories, separator_for};
+use crate::skills;
 
 pub const WHERE_COMMANDS: [&str; 2] = ["/where", "/cd"];
+const SKILLS_TTL: Duration = Duration::from_secs(5);
 
 pub const COMMANDS: &[&str] = &[
     "/where <path>",
@@ -20,6 +24,66 @@ pub const COMMANDS: &[&str] = &[
     "/help",
     "/quit",
 ];
+
+pub fn matching_commands(word: &str) -> Vec<&'static str> {
+    COMMANDS.iter().copied().filter(|usage| usage.starts_with(word)).collect()
+}
+
+pub fn complete_command(typed: &str, skills: &[String]) -> Option<String> {
+    let commands = matching_commands(typed);
+    let completed = match (commands.as_slice(), skills) {
+        ([usage], []) => {
+            let name = usage.split_whitespace().next().unwrap_or(usage);
+            let spacer = if usage.contains(' ') { " " } else { "" };
+            format!("{name}{spacer}")
+        }
+        ([], [skill]) => format!("{skill} "),
+        _ => {
+            let names: Vec<String> = commands
+                .iter()
+                .map(|usage| usage.split_whitespace().next().unwrap_or(usage).to_string())
+                .chain(skills.iter().cloned())
+                .collect();
+            common_prefix(&names)
+        }
+    };
+    (completed.chars().count() > typed.chars().count()).then_some(completed)
+}
+
+#[derive(Default)]
+pub struct SkillCatalog {
+    source: Option<(AgentKind, PathBuf)>,
+    loaded_at: Option<Instant>,
+    names: Vec<String>,
+}
+
+impl SkillCatalog {
+    pub fn refresh(&mut self, kind: AgentKind, dir: &Path) {
+        let same_source = self.source.as_ref().is_some_and(|(k, d)| *k == kind && d == dir);
+        if same_source && self.loaded_at.is_some_and(|at| at.elapsed() < SKILLS_TTL) {
+            return;
+        }
+        self.names = skills::discover(kind, dir);
+        self.source = Some((kind, dir.to_path_buf()));
+        self.loaded_at = Some(Instant::now());
+    }
+
+    fn names_for(&self, kind: AgentKind) -> &[String] {
+        match &self.source {
+            Some((source, _)) if *source == kind => &self.names,
+            _ => &[],
+        }
+    }
+
+    pub fn matching(&self, kind: AgentKind, word: &str) -> Vec<String> {
+        let typed = word.strip_prefix('/').unwrap_or(word);
+        self.names_for(kind).iter().filter(|name| name.starts_with(typed)).map(|name| format!("/{name}")).collect()
+    }
+
+    pub fn contains(&self, kind: AgentKind, name: &str) -> bool {
+        self.names_for(kind).iter().any(|skill| skill.eq_ignore_ascii_case(name))
+    }
+}
 
 pub fn where_argument(text: &str) -> Option<(&str, &str)> {
     let (command, rest) = text.split_once(' ')?;
@@ -129,6 +193,36 @@ mod tests {
             std::fs::create_dir_all(dir.join(sub)).unwrap();
         }
         Tree(dir)
+    }
+
+    #[test]
+    fn complete_command_mixes_orkai_commands_and_skills() {
+        assert_eq!(complete_command("/whe", &[]).as_deref(), Some("/where "));
+        assert_eq!(complete_command("/qu", &[]).as_deref(), Some("/quit"));
+        assert_eq!(complete_command("/wh", &[]), None);
+        assert_eq!(complete_command("/ren", &[]).as_deref(), Some("/rename"));
+        assert_eq!(complete_command("/rev", &["/review".into()]).as_deref(), Some("/review "));
+        let family = ["/maestri".to_string(), "/maestri-chat".to_string(), "/maestri-manager".to_string()];
+        assert_eq!(complete_command("/mae", &family).as_deref(), Some("/maestri"));
+        assert_eq!(complete_command("/maestri", &family), None);
+        assert_eq!(complete_command("/s", &["/stripe:docs".into()]), None);
+        assert_eq!(complete_command("/zzz", &[]), None);
+    }
+
+    #[test]
+    fn skill_catalog_matches_skills_of_the_selected_agent() {
+        let t = tree("skills");
+        let skill = t.0.join(".claude").join("skills").join("orkai-probe-skill").join("SKILL.md");
+        std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        std::fs::write(&skill, "---\nname: orkai-probe-skill\n---\n").unwrap();
+        let mut catalog = SkillCatalog::default();
+        catalog.refresh(AgentKind::Claude, &t.0);
+        assert_eq!(catalog.matching(AgentKind::Claude, "/orkai-probe"), ["/orkai-probe-skill"]);
+        assert!(catalog.contains(AgentKind::Claude, "ORKAI-PROBE-SKILL"));
+        assert!(catalog.matching(AgentKind::Codex, "/orkai-probe").is_empty());
+        assert!(!catalog.contains(AgentKind::Codex, "orkai-probe-skill"));
+        catalog.refresh(AgentKind::Terminal, &t.0);
+        assert!(catalog.matching(AgentKind::Terminal, "/").is_empty());
     }
 
     #[test]

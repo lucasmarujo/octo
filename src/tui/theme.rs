@@ -51,7 +51,7 @@ pub fn name_color(kind: AgentKind, state: AgentState) -> Color {
         _ if kind == AgentKind::Terminal => TEXT,
         AgentState::Done => GREEN,
         AgentState::Working => TEXT,
-        AgentState::Paused => RED,
+        AgentState::Paused => YELLOW,
         AgentState::Idle => MUTED,
     }
 }
@@ -64,7 +64,7 @@ pub fn glyph(kind: AgentKind, state: AgentState, frame: usize) -> (&'static str,
         AgentState::Exited => ("✗", FAINT),
         _ if kind == AgentKind::Terminal => ("$", TEXT),
         AgentState::Working => (SPINNER[frame % SPINNER.len()], YELLOW),
-        AgentState::Paused => ("‖", RED),
+        AgentState::Paused => ("‖", YELLOW),
         AgentState::Done => ("✔", GREEN),
         AgentState::Idle => ("●", DIM),
     }
@@ -84,6 +84,8 @@ mod tests {
         assert_eq!(glyph(AgentKind::Claude, AgentState::Done, 0).0, "✔");
         assert_eq!(glyph(AgentKind::Terminal, AgentState::Working, 0).0, "$");
         assert_eq!(glyph(AgentKind::Codex, AgentState::Lost, 0).0, "↻");
+        assert_eq!(glyph(AgentKind::Claude, AgentState::Paused, 0), ("‖", YELLOW));
+        assert_eq!(name_color(AgentKind::Codex, AgentState::Paused), YELLOW);
         assert_ne!(
             glyph(AgentKind::Claude, AgentState::Working, 0).0,
             glyph(AgentKind::Claude, AgentState::Working, 1).0

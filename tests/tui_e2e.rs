@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
@@ -14,6 +15,7 @@ use orkai::util::now_ms;
 const TIMEOUT: Duration = Duration::from_secs(45);
 const ROWS: u16 = 40;
 const COLS: u16 = 140;
+static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture {
     dir: PathBuf,
@@ -38,7 +40,12 @@ impl Drop for Fixture {
 }
 
 fn fixture() -> Fixture {
-    let dir = std::env::temp_dir().join(format!("orkai-tui-e2e-{}-{}", std::process::id(), now_ms()));
+    let dir = std::env::temp_dir().join(format!(
+        "orkai-tui-e2e-{}-{}-{}",
+        std::process::id(),
+        now_ms(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
     let outer = Store::open(Home::at(dir.join("outer"))).unwrap();
     let inner = Store::open(Home::at(dir.join("inner"))).unwrap();
     std::fs::create_dir_all(dir.join("work")).unwrap();
@@ -179,6 +186,48 @@ impl Session {
         let json = format!("{{\"width\":{cols},\"height\":{rows},\"cells\":[{}]}}", cells.join(","));
         std::fs::write(Path::new(&dir).join(format!("{name}.json")), json).unwrap();
     }
+}
+
+fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
+    let deadline = Instant::now() + TIMEOUT;
+    while !ready() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+#[test]
+fn tui_keeps_pasted_line_breaks_and_deletes_running_agents() {
+    let fx = fixture();
+    let mut tui = start_tui(&fx);
+    tui.wait_for("who claude");
+    tui.send(b"\t");
+    tui.send(b"\t");
+    tui.wait_for("who terminal");
+
+    tui.send(b"echo first-line\recho second-line");
+    tui.wait_for("echo second-line");
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(fx.inner.list_agents().unwrap().is_empty(), "a pasted line break must not start an agent");
+    tui.dump("multiline");
+
+    tui.send(b"\r");
+    tui.wait_for("echo-first-line");
+    let agents = fx.inner.list_agents().unwrap();
+    assert_eq!(agents.len(), 1);
+    assert_eq!(agents[0].task, "echo first-line\necho second-line");
+    let id = agents[0].id;
+    wait_until("the agent to run", || fx.inner.read_runtime(id).ok().flatten().is_some());
+
+    tui.send(b"\x1b[3~");
+    tui.wait_for("delete agent");
+    tui.dump("delete-popup");
+    tui.send(b"y");
+    wait_until("the agent to be removed", || fx.inner.list_agents().unwrap().is_empty());
+    assert!(!fx.inner.home().agent_dir(id).exists());
+
+    tui.send(b"\x03");
+    tui.wait_for_exit();
 }
 
 #[test]

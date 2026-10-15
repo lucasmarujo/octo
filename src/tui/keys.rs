@@ -1,6 +1,64 @@
+use std::time::Duration;
+
 use ratatui::crossterm::event::{
-    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
+
+pub const PASTE_LINE_GAP: Duration = Duration::from_millis(20);
+
+enum BurstKey {
+    Text(char),
+    Release,
+}
+
+fn burst_key(event: &Event) -> Option<BurstKey> {
+    let Event::Key(key) = event else { return None };
+    if key.kind == KeyEventKind::Release {
+        return Some(BurstKey::Release);
+    }
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('\r' | '\n') if !ctrl && !alt => Some(BurstKey::Text('\n')),
+        KeyCode::Tab if !ctrl && !alt => Some(BurstKey::Text('\t')),
+        KeyCode::Char(c) if !ctrl || alt => Some(BurstKey::Text(c)),
+        _ => None,
+    }
+}
+
+pub fn coalesce_paste(first: Event, mut pending: impl FnMut(Duration) -> Option<Event>) -> Vec<Event> {
+    if burst_key(&first).is_none() {
+        return vec![first];
+    }
+    let mut after_line_break = matches!(burst_key(&first), Some(BurstKey::Text('\n')));
+    let mut burst = vec![first];
+    let mut tail = None;
+    while let Some(event) = pending(if after_line_break { PASTE_LINE_GAP } else { Duration::ZERO }) {
+        match burst_key(&event) {
+            Some(key) => {
+                if let BurstKey::Text(c) = key {
+                    after_line_break = c == '\n';
+                }
+                burst.push(event);
+            }
+            None => {
+                tail = Some(event);
+                break;
+            }
+        }
+    }
+    let text: String = burst
+        .iter()
+        .filter_map(|event| match burst_key(event) {
+            Some(BurstKey::Text(c)) => Some(c),
+            _ => None,
+        })
+        .collect();
+    let pasted = text.trim_end_matches('\n').contains('\n');
+    let mut events = if pasted { vec![Event::Paste(text)] } else { burst };
+    events.extend(tail);
+    events
+}
 
 pub fn is_detach_key(key: &KeyEvent) -> bool {
     if key.code == KeyCode::Char('\u{1d}') {
@@ -217,6 +275,68 @@ mod tests {
 
     fn key(code: KeyCode, mods: KeyModifiers) -> KeyEvent {
         KeyEvent::new(code, mods)
+    }
+
+    fn typed(text: &str) -> Vec<Event> {
+        let mut events = Vec::new();
+        for c in text.chars() {
+            let code = if c == '\r' { KeyCode::Enter } else { KeyCode::Char(c) };
+            events.push(Event::Key(key(code, KeyModifiers::NONE)));
+            let mut release = key(code, KeyModifiers::NONE);
+            release.kind = KeyEventKind::Release;
+            events.push(Event::Key(release));
+        }
+        events
+    }
+
+    fn coalesce(events: Vec<Event>) -> Vec<Event> {
+        let mut queue = events.into_iter();
+        let first = queue.next().unwrap();
+        coalesce_paste(first, |_| queue.next())
+    }
+
+    #[test]
+    fn queued_keys_with_a_line_break_become_one_paste() {
+        let mut events = typed("fix\rthe bug\r");
+        events.push(Event::Key(key(KeyCode::Up, KeyModifiers::NONE)));
+        let out = coalesce(events);
+        assert_eq!(out, vec![Event::Paste("fix\nthe bug\n".into()), Event::Key(key(KeyCode::Up, KeyModifiers::NONE))]);
+    }
+
+    #[test]
+    fn keys_without_line_breaks_pass_through_unchanged() {
+        let events = typed("dd");
+        assert_eq!(coalesce(events.clone()), events);
+        let enter = typed("\r");
+        assert_eq!(coalesce(enter.clone()), enter);
+        let ctrl = vec![Event::Key(key(KeyCode::Char('c'), KeyModifiers::CONTROL))];
+        assert_eq!(coalesce_paste(ctrl[0].clone(), |_| panic!("must not read ahead")), ctrl);
+    }
+
+    #[test]
+    fn typing_that_queued_up_before_enter_still_submits() {
+        let events = typed("fix the bug\r");
+        assert_eq!(coalesce(events.clone()), events);
+    }
+
+    #[test]
+    fn a_lone_key_is_not_buffered() {
+        let first = Event::Key(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(coalesce_paste(first.clone(), |_| None), vec![first]);
+    }
+
+    #[test]
+    fn a_line_break_waits_briefly_for_the_rest_of_a_split_paste() {
+        let mut queue = typed("next line").into_iter();
+        let mut waits = Vec::new();
+        let first = Event::Key(key(KeyCode::Enter, KeyModifiers::NONE));
+        let out = coalesce_paste(first, |wait| {
+            waits.push(wait);
+            queue.next()
+        });
+        assert_eq!(out, vec![Event::Paste("\nnext line".into())]);
+        assert_eq!(waits[0], PASTE_LINE_GAP);
+        assert!(waits[1..].iter().all(|wait| wait.is_zero()));
     }
 
     fn enc(code: KeyCode, mods: KeyModifiers) -> Vec<u8> {

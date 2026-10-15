@@ -111,8 +111,14 @@ fn spawn_input(tx: mpsc::Sender<AppEvent>) -> io::Result<()> {
         .name("orkai-input".into())
         .spawn(move || {
             while let Ok(event) = event::read() {
-                if tx.send(AppEvent::Input(event)).is_err() {
-                    return;
+                let queued = |wait| match event::poll(wait) {
+                    Ok(true) => event::read().ok(),
+                    _ => None,
+                };
+                for event in keys::coalesce_paste(event, queued) {
+                    if tx.send(AppEvent::Input(event)).is_err() {
+                        return;
+                    }
                 }
             }
         })
