@@ -19,7 +19,7 @@ use orkai::store::Store;
 use orkai::subagents::Subagent;
 use orkai::tui::app::{App, AppEvent, Confirm, Link, Prompt};
 use orkai::tui::{render, theme};
-use orkai::usage::{Limits, Problem, Window};
+use orkai::usage::{Limits, Problem, Usage, Window};
 use orkai::util::now_ms;
 
 const WIDTH: u16 = 150;
@@ -183,6 +183,16 @@ fn dump(buffer: &Buffer, path: &str) {
 #[test]
 fn overview_shows_sessions_stats_projects_and_composer() {
     let mut scenario = scenario();
+    let now = now_ms();
+    let window =
+        |used_percent, minutes: u64| Some(Window { used_percent, resets_at_ms: Some(now + minutes * 60_000 + 30_000) });
+    let usage = |session, weekly| Usage {
+        limits: Some(Limits { session, weekly }),
+        problem: None,
+        updated_at_ms: Some(now - 34_000),
+    };
+    scenario.app.usage.insert(AgentKind::Claude, usage(window(62.0, 134), window(23.0, 6_060)));
+    scenario.app.usage.insert(AgentKind::Codex, usage(window(12.0, 221), window(76.0, 3_480)));
     let buffer = render(&mut scenario.app);
     if let Ok(path) = std::env::var("ORKAI_RENDER_DUMP") {
         dump(&buffer, &path);
@@ -204,6 +214,11 @@ fn overview_shows_sessions_stats_projects_and_composer() {
         "write a task",
         "who claude",
         "where",
+        "usage · updated 34s ago",
+        "62%  resets 2h14m",
+        "23%  resets 4d05h",
+        "12%  resets 3h41m",
+        "76%  resets 58h00m",
     ] {
         assert!(screen.contains(expected), "missing {expected:?} in:\n{screen}");
     }
