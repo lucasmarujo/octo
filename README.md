@@ -49,12 +49,25 @@ orkai
 | Área | O que mostra |
 | --- | --- |
 | Lateral | máquina, sessões com o número de agentes ativos em cada uma, `+ new session` |
-| Topo | o homenzinho pixelado e os contadores `agents`, `working`, `paused` e `done` da sessão |
+| Topo | o homenzinho pixelado, os contadores `agents`, `working`, `paused` e `done` da sessão e, à direita, o consumo do Claude Code e do Codex (veja abaixo) |
 | Lista | agentes agrupados por pasta (com a contagem de cada uma): número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
 | Rodapé | `write a task`, `pc`, `who` e `where` para lançar novos agentes |
 
 Estados: `⠋` trabalhando · `‖` em amarelo, esperando você responder (aprovação, pergunta ou escolha dentro do agente) · `✔` terminou (ainda não visto) ·
 `●` ocioso · `$` terminal · `↻` interrompido (crash/reboot) · `✗` encerrado.
+
+### Consumo do Claude Code e do Codex
+
+À direita dos contadores, o overview mostra quanto já foi usado da janela de 5 horas (`5h`) e da
+semanal (`week`) de cada plano, com uma barra (verde, amarela a partir de 70%, vermelha a partir de
+90%) e a contagem regressiva até o reset. Os valores são consultados a cada 2 minutos, em segundo
+plano, com o login que o próprio `claude` e o `codex` já guardam na máquina:
+
+- **Claude Code**: `~/.claude/.credentials.json` (ou `CLAUDE_CONFIG_DIR`; no macOS, o Keychain);
+- **Codex**: `~/.codex/auth.json` (ou `CODEX_HOME`), com login do ChatGPT.
+
+Sem login aparece `not signed in`; com o login vencido, `login expired` (abrir o agente renova); e
+se a consulta falhar, o último valor continua na tela com `unavailable`.
 
 ### Teclas
 
@@ -164,6 +177,9 @@ Exemplo: `"claude_args": ["--model", "opus"]`.
 
 Os holders escutam somente em `127.0.0.1`, numa porta aleatória, e exigem um token de 256
 bits por agente, que fica apenas na pasta de dados do usuário (permissões `0700`/`0600` no Unix).
+Para mostrar o consumo, o orkai lê o token de login do Claude Code e do Codex só na memória e o envia
+apenas, por HTTPS, ao serviço que o emitiu (`api.anthropic.com` e `chatgpt.com`); ele nunca é
+gravado, registrado em log ou renovado pelo orkai.
 Comandos `.cmd`/`.bat` no Windows nunca recebem texto livre como argumento: a tarefa é digitada
 no terminal do agente, não passada pela linha de comando.
 

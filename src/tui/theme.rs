@@ -20,6 +20,8 @@ pub const CLAUDE: Color = Color::Rgb(222, 128, 92);
 pub const CODEX: Color = Color::Rgb(120, 175, 255);
 pub const TERMINAL: Color = Color::Rgb(90, 210, 210);
 pub const TAB_ACTIVE_BG: Color = Color::Rgb(44, 44, 58);
+pub const USAGE_WARN_PERCENT: f64 = 70.0;
+pub const USAGE_ALERT_PERCENT: f64 = 90.0;
 
 const PROJECT_PALETTE: [Color; 8] = [
     Color::Rgb(186, 166, 255),
@@ -56,6 +58,16 @@ pub fn name_color(kind: AgentKind, state: AgentState) -> Color {
     }
 }
 
+pub fn usage_color(used_percent: f64) -> Color {
+    if used_percent >= USAGE_ALERT_PERCENT {
+        RED
+    } else if used_percent >= USAGE_WARN_PERCENT {
+        YELLOW
+    } else {
+        GREEN
+    }
+}
+
 pub const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 pub fn glyph(kind: AgentKind, state: AgentState, frame: usize) -> (&'static str, Color) {
@@ -77,6 +89,16 @@ mod tests {
     #[test]
     fn project_colors_are_stable() {
         assert_eq!(project_color("vibing/earth"), project_color("vibing/earth"));
+    }
+
+    #[test]
+    fn usage_colors_escalate_near_the_limit() {
+        assert_eq!(usage_color(0.0), GREEN);
+        assert_eq!(usage_color(69.9), GREEN);
+        assert_eq!(usage_color(USAGE_WARN_PERCENT), YELLOW);
+        assert_eq!(usage_color(89.0), YELLOW);
+        assert_eq!(usage_color(USAGE_ALERT_PERCENT), RED);
+        assert_eq!(usage_color(130.0), RED);
     }
 
     #[test]

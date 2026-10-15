@@ -27,6 +27,7 @@ use crate::tui::line::LineInput;
 use crate::tui::render;
 use crate::tui::view::TermView;
 use crate::update;
+use crate::usage::{self, Limits, Problem, Usage};
 use crate::util::now_ms;
 
 const RESCAN_EVERY: Duration = Duration::from_secs(2);
@@ -45,6 +46,7 @@ pub enum AppEvent {
     Restarted { id: AgentId, result: Result<AgentRecord, String> },
     Replayed { id: AgentId, parser: Option<Box<vt100::Parser>> },
     Subagents(BTreeMap<AgentId, Vec<Subagent>>),
+    Usage { kind: AgentKind, result: Result<Limits, Problem> },
 }
 
 pub enum Link {
@@ -210,6 +212,7 @@ pub struct App {
     pub screen: Rect,
     pub should_quit: bool,
     pub launching: usize,
+    pub usage: BTreeMap<AgentKind, Usage>,
     dirty: bool,
     next_generation: u64,
     last_rescan: Instant,
@@ -267,6 +270,7 @@ impl App {
             screen,
             should_quit: false,
             launching: 0,
+            usage: BTreeMap::new(),
             dirty: true,
             next_generation: 1,
             last_rescan: Instant::now(),
@@ -287,6 +291,7 @@ impl App {
         }
         self.spawn_subagent_watcher();
         self.request_subagents();
+        self.spawn_usage_watchers();
         if let Ok(commit) = std::env::var(update::UPDATED_ENV) {
             self.set_notice(Tone::Success, format!("orkai updated to {}", update::short_commit(&commit)));
         }
@@ -316,6 +321,25 @@ impl App {
         if spawned.is_ok() {
             self.subagent_requests = Some(requests);
         }
+    }
+
+    fn spawn_usage_watchers(&self) {
+        for kind in usage::PROVIDERS {
+            let tx = self.tx.clone();
+            let _ = thread::Builder::new().name("orkai-usage".into()).spawn(move || {
+                loop {
+                    if tx.send(AppEvent::Usage { kind, result: usage::fetch(kind) }).is_err() {
+                        return;
+                    }
+                    thread::sleep(usage::REFRESH_EVERY);
+                }
+            });
+        }
+    }
+
+    fn on_usage(&mut self, kind: AgentKind, result: Result<Limits, Problem>) {
+        self.usage.entry(kind).or_default().apply(result, now_ms());
+        self.dirty = true;
     }
 
     fn request_subagents(&self) {
@@ -521,6 +545,7 @@ impl App {
             AppEvent::Launched { result } => self.on_launched(result),
             AppEvent::Restarted { id, result } => self.on_restarted(id, result),
             AppEvent::Subagents(found) => self.on_subagents(found),
+            AppEvent::Usage { kind, result } => self.on_usage(kind, result),
             AppEvent::Replayed { id, parser } => {
                 if let Some(entry) = self.agents.get_mut(&id)
                     && entry.is_dead()

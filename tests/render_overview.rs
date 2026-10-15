@@ -19,6 +19,7 @@ use orkai::store::Store;
 use orkai::subagents::Subagent;
 use orkai::tui::app::{App, AppEvent, Confirm, Link, Prompt};
 use orkai::tui::{render, theme};
+use orkai::usage::{Limits, Problem, Window};
 use orkai::util::now_ms;
 
 const WIDTH: u16 = 150;
@@ -563,4 +564,78 @@ fn agents_waiting_for_a_decision_are_highlighted_in_yellow() {
     let byte = line.find("sidebar-sessions").unwrap();
     let column = u16::try_from(line[..byte].chars().count()).unwrap();
     assert_eq!(buffer[(column, u16::try_from(row).unwrap())].fg, theme::YELLOW);
+}
+
+fn line_with<'a>(screen: &'a str, needle: &str) -> (usize, &'a str) {
+    screen.lines().enumerate().find(|(_, l)| l.contains(needle)).unwrap_or_else(|| {
+        panic!(
+            "{needle:?} in:
+{screen}"
+        )
+    })
+}
+
+fn column_of(line: &str, needle: &str) -> u16 {
+    u16::try_from(line[..line.find(needle).unwrap()].chars().count()).unwrap()
+}
+
+#[test]
+fn usage_panel_sits_right_of_the_stats_and_counts_down_to_the_reset() {
+    let mut scenario = scenario();
+    let now = now_ms();
+    let claude = Limits {
+        session: Some(Window { used_percent: 55.0, resets_at_ms: Some(now + 3 * 3_600_000 + 30_000) }),
+        weekly: Some(Window { used_percent: 92.0, resets_at_ms: Some(now + 33 * 3_600_000 + 30_000) }),
+    };
+    let codex = Limits { session: None, weekly: Some(Window { used_percent: 75.0, resets_at_ms: None }) };
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Claude, result: Ok(claude) });
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Codex, result: Ok(codex) });
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Codex, result: Err(Problem::Unavailable) });
+    let buffer = render(&mut scenario.app);
+    let screen = text(&buffer);
+
+    let (row, agents) = line_with(&screen, " agents ");
+    for expected in ["claude", "5h", "55%", "resets 3h00m"] {
+        assert!(agents.contains(expected), "missing {expected:?} in {agents:?}");
+    }
+    assert!(column_of(agents, "claude") > column_of(agents, "agents"), "{agents}");
+    let working = screen.lines().nth(row + 1).unwrap();
+    for expected in ["week", "92%", "resets 33h00m"] {
+        assert!(working.contains(expected), "missing {expected:?} in {working:?}");
+    }
+    let paused = screen.lines().nth(row + 2).unwrap();
+    assert!(paused.contains("paused") && paused.contains("codex"), "{paused}");
+    assert!(paused.contains("n/a · unavailable"), "{paused}");
+    let done = screen.lines().nth(row + 3).unwrap();
+    assert!(done.contains("week") && done.contains("75%") && !done.contains("resets"), "{done}");
+    let header = screen.lines().nth(row - 1).unwrap();
+    assert!(header.contains("usage · updated 0s ago"), "{header}");
+
+    let y = u16::try_from(row).unwrap();
+    let percent = column_of(agents, "55%");
+    assert_eq!(buffer[(percent, y)].fg, theme::GREEN);
+    assert_eq!(buffer[(column_of(working, "92%"), y + 1)].fg, theme::RED);
+    assert_eq!(buffer[(column_of(done, "75%"), y + 3)].fg, theme::YELLOW);
+    let bar = column_of(agents, "━");
+    assert_eq!(agents.matches('━').count(), 7, "{agents}");
+    assert_eq!(buffer[(bar, y)].fg, theme::GREEN);
+}
+
+#[test]
+fn usage_panel_explains_missing_logins_before_any_data() {
+    let mut scenario = scenario();
+    let screen = text(&render(&mut scenario.app));
+    let (row, agents) = line_with(&screen, " agents ");
+    assert!(agents.contains("claude") && agents.contains("checking…"), "{agents}");
+    assert!(screen.lines().nth(row - 1).unwrap().contains("usage · checking…"), "{screen}");
+
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Claude, result: Err(Problem::Expired) });
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Codex, result: Err(Problem::SignedOut) });
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.lines().nth(row).unwrap().contains("claude  login expired"), "{screen}");
+    assert!(screen.lines().nth(row + 2).unwrap().contains("codex   not signed in"), "{screen}");
+
+    scenario.app.screen = Rect::new(0, 0, 60, 12);
+    let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
+    terminal.draw(|frame| render::draw(frame, &mut scenario.app)).unwrap();
 }

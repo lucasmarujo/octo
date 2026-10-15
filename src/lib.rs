@@ -13,4 +13,5 @@ pub mod subagents;
 pub mod termfmt;
 pub mod tui;
 pub mod update;
+pub mod usage;
 pub mod util;

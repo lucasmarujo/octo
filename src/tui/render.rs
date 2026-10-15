@@ -11,6 +11,7 @@ use crate::tui::complete::matching_commands;
 use crate::tui::format::{duration_short, pad, pad_left, truncate, truncate_start, width};
 use crate::tui::sprite;
 use crate::tui::theme;
+use crate::usage::{self, Problem, Window};
 use crate::util::now_ms;
 
 pub const SIDEBAR_WIDTH: u16 = 24;
@@ -28,6 +29,13 @@ const HINT: &str = "↑↓ select · enter open · tab who · ^l where · ^n ses
 const CONFIRM_WIDTH: u16 = 64;
 const CONFIRM_HEIGHT: u16 = 8;
 const CONFIRM_HINT: &str = "y / enter confirm  ·  any other key cancels";
+const USAGE_GAP: u16 = 4;
+const USAGE_NAME_WIDTH: u16 = 8;
+const USAGE_WINDOW_WIDTH: usize = 6;
+const USAGE_BAR_WIDTH: usize = 12;
+const USAGE_PERCENT_WIDTH: usize = 4;
+const USAGE_SESSION_LABEL: &str = "5h";
+const USAGE_WEEKLY_LABEL: &str = "week";
 
 pub struct Areas {
     pub sidebar: Option<Rect>,
@@ -241,18 +249,92 @@ fn draw_overview(app: &mut App, area: Rect, buf: &mut Buffer) {
         (stats.done, "done", theme::GREEN, theme::INK),
     ];
     let first = area.y + header_height.saturating_sub(4);
+    let mut stats_right = stats_x;
     for (i, (value, label, bg, ink)) in rows.iter().enumerate() {
         let y = first + u16::try_from(i).unwrap_or(0);
         if y < area.bottom() {
             let boxed = format!("{value:>3} ");
             let box_style = Style::default().fg(*ink).bg(*bg).add_modifier(Modifier::BOLD);
             let after = put(buf, stats_x, y, &boxed, box_style, right);
-            put(buf, after + 1, y, label, fg(theme::MUTED), right);
+            stats_right = stats_right.max(put(buf, after + 1, y, label, fg(theme::MUTED), right));
         }
     }
+    let usage_area = Rect::new(area.x, area.y, area.width, header_height);
+    draw_usage(app, stats_right + USAGE_GAP, first, usage_area, buf);
     let list_top = area.y + header_height + 1;
     if list_top < area.bottom() {
         draw_agent_list(app, Rect::new(area.x, list_top, area.width, area.bottom() - list_top), buf);
+    }
+}
+
+fn usage_cells(used_percent: f64, cells: usize) -> usize {
+    let share = used_percent.clamp(0.0, 100.0) / 100.0;
+    ((share * cells as f64).round() as usize).min(cells)
+}
+
+fn draw_usage_window(window: &Window, now: u64, x: u16, y: u16, right: u16, buf: &mut Buffer) -> u16 {
+    let color = theme::usage_color(window.used_percent);
+    let filled = usage_cells(window.used_percent, USAGE_BAR_WIDTH);
+    let mut x = put(buf, x, y, &"━".repeat(filled), fg(color), right);
+    x = put(buf, x, y, &"─".repeat(USAGE_BAR_WIDTH - filled), fg(theme::RULE), right);
+    let percent = pad_left(&format!("{:.0}%", window.used_percent), USAGE_PERCENT_WIDTH);
+    x = put(buf, x + 1, y, &percent, fg(color).add_modifier(Modifier::BOLD), right);
+    if let Some(resets_at) = window.resets_at_ms {
+        let text = if resets_at > now {
+            format!("resets {}", duration_short(resets_at - now))
+        } else {
+            "resets now".to_string()
+        };
+        x = put(buf, x + 2, y, &text, fg(theme::DIM), right);
+    }
+    x
+}
+
+fn draw_usage(app: &App, x: u16, first: u16, area: Rect, buf: &mut Buffer) {
+    let right = area.right();
+    if x >= right || first >= area.bottom() {
+        return;
+    }
+    let now = now_ms();
+    if first > area.y {
+        let updated = app.usage.values().filter_map(|u| u.updated_at_ms).max();
+        let status = match updated {
+            Some(at) => format!(" · updated {} ago", duration_short(now.saturating_sub(at))),
+            None => " · checking…".to_string(),
+        };
+        let after = put(buf, x, first - 1, "usage", fg(theme::MUTED), right);
+        put(buf, after, first - 1, &status, fg(theme::FAINT), right);
+    }
+    for (index, kind) in usage::PROVIDERS.iter().enumerate() {
+        let y = first + 2 * u16::try_from(index).unwrap_or(0);
+        if y >= area.bottom() {
+            return;
+        }
+        let entry = app.usage.get(kind);
+        put(buf, x, y, kind.label(), fg(theme::kind_color(*kind)), right);
+        let window_x = x + USAGE_NAME_WIDTH;
+        let Some(limits) = entry.and_then(|u| u.limits) else {
+            let text = entry.and_then(|u| u.problem).map_or("checking…", Problem::label);
+            put(buf, window_x, y, text, fg(theme::FAINT), right);
+            continue;
+        };
+        let windows = [(USAGE_SESSION_LABEL, limits.session), (USAGE_WEEKLY_LABEL, limits.weekly)];
+        for (row, (label, window)) in windows.iter().enumerate() {
+            let y = y + u16::try_from(row).unwrap_or(0);
+            if y >= area.bottom() {
+                return;
+            }
+            let cx = put(buf, window_x, y, &pad(label, USAGE_WINDOW_WIDTH), fg(theme::DIM), right);
+            let end = match window {
+                Some(window) => draw_usage_window(window, now, cx, y, right, buf),
+                None => put(buf, cx, y, "n/a", fg(theme::FAINT), right),
+            };
+            if row == 0
+                && let Some(problem) = entry.and_then(|u| u.problem)
+            {
+                put(buf, end, y, &format!(" · {}", problem.label()), fg(theme::FAINT), right);
+            }
+        }
     }
 }
 
@@ -806,6 +888,17 @@ mod tests {
         let layout = areas(Rect::new(0, 0, 60, 20), false, false, 1);
         assert!(layout.sidebar.is_none());
         assert_eq!(layout.body.x, 1);
+    }
+
+    #[test]
+    fn usage_bars_round_and_clamp_to_their_width() {
+        assert_eq!(usage_cells(0.0, 12), 0);
+        assert_eq!(usage_cells(55.0, 12), 7);
+        assert_eq!(usage_cells(8.0, 12), 1);
+        assert_eq!(usage_cells(100.0, 12), 12);
+        assert_eq!(usage_cells(140.0, 12), 12);
+        assert_eq!(usage_cells(-5.0, 12), 0);
+        assert_eq!(usage_cells(f64::NAN, 12), 0);
     }
 
     #[test]
