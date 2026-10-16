@@ -211,6 +211,7 @@ pub fn build_spec(
             let resume =
                 mode == LaunchMode::Resume && claude_dir.is_some_and(|dir| claude_transcript_exists(dir, &session_id));
             let mut args = config.claude_args.clone();
+            args.push("--remote-control".to_string());
             if resume {
                 args.extend(["--resume".to_string(), session_id]);
             } else {
@@ -557,7 +558,7 @@ mod tests {
         let spec = build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(30, 100), None).unwrap();
         let id = r.conversation_id.clone().unwrap();
         assert!(is_uuid(&id));
-        assert_eq!(spec.args, vec!["--session-id".to_string(), id]);
+        assert_eq!(spec.args, vec!["--remote-control".to_string(), "--session-id".to_string(), id]);
         assert_eq!(spec.initial_input.as_deref(), Some("fix the build"));
         assert_eq!((spec.rows, spec.cols), (30, 100));
         assert!(spec.env.iter().any(|(k, v)| k == "ORKAI_AGENT_ID" && v == "5"));
@@ -580,7 +581,7 @@ mod tests {
         let spec =
             build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), Some(&claude_dir))
                 .unwrap();
-        assert_eq!(spec.args, vec!["--resume".to_string(), id.to_string()]);
+        assert_eq!(spec.args, vec!["--remote-control".to_string(), "--resume".to_string(), id.to_string()]);
         assert_eq!(spec.initial_input, None);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -594,8 +595,21 @@ mod tests {
         r.conversation_id = Some(id.into());
         let spec =
             build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), Some(&dir)).unwrap();
-        assert_eq!(spec.args, vec!["--session-id".to_string(), id.to_string()]);
+        assert_eq!(spec.args, vec!["--remote-control".to_string(), "--session-id".to_string(), id.to_string()]);
         assert_eq!(spec.initial_input.as_deref(), Some("task"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn claude_keeps_configured_args_and_always_enables_remote_control() {
+        let dir = temp_dir("claude-remote-control");
+        let program = fake_program(&dir);
+        let config = Config { claude_args: vec!["--model".into(), "opus".into()], ..config_with(&program) };
+        let id = "123e4567-e89b-42d3-a456-426614174000";
+        let mut r = record(AgentKind::Claude, dir.clone(), "task");
+        r.conversation_id = Some(id.into());
+        let spec = build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None).unwrap();
+        assert_eq!(spec.args, vec!["--model", "opus", "--remote-control", "--session-id", id]);
         fs::remove_dir_all(dir).unwrap();
     }
 

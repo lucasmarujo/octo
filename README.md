@@ -173,6 +173,10 @@ Os dados ficam em `orkai home` (Windows: `%LOCALAPPDATA%\orkai`, Linux:
 `shell` nulo usa `pwsh`/`powershell` no Windows e `$SHELL` no Unix.
 Exemplo: `"claude_args": ["--model", "opus"]`.
 
+Todo Claude Code iniciado ou retomado pelo orkai abre com Remote Control ligado
+(`--remote-control`), então qualquer sessão pode ser continuada no app do Claude ou em
+claude.ai/code. O Codex não tem um equivalente para a sessão interativa no terminal.
+
 ## Segurança
 
 Os holders escutam somente em `127.0.0.1`, numa porta aleatória, e exigem um token de 256
