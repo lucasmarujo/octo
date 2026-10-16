@@ -12,6 +12,7 @@ pub const ACTIVITY_MAX_CHARS: usize = 160;
 pub const SUBMIT_MIN_MS: u64 = 500;
 pub const SUBMIT_QUIET_MS: u64 = 350;
 pub const SUBMIT_MAX_MS: u64 = 3_000;
+pub const SUBMIT_NO_ECHO_TIMEOUT_MS: u64 = 20_000;
 
 #[derive(Default)]
 pub struct Responder {
@@ -69,6 +70,7 @@ pub struct TermState {
     task: String,
     pending_input: Option<String>,
     submit_after: Option<u64>,
+    echoed_at: Option<u64>,
 }
 
 impl TermState {
@@ -92,12 +94,16 @@ impl TermState {
             task,
             pending_input,
             submit_after: None,
+            echoed_at: None,
         }
     }
 
     pub fn process(&mut self, bytes: &[u8], now: u64) -> Vec<u8> {
         self.parser.process(bytes);
         self.last_output_at = now;
+        if self.echoed_at.is_none() && self.submit_after.is_some_and(|typed_at| now > typed_at) {
+            self.echoed_at = Some(now);
+        }
         self.dirty = true;
         std::mem::take(&mut self.parser.callbacks_mut().responses)
     }
@@ -195,12 +201,18 @@ impl TermState {
             return false;
         };
         let elapsed = now.saturating_sub(typed_at);
-        let quiet = now.saturating_sub(self.last_output_at) >= SUBMIT_QUIET_MS;
-        if (elapsed >= SUBMIT_MIN_MS && quiet) || elapsed >= SUBMIT_MAX_MS {
+        let ready = match self.echoed_at {
+            Some(echoed_at) => {
+                let quiet = now.saturating_sub(self.last_output_at) >= SUBMIT_QUIET_MS;
+                (elapsed >= SUBMIT_MIN_MS && quiet) || now.saturating_sub(echoed_at) >= SUBMIT_MAX_MS
+            }
+            None => elapsed >= SUBMIT_NO_ECHO_TIMEOUT_MS,
+        };
+        if ready {
             self.submit_after = None;
-            return true;
+            self.echoed_at = None;
         }
-        false
+        ready
     }
 
     pub fn snapshot(&mut self) -> Vec<u8> {
@@ -317,9 +329,44 @@ mod tests {
         t.evaluate(1_000);
         let typed = t.take_ready_input(5_000).unwrap();
         assert_eq!(typed, b"x");
-        t.process(b"spinner", 5_000 + SUBMIT_MAX_MS - 1);
-        assert!(!t.take_submit(5_000 + SUBMIT_MAX_MS - 1));
-        assert!(t.take_submit(5_000 + SUBMIT_MAX_MS));
+        let echoed_at = 5_100;
+        t.process(b"x", echoed_at);
+        t.process(b"spinner", echoed_at + SUBMIT_MAX_MS - 1);
+        assert!(!t.take_submit(echoed_at + SUBMIT_MAX_MS - 1));
+        assert!(t.take_submit(echoed_at + SUBMIT_MAX_MS));
+    }
+
+    #[test]
+    fn submit_waits_until_a_busy_agent_echoes_the_typed_task() {
+        let mut t = TermState::new(
+            AgentKind::Claude,
+            TermSize { rows: 6, cols: 40 },
+            0,
+            "fix".into(),
+            Some("fix the bug".into()),
+        );
+        t.process(b"\x1b[?2004h> ", 1_000);
+        t.evaluate(1_000);
+        let typed_at = 1_000 + INPUT_QUIET_MS;
+        assert_eq!(t.take_ready_input(typed_at).unwrap(), b"fix the bug");
+        assert!(!t.take_submit(typed_at + SUBMIT_MIN_MS));
+        assert!(!t.take_submit(typed_at + SUBMIT_MAX_MS));
+        let echoed_at = typed_at + 5_000;
+        t.process(b"fix the bug", echoed_at);
+        assert!(!t.take_submit(echoed_at + SUBMIT_QUIET_MS - 1));
+        assert!(t.take_submit(echoed_at + SUBMIT_QUIET_MS));
+        assert!(!t.take_submit(echoed_at + SUBMIT_NO_ECHO_TIMEOUT_MS));
+    }
+
+    #[test]
+    fn submit_falls_back_when_the_agent_never_echoes() {
+        let mut t = TermState::new(AgentKind::Codex, TermSize { rows: 6, cols: 40 }, 0, "x".into(), Some("x".into()));
+        t.process(b"\x1b[?2004hready", 1_000);
+        t.evaluate(1_000);
+        let typed_at = 1_000 + INPUT_QUIET_MS;
+        assert_eq!(t.take_ready_input(typed_at).unwrap(), b"x");
+        assert!(!t.take_submit(typed_at + SUBMIT_NO_ECHO_TIMEOUT_MS - 1));
+        assert!(t.take_submit(typed_at + SUBMIT_NO_ECHO_TIMEOUT_MS));
     }
 
     #[test]
