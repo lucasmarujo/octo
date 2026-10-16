@@ -56,6 +56,10 @@ orkai
 Estados: `⠋` trabalhando · `‖` em amarelo, esperando você responder (aprovação, pergunta ou escolha dentro do agente) · `✔` terminou (ainda não visto) ·
 `●` ocioso · `$` terminal · `↻` interrompido (crash/reboot) · `✗` encerrado.
 
+Um terminal em que você roda `claude` ou `codex` vira esse agente sozinho: em até 2 segundos o
+overview passa a mostrar o tipo, o estado (trabalhando, esperando você, terminou), os subagents e os
+contadores como os de um agente lançado pelo orkai. Ao sair do `claude`/`codex`, volta a ser `terminal`.
+
 ### Consumo do Claude Code e do Codex
 
 À direita dos contadores, o overview mostra quanto já foi usado da janela de 5 horas (`5h`) e da
@@ -74,6 +78,7 @@ se a consulta falhar, o último valor continua na tela com `unavailable`.
 | Tecla | Ação |
 | --- | --- |
 | digitar + `enter` | inicia um agente com a tarefa digitada |
+| `!comando` + `enter` | roda o comando num terminal novo, sem mudar o `who` (ex.: `!npm run dev`) |
 | `shift+enter` (ou `alt+enter`) | quebra de linha na tarefa, sem enviar; colar um texto com várias linhas também mantém as quebras |
 | `tab` / `shift+tab` | escolhe quem executa: claude, codex ou terminal |
 | `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja abaixo); clicar no nome de um projeto também |

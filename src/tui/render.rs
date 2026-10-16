@@ -6,7 +6,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap};
 
 use crate::model::{AgentId, AgentKind, AgentState};
-use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, Prompt, Tone, View};
+use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, Prompt, SHELL_PREFIX, Tone, View};
 use crate::tui::complete::matching_commands;
 use crate::tui::format::{duration_short, pad, pad_left, truncate, truncate_start, width};
 use crate::tui::sprite;
@@ -181,7 +181,7 @@ fn draw_sidebar(app: &mut App, area: Rect, buf: &mut Buffer) {
 }
 
 fn tab_label(entry: &AgentEntry, tick: usize) -> (String, Color) {
-    let (glyph, color) = theme::glyph(entry.record.kind, entry.state(), tick);
+    let (glyph, color) = theme::glyph(entry.kind(), entry.state(), tick);
     (format!("{glyph} {}", truncate(&entry.record.name, TAB_NAME_MAX)), color)
 }
 
@@ -349,7 +349,7 @@ fn time_columns(entry: &AgentEntry, now: u64) -> (Option<(String, Color)>, Optio
         return (None, None);
     };
     let uptime = Some(duration_short(now.saturating_sub(status.started_at_ms)));
-    if entry.record.kind == AgentKind::Terminal {
+    if entry.kind() == AgentKind::Terminal {
         return (None, uptime);
     }
     let first = match status.state {
@@ -458,14 +458,11 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
                 x = put(buf, x, y, &format!("{:>3} ", id), fg(theme::DIM), right);
                 x = put(buf, x, y, if selected { "▸" } else { " " }, fg(theme::ACCENT), right);
                 x = put(buf, x, y, " ", Style::default(), right);
-                let (glyph, glyph_color) = if entry.is_starting() {
-                    ("◌", theme::DIM)
-                } else {
-                    theme::glyph(entry.record.kind, state, app.tick)
-                };
+                let (glyph, glyph_color) =
+                    if entry.is_starting() { ("◌", theme::DIM) } else { theme::glyph(entry.kind(), state, app.tick) };
                 x = put(buf, x, y, glyph, fg(glyph_color), right);
                 x = put(buf, x, y, " ", Style::default(), right);
-                let mut name_style = fg(theme::name_color(entry.record.kind, state));
+                let mut name_style = fg(theme::name_color(entry.kind(), state));
                 if selected {
                     name_style = name_style.add_modifier(Modifier::BOLD);
                 }
@@ -479,14 +476,7 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
                     x = put(buf, x, y, &pad_left(&uptime.unwrap_or_default(), TIME_WIDTH), fg(theme::DIM), right);
                 }
                 x = put(buf, x, y, "  ", Style::default(), right);
-                x = put(
-                    buf,
-                    x,
-                    y,
-                    &pad(entry.record.kind.label(), KIND_WIDTH),
-                    fg(theme::kind_color(entry.record.kind)),
-                    right,
-                );
+                x = put(buf, x, y, &pad(entry.kind().label(), KIND_WIDTH), fg(theme::kind_color(entry.kind())), right);
                 let (text, color) = activity(entry);
                 let available = usize::from(right.saturating_sub(x));
                 put(buf, x, y, &truncate(&text, available), fg(color), right);
@@ -621,7 +611,13 @@ fn draw_task(app: &App, x: u16, y: u16, rows: u16, right: u16, buf: &mut Buffer)
     let first = (cursor_row + 1).saturating_sub(rows);
     let visible = usize::from(right.saturating_sub(x + 1));
     let skip = cursor_width.saturating_sub(visible);
-    let color = if text.starts_with('/') { theme::LINK } else { theme::TEXT };
+    let color = if text.starts_with('/') {
+        theme::LINK
+    } else if text.starts_with(SHELL_PREFIX) {
+        theme::TERMINAL
+    } else {
+        theme::TEXT
+    };
     for (index, line) in text.split('\n').enumerate().skip(first).take(rows) {
         let row = y + u16::try_from(index - first).unwrap_or(0);
         let shown: String = line.chars().skip(if index == cursor_row { skip } else { 0 }).collect();
@@ -691,6 +687,9 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
             }
             put(buf, cx, y, &skills.join("  "), fg(theme::kind_color(app.who)), right);
         }
+    } else if app.prompt.is_none() && app.task.text().starts_with(SHELL_PREFIX) {
+        let text = format!("enter runs it in a new terminal · who stays {}", app.who.label());
+        put(buf, x, y, &text, fg(theme::TERMINAL), right);
     } else if let Some(notice) = app.notice.as_ref() {
         let color = match notice.tone {
             Tone::Info => theme::TEXT,
@@ -756,11 +755,12 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
         }
     };
     let mut x = area.x + 1;
-    let (glyph, glyph_color) = theme::glyph(entry.record.kind, entry.state(), app.tick);
+    let kind = entry.kind();
+    let (glyph, glyph_color) = theme::glyph(kind, entry.state(), app.tick);
     x = put(buf, x, y, glyph, fg(glyph_color), limit);
     x = put(buf, x + 1, y, &entry.record.name, fg(theme::TEXT).add_modifier(Modifier::BOLD), limit);
-    x = put(buf, x + 2, y, entry.record.kind.label(), fg(theme::kind_color(entry.record.kind)), limit);
-    if entry.record.kind.is_ai() || entry.is_dead() {
+    x = put(buf, x + 2, y, kind.label(), fg(theme::kind_color(kind)), limit);
+    if kind.is_ai() || entry.is_dead() {
         x = put(buf, x + 2, y, &state_text, fg(state_color), limit);
     }
     let path_x = x + 2;
@@ -809,6 +809,7 @@ const HELP: &[(&str, &str)] = &[
     ("type + enter", "start an agent with that task"),
     ("shift+enter", "new line in the task (alt+enter also works)"),
     ("tab / shift+tab", "who runs it: claude, codex or terminal"),
+    ("!command", "run a shell command in a new terminal"),
     ("/where · ctrl+l", "folder for this session: type, tab enters or cycles"),
     ("↑ ↓ / mouse", "select agent · click or enter opens it"),
     ("alt+1..9", "jump to an open tab"),

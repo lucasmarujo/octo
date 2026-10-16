@@ -13,7 +13,7 @@ use ratatui::style::{Color, Modifier};
 
 use orkai::config::Config;
 use orkai::launch::Launcher;
-use orkai::model::{AgentKind, AgentRecord, AgentState, ExitInfo, NewAgent, StatusReport};
+use orkai::model::{AgentKind, AgentRecord, AgentState, ExitInfo, NestedAgent, NewAgent, StatusReport};
 use orkai::paths::Home;
 use orkai::store::Store;
 use orkai::subagents::Subagent;
@@ -124,6 +124,7 @@ fn scenario() -> Scenario {
             rows: 24,
             cols: 80,
             exit: None,
+            nested: None,
         });
     }
     app.where_dir = dir.join("studio/game");
@@ -653,4 +654,95 @@ fn usage_panel_explains_missing_logins_before_any_data() {
     scenario.app.screen = Rect::new(0, 0, 60, 12);
     let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
     terminal.draw(|frame| render::draw(frame, &mut scenario.app)).unwrap();
+}
+
+#[test]
+fn bang_runs_the_command_in_a_new_terminal_without_changing_who() {
+    let mut scenario = scenario();
+    let store = scenario.app.launcher.store().clone();
+    let config = Config { shell: Some("orkai-missing-shell".into()), ..Config::default() };
+    scenario.app.launcher = Launcher::new(store, config, &std::env::current_exe().unwrap()).unwrap();
+    let app = &mut scenario.app;
+    assert_eq!(app.who, AgentKind::Claude);
+
+    type_text(app, "!");
+    press(app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(app.launching, 0);
+    assert!(app.notice.as_ref().unwrap().text.contains("type a command after !"));
+
+    type_text(app, "npm run dev");
+    let buffer = render(app);
+    let screen = text(&buffer);
+    let lines: Vec<&str> = screen.lines().collect();
+    let n = lines.len();
+    assert!(lines[n - 3].contains("!npm run dev"), "{screen}");
+    assert!(lines[n - 1].contains("enter runs it in a new terminal · who stays claude"), "{screen}");
+    let row = u16::try_from(n - 3).unwrap();
+    assert_eq!(buffer[(column_of(lines[n - 3], "!"), row)].fg, theme::TERMINAL);
+
+    press(app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(app.task.is_empty());
+    assert_eq!(app.launching, 1);
+    assert_eq!(app.who, AgentKind::Claude);
+    assert!(
+        app.notice.as_ref().unwrap().text.contains("starting terminal npm-run-dev"),
+        "{:?}",
+        app.notice.as_ref().unwrap().text
+    );
+    let error = launched(&scenario).unwrap_err();
+    assert!(error.contains("orkai-missing-shell"), "{error}");
+}
+
+#[test]
+fn terminals_running_an_agent_are_shown_counted_and_watched_as_that_agent() {
+    let mut scenario = scenario();
+    let now = now_ms();
+    let id = scenario.app.agents.values().find(|e| e.record.name == "localhost-server").unwrap().record.id;
+    let elsewhere = scenario.dir.join("elsewhere");
+    let session = "5bd0ccb0-0d09-47ca-9524-6eb740341fa9";
+    {
+        let status = scenario.app.agents.get_mut(&id).unwrap().status.as_mut().unwrap();
+        status.state = AgentState::Working;
+        status.turn_started_ms = Some(now - 42_000);
+        status.activity = "Fix login bug".into();
+        status.nested = Some(NestedAgent {
+            kind: AgentKind::Claude,
+            pid: 4242,
+            conversation_id: Some(session.into()),
+            cwd: Some(elsewhere.clone()),
+            since_ms: now - 50_000,
+        });
+    }
+    let stats = scenario.app.stats();
+    assert_eq!((stats.agents, stats.working), (9, 3));
+    let entry = &scenario.app.agents[&id];
+    assert_eq!(entry.kind(), AgentKind::Claude);
+    let parent = entry.subagent_parent().unwrap();
+    assert_eq!(parent.kind, AgentKind::Claude);
+    assert_eq!(parent.conversation_id.as_deref(), Some(session));
+    assert_eq!(parent.cwd, elsewhere);
+    assert_eq!(parent.created_at_ms, now - 50_000);
+    assert!(parent.busy);
+
+    let subagent = Subagent {
+        id: "a1".into(),
+        role: "Explore".into(),
+        description: "Map the login flow".into(),
+        activity: "Read · src/login.rs".into(),
+        started_at_ms: now - 7_000,
+    };
+    scenario.app.handle(AppEvent::Subagents(BTreeMap::from([(id, vec![subagent])])));
+    let screen = text(&render(&mut scenario.app));
+    let (row, line) = line_with(&screen, "localhost-server");
+    assert!(line.contains("42s") && line.contains("claude   Fix login bug"), "{line}");
+    assert!(!line.contains("terminal"), "{line}");
+    let sub = screen.lines().nth(row + 1).unwrap();
+    assert!(sub.contains("↳") && sub.contains("Explore") && sub.contains("Map the login flow"), "{sub}");
+
+    scenario.app.agents.get_mut(&id).unwrap().status.as_mut().unwrap().nested = None;
+    assert_eq!(scenario.app.agents[&id].kind(), AgentKind::Terminal);
+    assert!(scenario.app.agents[&id].subagent_parent().is_none());
+    assert_eq!(scenario.app.stats().agents, 8);
+    let screen = text(&render(&mut scenario.app));
+    assert!(line_with(&screen, "localhost-server").1.contains("terminal"), "{screen}");
 }

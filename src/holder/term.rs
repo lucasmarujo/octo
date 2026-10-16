@@ -1,6 +1,6 @@
 use crate::holder::detect::{self, Detector, Signals, TAIL_ROWS};
 use crate::holder::input::LineTracker;
-use crate::model::{AgentKind, ExitInfo, StatusReport};
+use crate::model::{AgentKind, ExitInfo, NestedAgent, StatusReport};
 use crate::protocol::TermSize;
 use crate::termfmt;
 
@@ -61,6 +61,7 @@ impl vt100::Callbacks for Responder {
 pub struct TermState {
     parser: vt100::Parser<Responder>,
     kind: AgentKind,
+    nested: Option<NestedAgent>,
     detector: Detector,
     signals: Signals,
     dirty: bool,
@@ -85,6 +86,7 @@ impl TermState {
         Self {
             parser: vt100::Parser::new_with_callbacks(size.rows, size.cols, HOLDER_SCROLLBACK, Responder::default()),
             kind,
+            nested: None,
             detector: Detector::new(started_at),
             signals: Signals::default(),
             dirty: false,
@@ -126,6 +128,29 @@ impl TermState {
         self.parser.screen()
     }
 
+    pub fn running_kind(&self) -> AgentKind {
+        self.nested.as_ref().map_or(self.kind, |nested| nested.kind)
+    }
+
+    pub fn set_nested(&mut self, found: Option<NestedAgent>, now: u64) -> bool {
+        let found = found.map(|mut nested| {
+            if let Some(current) = self.nested.as_ref().filter(|current| current.pid == nested.pid) {
+                nested.since_ms = current.since_ms;
+            }
+            nested
+        });
+        if self.nested == found {
+            return false;
+        }
+        let program_changed = self.nested.as_ref().map(|n| n.pid) != found.as_ref().map(|n| n.pid);
+        self.nested = found;
+        if program_changed {
+            self.detector = Detector::new(now);
+            self.dirty = true;
+        }
+        true
+    }
+
     pub fn note_input(&mut self, bytes: &[u8]) {
         if self.kind == AgentKind::Terminal {
             self.tracker.feed(bytes);
@@ -140,15 +165,19 @@ impl TermState {
         if self.dirty {
             self.dirty = false;
             let tail = termfmt::screen_tail(self.parser.screen(), TAIL_ROWS);
-            self.signals = detect::analyze(self.kind, self.title(), &tail);
+            self.signals = detect::analyze(self.running_kind(), self.title(), &tail);
         }
-        self.detector.observe(self.kind, self.signals, self.last_output_at, now)
+        self.detector.observe(self.running_kind(), self.signals, self.last_output_at, now)
     }
 
     pub fn activity(&self) -> String {
         let from_title = detect::activity_from_title(self.kind, self.title());
-        let text = match self.kind {
-            AgentKind::Terminal => self.tracker.last().map(str::to_string).or(from_title).unwrap_or_default(),
+        let last_command = self.tracker.last().map(str::to_string);
+        let text = match (self.kind, self.nested.as_ref()) {
+            (AgentKind::Terminal, Some(nested)) => {
+                detect::activity_from_title(nested.kind, self.title()).or(last_command).unwrap_or_default()
+            }
+            (AgentKind::Terminal, None) => last_command.or(from_title).unwrap_or_default(),
             _ => from_title.unwrap_or_else(|| self.task.clone()),
         };
         let single_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -168,6 +197,7 @@ impl TermState {
             rows: size.rows,
             cols: size.cols,
             exit,
+            nested: self.nested.clone(),
         }
     }
 
@@ -420,6 +450,55 @@ mod tests {
         assert_eq!(encode_typed_text("a\nb\n", true), b"\x1b[200~a\nb\x1b[201~");
         assert_eq!(encode_typed_text("a\nb\n", false), b"a b");
         assert_eq!(encode_typed_text("single", true), b"single");
+    }
+
+    fn nested(kind: AgentKind, pid: u32, since_ms: u64) -> Option<NestedAgent> {
+        Some(NestedAgent { kind, pid, conversation_id: None, cwd: None, since_ms })
+    }
+
+    #[test]
+    fn a_terminal_running_an_agent_is_tracked_as_that_agent() {
+        let mut t =
+            TermState::new(AgentKind::Terminal, TermSize { rows: 6, cols: 40 }, 0, String::new(), Some("ls".into()));
+        t.note_input(b"claude\r");
+        t.process(b"thinking (esc to interrupt)", 100);
+        t.evaluate(200);
+        assert_eq!(t.report(None).state, AgentState::Working);
+        assert!(t.evaluate(100 + crate::holder::detect::TERMINAL_ACTIVE_MS));
+        assert_eq!(t.report(None).state, AgentState::Idle);
+
+        assert!(t.set_nested(nested(AgentKind::Claude, 42, 3_000), 3_000));
+        assert_eq!(t.running_kind(), AgentKind::Claude);
+        t.process(b"\x1b]0;\xe2\x9c\xb3 Fix login bug\x07working (esc to interrupt)", 3_100);
+        t.evaluate(3_200);
+        let report = t.report(None);
+        assert_eq!(report.state, AgentState::Working);
+        assert_eq!(report.activity, "Fix login bug");
+        assert_eq!(report.nested, nested(AgentKind::Claude, 42, 3_000));
+        assert!(!t.set_nested(nested(AgentKind::Claude, 42, 9_000), 9_000));
+        assert_eq!(t.report(None).nested.unwrap().since_ms, 3_000);
+        assert_eq!(t.report(None).state, AgentState::Working);
+
+        assert!(t.set_nested(None, 10_000));
+        assert_eq!(t.running_kind(), AgentKind::Terminal);
+        let report = t.report(None);
+        assert_eq!(report.state, AgentState::Idle);
+        assert_eq!(report.nested, None);
+        assert_eq!(report.activity, "claude");
+    }
+
+    #[test]
+    fn a_new_program_in_the_terminal_starts_a_fresh_turn() {
+        let mut t = state(AgentKind::Terminal);
+        t.set_nested(nested(AgentKind::Codex, 7, 100), 100);
+        t.process(b"Working (3s \xe2\x80\xa2 esc to interrupt)", 150);
+        t.evaluate(200);
+        assert_eq!(t.report(None).state, AgentState::Working);
+        assert!(t.set_nested(nested(AgentKind::Codex, 8, 300), 300));
+        let report = t.report(None);
+        assert_eq!(report.state, AgentState::Idle);
+        assert_eq!(report.nested.unwrap().since_ms, 300);
+        assert_eq!(report.activity, "");
     }
 
     #[test]

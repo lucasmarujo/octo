@@ -159,6 +159,17 @@ impl ExitInfo {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct NestedAgent {
+    pub kind: AgentKind,
+    pub pid: u32,
+    #[serde(default)]
+    pub conversation_id: Option<String>,
+    #[serde(default)]
+    pub cwd: Option<PathBuf>,
+    pub since_ms: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct StatusReport {
     pub state: AgentState,
     pub state_since_ms: u64,
@@ -175,6 +186,14 @@ pub struct StatusReport {
     pub cols: u16,
     #[serde(default)]
     pub exit: Option<ExitInfo>,
+    #[serde(default)]
+    pub nested: Option<NestedAgent>,
+}
+
+impl StatusReport {
+    pub fn running_kind(&self, launched: AgentKind) -> AgentKind {
+        self.nested.as_ref().map_or(launched, |nested| nested.kind)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -293,6 +312,17 @@ mod tests {
         assert_eq!(record.task, "");
         assert_eq!(record.conversation_id, None);
         assert_eq!(record.launches, 0);
+    }
+
+    #[test]
+    fn status_without_nested_agent_keeps_the_launched_kind() {
+        let json = r#"{"state":"idle","state_since_ms":1,"started_at_ms":1,"rows":24,"cols":80}"#;
+        let mut status: StatusReport = serde_json::from_str(json).unwrap();
+        assert_eq!(status.nested, None);
+        assert_eq!(status.running_kind(AgentKind::Terminal), AgentKind::Terminal);
+        status.nested =
+            Some(NestedAgent { kind: AgentKind::Codex, pid: 42, conversation_id: None, cwd: None, since_ms: 5 });
+        assert_eq!(status.running_kind(AgentKind::Terminal), AgentKind::Codex);
     }
 
     #[test]

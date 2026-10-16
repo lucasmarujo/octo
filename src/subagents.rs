@@ -142,7 +142,7 @@ pub struct SubagentWatcher {
     codex_home: Option<PathBuf>,
     claude_dirs: HashMap<String, PathBuf>,
     claude_metas: HashMap<PathBuf, ClaudeMeta>,
-    codex_threads: HashMap<AgentId, String>,
+    codex_threads: HashMap<(AgentId, u64), String>,
     codex_spawns: HashMap<PathBuf, Option<CodexSpawn>>,
     tails: HashMap<PathBuf, CachedTail>,
 }
@@ -173,6 +173,9 @@ impl SubagentWatcher {
         }
         if self.codex_spawns.len() > MAX_CACHE_ENTRIES {
             self.codex_spawns.clear();
+        }
+        if self.codex_threads.len() > MAX_CACHE_ENTRIES {
+            self.codex_threads.clear();
         }
         found
     }
@@ -237,11 +240,18 @@ impl SubagentWatcher {
     }
 
     fn codex_thread(&mut self, parent: &Parent, codex_home: &Path) -> Option<String> {
-        if let Some(id) = parent.conversation_id.clone().or_else(|| self.codex_threads.get(&parent.id).cloned()) {
+        let key = (parent.id, parent.created_at_ms);
+        if let Some(id) = parent.conversation_id.clone().or_else(|| self.codex_threads.get(&key).cloned()) {
             return Some(id);
         }
-        let id = find_codex_session(codex_home, &parent.cwd, parent.created_at_ms, &[])?;
-        self.codex_threads.insert(parent.id, id.clone());
+        let earlier: Vec<String> = self
+            .codex_threads
+            .iter()
+            .filter(|((id, _), _)| *id == parent.id)
+            .map(|(_, thread)| thread.clone())
+            .collect();
+        let id = find_codex_session(codex_home, &parent.cwd, parent.created_at_ms, &earlier)?;
+        self.codex_threads.insert(key, id.clone());
         Some(id)
     }
 
@@ -632,6 +642,40 @@ mod tests {
         assert_eq!(subagents[0].role, "explorer");
         assert_eq!(subagents[0].description, "Ada");
         assert_eq!(subagents[0].activity, "shell · bash -lc cargo test");
+    }
+
+    #[test]
+    fn each_codex_run_inside_a_terminal_resolves_its_own_thread() {
+        let t = tree("codex-nested");
+        let codex = t.0.join("codex-home");
+        let now = crate::util::now_ms();
+        let (y, m, d) = civil_date_from_ms(now);
+        let day = codex.join("sessions").join(format!("{y:04}")).join(format!("{m:02}")).join(format!("{d:02}"));
+        codex_rollout(&day, "a-first", &[session_meta("first-1", Value::String("cli".into()))]);
+        codex_rollout(&day, "b-first-child", &[session_meta("child-1", spawned_by("first-1")), event("task_started")]);
+        let first = Parent {
+            id: 9,
+            kind: AgentKind::Codex,
+            conversation_id: None,
+            cwd: PathBuf::from("/work"),
+            created_at_ms: now.saturating_sub(30_000),
+            busy: true,
+        };
+        let mut watcher = SubagentWatcher::new(None, Some(codex));
+        let found = watcher.scan(std::slice::from_ref(&first), now);
+        assert_eq!(found[&9].len(), 1);
+        assert!(found[&9][0].id.ends_with("b-first-child"), "{:?}", found[&9]);
+
+        codex_rollout(&day, "c-second", &[session_meta("second-1", Value::String("cli".into()))]);
+        codex_rollout(
+            &day,
+            "d-second-child",
+            &[session_meta("child-2", spawned_by("second-1")), event("task_started")],
+        );
+        let second = Parent { created_at_ms: now, ..first };
+        let found = watcher.scan(&[second], now);
+        assert_eq!(found[&9].len(), 1);
+        assert!(found[&9][0].id.ends_with("d-second-child"), "{:?}", found[&9]);
     }
 
     #[test]

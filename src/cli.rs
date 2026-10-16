@@ -89,17 +89,21 @@ pub fn list(store: &Store, session: Option<&str>) -> io::Result<()> {
     );
     for record in records {
         let probe = probe(store, record.id);
-        let (uptime, activity) = match &probe {
-            Probe::Live(status) => (duration_short(now.saturating_sub(status.started_at_ms)), status.activity.clone()),
-            Probe::Exited(exit) => (String::new(), exit.describe()),
-            Probe::Lost => (String::new(), "interrupted — run `orkai recover`".to_string()),
+        let (uptime, activity, kind) = match &probe {
+            Probe::Live(status) => (
+                duration_short(now.saturating_sub(status.started_at_ms)),
+                status.activity.clone(),
+                status.running_kind(record.kind),
+            ),
+            Probe::Exited(exit) => (String::new(), exit.describe(), record.kind),
+            Probe::Lost => (String::new(), "interrupted — run `orkai recover`".to_string(), record.kind),
         };
         println!(
             "{:>4}  {}  {}  {}  {}  {:>7}  {}  {}",
             record.id,
             pad(&record.session, 12),
             pad(probe.state().label(), 8),
-            pad(record.kind.label(), 8),
+            pad(kind.label(), 8),
             pad(&record.name, 24),
             uptime,
             pad(&display_path(&record.cwd, home.as_deref()), 28),

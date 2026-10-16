@@ -130,6 +130,9 @@ fn sorted_dir_names(path: &Path) -> Vec<String> {
 fn codex_meta(line: &str) -> Option<(String, String)> {
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
     let source = value.get("payload").filter(|p| p.get("id").is_some()).unwrap_or(&value);
+    if source.get("source").and_then(|s| s.get("subagent")).is_some() {
+        return None;
+    }
     let id = source.get("id")?.as_str()?.to_string();
     let cwd = source.get("cwd")?.as_str()?.to_string();
     Some((id, cwd))
@@ -700,6 +703,14 @@ mod tests {
             Some(("abc".to_string(), "/x".to_string()))
         );
         assert_eq!(codex_meta("not json"), None);
+    }
+
+    #[test]
+    fn codex_subagent_threads_are_never_taken_for_the_main_session() {
+        let main = r#"{"type":"session_meta","payload":{"id":"main-1","cwd":"/x","source":"cli"}}"#;
+        assert_eq!(codex_meta(main), Some(("main-1".to_string(), "/x".to_string())));
+        let spawned = r#"{"type":"session_meta","payload":{"id":"child-1","cwd":"/x","source":{"subagent":{"thread_spawn":{"parent_thread_id":"main-1"}}}}}"#;
+        assert_eq!(codex_meta(spawned), None);
     }
 
     #[test]

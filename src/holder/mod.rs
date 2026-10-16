@@ -1,10 +1,12 @@
 pub mod detect;
 pub mod input;
+pub mod nested;
 pub mod oplog;
 pub mod term;
 
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Shutdown, TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -14,6 +16,7 @@ use std::time::Duration;
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 use crate::fsutil;
+use crate::launch;
 use crate::model::{AgentId, AgentKind, ExitInfo, LaunchSpec, RuntimeInfo, StatusReport};
 use crate::paths::Home;
 use crate::protocol::{ClientMsg, HolderMsg, PROTOCOL_VERSION, Snapshot, TermSize, Welcome};
@@ -29,6 +32,11 @@ const EXIT_LINGER: Duration = Duration::from_millis(400);
 const LOG_FLUSH_EVERY_TICKS: u32 = 5;
 
 type Frame = Arc<Vec<u8>>;
+
+struct Watch {
+    root: u32,
+    claude_home: Option<PathBuf>,
+}
 
 struct ClientSlot {
     id: u64,
@@ -287,9 +295,12 @@ pub fn run(home: &Home, id: AgentId) -> io::Result<()> {
         let shared = Arc::clone(&shared);
         move || accept_clients(&shared, listener)
     })?;
+    let watch = child_pid
+        .filter(|_| spec.kind == AgentKind::Terminal)
+        .map(|root| Watch { root, claude_home: launch::claude_home() });
     spawn_named("orkai-ticker", {
         let shared = Arc::clone(&shared);
-        move || tick(&shared)
+        move || tick(&shared, watch.as_ref())
     })?;
 
     let status = child.wait();
@@ -345,13 +356,19 @@ fn pump_output(shared: &Arc<Shared>, mut reader: Box<dyn Read + Send>) {
     }
 }
 
-fn tick(shared: &Arc<Shared>) {
+fn tick(shared: &Arc<Shared>, watch: Option<&Watch>) {
     let mut last: Option<StatusReport> = None;
     let mut ticks: u32 = 0;
     while !shared.finished.load(Ordering::SeqCst) {
         thread::sleep(TICK);
         ticks = ticks.wrapping_add(1);
         let now = now_ms();
+        if let Some(watch) = watch
+            && ticks.is_multiple_of(nested::CHECK_EVERY_TICKS)
+        {
+            let found = nested::detect(&nested::descendants(watch.root), watch.claude_home.as_deref(), now);
+            lock(&shared.term).set_nested(found, now);
+        }
         let (typed, submit) = {
             let mut term = lock(&shared.term);
             term.evaluate(now);

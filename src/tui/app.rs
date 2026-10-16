@@ -13,8 +13,8 @@ use crate::client::{self, Connection};
 use crate::holder::oplog;
 use crate::launch::{self, LaunchMode, Launcher};
 use crate::model::{
-    AgentId, AgentKind, AgentRecord, AgentState, DEFAULT_SESSION, ExitInfo, NewAgent, Session, StatusReport, UiState,
-    validate_agent_name,
+    AgentId, AgentKind, AgentRecord, AgentState, DEFAULT_SESSION, ExitInfo, NestedAgent, NewAgent, Session,
+    StatusReport, UiState, validate_agent_name,
 };
 use crate::paths::{expand_tilde, normalize_for_compare, separator_for, user_home};
 use crate::protocol::{ClientMsg, HolderMsg, TermSize};
@@ -36,6 +36,7 @@ const FRESH_RECORD_MS: u64 = 15_000;
 const SCROLL_STEP: isize = 3;
 const NAME_WORDS: usize = 3;
 const NAME_MAX_LEN: usize = 28;
+pub const SHELL_PREFIX: char = '!';
 
 pub enum AppEvent {
     Input(Event),
@@ -114,6 +115,29 @@ impl AgentEntry {
 
     pub fn is_dead(&self) -> bool {
         matches!(self.link, Link::Exited(_) | Link::Lost)
+    }
+
+    pub fn nested(&self) -> Option<&NestedAgent> {
+        self.status.as_ref().filter(|_| !self.is_dead()).and_then(|s| s.nested.as_ref())
+    }
+
+    pub fn kind(&self) -> AgentKind {
+        self.nested().map_or(self.record.kind, |nested| nested.kind)
+    }
+
+    pub fn subagent_parent(&self) -> Option<Parent> {
+        if !self.kind().is_ai() || self.is_dead() {
+            return None;
+        }
+        let nested = self.nested();
+        Some(Parent {
+            id: self.record.id,
+            kind: self.kind(),
+            conversation_id: nested.map_or(self.record.conversation_id.clone(), |n| n.conversation_id.clone()),
+            cwd: nested.and_then(|n| n.cwd.clone()).unwrap_or_else(|| self.record.cwd.clone()),
+            created_at_ms: nested.map_or(self.record.created_at_ms, |n| n.since_ms),
+            busy: matches!(self.state(), AgentState::Working | AgentState::Paused),
+        })
     }
 }
 
@@ -344,19 +368,7 @@ impl App {
 
     fn request_subagents(&self) {
         let Some(requests) = &self.subagent_requests else { return };
-        let parents = self
-            .agents
-            .values()
-            .filter(|e| e.record.kind.is_ai() && !e.is_dead())
-            .map(|e| Parent {
-                id: e.record.id,
-                kind: e.record.kind,
-                conversation_id: e.record.conversation_id.clone(),
-                cwd: e.record.cwd.clone(),
-                created_at_ms: e.record.created_at_ms,
-                busy: matches!(e.state(), AgentState::Working | AgentState::Paused),
-            })
-            .collect();
+        let parents = self.agents.values().filter_map(AgentEntry::subagent_parent).collect();
         let _ = requests.send(parents);
     }
 
@@ -434,7 +446,7 @@ impl App {
 
     pub fn stats(&self) -> Stats {
         let mut stats = Stats::default();
-        for entry in self.agents.values().filter(|e| e.record.session == self.session && e.record.kind.is_ai()) {
+        for entry in self.agents.values().filter(|e| e.record.session == self.session && e.kind().is_ai()) {
             match entry.state() {
                 AgentState::Exited => continue,
                 AgentState::Working => stats.working += 1,
@@ -931,12 +943,11 @@ impl App {
         (2..).map(|n| format!("{base}-{n}")).find(|candidate| !self.name_taken(candidate)).unwrap_or(base)
     }
 
-    fn launch_task(&mut self, task: String) {
+    fn launch_task(&mut self, kind: AgentKind, task: String) {
         if !self.where_dir.is_dir() {
             self.set_notice(Tone::Error, format!("{} is not a directory", self.display(&self.where_dir)));
             return;
         }
-        let kind = self.who;
         let name = self.default_name(kind, &task);
         let draft =
             NewAgent { session: self.session.clone(), name: name.clone(), kind, cwd: self.where_dir.clone(), task };
@@ -1442,7 +1453,14 @@ impl App {
             self.run_command(&text);
             return;
         }
-        self.launch_task(text);
+        if let Some(command) = text.strip_prefix(SHELL_PREFIX) {
+            match command.trim() {
+                "" => self.set_notice(Tone::Error, "type a command after ! to run it in a new terminal"),
+                command => self.launch_task(AgentKind::Terminal, command.to_string()),
+            }
+            return;
+        }
+        self.launch_task(self.who, text);
     }
 
     pub fn run_command(&mut self, line: &str) {
@@ -1520,7 +1538,7 @@ impl App {
             other => {
                 self.skills.refresh(self.who, &self.where_dir);
                 if self.skills.contains(self.who, other) {
-                    self.launch_task(skills::invocation(self.who, line));
+                    self.launch_task(self.who, skills::invocation(self.who, line));
                 } else {
                     self.set_notice(Tone::Error, format!("unknown command /{other} — try /help"));
                 }

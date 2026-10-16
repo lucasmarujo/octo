@@ -5,10 +5,11 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 use orkai::client::{self, Connection};
+use orkai::holder::nested::{descendants, program_name};
 use orkai::holder::oplog;
-use orkai::launch::{spawn_holder, wait_for_runtime};
-use orkai::model::{AgentId, AgentKind, LaunchSpec, NewAgent, RuntimeInfo};
-use orkai::paths::Home;
+use orkai::launch::{HOLDER_COMMAND, spawn_holder, wait_for_runtime};
+use orkai::model::{AgentId, AgentKind, LaunchSpec, NestedAgent, NewAgent, RuntimeInfo};
+use orkai::paths::{HOME_ENV, Home};
 use orkai::protocol::{ClientMsg, HolderMsg, PROTOCOL_VERSION, TermSize};
 use orkai::store::Store;
 use orkai::util::now_ms;
@@ -243,5 +244,92 @@ fn failing_program_records_error() {
             let exit = fx.store.read_exit(record.id).unwrap().unwrap();
             assert_ne!(exit.code, Some(0));
         }
+    }
+}
+
+fn wait_for_nested(rx: &Receiver<Option<HolderMsg>>, mut matches: impl FnMut(Option<&NestedAgent>) -> bool) {
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        assert!(!remaining.is_zero(), "the holder never reported the expected nested agent");
+        match rx.recv_timeout(remaining) {
+            Ok(Some(HolderMsg::Status(status))) if matches(status.nested.as_ref()) => return,
+            Ok(None) => panic!("holder disconnected while waiting for a nested agent"),
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn a_terminal_reports_the_claude_session_started_inside_it() {
+    let fx = fixture("nested");
+    let claude_home = fx.dir.join("claude-home");
+    std::fs::create_dir_all(claude_home.join("sessions")).unwrap();
+    let cwd = fx.dir.join("work");
+    let (command, program) = if cfg!(windows) { ("ping -n 120 127.0.0.1", "ping") } else { ("sleep 120", "sleep") };
+    let record = fx
+        .store
+        .create_agent(NewAgent {
+            session: "default".into(),
+            name: "nested".into(),
+            kind: AgentKind::Terminal,
+            cwd: cwd.clone(),
+            task: command.into(),
+        })
+        .unwrap();
+    let (shell, args) = shell();
+    let spec = LaunchSpec {
+        kind: AgentKind::Terminal,
+        program: shell,
+        args,
+        cwd: cwd.clone(),
+        env: Vec::new(),
+        env_remove: Vec::new(),
+        initial_input: Some(command.into()),
+        rows: 24,
+        cols: 100,
+    };
+    fx.store.write_launch(record.id, &spec).unwrap();
+    let mut holder = std::process::Command::new(env!("CARGO_BIN_EXE_orkai"))
+        .arg(HOLDER_COMMAND)
+        .arg(record.id.to_string())
+        .env(HOME_ENV, fx.store.home().root())
+        .env("CLAUDE_CONFIG_DIR", &claude_home)
+        .current_dir(fx.store.home().root())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let runtime = wait_for_runtime(&fx.store, record.id, TIMEOUT).unwrap();
+    let (conn, rx) = open(&runtime);
+    let shell_pid = runtime.child_pid.expect("the holder must report the shell pid");
+
+    let mut child = None;
+    wait_until(|| {
+        child = descendants(shell_pid).into_iter().find(|p| program_name(&p.name) == program).map(|p| p.pid);
+        child.is_some()
+    });
+    let pid = child.unwrap();
+    let session = "5bd0ccb0-0d09-47ca-9524-6eb740341fa9";
+    let file = claude_home.join("sessions").join(format!("{pid}.json"));
+    let json = serde_json::json!({"pid": pid, "sessionId": session, "cwd": cwd, "kind": "interactive"});
+    std::fs::write(&file, json.to_string()).unwrap();
+    wait_for_nested(&rx, |nested| {
+        nested.is_some_and(|n| {
+            n.kind == AgentKind::Claude && n.pid == pid && n.conversation_id.as_deref() == Some(session)
+        })
+    });
+
+    std::fs::remove_file(&file).unwrap();
+    wait_for_nested(&rx, |nested| nested.is_none());
+
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
+    let _ = holder.wait();
+    if cfg!(unix) {
+        let _ = std::process::Command::new("kill").arg(pid.to_string()).status();
+    } else {
+        let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
     }
 }

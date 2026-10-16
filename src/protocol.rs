@@ -193,7 +193,7 @@ impl HolderMsg {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::AgentState;
+    use crate::model::{AgentKind, AgentState, NestedAgent};
 
     fn round_trip_client(msg: ClientMsg) {
         let frame = msg.to_frame();
@@ -237,6 +237,13 @@ mod tests {
             rows: 24,
             cols: 80,
             exit: None,
+            nested: Some(NestedAgent {
+                kind: AgentKind::Claude,
+                pid: 4242,
+                conversation_id: Some("5bd0ccb0-0d09-47ca-9524-6eb740341fa9".into()),
+                cwd: Some("/work/app".into()),
+                since_ms: 3,
+            }),
         }));
         round_trip_holder(HolderMsg::Snapshot(Snapshot {
             size: TermSize { rows: 3, cols: 4 },
