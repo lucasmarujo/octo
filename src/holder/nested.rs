@@ -321,10 +321,18 @@ mod tests {
         .unwrap();
         let pid = child.id();
         let expected = if cfg!(windows) { "ping" } else { "sleep" };
-        let found = descendants(std::process::id());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let entry = loop {
+            let entry = descendants(std::process::id()).into_iter().find(|p| p.pid == pid);
+            let started = entry.as_ref().is_some_and(|p| program_name(&p.name) == expected);
+            if started || std::time::Instant::now() >= deadline {
+                break entry;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
         let _ = child.kill();
         let _ = child.wait();
-        let entry = found.iter().find(|p| p.pid == pid).unwrap_or_else(|| panic!("{pid} not in {found:?}"));
+        let entry = entry.unwrap_or_else(|| panic!("{pid} is not a descendant"));
         assert_eq!(program_name(&entry.name), expected);
     }
 }

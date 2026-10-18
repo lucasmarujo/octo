@@ -109,20 +109,10 @@ fn free_branch(repo: &Path, name: &str) -> io::Result<String> {
     Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("every branch name like {base} is taken")))
 }
 
-fn child_components(root: &Path, dir: &Path) -> Option<PathBuf> {
-    let root_text = normalize_for_compare(root);
-    let dir_text = normalize_for_compare(dir);
-    let inside = dir_text == root_text || dir_text.starts_with(&format!("{}/", root_text.trim_end_matches('/')));
-    inside.then(|| dir.components().skip(root.components().count()).collect())
-}
-
-fn relative_dir(root: &Path, dir: &Path) -> Option<PathBuf> {
-    child_components(root, dir).or_else(|| child_components(root, &dir.canonicalize().ok()?))
-}
-
 pub fn create(home: &Home, id: AgentId, name: &str, source: &Path) -> io::Result<(Worktree, PathBuf)> {
     let toplevel = run(source, &["rev-parse", "--show-toplevel"])
         .map_err(|_| invalid(format!("{} is not inside a git repository", source.display())))?;
+    let prefix = run(source, &["rev-parse", "--show-prefix"])?;
     let repo = native(&toplevel);
     let base = run(&repo, &["rev-parse", "--verify", "HEAD^{commit}"])
         .map_err(|_| invalid("the repository has no commits yet; commit once before starting agents in worktrees"))?;
@@ -133,8 +123,8 @@ pub fn create(home: &Home, id: AgentId, name: &str, source: &Path) -> io::Result
         return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("{} already exists", path.display())));
     }
     run(&repo, &["worktree", "add", "-b", &branch, &path.to_string_lossy(), &base])?;
-    let cwd = relative_dir(&repo, source).map(|relative| path.join(relative)).filter(|dir| dir.is_dir());
-    let cwd = cwd.unwrap_or_else(|| path.clone());
+    let relative: PathBuf = prefix.split('/').filter(|part| !part.is_empty()).collect();
+    let cwd = Some(path.join(relative)).filter(|dir| dir.is_dir()).unwrap_or_else(|| path.clone());
     Ok((Worktree { repo, path, branch, base, source: source.to_path_buf() }, cwd))
 }
 
@@ -334,8 +324,16 @@ mod tests {
         assert!(cwd.join("lib.txt").is_file());
         assert_eq!(git_in(&cwd, &["branch", "--show-current"]), "orkai/fix-login");
 
-        let (second, _) = create(&r.home, 8, "Fix Login", &r.repo).unwrap();
+        let (second, root) = create(&r.home, 8, "Fix Login", &r.repo).unwrap();
         assert_eq!(second.branch, "orkai/fix-login-2");
+        assert_eq!(root, second.path);
+        let nested = r.repo.join("app").join("deep");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("keep.txt"), "x\n").unwrap();
+        git_in(&r.repo, &["add", "."]);
+        git_in(&r.repo, &["commit", "-q", "-m", "deep"]);
+        let (_, deep) = create(&r.home, 9, "Deep", &nested).unwrap();
+        assert_eq!(deep, r.home.worktree_dir(9).join("app").join("deep"));
         assert_eq!(changes(&worktree).unwrap(), Changes::default());
     }
 
