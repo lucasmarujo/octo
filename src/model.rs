@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -87,6 +87,15 @@ impl AgentState {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Worktree {
+    pub repo: PathBuf,
+    pub path: PathBuf,
+    pub branch: String,
+    pub base: String,
+    pub source: PathBuf,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AgentRecord {
     pub id: AgentId,
     pub session: String,
@@ -100,6 +109,14 @@ pub struct AgentRecord {
     pub conversation_id: Option<String>,
     #[serde(default)]
     pub launches: u32,
+    #[serde(default)]
+    pub worktree: Option<Worktree>,
+}
+
+impl AgentRecord {
+    pub fn project_dir(&self) -> &Path {
+        self.worktree.as_ref().map_or(&self.cwd, |worktree| &worktree.source)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -137,6 +154,8 @@ pub struct RuntimeInfo {
     pub started_at_ms: u64,
     pub protocol: u32,
     pub version: String,
+    #[serde(default)]
+    pub exe: Option<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -217,6 +236,8 @@ pub struct UiState {
     pub tabs: Vec<AgentId>,
     #[serde(default)]
     pub session_dirs: BTreeMap<String, PathBuf>,
+    #[serde(default)]
+    pub worktree: bool,
 }
 
 impl Default for UiState {
@@ -227,6 +248,7 @@ impl Default for UiState {
             where_dir: None,
             tabs: Vec::new(),
             session_dirs: BTreeMap::new(),
+            worktree: false,
         }
     }
 }
@@ -323,6 +345,27 @@ mod tests {
         status.nested =
             Some(NestedAgent { kind: AgentKind::Codex, pid: 42, conversation_id: None, cwd: None, since_ms: 5 });
         assert_eq!(status.running_kind(AgentKind::Terminal), AgentKind::Codex);
+    }
+
+    #[test]
+    fn agents_in_a_worktree_belong_to_the_folder_they_were_started_from() {
+        let mut record: AgentRecord = serde_json::from_str(
+            r#"{"id":1,"session":"s","name":"n","kind":"claude","cwd":"/repo/app","created_at_ms":1}"#,
+        )
+        .unwrap();
+        assert_eq!(record.worktree, None);
+        assert_eq!(record.project_dir(), Path::new("/repo/app"));
+        record.cwd = PathBuf::from("/orkai/worktrees/1/app");
+        record.worktree = Some(Worktree {
+            repo: PathBuf::from("/repo"),
+            path: PathBuf::from("/orkai/worktrees/1"),
+            branch: "orkai/n".into(),
+            base: "abc".into(),
+            source: PathBuf::from("/repo/app"),
+        });
+        assert_eq!(record.project_dir(), Path::new("/repo/app"));
+        let saved = serde_json::to_string(&record).unwrap();
+        assert_eq!(serde_json::from_str::<AgentRecord>(&saved).unwrap(), record);
     }
 
     #[test]

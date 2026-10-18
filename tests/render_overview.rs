@@ -13,14 +13,18 @@ use ratatui::style::{Color, Modifier};
 
 use orkai::config::Config;
 use orkai::launch::Launcher;
-use orkai::model::{AgentKind, AgentRecord, AgentState, ExitInfo, NestedAgent, NewAgent, StatusReport};
+use orkai::model::{
+    AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, NestedAgent, NewAgent, StatusReport, Worktree,
+};
 use orkai::paths::Home;
+use orkai::protocol::HolderMsg;
 use orkai::store::Store;
 use orkai::subagents::Subagent;
 use orkai::tui::app::{App, AppEvent, Confirm, Link, Prompt};
 use orkai::tui::{render, theme};
 use orkai::usage::{Limits, Problem, Usage, Window};
 use orkai::util::now_ms;
+use orkai::worktree::Changes;
 
 const WIDTH: u16 = 150;
 const HEIGHT: u16 = 40;
@@ -745,4 +749,337 @@ fn terminals_running_an_agent_are_shown_counted_and_watched_as_that_agent() {
     assert_eq!(scenario.app.stats().agents, 8);
     let screen = text(&render(&mut scenario.app));
     assert!(line_with(&screen, "localhost-server").1.contains("terminal"), "{screen}");
+}
+
+fn agent_named(app: &App, name: &str) -> AgentId {
+    app.agents.values().find(|e| e.record.name == name).unwrap().record.id
+}
+
+fn push_state(app: &mut App, id: AgentId, state: AgentState) {
+    let mut status = app.agents[&id].status.clone().unwrap();
+    status.state = state;
+    status.state_since_ms = now_ms();
+    app.handle(AppEvent::Holder { id, generation: 0, msg: Some(HolderMsg::Status(status)) });
+}
+
+#[test]
+fn agents_that_need_you_raise_one_alert_and_show_in_the_window_title() {
+    let mut scenario = scenario();
+    let app = &mut scenario.app;
+    assert_eq!(app.window_title(), "‖1 ✔3 · Orkai");
+    assert!(app.take_alerts().is_empty());
+
+    let working = agent_named(app, "physics-merge");
+    push_state(app, working, AgentState::Paused);
+    let alerts = app.take_alerts();
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0].id, working);
+    assert_eq!(alerts[0].state, AgentState::Paused);
+    assert_eq!(alerts[0].kind, AgentKind::Claude);
+    assert_eq!(alerts[0].activity, "Merging the new physics engine");
+    assert_eq!(alerts[0].message(), "physics-merge is waiting for you");
+    assert_eq!(app.notice.as_ref().unwrap().text, "physics-merge is waiting for you · alt+n opens it");
+    assert_eq!(app.window_title(), "‖2 ✔3 · Orkai");
+
+    push_state(app, working, AgentState::Working);
+    push_state(app, working, AgentState::Paused);
+    assert!(app.take_alerts().is_empty(), "a flicker back into the same state must not ring again");
+
+    push_state(app, working, AgentState::Done);
+    let alerts = app.take_alerts();
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0].message(), "physics-merge finished");
+    assert_eq!(app.notice.as_ref().unwrap().text, "physics-merge finished · alt+n opens it");
+
+    let viewed = agent_named(app, "docker-install");
+    app.view = orkai::tui::app::View::Agent(viewed);
+    push_state(app, viewed, AgentState::Done);
+    assert!(app.take_alerts().is_empty(), "the agent on screen must not ring");
+
+    let fresh = agent_named(app, "container-ssh-access");
+    let mut status = app.agents.get_mut(&fresh).unwrap().status.take().unwrap();
+    status.state = AgentState::Paused;
+    app.handle(AppEvent::Holder { id: fresh, generation: 0, msg: Some(HolderMsg::Status(status)) });
+    assert!(app.take_alerts().is_empty(), "the first status after connecting is not a change");
+
+    let terminal = agent_named(app, "term-3");
+    push_state(app, terminal, AgentState::Idle);
+    assert!(app.take_alerts().is_empty());
+
+    for entry in app.agents.values_mut() {
+        if let Some(status) = entry.status.as_mut() {
+            status.state = AgentState::Idle;
+        }
+    }
+    assert_eq!(app.window_title(), "Orkai");
+}
+
+#[test]
+fn alt_n_opens_the_longest_waiting_agent_first_then_the_next_from_anywhere() {
+    let mut scenario = scenario();
+    let app = &mut scenario.app;
+    let paused = agent_named(app, "sidebar-sessions");
+    let oldest_done = agent_named(app, "folder-icon-update");
+    let help = text(&{
+        app.show_help = true;
+        let buffer = render(app);
+        app.show_help = false;
+        buffer
+    });
+    assert!(help.contains("alt+n") && help.contains("next agent waiting for you"), "{help}");
+
+    press(app, KeyCode::Char('n'), KeyModifiers::ALT);
+    assert_eq!(app.view, orkai::tui::app::View::Agent(paused));
+    assert!(app.task.is_empty());
+    let status = text(&render(app)).lines().last().unwrap().to_string();
+    assert!(status.contains("‖ 3 need you · alt+n · ctrl+] overview"), "{status}");
+
+    press(app, KeyCode::Char('n'), KeyModifiers::ALT);
+    assert_eq!(app.view, orkai::tui::app::View::Agent(oldest_done));
+    assert_eq!(app.tabs, vec![paused, oldest_done]);
+
+    press(app, KeyCode::Char(']'), KeyModifiers::CONTROL);
+    for entry in app.agents.values_mut() {
+        if let Some(status) = entry.status.as_mut() {
+            status.state = AgentState::Idle;
+        }
+    }
+    press(app, KeyCode::Char('n'), KeyModifiers::ALT);
+    assert_eq!(app.view, orkai::tui::app::View::Overview);
+    assert_eq!(app.notice.as_ref().unwrap().text, "no agent is waiting for you");
+    let status = {
+        app.view = orkai::tui::app::View::Agent(paused);
+        let line = text(&render(app)).lines().last().unwrap().to_string();
+        app.view = orkai::tui::app::View::Overview;
+        line
+    };
+    assert!(!status.contains("need you"), "{status}");
+
+    let elsewhere = agent_named(app, "localhost-server");
+    {
+        let entry = app.agents.get_mut(&paused).unwrap();
+        entry.record.session = "session-2".into();
+        entry.status.as_mut().unwrap().state = AgentState::Paused;
+    }
+    assert_ne!(elsewhere, paused);
+    press(app, KeyCode::Char('n'), KeyModifiers::ALT);
+    assert_eq!(app.session, "session-2");
+    assert_eq!(app.view, orkai::tui::app::View::Agent(paused));
+}
+
+fn git(dir: &std::path::Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
+    assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn git_repo(dir: &std::path::Path) -> PathBuf {
+    let repo = dir.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "orkai@example.com"]);
+    git(&repo, &["config", "user.name", "orkai"]);
+    git(&repo, &["config", "core.autocrlf", "false"]);
+    std::fs::write(repo.join("readme.txt"), "hello\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "init"]);
+    repo
+}
+
+fn next_event(scenario: &Scenario, matches: impl Fn(&AppEvent) -> bool) -> AppEvent {
+    loop {
+        let event = scenario.events.recv_timeout(Duration::from_secs(30)).unwrap();
+        if matches(&event) {
+            return event;
+        }
+    }
+}
+
+fn put_in_worktree(scenario: &mut Scenario, name: &str) -> (AgentId, Worktree) {
+    let repo = git_repo(&scenario.dir);
+    let id = agent_named(&scenario.app, name);
+    let home = scenario.app.launcher.store().home().clone();
+    let (worktree, cwd) = orkai::worktree::create(&home, id, name, &repo).unwrap();
+    let entry = scenario.app.agents.get_mut(&id).unwrap();
+    entry.record.cwd = cwd;
+    entry.record.worktree = Some(worktree.clone());
+    scenario.app.launcher.store().save_agent(&entry.record).unwrap();
+    (id, worktree)
+}
+
+#[test]
+fn the_worktree_switch_is_shown_clickable_and_remembered() {
+    let mut scenario = scenario();
+    let app = &mut scenario.app;
+    let footer = |app: &mut App| text(&render(app)).lines().nth(HEIGHT as usize - 2).unwrap().to_string();
+    assert!(footer(app).contains("who claude   worktree off   where"), "{}", footer(app));
+
+    press(app, KeyCode::Char('t'), KeyModifiers::CONTROL);
+    assert!(app.worktree);
+    assert!(footer(app).contains("worktree on"));
+    assert!(app.notice.as_ref().unwrap().text.contains("own git worktree"));
+    assert!(app.launcher.store().load_ui().worktree);
+
+    let line = footer(app);
+    let click = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: column_of(&line, "worktree"),
+        row: HEIGHT - 2,
+        modifiers: KeyModifiers::NONE,
+    };
+    app.handle(AppEvent::Input(Event::Mouse(click)));
+    assert!(!app.worktree);
+    app.run_command("/worktree on");
+    assert!(app.worktree);
+    app.run_command("/worktree off");
+    assert!(!app.worktree);
+    app.run_command("/worktree maybe");
+    assert_eq!(app.notice.as_ref().unwrap().text, "usage: /worktree [on|off]");
+    app.run_command("/wt");
+    assert!(app.worktree);
+}
+
+#[test]
+fn agents_in_a_worktree_show_their_branch_and_changes_under_their_project() {
+    let mut scenario = scenario();
+    let (id, worktree) = put_in_worktree(&mut scenario, "physics-merge");
+    let labels: Vec<String> = scenario.app.groups().into_iter().map(|g| g.label).collect();
+    assert!(labels.iter().any(|l| l.ends_with("/repo")), "{labels:?}");
+    assert!(!labels.iter().any(|l| l.contains("worktrees")), "{labels:?}");
+
+    let screen = text(&render(&mut scenario.app));
+    assert!(line_with(&screen, "physics-merge").1.contains("claude   ⎇ …  Merging"), "{screen}");
+
+    let changes = Changes { files: 4, insertions: 12, deletions: 3 };
+    scenario.app.handle(AppEvent::Changes(BTreeMap::from([(id, changes)])));
+    let buffer = render(&mut scenario.app);
+    let screen = text(&buffer);
+    let (row, line) = line_with(&screen, "physics-merge");
+    assert!(line.contains("⎇ 4 files +12 −3  Merging the new physics engine"), "{line}");
+    let y = u16::try_from(row).unwrap();
+    assert_eq!(buffer[(column_of(line, "+12"), y)].fg, theme::GREEN);
+    assert_eq!(buffer[(column_of(line, "−3"), y)].fg, theme::RED);
+
+    scenario.app.handle(AppEvent::Changes(BTreeMap::from([(id, Changes::default())])));
+    assert!(line_with(&text(&render(&mut scenario.app)), "physics-merge").1.contains("⎇ clean"));
+
+    scenario.app.view = orkai::tui::app::View::Agent(id);
+    let status = text(&render(&mut scenario.app)).lines().last().unwrap().to_string();
+    assert!(status.contains(&format!("⎇ {}", worktree.branch)), "{status}");
+}
+
+#[test]
+fn diff_shows_the_worktree_changes_and_closes_with_esc() {
+    let mut scenario = scenario();
+    scenario.app.run_command("/diff");
+    assert_eq!(scenario.app.notice.as_ref().unwrap().text, "the selected agent does not run in its own worktree");
+
+    let (id, worktree) = put_in_worktree(&mut scenario, "physics-merge");
+    std::fs::write(worktree.path.join("readme.txt"), "hello\nworld\n").unwrap();
+    std::fs::write(worktree.path.join("engine.rs"), "fn step() {}\n").unwrap();
+    scenario.app.selected = Some(id);
+    scenario.app.run_command("/diff");
+    let event = next_event(&scenario, |e| matches!(e, AppEvent::Diff { .. }));
+    scenario.app.handle(event);
+    assert!(scenario.app.diff.is_some());
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.contains(&format!("diff physics-merge  ⎇ {} since", worktree.branch)), "{screen}");
+    for expected in ["readme.txt", "+world", "engine.rs", "+fn step() {}", "esc close"] {
+        assert!(screen.contains(expected), "missing {expected:?} in:\n{screen}");
+    }
+    assert!(!screen.contains("Running design update"), "the list is hidden behind the diff:\n{screen}");
+
+    press(&mut scenario.app, KeyCode::PageDown, KeyModifiers::NONE);
+    press(&mut scenario.app, KeyCode::Up, KeyModifiers::NONE);
+    press(&mut scenario.app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(scenario.app.diff.is_none());
+    assert!(text(&render(&mut scenario.app)).contains("Running design update"));
+
+    scenario.app.handle(AppEvent::Diff { id, result: Ok(Vec::new()) });
+    assert!(text(&render(&mut scenario.app)).contains("physics-merge has not changed anything yet"));
+    press(&mut scenario.app, KeyCode::Char('q'), KeyModifiers::NONE);
+    assert!(scenario.app.diff.is_none());
+    scenario.app.handle(AppEvent::Diff { id, result: Err("boom".into()) });
+    assert_eq!(scenario.app.notice.as_ref().unwrap().text, "could not read the changes: boom");
+}
+
+#[test]
+fn merge_asks_first_waits_for_the_agent_and_brings_the_work_home() {
+    let mut scenario = scenario();
+    let (id, worktree) = put_in_worktree(&mut scenario, "physics-merge");
+    scenario.app.selected = Some(id);
+    scenario.app.run_command("/merge");
+    assert!(scenario.app.prompt.is_none());
+    assert!(scenario.app.notice.as_ref().unwrap().text.contains("wait for physics-merge to finish"));
+
+    push_state(&mut scenario.app, id, AgentState::Done);
+    std::fs::write(worktree.path.join("engine.rs"), "fn step() {}\n").unwrap();
+    let pending = Changes { files: 1, insertions: 1, deletions: 0 };
+    scenario.app.handle(AppEvent::Changes(BTreeMap::from([(id, pending)])));
+    scenario.app.run_command("/merge");
+    assert!(matches!(scenario.app.prompt, Some(Prompt::Confirm(Confirm::Merge(target))) if target == id));
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.contains("merge worktree"), "{screen}");
+    assert!(screen.contains(&format!("merge {} (1 files +1 −0)", worktree.branch)), "{screen}");
+    press(&mut scenario.app, KeyCode::Char('n'), KeyModifiers::NONE);
+    assert!(scenario.app.prompt.is_none());
+
+    scenario.app.run_command("/merge");
+    press(&mut scenario.app, KeyCode::Char('y'), KeyModifiers::NONE);
+    let event = next_event(&scenario, |e| matches!(e, AppEvent::Merged { .. }));
+    scenario.app.handle(event);
+    assert_eq!(scenario.app.notice.as_ref().unwrap().text, format!("{} merged into main", worktree.branch));
+    assert_eq!(std::fs::read_to_string(worktree.repo.join("engine.rs")).unwrap(), "fn step() {}\n");
+    let saved = scenario.app.launcher.store().load_agent(id).unwrap().worktree.unwrap();
+    assert_eq!(saved.base, git(&worktree.path, &["rev-parse", "HEAD"]));
+    assert_eq!(scenario.app.agents[&id].changes, Some(Changes::default()));
+
+    scenario.app.handle(AppEvent::Merged { id, result: Err("1 file(s) conflict with main".into()) });
+    assert_eq!(scenario.app.notice.as_ref().unwrap().text, "merge failed: 1 file(s) conflict with main");
+}
+
+#[test]
+fn deleting_an_agent_in_a_worktree_deletes_its_worktree_and_branch() {
+    let mut scenario = scenario();
+    let (id, worktree) = put_in_worktree(&mut scenario, "folder-icon-update");
+    scenario.app.agents.get_mut(&id).unwrap().link =
+        Link::Exited(ExitInfo { code: Some(0), error: None, at_ms: now_ms() });
+    scenario.app.selected = Some(id);
+    press(&mut scenario.app, KeyCode::Delete, KeyModifiers::NONE);
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.contains(&format!("worktree and branch {} go too", worktree.branch)), "{screen}");
+    press(&mut scenario.app, KeyCode::Char('y'), KeyModifiers::NONE);
+    assert!(!scenario.app.agents.contains_key(&id));
+    let event = next_event(&scenario, |e| matches!(e, AppEvent::Discarded { .. }));
+    scenario.app.handle(event);
+    assert_eq!(scenario.app.notice.as_ref().unwrap().text, "folder-icon-update removed with its worktree and branch");
+    assert!(!worktree.path.exists());
+    assert!(git(&worktree.repo, &["branch", "--list", &worktree.branch]).is_empty());
+}
+
+#[test]
+fn a_failed_launch_in_a_new_worktree_leaves_nothing_behind() {
+    let mut scenario = scenario();
+    let repo = git_repo(&scenario.dir);
+    scenario.app.where_dir = repo.clone();
+    without_agent_programs(&mut scenario.app);
+    let home = scenario.app.launcher.store().home().clone();
+    scenario.app.run_command("/worktree on");
+
+    type_text(&mut scenario.app, "!git status");
+    press(&mut scenario.app, KeyCode::Enter, KeyModifiers::NONE);
+    let notice = scenario.app.notice.as_ref().unwrap().text.clone();
+    assert_eq!(notice, "starting terminal git-status…", "terminals never get a worktree");
+    let _ = launched(&scenario);
+
+    type_text(&mut scenario.app, "refactor the engine");
+    press(&mut scenario.app, KeyCode::Enter, KeyModifiers::NONE);
+    let notice = scenario.app.notice.as_ref().unwrap().text.clone();
+    assert_eq!(notice, "starting claude refactor-engine in a new worktree…");
+    let error = launched(&scenario).unwrap_err();
+    assert!(error.contains("orkai-missing-claude"), "{error}");
+    let left: Vec<_> = std::fs::read_dir(home.worktrees_dir()).map(|d| d.flatten().collect()).unwrap_or_default();
+    assert!(left.is_empty(), "{left:?}");
+    assert!(git(&repo, &["branch", "--list", "orkai/*"]).is_empty());
+    assert!(!git(&repo, &["worktree", "list"]).contains("worktrees"));
 }

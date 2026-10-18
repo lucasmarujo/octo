@@ -5,6 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 use crate::protocol::TermSize;
 
 pub const CLIENT_SCROLLBACK: usize = 3_000;
+const DOCUMENT_TRUNCATED: &[u8] = b"\x1b[m\r\n(truncated)";
 
 pub struct TermView {
     parser: vt100::Parser,
@@ -24,6 +25,28 @@ impl TermView {
 
     pub fn from_parser(parser: vt100::Parser) -> Self {
         Self { parser, scroll: 0 }
+    }
+
+    pub fn document(size: TermSize, text: &[u8]) -> Self {
+        let limit = CLIENT_SCROLLBACK + usize::from(size.rows).saturating_sub(1);
+        let mut data = b"\x1b[?25l".to_vec();
+        let mut lines = 0;
+        for &byte in text {
+            if byte == b'\n' {
+                lines += 1;
+                if lines >= limit {
+                    data.extend_from_slice(DOCUMENT_TRUNCATED);
+                    break;
+                }
+                data.extend_from_slice(b"\r\n");
+            } else {
+                data.push(byte);
+            }
+        }
+        let mut view = Self::new(size);
+        view.parser.process(&data);
+        view.scroll_by(isize::MAX);
+        view
     }
 
     pub fn process(&mut self, bytes: &[u8]) {
@@ -158,6 +181,34 @@ mod tests {
         assert_eq!(buf[(0, 0)].symbol(), "o");
         view.scroll_to_bottom();
         assert!(!view.is_scrolled());
+    }
+
+    #[test]
+    fn documents_open_at_the_top_without_a_cursor_and_are_bounded() {
+        let mut view = TermView::document(TermSize { rows: 2, cols: 10 }, b"\x1b[32m+one\x1b[m\ntwo\nthree\nfour\n");
+        let area = Rect::new(0, 0, 10, 2);
+        let mut buf = Buffer::empty(area);
+        assert_eq!(view.render(area, &mut buf), None);
+        assert_eq!(buf[(0, 0)].symbol(), "+");
+        assert_eq!(buf[(0, 0)].fg, Color::Indexed(2));
+        assert_eq!(buf[(0, 1)].symbol(), "t");
+        view.scroll_to_bottom();
+        let mut buf = Buffer::empty(area);
+        assert_eq!(view.render(area, &mut buf), None);
+        assert_eq!(buf[(0, 0)].symbol(), "f");
+
+        let long: Vec<u8> = (0..CLIENT_SCROLLBACK + 50).flat_map(|i| format!("line {i}\n").into_bytes()).collect();
+        let mut view = TermView::document(TermSize { rows: 4, cols: 20 }, &long);
+        view.scroll_to_bottom();
+        let mut buf = Buffer::empty(Rect::new(0, 0, 20, 4));
+        view.render(Rect::new(0, 0, 20, 4), &mut buf);
+        let bottom: String = (0..11).map(|x| buf[(x, 3)].symbol().to_string()).collect();
+        assert_eq!(bottom, "(truncated)");
+        view.scroll_by(isize::MAX);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 20, 4));
+        view.render(Rect::new(0, 0, 20, 4), &mut buf);
+        let top: String = (0..6).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+        assert_eq!(top, "line 0");
     }
 
     #[test]

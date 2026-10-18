@@ -1,5 +1,6 @@
 use crate::holder::detect::{self, Detector, Signals, TAIL_ROWS};
 use crate::holder::input::LineTracker;
+use crate::hooks::HookSignal;
 use crate::model::{AgentKind, ExitInfo, NestedAgent, StatusReport};
 use crate::protocol::TermSize;
 use crate::termfmt;
@@ -155,6 +156,16 @@ impl TermState {
         if self.kind == AgentKind::Terminal {
             self.tracker.feed(bytes);
         }
+        if is_answer(bytes) {
+            self.detector.user_answered();
+        }
+    }
+
+    pub fn apply_hook(&mut self, signal: HookSignal, at: u64) -> bool {
+        if self.nested.is_some() || !self.kind.is_ai() {
+            return false;
+        }
+        self.detector.hook(signal, at)
     }
 
     pub fn mark_seen(&mut self) -> bool {
@@ -248,6 +259,10 @@ impl TermState {
     pub fn snapshot(&mut self) -> Vec<u8> {
         termfmt::snapshot(self.parser.screen_mut())
     }
+}
+
+fn is_answer(bytes: &[u8]) -> bool {
+    bytes == [0x1b] || bytes.iter().any(|b| matches!(b, b'\r' | b'\n' | b'1'..=b'9'))
 }
 
 pub fn encode_typed_text(text: &str, bracketed_paste: bool) -> Vec<u8> {
@@ -499,6 +514,48 @@ mod tests {
         assert_eq!(report.state, AgentState::Idle);
         assert_eq!(report.nested.unwrap().since_ms, 300);
         assert_eq!(report.activity, "");
+    }
+
+    #[test]
+    fn hooks_drive_the_state_of_launched_agents_until_the_user_answers() {
+        let mut t = state(AgentKind::Claude);
+        assert!(t.apply_hook(HookSignal::Busy, 100));
+        assert_eq!(t.report(None).state, AgentState::Working);
+        assert!(t.apply_hook(HookSignal::Waiting, 200));
+        t.process(b"Bash command\r\nRun it?\r\n> 1. Yes\r\nEnter to confirm \xc2\xb7 Esc to cancel", 250);
+        t.evaluate(300);
+        assert_eq!(t.report(None).state, AgentState::Paused, "a dialog the screen detector misreads stays paused");
+        t.note_input(b"\x1b[B");
+        t.evaluate(400);
+        assert_eq!(t.report(None).state, AgentState::Paused, "moving through the options is not an answer yet");
+        t.note_input(b"\r");
+        t.process(b"\x1b[2J\x1b[Hrunning tests (esc to interrupt)", 500);
+        t.evaluate(600);
+        assert_eq!(t.report(None).state, AgentState::Working);
+        assert!(t.apply_hook(HookSignal::Finished, 700));
+        let report = t.report(None);
+        assert_eq!((report.state, report.state_since_ms, report.last_turn_ms), (AgentState::Done, 700, Some(600)));
+    }
+
+    #[test]
+    fn hooks_are_ignored_for_terminals_and_programs_started_inside_them() {
+        let mut terminal = state(AgentKind::Terminal);
+        assert!(!terminal.apply_hook(HookSignal::Busy, 100));
+        assert_eq!(terminal.report(None).state, AgentState::Idle);
+        terminal.set_nested(nested(AgentKind::Claude, 9, 50), 50);
+        assert!(!terminal.apply_hook(HookSignal::Waiting, 100));
+        assert_eq!(terminal.report(None).state, AgentState::Idle);
+    }
+
+    #[test]
+    fn answers_are_enter_escape_or_a_choice_number() {
+        assert!(is_answer(b"\r"));
+        assert!(is_answer(b"2"));
+        assert!(is_answer(b"\x1b"));
+        assert!(is_answer(b"\x1b[200~text\n\x1b[201~"));
+        assert!(!is_answer(b"\x1b[A"));
+        assert!(!is_answer(b"y"));
+        assert!(!is_answer(b""));
     }
 
     #[test]

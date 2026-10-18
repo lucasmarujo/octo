@@ -8,7 +8,7 @@ use orkai::launch::Launcher;
 use orkai::model::{AgentId, AgentKind, DEFAULT_SESSION};
 use orkai::paths::Home;
 use orkai::store::Store;
-use orkai::{cli, holder, tui, update};
+use orkai::{cli, holder, hooks, tui, update};
 
 #[derive(Parser)]
 #[command(
@@ -40,6 +40,8 @@ enum Command {
         cwd: Option<PathBuf>,
         #[arg(short, long)]
         name: Option<String>,
+        #[arg(short, long, help = "Run the agent in its own git worktree and branch (orkai/<name>)")]
+        worktree: bool,
         #[arg(trailing_var_arg = true, help = "Task for the agent (or command for terminals)")]
         task: Vec<String>,
     },
@@ -74,6 +76,8 @@ enum Command {
     Update,
     #[command(name = "__holder", hide = true)]
     Holder { id: AgentId },
+    #[command(name = "__hook", hide = true)]
+    Hook { source: String, id: AgentId, payload: Option<String> },
 }
 
 fn launcher(store: Store) -> std::io::Result<Launcher> {
@@ -87,16 +91,20 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
     if let Some(Command::Holder { id }) = command {
         return holder::run(&home, id);
     }
+    if let Some(Command::Hook { source, id, payload }) = command {
+        let _ = hooks::record(&home, id, &source, payload.as_deref());
+        return Ok(());
+    }
     let store = Store::open(home)?;
     match command {
         None => tui::run(launcher(store)?),
         Some(Command::Ls { session }) => cli::list(&store, session.as_deref()),
         Some(Command::Sessions) => cli::sessions(&store),
-        Some(Command::New { kind, session, cwd, name, task }) => {
+        Some(Command::New { kind, session, cwd, name, worktree, task }) => {
             let kind = AgentKind::parse(&kind).ok_or_else(|| {
                 std::io::Error::new(std::io::ErrorKind::InvalidInput, "kind must be claude, codex or terminal")
             })?;
-            cli::new_agent(&launcher(store)?, kind, session, cwd, name, task.join(" "))
+            cli::new_agent(&launcher(store)?, kind, session, cwd, name, task.join(" "), worktree)
         }
         Some(Command::Attach { id }) => cli::attach(&store, id),
         Some(Command::Send { id, no_enter, text }) => cli::send(&store, id, &text.join(" "), !no_enter),
@@ -109,7 +117,7 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
             Ok(())
         }
         Some(Command::Update) => update::update_now(),
-        Some(Command::Holder { .. }) => Ok(()),
+        Some(Command::Holder { .. }) | Some(Command::Hook { .. }) => Ok(()),
     }
 }
 

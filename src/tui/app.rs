@@ -14,8 +14,9 @@ use crate::holder::oplog;
 use crate::launch::{self, LaunchMode, Launcher};
 use crate::model::{
     AgentId, AgentKind, AgentRecord, AgentState, DEFAULT_SESSION, ExitInfo, NestedAgent, NewAgent, Session,
-    StatusReport, UiState, validate_agent_name,
+    StatusReport, UiState, Worktree, validate_agent_name,
 };
+use crate::notify::Alert;
 use crate::paths::{expand_tilde, normalize_for_compare, separator_for, user_home};
 use crate::protocol::{ClientMsg, HolderMsg, TermSize};
 use crate::skills;
@@ -29,6 +30,7 @@ use crate::tui::view::TermView;
 use crate::update;
 use crate::usage::{self, Limits, Problem, Usage};
 use crate::util::now_ms;
+use crate::worktree::{self, ChangeWatcher, Changes, Merged};
 
 const RESCAN_EVERY: Duration = Duration::from_secs(2);
 const START_WAIT: Duration = Duration::from_secs(15);
@@ -36,6 +38,8 @@ const FRESH_RECORD_MS: u64 = 15_000;
 const SCROLL_STEP: isize = 3;
 const NAME_WORDS: usize = 3;
 const NAME_MAX_LEN: usize = 28;
+const ALERT_REPEAT_MS: u64 = 15_000;
+const MERGE_SUBJECT_MAX: usize = 60;
 pub const SHELL_PREFIX: char = '!';
 
 pub enum AppEvent {
@@ -48,6 +52,10 @@ pub enum AppEvent {
     Replayed { id: AgentId, parser: Option<Box<vt100::Parser>> },
     Subagents(BTreeMap<AgentId, Vec<Subagent>>),
     Usage { kind: AgentKind, result: Result<Limits, Problem> },
+    Changes(BTreeMap<AgentId, Changes>),
+    Diff { id: AgentId, result: Result<Vec<u8>, String> },
+    Merged { id: AgentId, result: Result<Merged, String> },
+    Discarded { name: String, result: Result<(), String> },
 }
 
 pub enum Link {
@@ -64,7 +72,9 @@ pub struct AgentEntry {
     pub term: Option<TermView>,
     pub attached: bool,
     pub subagents: Vec<Subagent>,
+    pub changes: Option<Changes>,
     failed_runtime: Option<u64>,
+    last_alert: Option<(AgentState, u64)>,
 }
 
 impl AgentEntry {
@@ -76,7 +86,9 @@ impl AgentEntry {
             term: None,
             attached: false,
             subagents: Vec::new(),
+            changes: None,
             failed_runtime: None,
+            last_alert: None,
         }
     }
 
@@ -125,6 +137,27 @@ impl AgentEntry {
         self.nested().map_or(self.record.kind, |nested| nested.kind)
     }
 
+    fn alert(&mut self, state: AgentState, now: u64) -> Option<Alert> {
+        if !self.kind().is_ai() {
+            return None;
+        }
+        let repeated =
+            self.last_alert.is_some_and(|(last, at)| last == state && now.saturating_sub(at) < ALERT_REPEAT_MS);
+        if repeated {
+            return None;
+        }
+        self.last_alert = Some((state, now));
+        Some(Alert {
+            id: self.record.id,
+            name: self.record.name.clone(),
+            kind: self.kind(),
+            state,
+            session: self.record.session.clone(),
+            cwd: self.record.cwd.clone(),
+            activity: self.status.as_ref().map(|s| s.activity.clone()).unwrap_or_default(),
+        })
+    }
+
     pub fn subagent_parent(&self) -> Option<Parent> {
         if !self.kind().is_ai() || self.is_dead() {
             return None;
@@ -161,12 +194,19 @@ pub enum Confirm {
     Delete(AgentId),
     DeleteSession(String),
     Recover(Vec<AgentId>),
+    Merge(AgentId),
 }
 
 impl Confirm {
     pub fn is_popup(&self) -> bool {
-        matches!(self, Confirm::Kill(_) | Confirm::Remove(_) | Confirm::Delete(_))
+        matches!(self, Confirm::Kill(_) | Confirm::Remove(_) | Confirm::Delete(_) | Confirm::Merge(_))
     }
+}
+
+pub struct DiffPane {
+    pub id: AgentId,
+    pub view: TermView,
+    pub empty: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,9 +232,22 @@ pub enum Hit {
     Overview,
     Who,
     Where,
+    Worktree,
     Recover,
     Project(PathBuf),
     Terminal,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Attention {
+    pub waiting: usize,
+    pub done: usize,
+}
+
+impl Attention {
+    pub fn total(&self) -> usize {
+        self.waiting + self.done
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -237,6 +290,8 @@ pub struct App {
     pub should_quit: bool,
     pub launching: usize,
     pub usage: BTreeMap<AgentKind, Usage>,
+    pub worktree: bool,
+    pub diff: Option<DiffPane>,
     dirty: bool,
     next_generation: u64,
     last_rescan: Instant,
@@ -245,6 +300,8 @@ pub struct App {
     session_dirs: BTreeMap<String, PathBuf>,
     removing: HashSet<AgentId>,
     subagent_requests: Option<Sender<Vec<Parent>>>,
+    change_requests: Option<Sender<Vec<(AgentId, Worktree)>>>,
+    alerts: Vec<Alert>,
 }
 
 impl App {
@@ -295,6 +352,8 @@ impl App {
             should_quit: false,
             launching: 0,
             usage: BTreeMap::new(),
+            worktree: ui.worktree,
+            diff: None,
             dirty: true,
             next_generation: 1,
             last_rescan: Instant::now(),
@@ -303,6 +362,8 @@ impl App {
             session_dirs: ui.session_dirs,
             removing: HashSet::new(),
             subagent_requests: None,
+            change_requests: None,
+            alerts: Vec::new(),
         };
         app.ensure_selection();
         Ok(app)
@@ -315,6 +376,8 @@ impl App {
         }
         self.spawn_subagent_watcher();
         self.request_subagents();
+        self.spawn_change_watcher();
+        self.request_changes();
         self.spawn_usage_watchers();
         if let Ok(commit) = std::env::var(update::UPDATED_ENV) {
             self.set_notice(Tone::Success, format!("orkai updated to {}", update::short_commit(&commit)));
@@ -344,6 +407,50 @@ impl App {
         });
         if spawned.is_ok() {
             self.subagent_requests = Some(requests);
+        }
+    }
+
+    fn spawn_change_watcher(&mut self) {
+        let (requests, rx) = mpsc::channel::<Vec<(AgentId, Worktree)>>();
+        let tx = self.tx.clone();
+        let spawned = thread::Builder::new().name("orkai-worktrees".into()).spawn(move || {
+            let mut watcher = ChangeWatcher::default();
+            while let Ok(mut targets) = rx.recv() {
+                while let Ok(latest) = rx.try_recv() {
+                    targets = latest;
+                }
+                let found = watcher.scan(&targets, now_ms());
+                if !found.is_empty() && tx.send(AppEvent::Changes(found)).is_err() {
+                    return;
+                }
+            }
+        });
+        if spawned.is_ok() {
+            self.change_requests = Some(requests);
+        }
+    }
+
+    fn request_changes(&self) {
+        let Some(requests) = &self.change_requests else { return };
+        let targets: Vec<(AgentId, Worktree)> = self
+            .agents
+            .values()
+            .filter(|e| e.record.session == self.session)
+            .filter_map(|e| e.record.worktree.clone().map(|worktree| (e.record.id, worktree)))
+            .collect();
+        if !targets.is_empty() {
+            let _ = requests.send(targets);
+        }
+    }
+
+    fn on_changes(&mut self, found: BTreeMap<AgentId, Changes>) {
+        for (id, changes) in found {
+            if let Some(entry) = self.agents.get_mut(&id)
+                && entry.changes != Some(changes)
+            {
+                entry.changes = Some(changes);
+                self.dirty = true;
+            }
         }
     }
 
@@ -411,6 +518,7 @@ impl App {
             where_dir: Some(self.where_dir.clone()),
             tabs: self.tabs.clone(),
             session_dirs: self.session_dirs.clone(),
+            worktree: self.worktree,
         };
         let _ = self.launcher.store().save_ui(&state);
     }
@@ -427,12 +535,13 @@ impl App {
     pub fn groups(&self) -> Vec<Group> {
         let mut groups: Vec<Group> = Vec::new();
         for entry in self.agents.values().filter(|e| e.record.session == self.session) {
-            let key = normalize_for_compare(&entry.record.cwd);
+            let project = entry.record.project_dir();
+            let key = normalize_for_compare(project);
             match groups.iter_mut().find(|g| normalize_for_compare(&g.cwd) == key) {
                 Some(group) => group.ids.push(entry.record.id),
                 None => groups.push(Group {
-                    label: project_label(&entry.record.cwd),
-                    cwd: entry.record.cwd.clone(),
+                    label: project_label(project),
+                    cwd: project.to_path_buf(),
                     ids: vec![entry.record.id],
                 }),
             }
@@ -457,6 +566,51 @@ impl App {
             stats.agents += 1;
         }
         stats
+    }
+
+    pub fn waiting_for_you(&self) -> Vec<AgentId> {
+        let mut waiting: Vec<(bool, u64, AgentId)> = self
+            .agents
+            .values()
+            .filter(|e| e.kind().is_ai() && matches!(e.state(), AgentState::Paused | AgentState::Done))
+            .map(|e| {
+                let since = e.status.as_ref().map_or(0, |s| s.state_since_ms);
+                (e.state() != AgentState::Paused, since, e.record.id)
+            })
+            .collect();
+        waiting.sort_unstable();
+        waiting.into_iter().map(|(_, _, id)| id).collect()
+    }
+
+    pub fn attention(&self, except: Option<AgentId>) -> Attention {
+        let mut attention = Attention::default();
+        for id in self.waiting_for_you().into_iter().filter(|id| Some(*id) != except) {
+            match self.agents[&id].state() {
+                AgentState::Paused => attention.waiting += 1,
+                _ => attention.done += 1,
+            }
+        }
+        attention
+    }
+
+    pub fn window_title(&self) -> String {
+        let attention = self.attention(None);
+        let mut parts = Vec::new();
+        if attention.waiting > 0 {
+            parts.push(format!("‖{}", attention.waiting));
+        }
+        if attention.done > 0 {
+            parts.push(format!("✔{}", attention.done));
+        }
+        if parts.is_empty() {
+            crate::tui::WINDOW_TITLE.to_string()
+        } else {
+            format!("{} · {}", parts.join(" "), crate::tui::WINDOW_TITLE)
+        }
+    }
+
+    pub fn take_alerts(&mut self) -> Vec<Alert> {
+        std::mem::take(&mut self.alerts)
     }
 
     pub fn session_count(&self, name: &str) -> usize {
@@ -558,6 +712,13 @@ impl App {
             AppEvent::Restarted { id, result } => self.on_restarted(id, result),
             AppEvent::Subagents(found) => self.on_subagents(found),
             AppEvent::Usage { kind, result } => self.on_usage(kind, result),
+            AppEvent::Changes(found) => self.on_changes(found),
+            AppEvent::Diff { id, result } => self.on_diff(id, result),
+            AppEvent::Merged { id, result } => self.on_merged(id, result),
+            AppEvent::Discarded { name, result } => match result {
+                Ok(()) => self.set_notice(Tone::Info, format!("{name} removed with its worktree and branch")),
+                Err(err) => self.set_notice(Tone::Error, format!("could not delete the worktree of {name}: {err}")),
+            },
             AppEvent::Replayed { id, parser } => {
                 if let Some(entry) = self.agents.get_mut(&id)
                     && entry.is_dead()
@@ -652,11 +813,15 @@ impl App {
         }
         self.ensure_selection();
         self.request_subagents();
+        self.request_changes();
     }
 
     fn forget(&mut self, id: AgentId) {
         if self.view == View::Agent(id) {
             self.view = View::Overview;
+        }
+        if self.diff.as_ref().is_some_and(|diff| diff.id == id) {
+            self.diff = None;
         }
         self.tabs.retain(|t| *t != id);
         self.agents.remove(&id);
@@ -713,23 +878,29 @@ impl App {
             }
             Some(HolderMsg::Welcome(_)) => {}
             Some(HolderMsg::Status(status)) => {
-                let finished = status.state == AgentState::Done
-                    && entry.status.as_ref().is_none_or(|s| s.state != AgentState::Done);
+                let previous = entry.status.as_ref().map(|s| s.state);
+                let state = status.state;
+                let finished = state == AgentState::Done && previous != Some(AgentState::Done);
                 if finished
                     && viewing
                     && let Some(conn) = entry.conn()
                 {
                     let _ = conn.send(&ClientMsg::Seen);
                 }
-                let needs_you = status.state == AgentState::Paused
-                    && entry.status.as_ref().is_some_and(|s| s.state != AgentState::Paused);
+                let needs_you = state == AgentState::Paused && previous.is_some_and(|s| s != AgentState::Paused);
                 let name = entry.record.name.clone();
                 entry.status = Some(status);
                 self.dirty = true;
+                let alert = if !viewing && previous.is_some() && (finished || needs_you) {
+                    entry.alert(state, now_ms())
+                } else {
+                    None
+                };
+                self.alerts.extend(alert);
                 if finished && !viewing {
-                    self.set_notice(Tone::Success, format!("{name} finished"));
+                    self.set_notice(Tone::Success, format!("{name} finished · alt+n opens it"));
                 } else if needs_you && !viewing {
-                    self.set_notice(Tone::Warn, format!("{name} is waiting for you"));
+                    self.set_notice(Tone::Warn, format!("{name} is waiting for you · alt+n opens it"));
                 }
             }
             Some(HolderMsg::Snapshot(snapshot)) => {
@@ -758,7 +929,16 @@ impl App {
         match result {
             Ok(record) => {
                 let id = record.id;
-                let text = format!("{} {} started in {}", record.kind.label(), record.name, self.display(&record.cwd));
+                let text = match &record.worktree {
+                    Some(worktree) => format!(
+                        "{} {} started on branch {} in a worktree of {}",
+                        record.kind.label(),
+                        record.name,
+                        worktree.branch,
+                        self.display(&worktree.source)
+                    ),
+                    None => format!("{} {} started in {}", record.kind.label(), record.name, self.display(&record.cwd)),
+                };
                 let in_session = record.session == self.session;
                 self.agents.insert(id, AgentEntry::new(record));
                 self.connect_agent(id, START_WAIT);
@@ -843,6 +1023,7 @@ impl App {
         if !self.tabs.contains(&id) {
             self.tabs.push(id);
         }
+        self.diff = None;
         if let View::Agent(current) = self.view {
             if current == id {
                 return;
@@ -858,6 +1039,21 @@ impl App {
         self.paths.clear();
         self.attach(id);
         self.persist_ui();
+    }
+
+    fn open_next_waiting(&mut self) {
+        let current = match self.view {
+            View::Agent(id) => Some(id),
+            View::Overview => None,
+        };
+        let Some(id) = self.waiting_for_you().into_iter().find(|id| Some(*id) != current) else {
+            self.set_notice(Tone::Info, "no agent is waiting for you");
+            return;
+        };
+        if let Some(session) = self.agents.get(&id).map(|e| e.record.session.clone()).filter(|s| *s != self.session) {
+            self.switch_session(&session);
+        }
+        self.open_agent(id);
     }
 
     pub fn show_overview(&mut self) {
@@ -888,6 +1084,7 @@ impl App {
             return;
         }
         self.show_overview();
+        self.diff = None;
         self.session = name.to_string();
         if let Some(dir) = self.session_dirs.get(name).filter(|dir| dir.is_dir()) {
             self.where_dir = dir.clone();
@@ -954,13 +1151,133 @@ impl App {
         let size = self.agent_term_size();
         let launcher = self.launcher.clone();
         let tx = self.tx.clone();
+        let isolate = self.worktree && kind.is_ai();
         self.launching += 1;
         self.task.clear();
-        self.set_notice(Tone::Info, format!("starting {} {name}…", kind.label()));
+        let place = if isolate { " in a new worktree" } else { "" };
+        self.set_notice(Tone::Info, format!("starting {} {name}{place}…", kind.label()));
         let _ = thread::Builder::new().name("orkai-launch".into()).spawn(move || {
-            let result = launcher.create(draft, size).map_err(|e| e.to_string());
+            let result = launcher.create(draft, size, isolate).map_err(|e| e.to_string());
             let _ = tx.send(AppEvent::Launched { result });
         });
+    }
+
+    fn set_worktree(&mut self, on: bool) {
+        self.worktree = on;
+        self.persist_ui();
+        let text = if on {
+            "new claude and codex agents start in their own git worktree and branch"
+        } else {
+            "new agents run directly in the where folder"
+        };
+        self.set_notice(Tone::Info, text);
+    }
+
+    fn selected_worktree(&mut self) -> Option<(AgentId, Worktree)> {
+        let Some(id) = self.selected else {
+            self.set_notice(Tone::Error, "select an agent first");
+            return None;
+        };
+        match self.agents.get(&id).and_then(|e| e.record.worktree.clone()) {
+            Some(worktree) => Some((id, worktree)),
+            None => {
+                self.set_notice(Tone::Error, "the selected agent does not run in its own worktree");
+                None
+            }
+        }
+    }
+
+    fn open_diff(&mut self) {
+        let Some((id, worktree)) = self.selected_worktree() else { return };
+        let tx = self.tx.clone();
+        self.set_notice(Tone::Info, format!("reading the changes on {}…", worktree.branch));
+        let _ = thread::Builder::new().name("orkai-diff".into()).spawn(move || {
+            let result = worktree::diff(&worktree).map_err(|e| e.to_string());
+            let _ = tx.send(AppEvent::Diff { id, result });
+        });
+    }
+
+    fn on_diff(&mut self, id: AgentId, result: Result<Vec<u8>, String>) {
+        if !self.agents.contains_key(&id) {
+            return;
+        }
+        match result {
+            Ok(text) => {
+                let body = render::areas(self.screen, false, !self.tabs.is_empty(), 1).body;
+                let size = TermSize::new(body.height.saturating_sub(1).max(1), body.width.max(1));
+                self.diff = Some(DiffPane { id, empty: text.is_empty(), view: TermView::document(size, &text) });
+                self.notice = None;
+                self.dirty = true;
+            }
+            Err(err) => self.set_notice(Tone::Error, format!("could not read the changes: {err}")),
+        }
+    }
+
+    fn on_diff_key(&mut self, key: KeyEvent) {
+        if keys::is_next_waiting_key(&key) {
+            self.diff = None;
+            self.open_next_waiting();
+            return;
+        }
+        let page =
+            isize::try_from(self.diff.as_ref().map_or(1, |d| d.view.size().rows.saturating_sub(1).max(1))).unwrap_or(1);
+        let Some(diff) = self.diff.as_mut() else { return };
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => self.diff = None,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.diff = None,
+            KeyCode::Up | KeyCode::Char('k') => diff.view.scroll_by(1),
+            KeyCode::Down | KeyCode::Char('j') => diff.view.scroll_by(-1),
+            KeyCode::PageUp => diff.view.scroll_by(page),
+            KeyCode::PageDown | KeyCode::Char(' ') => diff.view.scroll_by(-page),
+            KeyCode::Home | KeyCode::Char('g') => diff.view.scroll_by(isize::MAX),
+            KeyCode::End | KeyCode::Char('G') => diff.view.scroll_to_bottom(),
+            _ => {}
+        }
+    }
+
+    fn request_merge(&mut self) {
+        let Some((id, _)) = self.selected_worktree() else { return };
+        let Some(entry) = self.agents.get(&id) else { return };
+        if matches!(entry.state(), AgentState::Working | AgentState::Paused) {
+            let name = entry.record.name.clone();
+            self.set_notice(Tone::Error, format!("wait for {name} to finish (or stop it) before merging its worktree"));
+            return;
+        }
+        self.prompt = Some(Prompt::Confirm(Confirm::Merge(id)));
+    }
+
+    fn merge_agent(&mut self, id: AgentId) {
+        let Some(entry) = self.agents.get(&id) else { return };
+        let Some(worktree) = entry.record.worktree.clone() else { return };
+        let message = merge_message(&entry.record);
+        let tx = self.tx.clone();
+        self.set_notice(Tone::Info, format!("merging {}…", worktree.branch));
+        let _ = thread::Builder::new().name("orkai-merge".into()).spawn(move || {
+            let result = worktree::merge(&worktree, &message).map_err(|e| e.to_string());
+            let _ = tx.send(AppEvent::Merged { id, result });
+        });
+    }
+
+    fn on_merged(&mut self, id: AgentId, result: Result<Merged, String>) {
+        let merged = match result {
+            Ok(merged) => merged,
+            Err(err) => return self.set_notice(Tone::Error, format!("merge failed: {err}")),
+        };
+        let store = self.launcher.store().clone();
+        let Some(entry) = self.agents.get_mut(&id) else { return };
+        let Some(worktree) = entry.record.worktree.as_mut() else { return };
+        worktree.base = merged.tip;
+        let branch = worktree.branch.clone();
+        entry.changes = Some(Changes::default());
+        if let Err(err) = store.save_agent(&entry.record) {
+            return self.set_notice(Tone::Error, format!("{branch} was merged, but orkai could not record it: {err}"));
+        }
+        let text = if merged.up_to_date {
+            format!("{branch} had nothing new for {}", merged.target)
+        } else {
+            format!("{branch} merged into {}", merged.target)
+        };
+        self.set_notice(Tone::Success, text);
     }
 
     fn restart_agents(&mut self, ids: Vec<AgentId>) {
@@ -997,14 +1314,27 @@ impl App {
 
     fn remove_agent(&mut self, id: AgentId) {
         let name = self.agents.get(&id).map(|e| e.record.name.clone()).unwrap_or_default();
+        let worktree = self.agents.get(&id).and_then(|e| e.record.worktree.clone());
         match self.launcher.store().remove_agent(id) {
             Ok(()) => {
                 self.forget(id);
                 self.persist_ui();
                 self.set_notice(Tone::Info, format!("{name} removed"));
+                if let Some(worktree) = worktree {
+                    self.discard_worktree(name, worktree);
+                }
             }
             Err(err) => self.set_notice(Tone::Error, format!("could not remove {name}: {err}")),
         }
+    }
+
+    fn discard_worktree(&self, name: String, worktree: Worktree) {
+        let home = self.launcher.store().home().clone();
+        let tx = self.tx.clone();
+        let _ = thread::Builder::new().name("orkai-discard".into()).spawn(move || {
+            let result = worktree::discard(&home, &worktree).map_err(|e| e.to_string());
+            let _ = tx.send(AppEvent::Discarded { name, result });
+        });
     }
 
     fn kill_agent(&mut self, id: AgentId) {
@@ -1253,6 +1583,10 @@ impl App {
             self.show_overview();
             return;
         }
+        if keys::is_next_waiting_key(&key) {
+            self.open_next_waiting();
+            return;
+        }
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         let page = isize::try_from(self.agent_term_size().rows.saturating_sub(2).max(1)).unwrap_or(1);
         let Some(entry) = self.agents.get_mut(&id) else {
@@ -1306,6 +1640,7 @@ impl App {
                     Confirm::Delete(id) => self.delete_agent(id),
                     Confirm::DeleteSession(name) => self.delete_session(&name),
                     Confirm::Recover(ids) => self.restart_agents(ids),
+                    Confirm::Merge(id) => self.merge_agent(id),
                 },
                 _ => self.set_notice(Tone::Info, "cancelled"),
             }
@@ -1356,6 +1691,10 @@ impl App {
     }
 
     fn on_overview_key(&mut self, key: KeyEvent) {
+        if self.diff.is_some() && self.prompt.is_none() {
+            self.on_diff_key(key);
+            return;
+        }
         if self.prompt.is_some() {
             self.on_prompt_key(key);
         } else {
@@ -1398,6 +1737,7 @@ impl App {
                 }
             }
             KeyCode::Char('e') if ctrl && !alt => self.begin_rename(),
+            KeyCode::Char('t') if ctrl && !alt => self.set_worktree(!self.worktree),
             KeyCode::Delete if self.task.is_empty() => {
                 if let Some(id) = self.selected {
                     self.request_delete(id);
@@ -1414,6 +1754,7 @@ impl App {
                     self.open_agent(id);
                 }
             }
+            KeyCode::Char(keys::NEXT_WAITING_KEY) if alt && !ctrl => self.open_next_waiting(),
             KeyCode::Up if alt => self.cycle_session(-1),
             KeyCode::Down if alt => self.cycle_session(1),
             KeyCode::Up => self.move_selection(-1),
@@ -1530,6 +1871,14 @@ impl App {
                 Some(_) => self.set_notice(Tone::Error, "the selected agent is still running"),
                 None => self.set_notice(Tone::Error, "select an agent first"),
             },
+            "worktree" | "wt" => match arg.as_str() {
+                "" => self.set_worktree(!self.worktree),
+                "on" => self.set_worktree(true),
+                "off" => self.set_worktree(false),
+                _ => self.set_notice(Tone::Error, "usage: /worktree [on|off]"),
+            },
+            "diff" => self.open_diff(),
+            "merge" => self.request_merge(),
             "open" => match arg.parse::<AgentId>() {
                 Ok(id) if self.agents.contains_key(&id) => self.open_agent(id),
                 _ => self.set_notice(Tone::Error, "usage: /open <agent number>"),
@@ -1594,6 +1943,7 @@ impl App {
                         self.open_where_prompt();
                         self.sync_suggestions();
                     }
+                    Some(Hit::Worktree) => self.set_worktree(!self.worktree),
                     Some(Hit::Project(cwd)) => self.apply_where(cwd),
                     Some(Hit::Recover) => {
                         let lost = self.lost_in_session();
@@ -1613,7 +1963,10 @@ impl App {
                             term.scroll_by(if up { SCROLL_STEP } else { -SCROLL_STEP });
                         }
                     }
-                    View::Overview => self.move_selection(if up { -1 } else { 1 }),
+                    View::Overview => match self.diff.as_mut() {
+                        Some(diff) => diff.view.scroll_by(if up { SCROLL_STEP } else { -SCROLL_STEP }),
+                        None => self.move_selection(if up { -1 } else { 1 }),
+                    },
                 }
             }
             _ => {}
@@ -1659,6 +2012,19 @@ fn edit_line(input: &mut LineInput, key: &KeyEvent, ctrl: bool) {
     }
 }
 
+fn merge_message(record: &AgentRecord) -> String {
+    let subject: String = record
+        .task
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default()
+        .chars()
+        .take(MERGE_SUBJECT_MAX)
+        .collect();
+    if subject.is_empty() { record.name.clone() } else { format!("{}: {subject}", record.name) }
+}
+
 fn strip_verbatim(path: PathBuf) -> PathBuf {
     let text = path.to_string_lossy();
     if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
@@ -1679,6 +2045,19 @@ mod tests {
         assert_eq!(strip_verbatim(PathBuf::from(r"\\?\C:\work")), PathBuf::from(r"C:\work"));
         assert_eq!(strip_verbatim(PathBuf::from(r"\\?\UNC\srv\share")), PathBuf::from(r"\\srv\share"));
         assert_eq!(strip_verbatim(PathBuf::from("/home/me")), PathBuf::from("/home/me"));
+    }
+
+    #[test]
+    fn merge_commits_are_named_after_the_agent_and_its_task() {
+        let mut record: AgentRecord = serde_json::from_str(
+            r#"{"id":1,"session":"s","name":"fix-login","kind":"claude","cwd":"/x","created_at_ms":1}"#,
+        )
+        .unwrap();
+        assert_eq!(merge_message(&record), "fix-login");
+        record.task = "\n  Fix the login redirect loop\nand add tests".into();
+        assert_eq!(merge_message(&record), "fix-login: Fix the login redirect loop");
+        record.task = "x".repeat(200);
+        assert_eq!(merge_message(&record).chars().count(), "fix-login: ".len() + MERGE_SUBJECT_MAX);
     }
 
     #[test]

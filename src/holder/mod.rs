@@ -16,6 +16,7 @@ use std::time::Duration;
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 use crate::fsutil;
+use crate::hooks::HookInbox;
 use crate::launch;
 use crate::model::{AgentId, AgentKind, ExitInfo, LaunchSpec, RuntimeInfo, StatusReport};
 use crate::paths::Home;
@@ -284,6 +285,7 @@ pub fn run(home: &Home, id: AgentId) -> io::Result<()> {
             started_at_ms: started_at,
             protocol: PROTOCOL_VERSION,
             version: env!("CARGO_PKG_VERSION").to_string(),
+            exe: std::env::current_exe().ok(),
         },
     )?;
 
@@ -298,9 +300,10 @@ pub fn run(home: &Home, id: AgentId) -> io::Result<()> {
     let watch = child_pid
         .filter(|_| spec.kind == AgentKind::Terminal)
         .map(|root| Watch { root, claude_home: launch::claude_home() });
+    let inbox = spec.kind.is_ai().then(|| HookInbox::open(home.hooks_dir(id)));
     spawn_named("orkai-ticker", {
         let shared = Arc::clone(&shared);
-        move || tick(&shared, watch.as_ref())
+        move || tick(&shared, watch.as_ref(), inbox)
     })?;
 
     let status = child.wait();
@@ -356,7 +359,7 @@ fn pump_output(shared: &Arc<Shared>, mut reader: Box<dyn Read + Send>) {
     }
 }
 
-fn tick(shared: &Arc<Shared>, watch: Option<&Watch>) {
+fn tick(shared: &Arc<Shared>, watch: Option<&Watch>, mut inbox: Option<HookInbox>) {
     let mut last: Option<StatusReport> = None;
     let mut ticks: u32 = 0;
     while !shared.finished.load(Ordering::SeqCst) {
@@ -369,8 +372,12 @@ fn tick(shared: &Arc<Shared>, watch: Option<&Watch>) {
             let found = nested::detect(&nested::descendants(watch.root), watch.claude_home.as_deref(), now);
             lock(&shared.term).set_nested(found, now);
         }
+        let events = inbox.as_mut().map(HookInbox::take).unwrap_or_default();
         let (typed, submit) = {
             let mut term = lock(&shared.term);
+            for event in events {
+                term.apply_hook(event.signal, event.at_ms);
+            }
             term.evaluate(now);
             (term.take_ready_input(now), term.take_submit(now))
         };

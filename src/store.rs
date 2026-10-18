@@ -166,6 +166,7 @@ impl Store {
             created_at_ms: now_ms(),
             conversation_id: None,
             launches: 0,
+            worktree: None,
         };
         self.save_agent(&record)?;
         Ok(record)
@@ -306,6 +307,7 @@ mod tests {
             where_dir: Some(PathBuf::from("/x")),
             tabs: vec![3, 1],
             session_dirs: [("work".to_string(), PathBuf::from("/x/y"))].into(),
+            worktree: true,
         };
         store.save_ui(&state).unwrap();
         assert_eq!(store.load_ui(), state);

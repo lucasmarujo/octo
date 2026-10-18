@@ -13,6 +13,7 @@ use crate::tui::sprite;
 use crate::tui::theme;
 use crate::usage::{self, Problem, Window};
 use crate::util::now_ms;
+use crate::worktree::Changes;
 
 pub const SIDEBAR_WIDTH: u16 = 24;
 pub const SIDEBAR_MIN_SCREEN: u16 = 72;
@@ -36,6 +37,9 @@ const USAGE_BAR_WIDTH: usize = 12;
 const USAGE_PERCENT_WIDTH: usize = 4;
 const USAGE_SESSION_LABEL: &str = "5h";
 const USAGE_WEEKLY_LABEL: &str = "week";
+const BRANCH_GLYPH: &str = "⎇";
+const DIFF_HINT: &str = "esc close · ↑↓ pgup pgdn scroll · /merge merges it";
+const BASE_SHORT: usize = 8;
 
 pub struct Areas {
     pub sidebar: Option<Rect>,
@@ -109,7 +113,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         }
         let cursor = match app.view {
             View::Overview => {
-                draw_overview(app, layout.body, buf);
+                if app.diff.is_some() {
+                    draw_diff(app, layout.body, buf);
+                } else {
+                    draw_overview(app, layout.body, buf);
+                }
                 draw_composer(app, layout.bottom, buf)
             }
             View::Agent(id) => {
@@ -390,6 +398,52 @@ fn activity(entry: &AgentEntry) -> (String, Color) {
     }
 }
 
+fn changes_text(changes: Option<Changes>) -> Vec<(String, Color)> {
+    match changes {
+        None => vec![("…".to_string(), theme::FAINT)],
+        Some(changes) if changes.is_empty() => vec![("clean".to_string(), theme::DIM)],
+        Some(changes) => vec![
+            (format!("{} files", changes.files), theme::DIM),
+            (format!(" +{}", changes.insertions), theme::GREEN),
+            (format!(" −{}", changes.deletions), theme::RED),
+        ],
+    }
+}
+
+fn changes_summary(changes: Option<Changes>) -> String {
+    changes
+        .filter(|c| !c.is_empty())
+        .map_or_else(String::new, |c| format!(" ({} files +{} −{})", c.files, c.insertions, c.deletions))
+}
+
+fn draw_diff(app: &mut App, area: Rect, buf: &mut Buffer) {
+    if area.height == 0 {
+        return;
+    }
+    let Some(diff) = app.diff.as_ref() else { return };
+    let right = area.right();
+    let entry = app.agents.get(&diff.id);
+    let name = entry.map(|e| e.record.name.clone()).unwrap_or_default();
+    let worktree = entry.and_then(|e| e.record.worktree.as_ref());
+    let mut x = put(buf, area.x, area.y, "diff ", fg(theme::MUTED), right);
+    x = put(buf, x, area.y, &name, fg(theme::TEXT).add_modifier(Modifier::BOLD), right);
+    if let Some(worktree) = worktree {
+        x = put(buf, x + 2, area.y, &format!("{BRANCH_GLYPH} {}", worktree.branch), fg(theme::LINK), right);
+        let base: String = worktree.base.chars().take(BASE_SHORT).collect();
+        x = put(buf, x, area.y, &format!(" since {base}"), fg(theme::FAINT), right);
+    }
+    x = put(buf, x, area.y, "  ", Style::default(), right);
+    for (text, color) in changes_text(entry.and_then(|e| e.changes)) {
+        x = put(buf, x, area.y, &text, fg(color), right);
+    }
+    let body = Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(1));
+    if diff.empty {
+        put(buf, body.x, body.y, &format!("{name} has not changed anything yet"), fg(theme::DIM), right);
+        return;
+    }
+    diff.view.render(body, buf);
+}
+
 fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
     let groups = app.groups();
     if groups.is_empty() {
@@ -477,6 +531,13 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
                 }
                 x = put(buf, x, y, "  ", Style::default(), right);
                 x = put(buf, x, y, &pad(entry.kind().label(), KIND_WIDTH), fg(theme::kind_color(entry.kind())), right);
+                if entry.record.worktree.is_some() {
+                    x = put(buf, x, y, &format!("{BRANCH_GLYPH} "), fg(theme::LINK), right);
+                    for (text, color) in changes_text(entry.changes) {
+                        x = put(buf, x, y, &text, fg(color), right);
+                    }
+                    x = put(buf, x, y, "  ", Style::default(), right);
+                }
                 let (text, color) = activity(entry);
                 let available = usize::from(right.saturating_sub(x));
                 put(buf, x, y, &truncate(&text, available), fg(color), right);
@@ -530,7 +591,7 @@ fn prompt_prefix(app: &App) -> Option<(String, Color, String, usize)> {
 
 fn confirm_text(app: &App, confirm: &Confirm) -> String {
     let name = |id: &AgentId| app.agents.get(id).map(|e| e.record.name.clone()).unwrap_or_default();
-    match confirm {
+    let text = match confirm {
         Confirm::Kill(id) => format!("stop agent {}? the process will be terminated", name(id)),
         Confirm::Remove(id) => format!("remove {} and its recorded output?", name(id)),
         Confirm::Delete(id) => {
@@ -538,6 +599,22 @@ fn confirm_text(app: &App, confirm: &Confirm) -> String {
         }
         Confirm::DeleteSession(session) => format!("delete session {session}?  [y/N]"),
         Confirm::Recover(ids) => format!("recover {} interrupted agent(s) in their folders?  [Y/n]", ids.len()),
+        Confirm::Merge(id) => {
+            let entry = app.agents.get(id);
+            let branch = entry.and_then(|e| e.record.worktree.as_ref()).map(|w| w.branch.clone()).unwrap_or_default();
+            let summary = changes_summary(entry.and_then(|e| e.changes));
+            format!(
+                "merge {branch}{summary} into the repository's current branch? pending changes are committed on {branch} first"
+            )
+        }
+    };
+    let worktree = match confirm {
+        Confirm::Remove(id) | Confirm::Delete(id) => app.agents.get(id).and_then(|e| e.record.worktree.as_ref()),
+        _ => None,
+    };
+    match worktree {
+        Some(worktree) => format!("{text} — its worktree and branch {} go too", worktree.branch),
+        None => text,
     }
 }
 
@@ -664,6 +741,13 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
     cx = put(buf, cx, y, app.who.label(), fg(theme::kind_color(app.who)).add_modifier(Modifier::BOLD), right);
     app.hits.push((Rect::new(who_start, y, cx - who_start, 1), Hit::Who));
     cx = put(buf, cx, y, "   ", Style::default(), right);
+    let worktree_start = cx;
+    cx = put(buf, cx, y, "worktree ", fg(theme::DIM), right);
+    let (state, style) =
+        if app.worktree { ("on", fg(theme::GREEN).add_modifier(Modifier::BOLD)) } else { ("off", fg(theme::FAINT)) };
+    cx = put(buf, cx, y, state, style, right);
+    app.hits.push((Rect::new(worktree_start, y, cx - worktree_start, 1), Hit::Worktree));
+    cx = put(buf, cx, y, "   ", Style::default(), right);
     let where_start = cx;
     cx = put(buf, cx, y, "where ", fg(theme::DIM), right);
     let where_text = app.display(&app.where_dir);
@@ -687,6 +771,8 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
             }
             put(buf, cx, y, &skills.join("  "), fg(theme::kind_color(app.who)), right);
         }
+    } else if app.diff.is_some() && app.prompt.is_none() && app.notice.is_none() {
+        put(buf, x, y, DIFF_HINT, fg(theme::FAINT), right);
     } else if app.prompt.is_none() && app.task.text().starts_with(SHELL_PREFIX) {
         let text = format!("enter runs it in a new terminal · who stays {}", app.who.label());
         put(buf, x, y, &text, fg(theme::TERMINAL), right);
@@ -734,11 +820,14 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
     } else {
         "ctrl+] overview · shift+pgup scroll"
     };
-    let hint_width = u16::try_from(width(hint)).unwrap_or(0);
+    let others = app.attention(Some(id)).total();
+    let lead = if others > 0 { format!("‖ {others} need you · alt+n · ") } else { String::new() };
+    let hint_width = u16::try_from(width(&lead) + width(hint)).unwrap_or(0);
     let hint_x = right.saturating_sub(hint_width + 1);
     let limit = if hint_x > area.x + 20 { hint_x.saturating_sub(2) } else { right };
     if limit < right {
-        put(buf, hint_x, y, hint, fg(theme::FAINT), right);
+        let x = put(buf, hint_x, y, &lead, fg(theme::YELLOW), right);
+        put(buf, x, y, hint, fg(theme::FAINT), right);
     }
     let (state_text, state_color) = match &entry.link {
         Link::Exited(info) => (info.describe(), theme::MUTED),
@@ -760,6 +849,9 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
     x = put(buf, x, y, glyph, fg(glyph_color), limit);
     x = put(buf, x + 1, y, &entry.record.name, fg(theme::TEXT).add_modifier(Modifier::BOLD), limit);
     x = put(buf, x + 2, y, kind.label(), fg(theme::kind_color(kind)), limit);
+    if let Some(worktree) = entry.record.worktree.as_ref() {
+        x = put(buf, x + 2, y, &format!("{BRANCH_GLYPH} {}", worktree.branch), fg(theme::LINK), limit);
+    }
     if kind.is_ai() || entry.is_dead() {
         x = put(buf, x + 2, y, &state_text, fg(state_color), limit);
     }
@@ -774,6 +866,7 @@ fn draw_confirm(app: &App, confirm: &Confirm, screen: Rect, buf: &mut Buffer) {
     let (title, color) = match confirm {
         Confirm::Delete(_) => (" delete agent ", theme::RED),
         Confirm::Remove(_) => (" remove agent ", theme::RED),
+        Confirm::Merge(_) => (" merge worktree ", theme::GREEN),
         _ => (" stop agent ", theme::YELLOW),
     };
     let width = CONFIRM_WIDTH.min(screen.width.saturating_sub(4));
@@ -811,8 +904,11 @@ const HELP: &[(&str, &str)] = &[
     ("tab / shift+tab", "who runs it: claude, codex or terminal"),
     ("!command", "run a shell command in a new terminal"),
     ("/where · ctrl+l", "folder for this session: type, tab enters or cycles"),
+    ("ctrl+t /worktree", "new agents in their own git worktree and branch"),
+    ("/diff · /merge", "see or merge the selected agent's worktree"),
     ("↑ ↓ / mouse", "select agent · click or enter opens it"),
     ("alt+1..9", "jump to an open tab"),
+    ("alt+n", "open the next agent waiting for you (or finished)"),
     ("ctrl+]", "leave an agent and return to the overview"),
     ("shift+pgup/pgdn", "scroll an agent's history (or mouse wheel)"),
     ("ctrl+e / f2", "rename selected agent"),

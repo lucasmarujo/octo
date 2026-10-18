@@ -59,6 +59,7 @@ struct Session {
     rx: Receiver<Option<HolderMsg>>,
     screen: vt100::Parser,
     title: String,
+    raw: Vec<u8>,
 }
 
 fn start_tui(fx: &Fixture) -> Session {
@@ -93,7 +94,7 @@ fn start_tui(fx: &Fixture) -> Session {
     let (tx, rx) = mpsc::channel();
     client::spawn_reader(reader, move |msg| tx.send(msg).is_ok()).unwrap();
     conn.send(&ClientMsg::Attach(TermSize { rows: ROWS, cols: COLS })).unwrap();
-    Session { conn, rx, screen: vt100::Parser::new(ROWS, COLS, 0), title: String::new() }
+    Session { conn, rx, screen: vt100::Parser::new(ROWS, COLS, 0), title: String::new(), raw: Vec::new() }
 }
 
 impl Session {
@@ -106,6 +107,7 @@ impl Session {
             }
             Ok(Some(HolderMsg::Output(bytes))) => {
                 self.screen.process(&bytes);
+                self.raw.extend_from_slice(&bytes);
                 true
             }
             Ok(Some(HolderMsg::Status(status))) => {
@@ -122,6 +124,14 @@ impl Session {
         while self.title != expected {
             assert!(Instant::now() < deadline, "window title is {:?}, expected {expected:?}", self.title);
             assert!(self.pump(Duration::from_millis(100)), "tui exited before setting the window title");
+        }
+    }
+
+    fn wait_for_raw(&mut self, needle: &[u8]) {
+        let deadline = Instant::now() + TIMEOUT;
+        while !self.raw.windows(needle.len()).any(|w| w == needle) {
+            assert!(Instant::now() < deadline, "timed out waiting for {:?}", String::from_utf8_lossy(needle));
+            assert!(self.pump(Duration::from_millis(100)), "tui exited while waiting for raw output");
         }
     }
 
@@ -273,4 +283,70 @@ fn tui_launches_agent_opens_it_and_agent_survives_restart() {
     again.dump("restarted");
     again.send(b"\x03");
     again.wait_for_exit();
+}
+
+fn fake_agent(dir: &Path) -> PathBuf {
+    if cfg!(windows) {
+        let script = dir.join("fake-claude.cmd");
+        let body = [
+            "@echo off",
+            "if \"%1\"==\"--version\" exit /b 0",
+            "for /l %%i in (1,1,60) do echo.",
+            "echo working (esc to interrupt)",
+            "ping -n 6 127.0.0.1 >nul",
+            "cls",
+            "echo all done",
+            "ping -n 120 127.0.0.1 >nul",
+        ];
+        std::fs::write(&script, body.join("\r\n")).unwrap();
+        script
+    } else {
+        let script = dir.join("fake-claude.sh");
+        let body = [
+            "#!/bin/sh",
+            "[ \"$1\" = --version ] && exit 0",
+            "i=0; while [ $i -lt 60 ]; do echo; i=$((i+1)); done",
+            "echo 'working (esc to interrupt)'",
+            "sleep 5",
+            "printf '\\033[2J\\033[H'",
+            "echo 'all done'",
+            "sleep 120",
+        ];
+        std::fs::write(&script, body.join("\n")).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        script
+    }
+}
+
+#[test]
+fn tui_rings_and_retitles_when_an_agent_finishes_out_of_sight() {
+    let fx = fixture();
+    let fake = fake_agent(&fx.dir);
+    let (shell, args) = if cfg!(windows) { ("cmd.exe", vec!["/q"]) } else { ("/bin/sh", vec![]) };
+    write_json_atomic(
+        &fx.inner.home().config_file(),
+        &serde_json::json!({ "shell": shell, "shell_args": args, "claude_command": fake }),
+    )
+    .unwrap();
+    let mut tui = start_tui(&fx);
+    tui.wait_for("who claude");
+    tui.wait_for_title(orkai::tui::WINDOW_TITLE);
+
+    tui.type_text("finish quietly");
+    tui.send(b"\r");
+    tui.wait_for("finish-quietly");
+    tui.wait_for_raw(b"\x07\x1b]9;orkai: finish-quietly finished\x07");
+    tui.wait_for_title(&format!("✔1 · {}", orkai::tui::WINDOW_TITLE));
+    tui.wait_for("finish-quietly finished · alt+n opens it");
+
+    tui.send(b"\x1bn");
+    tui.wait_for("ctrl+] overview");
+    tui.wait_for_title(orkai::tui::WINDOW_TITLE);
+    tui.send(b"\x1d");
+    tui.send(b"\x03");
+    tui.wait_for_exit();
 }

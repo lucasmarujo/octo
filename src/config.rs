@@ -14,6 +14,9 @@ pub struct Config {
     pub claude_args: Vec<String>,
     pub codex_command: String,
     pub codex_args: Vec<String>,
+    pub notify: bool,
+    pub notify_command: Option<String>,
+    pub notify_args: Vec<String>,
 }
 
 impl Default for Config {
@@ -25,6 +28,9 @@ impl Default for Config {
             claude_args: Vec::new(),
             codex_command: "codex".to_string(),
             codex_args: Vec::new(),
+            notify: true,
+            notify_command: None,
+            notify_args: Vec::new(),
         }
     }
 }
@@ -54,6 +60,19 @@ mod tests {
         assert_eq!(config.claude_args, vec!["--model", "opus"]);
         assert_eq!(config.codex_command, "codex");
         assert!(config.shell.is_none());
+        assert!(config.notify);
+        assert!(config.notify_command.is_none());
+        assert!(config.notify_args.is_empty());
+    }
+
+    #[test]
+    fn notifications_can_be_turned_off_or_sent_to_a_command() {
+        let config: Config =
+            serde_json::from_str(r#"{"notify":false,"notify_command":"ntfy","notify_args":["publish","orkai"]}"#)
+                .unwrap();
+        assert!(!config.notify);
+        assert_eq!(config.notify_command.as_deref(), Some("ntfy"));
+        assert_eq!(config.notify_args, vec!["publish", "orkai"]);
     }
 
     #[test]

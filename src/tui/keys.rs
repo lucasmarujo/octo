@@ -5,6 +5,7 @@ use ratatui::crossterm::event::{
 };
 
 pub const PASTE_LINE_GAP: Duration = Duration::from_millis(20);
+pub const NEXT_WAITING_KEY: char = 'n';
 
 enum BurstKey {
     Text(char),
@@ -67,6 +68,12 @@ pub fn is_detach_key(key: &KeyEvent) -> bool {
     key.modifiers.contains(KeyModifiers::CONTROL)
         && !key.modifiers.contains(KeyModifiers::ALT)
         && matches!(key.code, KeyCode::Char(']') | KeyCode::Char('5'))
+}
+
+pub fn is_next_waiting_key(key: &KeyEvent) -> bool {
+    key.code == KeyCode::Char(NEXT_WAITING_KEY)
+        && key.modifiers.contains(KeyModifiers::ALT)
+        && !key.modifiers.contains(KeyModifiers::CONTROL)
 }
 
 pub fn is_press(key: &KeyEvent) -> bool {
@@ -400,6 +407,15 @@ mod tests {
         assert!(is_detach_key(&key(KeyCode::Char('5'), KeyModifiers::CONTROL)));
         assert!(!is_detach_key(&key(KeyCode::Char(']'), KeyModifiers::NONE)));
         assert!(!is_detach_key(&key(KeyCode::Char(']'), KeyModifiers::CONTROL | KeyModifiers::ALT)));
+    }
+
+    #[test]
+    fn next_waiting_key_is_alt_n_only() {
+        assert!(is_next_waiting_key(&key(KeyCode::Char('n'), KeyModifiers::ALT)));
+        assert!(!is_next_waiting_key(&key(KeyCode::Char('n'), KeyModifiers::NONE)));
+        assert!(!is_next_waiting_key(&key(KeyCode::Char('n'), KeyModifiers::CONTROL)));
+        assert!(!is_next_waiting_key(&key(KeyCode::Char('n'), KeyModifiers::CONTROL | KeyModifiers::ALT)));
+        assert!(!is_next_waiting_key(&key(KeyCode::Char('N'), KeyModifiers::ALT | KeyModifiers::SHIFT)));
     }
 
     #[test]

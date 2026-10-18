@@ -4,11 +4,15 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
+use orkai::cli::probe;
 use orkai::client::{self, Connection};
+use orkai::config::Config;
+use orkai::holder::detect::DONE_GRACE_MS;
 use orkai::holder::nested::{descendants, program_name};
 use orkai::holder::oplog;
-use orkai::launch::{HOLDER_COMMAND, spawn_holder, wait_for_runtime};
-use orkai::model::{AgentId, AgentKind, LaunchSpec, NestedAgent, NewAgent, RuntimeInfo};
+use orkai::hooks::HOOK_COMMAND;
+use orkai::launch::{HOLDER_COMMAND, Launcher, spawn_holder, wait_for_runtime};
+use orkai::model::{AgentId, AgentKind, AgentState, LaunchSpec, NestedAgent, NewAgent, RuntimeInfo, StatusReport};
 use orkai::paths::{HOME_ENV, Home};
 use orkai::protocol::{ClientMsg, HolderMsg, PROTOCOL_VERSION, TermSize};
 use orkai::store::Store;
@@ -332,4 +336,145 @@ fn a_terminal_reports_the_claude_session_started_inside_it() {
     } else {
         let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
     }
+}
+
+fn run_hook(fx: &Fixture, args: &[&str], stdin: &[u8]) -> std::process::ExitStatus {
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_orkai"))
+        .arg(HOOK_COMMAND)
+        .args(args)
+        .env(HOME_ENV, fx.store.home().root())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    child.wait().unwrap()
+}
+
+fn wait_for_state(rx: &Receiver<Option<HolderMsg>>, expected: AgentState) -> StatusReport {
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        assert!(!remaining.is_zero(), "the holder never reported {expected:?}");
+        match rx.recv_timeout(remaining) {
+            Ok(Some(HolderMsg::Status(status))) if status.state == expected => return status,
+            Ok(None) => panic!("holder disconnected while waiting for {expected:?}"),
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn hook_events_from_the_agent_drive_its_state() {
+    let fx = fixture("hooks");
+    let cwd = fx.dir.join("work");
+    let record = fx
+        .store
+        .create_agent(NewAgent {
+            session: "default".into(),
+            name: "hooked".into(),
+            kind: AgentKind::Claude,
+            cwd: cwd.clone(),
+            task: String::new(),
+        })
+        .unwrap();
+    let (program, args) = shell();
+    let spec = LaunchSpec {
+        kind: AgentKind::Claude,
+        program,
+        args,
+        cwd,
+        env: Vec::new(),
+        env_remove: Vec::new(),
+        initial_input: None,
+        rows: 24,
+        cols: 100,
+    };
+    fx.store.write_launch(record.id, &spec).unwrap();
+    spawn_holder(fx.store.home(), record.id, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let runtime = wait_for_runtime(&fx.store, record.id, TIMEOUT).unwrap();
+    let (conn, rx) = open(&runtime);
+    let id = record.id.to_string();
+
+    let prompt = br#"{"session_id":"s","hook_event_name":"UserPromptSubmit","prompt":"private task text"}"#;
+    assert!(run_hook(&fx, &["claude", &id], prompt).success());
+    let working = wait_for_state(&rx, AgentState::Working);
+    assert!(working.turn_started_ms.is_some());
+
+    let permission = br#"{"session_id":"s","hook_event_name":"PermissionRequest","tool_name":"Bash"}"#;
+    assert!(run_hook(&fx, &["claude", &id], permission).success());
+    wait_for_state(&rx, AgentState::Paused);
+    std::thread::sleep(Duration::from_millis(DONE_GRACE_MS + 1_000));
+    assert_eq!(probe(&fx.store, record.id).state(), AgentState::Paused, "a pending permission must stay paused");
+
+    let stop = br#"{"session_id":"s","hook_event_name":"Stop","stop_hook_active":false}"#;
+    assert!(run_hook(&fx, &["claude", &id], stop).success());
+    let done = wait_for_state(&rx, AgentState::Done);
+    assert!(done.last_turn_ms.is_some());
+
+    assert!(run_hook(&fx, &["claude", &id], prompt).success());
+    wait_for_state(&rx, AgentState::Working);
+    let turn = r#"{"type":"agent-turn-complete","thread-id":"t","turn-id":"1","input-messages":["private"]}"#;
+    assert!(run_hook(&fx, &["codex", &id, turn], b"").success());
+    wait_for_state(&rx, AgentState::Done);
+
+    wait_until(|| std::fs::read_dir(fx.store.home().hooks_dir(record.id)).unwrap().next().is_none());
+    assert!(run_hook(&fx, &["claude", "999"], stop).success(), "a hook must never fail the agent's tool call");
+    assert!(!fx.store.home().agent_dir(999).exists());
+    assert!(run_hook(&fx, &["claude", &id], b"not json").success());
+
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
+}
+
+fn git(dir: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
+    assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+#[test]
+fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
+    let fx = fixture("worktree");
+    let repo = fx.dir.join("work");
+    std::fs::create_dir_all(repo.join("app")).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "orkai@example.com"]);
+    git(&repo, &["config", "user.name", "orkai"]);
+    std::fs::write(repo.join("app").join("main.txt"), "v1\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "init"]);
+
+    let (program, args) = shell();
+    let config = Config { shell: Some(program.to_string_lossy().into_owned()), shell_args: args, ..Config::default() };
+    let launcher = Launcher::new(fx.store.clone(), config, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let draft = NewAgent {
+        session: "default".into(),
+        name: "Branch Check".into(),
+        kind: AgentKind::Terminal,
+        cwd: repo.join("app"),
+        task: "git branch --show-current".into(),
+    };
+    let record = launcher.create(draft, TermSize { rows: 24, cols: 100 }, true).unwrap();
+    let worktree = record.worktree.clone().expect("the agent must get a worktree");
+    assert_eq!(worktree.branch, "orkai/branch-check");
+    assert_eq!(record.cwd, worktree.path.join("app"));
+    assert_eq!(fx.store.load_agent(record.id).unwrap(), record);
+    assert_eq!(record.project_dir(), repo.join("app"));
+
+    let runtime = wait_for_runtime(&fx.store, record.id, TIMEOUT).unwrap();
+    let (conn, rx) = open(&runtime);
+    conn.send(&ClientMsg::Attach(TermSize { rows: 24, cols: 100 })).unwrap();
+    let mut screen = vt100::Parser::new(24, 100, 500);
+    wait_for_text(&rx, &mut screen, "orkai/branch-check");
+    assert_eq!(git(&repo, &["branch", "--show-current"]), "main");
+
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
+    wait_until(|| fx.store.read_runtime(record.id).unwrap().is_none());
+    orkai::cli::remove(&fx.store, record.id).unwrap();
+    assert!(!worktree.path.exists());
+    assert!(git(&repo, &["branch", "--list", "orkai/*"]).is_empty());
+    assert!(fx.store.list_agents().unwrap().is_empty());
 }

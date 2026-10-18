@@ -20,6 +20,7 @@ use crate::termfmt;
 use crate::tui::format::{display_path, duration_short, pad, slugify, truncate};
 use crate::tui::keys;
 use crate::util::now_ms;
+use crate::worktree;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const KILL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -129,6 +130,7 @@ pub fn new_agent(
     cwd: Option<PathBuf>,
     name: Option<String>,
     task: String,
+    isolate: bool,
 ) -> io::Result<()> {
     let cwd = match cwd {
         Some(dir) => dir.canonicalize()?,
@@ -142,8 +144,12 @@ pub fn new_agent(
             slug
         }
     });
-    let record = launcher.create(NewAgent { session, name, kind, cwd: strip_verbatim(cwd), task }, DEFAULT_SIZE)?;
+    let record =
+        launcher.create(NewAgent { session, name, kind, cwd: strip_verbatim(cwd), task }, DEFAULT_SIZE, isolate)?;
     println!("started {} {} (#{}) in session {}", record.kind.label(), record.name, record.id, record.session);
+    if let Some(worktree) = &record.worktree {
+        println!("worktree {} on branch {}", record.cwd.display(), worktree.branch);
+    }
     Ok(())
 }
 
@@ -191,8 +197,13 @@ pub fn remove(store: &Store, id: AgentId) -> io::Result<()> {
     if let Probe::Live(_) = probe(store, id) {
         return Err(io::Error::other(format!("agent {id} is running; stop it first with `orkai kill {id}`")));
     }
+    let worktree = store.load_agent(id)?.worktree;
     store.remove_agent(id)?;
     println!("agent {id} removed");
+    if let Some(worktree) = worktree {
+        worktree::discard(store.home(), &worktree)?;
+        println!("worktree {} and branch {} deleted", worktree.path.display(), worktree.branch);
+    }
     Ok(())
 }
 

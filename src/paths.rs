@@ -43,6 +43,14 @@ impl Home {
         self.root.join("bin")
     }
 
+    pub fn worktrees_dir(&self) -> PathBuf {
+        self.root.join("worktrees")
+    }
+
+    pub fn worktree_dir(&self, id: AgentId) -> PathBuf {
+        self.worktrees_dir().join(id.to_string())
+    }
+
     pub fn agent_dir(&self, id: AgentId) -> PathBuf {
         self.agents_dir().join(id.to_string())
     }
@@ -69,6 +77,14 @@ impl Home {
 
     pub fn holder_log(&self, id: AgentId) -> PathBuf {
         self.agent_dir(id).join("holder.log")
+    }
+
+    pub fn hooks_dir(&self, id: AgentId) -> PathBuf {
+        self.agent_dir(id).join("hooks")
+    }
+
+    pub fn claude_settings_file(&self, id: AgentId) -> PathBuf {
+        self.agent_dir(id).join("claude-settings.json")
     }
 
     pub fn sessions_file(&self) -> PathBuf {

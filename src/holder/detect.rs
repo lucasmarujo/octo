@@ -1,3 +1,4 @@
+use crate::hooks::HookSignal;
 use crate::model::{AgentKind, AgentState};
 
 pub const DONE_GRACE_MS: u64 = 2_500;
@@ -14,6 +15,7 @@ const WAITING_MARKERS: &[&str] = &[
     "approve this",
     "press enter to continue",
     "press enter to confirm",
+    "enter to confirm",
     "enter to select",
     "enter to submit answer",
     "enter to submit all",
@@ -78,6 +80,12 @@ pub fn activity_from_title(kind: AgentKind, title: &str) -> Option<String> {
     (!generic).then_some(text)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Lease {
+    Waiting,
+    Finished { screen_settled: bool },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Detector {
     state: AgentState,
@@ -85,11 +93,19 @@ pub struct Detector {
     turn_started: Option<u64>,
     last_turn_ms: Option<u64>,
     last_signal_at: u64,
+    lease: Option<Lease>,
 }
 
 impl Detector {
     pub fn new(now: u64) -> Self {
-        Self { state: AgentState::Idle, since: now, turn_started: None, last_turn_ms: None, last_signal_at: 0 }
+        Self {
+            state: AgentState::Idle,
+            since: now,
+            turn_started: None,
+            last_turn_ms: None,
+            last_signal_at: 0,
+            lease: None,
+        }
     }
 
     pub fn state(&self) -> AgentState {
@@ -125,7 +141,61 @@ impl Detector {
         if kind.is_ai() { self.observe_ai(signals, now) } else { self.observe_terminal(last_output_at, now) }
     }
 
+    fn begin_turn(&mut self, at: u64) {
+        if !self.is_busy_or_waiting() {
+            self.turn_started = Some(at);
+        }
+        self.last_signal_at = self.last_signal_at.max(at);
+    }
+
+    pub fn hook(&mut self, signal: HookSignal, at: u64) -> bool {
+        match signal {
+            HookSignal::Busy => {
+                self.lease = None;
+                self.begin_turn(at);
+                self.set(AgentState::Working, at)
+            }
+            HookSignal::Waiting => {
+                self.lease = Some(Lease::Waiting);
+                self.begin_turn(at);
+                self.set(AgentState::Paused, at)
+            }
+            HookSignal::Finished => {
+                self.lease = Some(Lease::Finished { screen_settled: false });
+                if !self.is_busy_or_waiting() {
+                    return false;
+                }
+                self.last_turn_ms = self.turn_started.map(|start| at.saturating_sub(start));
+                self.turn_started = None;
+                self.set(AgentState::Done, at)
+            }
+        }
+    }
+
+    pub fn user_answered(&mut self) {
+        if self.lease == Some(Lease::Waiting) {
+            self.lease = None;
+        }
+    }
+
     fn observe_ai(&mut self, signals: Signals, now: u64) -> bool {
+        match self.lease {
+            Some(Lease::Waiting) => {
+                self.last_signal_at = now;
+                return false;
+            }
+            Some(Lease::Finished { screen_settled }) => {
+                if !signals.busy {
+                    self.lease = Some(Lease::Finished { screen_settled: true });
+                    return false;
+                }
+                if !screen_settled {
+                    return false;
+                }
+                self.lease = None;
+            }
+            None => {}
+        }
         if signals.waiting {
             self.last_signal_at = now;
             if !self.is_busy_or_waiting() {
@@ -208,6 +278,12 @@ mod tests {
         let s = analyze(AgentKind::Claude, "⠐ Fix tests", CLAUDE_PERMISSION);
         assert_eq!(s, Signals { busy: false, waiting: true });
         assert!(analyze(AgentKind::Claude, "", CLAUDE_TRUST).waiting);
+    }
+
+    #[test]
+    fn the_folder_trust_check_waits_for_you_instead_of_looking_busy() {
+        let trust = " Quick safety check: Is this a project you created or one you trust?\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n";
+        assert_eq!(analyze(AgentKind::Claude, "", trust), Signals { busy: false, waiting: true });
     }
 
     #[test]
@@ -308,5 +384,85 @@ mod tests {
         assert!(d.observe(AgentKind::Terminal, Signals::default(), 1_000, 1_000 + TERMINAL_ACTIVE_MS));
         assert_eq!(d.state(), AgentState::Idle);
         assert!(!d.mark_seen());
+    }
+
+    fn hook_turn() -> Detector {
+        let mut d = Detector::new(0);
+        assert!(d.hook(HookSignal::Busy, 1_000));
+        assert_eq!(d.state(), AgentState::Working);
+        assert_eq!(d.turn_started(), Some(1_000));
+        d
+    }
+
+    #[test]
+    fn a_finished_hook_ends_the_turn_at_once_and_question_text_cannot_reopen_it() {
+        let mut d = hook_turn();
+        let busy = Signals { busy: true, waiting: false };
+        let question = Signals { busy: false, waiting: true };
+        d.observe(AgentKind::Claude, busy, 0, 2_000);
+        assert!(d.hook(HookSignal::Finished, 3_000));
+        assert_eq!((d.state(), d.since(), d.last_turn_ms()), (AgentState::Done, 3_000, Some(2_000)));
+        assert!(!d.observe(AgentKind::Claude, busy, 0, 3_050), "the spinner still on screen is not a new turn");
+        assert!(!d.observe(AgentKind::Claude, question, 0, 3_200));
+        assert!(!d.observe(AgentKind::Claude, Signals::default(), 0, 60_000));
+        assert_eq!(d.state(), AgentState::Done);
+        assert!(d.mark_seen());
+        assert!(d.observe(AgentKind::Claude, busy, 0, 61_000), "a turn started without a prompt is still seen");
+        assert_eq!((d.state(), d.turn_started()), (AgentState::Working, Some(61_000)));
+    }
+
+    #[test]
+    fn a_waiting_hook_holds_until_the_user_answers() {
+        let mut d = hook_turn();
+        let busy = Signals { busy: true, waiting: false };
+        assert!(d.hook(HookSignal::Waiting, 2_000));
+        assert_eq!((d.state(), d.turn_started()), (AgentState::Paused, Some(1_000)));
+        assert!(!d.observe(AgentKind::Claude, busy, 0, 2_100), "a dialog footer like esc to cancel is not work");
+        assert!(!d.observe(AgentKind::Claude, Signals::default(), 0, 2_000 + 10 * DONE_GRACE_MS));
+        assert_eq!(d.state(), AgentState::Paused);
+        d.user_answered();
+        assert!(d.observe(AgentKind::Claude, busy, 0, 40_000));
+        assert_eq!((d.state(), d.turn_started()), (AgentState::Working, Some(1_000)));
+    }
+
+    #[test]
+    fn after_an_answer_without_work_the_screen_decides_again() {
+        let mut d = hook_turn();
+        d.hook(HookSignal::Waiting, 2_000);
+        d.observe(AgentKind::Claude, Signals::default(), 0, 9_000);
+        d.user_answered();
+        assert!(!d.observe(AgentKind::Claude, Signals::default(), 0, 9_000 + DONE_GRACE_MS - 1));
+        assert!(d.observe(AgentKind::Claude, Signals::default(), 0, 9_000 + DONE_GRACE_MS));
+        assert_eq!(d.state(), AgentState::Done);
+    }
+
+    #[test]
+    fn busy_hooks_clear_any_hold_and_leave_the_screen_in_charge() {
+        let mut d = hook_turn();
+        d.hook(HookSignal::Waiting, 2_000);
+        assert!(d.hook(HookSignal::Busy, 3_000));
+        assert_eq!((d.state(), d.turn_started()), (AgentState::Working, Some(1_000)));
+        assert!(d.observe(AgentKind::Claude, Signals { busy: false, waiting: true }, 0, 3_100));
+        assert_eq!(d.state(), AgentState::Paused);
+        d.hook(HookSignal::Finished, 4_000);
+        assert!(d.hook(HookSignal::Busy, 5_000));
+        assert_eq!((d.state(), d.turn_started()), (AgentState::Working, Some(5_000)));
+    }
+
+    #[test]
+    fn a_late_finished_hook_does_not_bring_back_a_turn_already_seen() {
+        let mut d = hook_turn();
+        d.observe(AgentKind::Claude, Signals::default(), 0, 1_000 + DONE_GRACE_MS);
+        assert_eq!(d.state(), AgentState::Done);
+        assert!(d.mark_seen());
+        assert!(!d.hook(HookSignal::Finished, 5_000));
+        assert_eq!(d.state(), AgentState::Idle);
+    }
+
+    #[test]
+    fn answering_outside_a_waiting_hold_changes_nothing() {
+        let mut d = Detector::new(0);
+        d.user_answered();
+        assert_eq!(d, Detector::new(0));
     }
 }

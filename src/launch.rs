@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -6,11 +7,14 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
+use crate::fsutil;
+use crate::hooks;
 use crate::model::{AgentId, AgentKind, AgentRecord, LaunchSpec, NewAgent, RuntimeInfo};
 use crate::paths::{HOME_ENV, Home, normalize_for_compare, user_home};
 use crate::protocol::TermSize;
 use crate::store::Store;
 use crate::util::{civil_date_from_ms, fnv1a64, is_uuid, new_uuid_v4};
+use crate::worktree;
 
 pub const HOLDER_COMMAND: &str = "__holder";
 pub const HOLDER_PREFIX: &str = "orkai-holder-";
@@ -189,6 +193,43 @@ pub fn find_codex_session(codex_home: &Path, cwd: &Path, since_ms: u64, exclude:
     None
 }
 
+pub struct HookSetup {
+    pub exe: PathBuf,
+    pub claude_settings: PathBuf,
+    pub codex_home: Option<PathBuf>,
+}
+
+fn names_option(args: &[String], option: &str) -> bool {
+    args.iter().any(|arg| arg == option || arg.starts_with(&format!("{option}=")))
+}
+
+fn hook_args(config: &Config, record: &AgentRecord, program: &Path, setup: &HookSetup) -> Vec<String> {
+    match record.kind {
+        AgentKind::Claude => {
+            if names_option(&config.claude_args, "--settings")
+                || !hooks::git_bash_available()
+                || !hooks::claude_supports_hooks(program)
+            {
+                return Vec::new();
+            }
+            let settings = hooks::claude_settings(&hooks::claude_hook_command(&setup.exe, record.id));
+            match fsutil::write_json_atomic(&setup.claude_settings, &settings) {
+                Ok(()) => vec!["--settings".to_string(), setup.claude_settings.to_string_lossy().into_owned()],
+                Err(_) => Vec::new(),
+            }
+        }
+        AgentKind::Codex => {
+            let configured = config.codex_args.iter().any(|arg| arg.trim_start().starts_with("notify"))
+                || setup.codex_home.as_deref().is_some_and(hooks::codex_has_own_notify);
+            if configured {
+                return Vec::new();
+            }
+            vec!["-c".to_string(), hooks::codex_notify_override(&setup.exe, record.id)]
+        }
+        AgentKind::Terminal => Vec::new(),
+    }
+}
+
 fn non_empty(text: &str) -> Option<String> {
     let trimmed = text.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
@@ -200,6 +241,7 @@ pub fn build_spec(
     mode: LaunchMode,
     size: TermSize,
     claude_dir: Option<&Path>,
+    hooks: Option<&HookSetup>,
 ) -> io::Result<LaunchSpec> {
     let (program_name, args, initial_input) = match record.kind {
         AgentKind::Claude => {
@@ -247,7 +289,16 @@ pub fn build_spec(
         ));
     }
     let resolved = resolve_program(&program_name)?;
-    let (program, args) = wrap_for_platform(resolved, args)?;
+    let extra = hooks.map(|setup| hook_args(config, record, &resolved, setup)).unwrap_or_default();
+    let with_hooks = match record.kind {
+        AgentKind::Codex => extra.iter().chain(&args).cloned().collect(),
+        _ => args.iter().chain(&extra).cloned().collect(),
+    };
+    let (program, args) = match wrap_for_platform(resolved.clone(), with_hooks) {
+        Ok(wrapped) => wrapped,
+        Err(_) if !extra.is_empty() => wrap_for_platform(resolved, args)?,
+        Err(err) => return Err(err),
+    };
     let mut env = vec![
         ("ORKAI_AGENT_ID".to_string(), record.id.to_string()),
         ("ORKAI_SESSION".to_string(), record.session.clone()),
@@ -303,12 +354,27 @@ pub fn holder_executable(home: &Home, source: &Path) -> io::Result<PathBuf> {
     Ok(target)
 }
 
+fn holder_binaries_in_use(home: &Home) -> HashSet<String> {
+    let Ok(entries) = fs::read_dir(home.agents_dir()) else { return HashSet::new() };
+    entries
+        .flatten()
+        .filter_map(|entry| entry.file_name().to_str().and_then(|name| name.parse::<AgentId>().ok()))
+        .filter_map(|id| fsutil::read_json_opt::<RuntimeInfo>(&home.runtime_file(id)).ok().flatten())
+        .filter_map(|runtime| runtime.exe)
+        .map(|exe| normalize_for_compare(&exe))
+        .collect()
+}
+
 pub fn prune_holder_binaries(home: &Home, keep: &Path) {
     let Ok(entries) = fs::read_dir(home.bin_dir()) else { return };
+    let in_use = holder_binaries_in_use(home);
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        if (name.starts_with(HOLDER_PREFIX) || name.starts_with(".staging-")) && path != keep {
+        if (name.starts_with(HOLDER_PREFIX) || name.starts_with(".staging-"))
+            && path != keep
+            && !in_use.contains(&normalize_for_compare(&path))
+        {
             let _ = fs::remove_file(path);
         }
     }
@@ -354,7 +420,7 @@ fn disable_std_handle_inheritance() {
 }
 
 #[cfg(windows)]
-fn spawn_detached(cmd: &mut Command) -> io::Result<std::process::Child> {
+pub fn spawn_detached(cmd: &mut Command) -> io::Result<std::process::Child> {
     use std::os::windows::process::CommandExt;
     disable_std_handle_inheritance();
     const DETACHED_PROCESS: u32 = 0x0000_0008;
@@ -371,7 +437,7 @@ fn spawn_detached(cmd: &mut Command) -> io::Result<std::process::Child> {
 }
 
 #[cfg(unix)]
-fn spawn_detached(cmd: &mut Command) -> io::Result<std::process::Child> {
+pub fn spawn_detached(cmd: &mut Command) -> io::Result<std::process::Child> {
     use std::os::unix::process::CommandExt;
     unsafe {
         cmd.pre_exec(|| {
@@ -466,13 +532,28 @@ impl Launcher {
         &self.exe
     }
 
-    pub fn create(&self, draft: NewAgent, size: TermSize) -> io::Result<AgentRecord> {
+    pub fn create(&self, draft: NewAgent, size: TermSize, isolate: bool) -> io::Result<AgentRecord> {
         let mut record = self.store.create_agent(draft)?;
-        if let Err(err) = self.start(&mut record, LaunchMode::Fresh, size) {
+        let started =
+            self.isolate(&mut record, isolate).and_then(|()| self.start(&mut record, LaunchMode::Fresh, size));
+        if let Err(err) = started {
+            if let Some(worktree) = record.worktree.as_ref() {
+                let _ = worktree::discard(self.store.home(), worktree);
+            }
             let _ = self.store.remove_agent(record.id);
             return Err(err);
         }
         Ok(record)
+    }
+
+    fn isolate(&self, record: &mut AgentRecord, isolate: bool) -> io::Result<()> {
+        if !isolate {
+            return Ok(());
+        }
+        let (worktree, cwd) = worktree::create(self.store.home(), record.id, &record.name, &record.cwd)?;
+        record.cwd = cwd;
+        record.worktree = Some(worktree);
+        self.store.save_agent(record)
     }
 
     pub fn start(&self, record: &mut AgentRecord, mode: LaunchMode, size: TermSize) -> io::Result<()> {
@@ -482,12 +563,17 @@ impl Launcher {
                 record.conversation_id = self.discover_codex_session(record)?;
             }
         }
-        let spec = build_spec(&self.config, record, mode, size, claude_home().as_deref())?;
+        let exe = holder_executable(self.store.home(), &self.source).unwrap_or_else(|_| self.exe.clone());
+        let setup = HookSetup {
+            exe: exe.clone(),
+            claude_settings: self.store.home().claude_settings_file(record.id),
+            codex_home: codex_home(),
+        };
+        let spec = build_spec(&self.config, record, mode, size, claude_home().as_deref(), Some(&setup))?;
         record.launches = record.launches.saturating_add(1);
         self.store.save_agent(record)?;
         self.store.clear_runtime_markers(record.id)?;
         self.store.write_launch(record.id, &spec)?;
-        let exe = holder_executable(self.store.home(), &self.source).unwrap_or_else(|_| self.exe.clone());
         spawn_holder(self.store.home(), record.id, &exe)
     }
 
@@ -535,6 +621,7 @@ mod tests {
             created_at_ms: now_ms(),
             conversation_id: None,
             launches: 0,
+            worktree: None,
         }
     }
 
@@ -558,7 +645,8 @@ mod tests {
         let dir = temp_dir("claude-fresh");
         let program = fake_program(&dir);
         let mut r = record(AgentKind::Claude, dir.clone(), "  fix the build ");
-        let spec = build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(30, 100), None).unwrap();
+        let spec =
+            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(30, 100), None, None).unwrap();
         let id = r.conversation_id.clone().unwrap();
         assert!(is_uuid(&id));
         assert_eq!(spec.args, vec!["--remote-control".to_string(), "--session-id".to_string(), id]);
@@ -581,9 +669,15 @@ mod tests {
         fs::write(claude_dir.join("projects").join("C--work").join(format!("{id}.jsonl")), b"{}").unwrap();
         let mut r = record(AgentKind::Claude, dir.clone(), "task");
         r.conversation_id = Some(id.into());
-        let spec =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), Some(&claude_dir))
-                .unwrap();
+        let spec = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Resume,
+            TermSize::new(24, 80),
+            Some(&claude_dir),
+            None,
+        )
+        .unwrap();
         assert_eq!(spec.args, vec!["--remote-control".to_string(), "--resume".to_string(), id.to_string()]);
         assert_eq!(spec.initial_input, None);
         fs::remove_dir_all(dir).unwrap();
@@ -597,7 +691,8 @@ mod tests {
         let mut r = record(AgentKind::Claude, dir.clone(), "task");
         r.conversation_id = Some(id.into());
         let spec =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), Some(&dir)).unwrap();
+            build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), Some(&dir), None)
+                .unwrap();
         assert_eq!(spec.args, vec!["--remote-control".to_string(), "--session-id".to_string(), id.to_string()]);
         assert_eq!(spec.initial_input.as_deref(), Some("task"));
         fs::remove_dir_all(dir).unwrap();
@@ -611,7 +706,7 @@ mod tests {
         let id = "123e4567-e89b-42d3-a456-426614174000";
         let mut r = record(AgentKind::Claude, dir.clone(), "task");
         r.conversation_id = Some(id.into());
-        let spec = build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None).unwrap();
+        let spec = build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, None).unwrap();
         assert_eq!(spec.args, vec!["--model", "opus", "--remote-control", "--session-id", id]);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -622,10 +717,12 @@ mod tests {
         let program = fake_program(&dir);
         let mut r = record(AgentKind::Codex, dir.clone(), "task");
         r.conversation_id = Some("abc-123".into());
-        let spec = build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), None).unwrap();
+        let spec =
+            build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), None, None).unwrap();
         assert_eq!(spec.args, vec!["resume".to_string(), "abc-123".to_string()]);
         assert_eq!(spec.initial_input, None);
-        let fresh = build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None).unwrap();
+        let fresh =
+            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, None).unwrap();
         assert!(fresh.args.is_empty());
         assert_eq!(fresh.initial_input.as_deref(), Some("task"));
         fs::remove_dir_all(dir).unwrap();
@@ -636,7 +733,8 @@ mod tests {
         let dir = temp_dir("terminal");
         let program = fake_program(&dir);
         let mut r = record(AgentKind::Terminal, dir.clone(), "npm run dev");
-        let spec = build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), None).unwrap();
+        let spec =
+            build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), None, None).unwrap();
         assert_eq!(spec.program, program);
         assert_eq!(spec.initial_input.as_deref(), Some("npm run dev"));
         fs::remove_dir_all(dir).unwrap();
@@ -647,8 +745,8 @@ mod tests {
         let dir = temp_dir("missing");
         let program = fake_program(&dir);
         let mut r = record(AgentKind::Terminal, dir.join("does-not-exist"), "");
-        let err =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None).unwrap_err();
+        let err = build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, None)
+            .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -733,9 +831,167 @@ mod tests {
         assert_eq!(holder_executable(&home, &source).unwrap(), staged);
         let stale = home.bin_dir().join(format!("{HOLDER_PREFIX}old"));
         fs::write(&stale, b"old").unwrap();
+        let running = home.bin_dir().join(format!("{HOLDER_PREFIX}running"));
+        fs::write(&running, b"running").unwrap();
+        fs::create_dir_all(home.agent_dir(4)).unwrap();
+        let runtime = RuntimeInfo {
+            holder_pid: 1,
+            child_pid: None,
+            port: 1,
+            token: String::new(),
+            started_at_ms: 1,
+            protocol: 1,
+            version: String::new(),
+            exe: Some(PathBuf::from(running.to_string_lossy().replace('\\', "/"))),
+        };
+        fsutil::write_json_atomic(&home.runtime_file(4), &runtime).unwrap();
         prune_holder_binaries(&home, &staged);
         assert!(!stale.exists());
         assert!(staged.exists());
+        assert!(running.exists(), "agents call their holder binary from hooks, so it must stay while they run");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn versioned_claude(dir: &Path, version: &str) -> PathBuf {
+        let stem: String = version.chars().filter(char::is_ascii_alphanumeric).collect();
+        if cfg!(windows) {
+            let script = dir.join(format!("claude{stem}.cmd"));
+            fs::write(&script, format!("@echo {version}\r\n")).unwrap();
+            script
+        } else {
+            let script = dir.join(format!("claude{stem}"));
+            fs::write(&script, format!("#!/bin/sh\necho '{version}'\n")).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            script
+        }
+    }
+
+    fn setup(dir: &Path) -> HookSetup {
+        HookSetup {
+            exe: dir.join("bin").join("orkai-holder"),
+            claude_settings: dir.join("claude-settings.json"),
+            codex_home: Some(dir.join("codex-home")),
+        }
+    }
+
+    fn claude_config(program: &Path, args: &[&str]) -> Config {
+        Config {
+            claude_command: program.to_string_lossy().into_owned(),
+            claude_args: args.iter().map(|a| a.to_string()).collect(),
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn claude_gets_async_hooks_through_a_settings_file_when_its_version_supports_them() {
+        let dir = temp_dir("claude-hooks");
+        let program = versioned_claude(&dir, "2.1.302 (Claude Code)");
+        let hooks = setup(&dir);
+        let mut r = record(AgentKind::Claude, dir.clone(), "task");
+        let spec = build_spec(
+            &claude_config(&program, &[]),
+            &mut r,
+            LaunchMode::Fresh,
+            TermSize::new(24, 80),
+            None,
+            Some(&hooks),
+        )
+        .unwrap();
+        let settings_arg = hooks.claude_settings.to_string_lossy().into_owned();
+        let tail: Vec<&str> = spec.args.iter().rev().take(2).rev().map(String::as_str).collect();
+        assert_eq!(tail, vec!["--settings", settings_arg.as_str()]);
+        assert!(spec.args.contains(&"--remote-control".to_string()));
+        let written: serde_json::Value = fsutil::read_json(&hooks.claude_settings).unwrap();
+        let command = written["hooks"]["Stop"][0]["hooks"][0]["command"].as_str().unwrap().to_string();
+        assert_eq!(command, hooks::claude_hook_command(&hooks.exe, r.id));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn old_claude_versions_and_user_settings_keep_launching_without_hooks() {
+        let dir = temp_dir("claude-no-hooks");
+        let hooks = setup(&dir);
+        let old = versioned_claude(&dir, "2.1.77 (Claude Code)");
+        let mut r = record(AgentKind::Claude, dir.clone(), "task");
+        let spec =
+            build_spec(&claude_config(&old, &[]), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks))
+                .unwrap();
+        assert!(!spec.args.contains(&"--settings".to_string()));
+        assert!(!hooks.claude_settings.exists());
+
+        let current = versioned_claude(&dir, "2.1.302 (Claude Code)");
+        let own = claude_config(&current, &["--settings", "mine.json"]);
+        let spec = build_spec(&own, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks)).unwrap();
+        assert_eq!(spec.args.iter().filter(|a| *a == "--settings").count(), 1);
+        assert!(spec.args.contains(&"mine.json".to_string()));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn codex_reports_finished_turns_through_notify_unless_one_is_configured() {
+        let dir = temp_dir("codex-notify");
+        let program = fake_program(&dir);
+        let hooks = setup(&dir);
+        let notify = hooks::codex_notify_override(&hooks.exe, 5);
+        let mut r = record(AgentKind::Codex, dir.clone(), "task");
+        let fresh =
+            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks))
+                .unwrap();
+        assert_eq!(fresh.args, vec!["-c".to_string(), notify.clone()]);
+        r.conversation_id = Some("abc-123".into());
+        let resumed =
+            build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), None, Some(&hooks))
+                .unwrap();
+        assert_eq!(resumed.args, vec!["-c".to_string(), notify, "resume".into(), "abc-123".into()]);
+
+        let own_args = Config { codex_args: vec!["-c".into(), "notify=[\"say\"]".into()], ..config_with(&program) };
+        let spec = build_spec(&own_args, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks)).unwrap();
+        assert_eq!(spec.args, vec!["-c", "notify=[\"say\"]"]);
+
+        fs::create_dir_all(dir.join("codex-home")).unwrap();
+        fs::write(dir.join("codex-home").join("config.toml"), "notify = [\"notify-send\", \"Codex\"]\n").unwrap();
+        let spec =
+            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks))
+                .unwrap();
+        assert!(spec.args.is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn terminals_never_get_hooks() {
+        let dir = temp_dir("terminal-hooks");
+        let program = fake_program(&dir);
+        let hooks = setup(&dir);
+        let mut r = record(AgentKind::Terminal, dir.clone(), "npm run dev");
+        let spec =
+            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks))
+                .unwrap();
+        assert!(spec.args.is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn batch_programs_launch_without_hooks_when_the_hook_arguments_are_unsafe_for_cmd() {
+        let dir = temp_dir("batch-hooks");
+        let program = dir.join("codex.cmd");
+        fs::write(&program, b"@echo off\r\n").unwrap();
+        let hooks = HookSetup { exe: PathBuf::from(r"C:\Users\me (work)\orkai-holder.exe"), ..setup(&dir) };
+        let mut r = record(AgentKind::Codex, dir.clone(), "task");
+        let spec =
+            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks))
+                .unwrap();
+        assert!(spec.program.to_string_lossy().to_ascii_lowercase().ends_with("cmd.exe"));
+        assert!(!spec.args.iter().any(|a| a.starts_with("notify=")));
+        let safe = setup(&dir);
+        let spec =
+            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&safe))
+                .unwrap();
+        assert!(spec.args.iter().any(|a| a.starts_with("notify=")));
         fs::remove_dir_all(dir).unwrap();
     }
 }

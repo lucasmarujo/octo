@@ -26,6 +26,7 @@ use ratatui::crossterm::terminal::{
 use ratatui::layout::Rect;
 
 use crate::launch::Launcher;
+use crate::notify::{self, Notifier};
 use app::{App, AppEvent};
 
 const TICK: Duration = Duration::from_millis(120);
@@ -139,6 +140,27 @@ fn spawn_ticker(tx: mpsc::Sender<AppEvent>) -> io::Result<()> {
         .map(|_| ())
 }
 
+fn deliver_alerts(app: &mut App, notifier: &Notifier, ring: bool) {
+    let alerts = app.take_alerts();
+    if alerts.is_empty() {
+        return;
+    }
+    if ring {
+        let mut stdout = io::stdout();
+        let _ = stdout.write_all(&notify::terminal_sequence(&alerts)).and_then(|()| stdout.flush());
+    }
+    for alert in alerts {
+        notifier.send(alert);
+    }
+}
+
+fn sync_window_title(app: &App, shown: &mut String) {
+    let title = app.window_title();
+    if *shown != title && execute!(io::stdout(), SetTitle(&title)).is_ok() {
+        *shown = title;
+    }
+}
+
 fn drain(app: &mut App, rx: &Receiver<AppEvent>) {
     while let Ok(event) = rx.try_recv() {
         app.handle(event);
@@ -150,6 +172,8 @@ fn drain(app: &mut App, rx: &Receiver<AppEvent>) {
 
 pub fn run(launcher: Launcher) -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
+    let notifier = Notifier::start(launcher.config());
+    let ring = launcher.config().notify;
     let (mut terminal, guard) = setup_terminal()?;
     let size = terminal.size()?;
     let mut app = App::new(launcher, tx.clone(), Rect::new(0, 0, size.width, size.height))?;
@@ -158,6 +182,7 @@ pub fn run(launcher: Launcher) -> io::Result<()> {
     app.start();
     terminal.draw(|frame| render::draw(frame, &mut app))?;
     let mut last_draw = Instant::now();
+    let mut title = WINDOW_TITLE.to_string();
     while !app.should_quit {
         match rx.recv() {
             Ok(event) => app.handle(event),
@@ -166,6 +191,7 @@ pub fn run(launcher: Launcher) -> io::Result<()> {
         drain(&mut app, &rx);
         app.flush_input();
         app.sync_attached_size();
+        deliver_alerts(&mut app, &notifier, ring);
         if !app.take_dirty() {
             continue;
         }
@@ -184,6 +210,7 @@ pub fn run(launcher: Launcher) -> io::Result<()> {
         }
         app.take_dirty();
         terminal.draw(|frame| render::draw(frame, &mut app))?;
+        sync_window_title(&app, &mut title);
         last_draw = Instant::now();
     }
     app.shutdown();
