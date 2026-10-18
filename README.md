@@ -1,10 +1,58 @@
-# orkai
+<p align="center">
+  <img src="docs/banner.png" alt="orkai" width="520">
+</p>
 
-Um terminal para orquestrar vários agentes de IA (Claude Code, Codex) e terminais comuns,
-em vários projetos ao mesmo tempo, organizados em sessões. Binário único, nativo, sem runtime,
-para Windows, Linux e macOS.
+<p align="center">
+  <b>Orquestre vários agentes de IA em vários projetos, de um terminal só.</b><br>
+  Claude Code, Codex e terminais comuns lado a lado, organizados em sessões.<br>
+  Binário único, nativo e sem runtime, para Windows, Linux e macOS.
+</p>
 
-![orkai overview](docs/overview.png)
+<p align="center">
+  <a href="https://github.com/lucasmarujo/orkai-cli/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lucasmarujo/orkai-cli/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="https://github.com/lucasmarujo/orkai-cli/releases/tag/latest"><img alt="Download" src="https://img.shields.io/badge/download-latest-fe5d87?style=flat-square"></a>
+  <img alt="Windows · Linux · macOS" src="https://img.shields.io/badge/Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-1f1d29?style=flat-square">
+  <img alt="Claude Code · Codex" src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex-1f1d29?style=flat-square">
+  <img alt="Rust 1.88+" src="https://img.shields.io/badge/Rust-1.88%2B-1f1d29?style=flat-square&logo=rust">
+</p>
+
+<p align="center">
+  <a href="#instalação">Instalação</a> ·
+  <a href="#primeiros-passos">Primeiros passos</a> ·
+  <a href="#teclas">Teclas</a> ·
+  <a href="#linha-de-comando">Linha de comando</a> ·
+  <a href="#configuração">Configuração</a> ·
+  <a href="#segurança">Segurança</a>
+</p>
+
+## O orkai em 50 segundos
+
+https://github.com/user-attachments/assets/ee120388-6e26-485f-ad0b-b2f8d08cdbc9
+
+<p align="center">
+  <img src="docs/overview.png" alt="Visão geral do orkai: sessões na lateral, contadores e consumo no topo, agentes agrupados por projeto">
+  <br>
+  <sub>A visão geral: sessões na lateral, contadores e consumo dos planos no topo, e cada agente ao vivo, agrupado por projeto.</sub>
+</p>
+
+## Destaques
+
+- **Todos os agentes numa tela.** Claude Code, Codex e terminais agrupados por pasta, com estado, tempo,
+  tipo, a frase do que cada um está fazendo e os subagents que ele disparou.
+- **Estado exato, na hora.** Os hooks do Claude Code e o `notify` do Codex dizem quando o agente está
+  trabalhando, esperando você ou terminou, sem depender do texto da tela.
+- **Você sabe quando precisam de você.** Sino, notificação do terminal, título da janela e `alt+n` para abrir
+  direto o agente que está esperando; ou mande o aviso para o celular.
+- **Uma worktree por agente.** Vários agentes no mesmo repositório, cada um na sua branch, com `/diff` e
+  `/merge` sem sair do orkai.
+- **Consumo dos planos à vista.** Janela de 5 horas e semanal do Claude Code e do Codex, com contagem
+  regressiva até o reset.
+- **Nada se perde.** Fechar, travar ou atualizar a interface não derruba nenhum agente; depois de um reboot,
+  `ctrl+r` retoma cada conversa de onde parou.
+- **Skills no `/`.** As skills do Claude Code e do Codex aparecem no autocomplete e iniciam um agente já
+  invocando a skill.
+- **Binário único que se atualiza sozinho.** Cada build nova é conferida por tamanho e SHA-256 antes de
+  substituir o executável.
 
 ## Instalação
 
@@ -19,42 +67,78 @@ Baixe o binário da sua plataforma na release
 | macOS Apple Silicon | `orkai-aarch64-apple-darwin` |
 | macOS Intel | `orkai-x86_64-apple-darwin` |
 
-Ou compile com Rust 1.88+: `cargo install --path .` (vai para `~/.cargo/bin`).
-Depois é só digitar `orkai` no PowerShell, Bash ou zsh.
+**Linux e macOS** (troque `target` pelo arquivo da sua plataforma):
 
-Para usar agentes de IA, `claude` e/ou `codex` precisam estar no `PATH`.
-
-## Atualização automática
-
-Cada push no `main` passa pelos testes nos três sistemas e vira uma nova build na release
-`latest`, com um `manifest.json` contendo o commit e o SHA-256 de cada binário.
-
-Toda vez que você abre `orkai`, ele consulta esse manifesto (timeout curto; sem internet,
-abre direto). Se houver uma build mais nova, ele baixa o binário da sua plataforma, confere
-tamanho e SHA-256, substitui o próprio executável e abre já atualizado. Os agentes em
-execução não são afetados, porque rodam de cópias próprias do binário.
-
-- `orkai update` atualiza na hora (também converte uma build local em build oficial);
-- `orkai --version` mostra a versão e o commit (`dev` para builds locais, que não se
-  auto-atualizam);
-- `ORKAI_NO_UPDATE=1` desliga a verificação; `ORKAI_UPDATE_URL` aponta para outro
-  servidor de builds.
-
-## Uso
-
+```sh
+target=orkai-x86_64-unknown-linux-musl
+mkdir -p ~/.local/bin
+curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/$target"
+chmod +x ~/.local/bin/orkai
 ```
-orkai
+
+Se `~/.local/bin` ainda não estiver no `PATH`, adicione `export PATH="$HOME/.local/bin:$PATH"` ao
+`~/.bashrc` ou ao `~/.zshrc`.
+
+**Windows** (PowerShell):
+
+```powershell
+$dir = "$env:LOCALAPPDATA\Programs\orkai"
+$url = "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-pc-windows-msvc.exe"
+New-Item -ItemType Directory -Force $dir | Out-Null
+Invoke-WebRequest $url -OutFile "$dir\orkai.exe"
+$path = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($path -notlike "*$dir*") { [Environment]::SetEnvironmentVariable("Path", "$path;$dir", "User") }
 ```
+
+Abra um terminal novo e digite `orkai` no PowerShell, Bash ou zsh.
+
+> [!IMPORTANT]
+> Para usar agentes de IA, `claude` e/ou `codex` precisam estar no `PATH`.
+
+> [!TIP]
+> Deixe o `orkai` numa pasta em que o seu usuário possa escrever, como as dos exemplos acima: a
+> [atualização automática](#atualização-automática) substitui o próprio executável.
+
+**Do código-fonte**, com Rust 1.88+ (vai para `~/.cargo/bin`):
+
+```sh
+git clone https://github.com/lucasmarujo/orkai-cli.git
+cd orkai-cli
+cargo install --path .
+```
+
+Builds locais aparecem como `dev` e não se auto-atualizam; `orkai update` converte uma delas em build oficial.
+
+## Primeiros passos
+
+1. Abra o orkai em qualquer terminal: `orkai`.
+2. Escolha a pasta do projeto com `ctrl+l` (ou `/where <pasta>`).
+3. Escolha quem executa com `tab`: claude, codex ou terminal.
+4. Escreva a tarefa no "write a task" e aperte `enter`: o agente nasce já trabalhando nela.
+5. `enter` (ou um clique) abre o agente numa aba; `ctrl+]` volta para a visão geral.
+
+Pode sair quando quiser (`ctrl+q`): os agentes continuam rodando e o orkai reconecta em todos ao abrir de novo.
+
+## A interface
 
 | Área | O que mostra |
 | --- | --- |
 | Lateral | máquina, sessões com o número de agentes ativos em cada uma, `+ new session` |
-| Topo | o homenzinho pixelado, os contadores `agents`, `working`, `paused` e `done` da sessão e, à direita, o consumo do Claude Code e do Codex (veja abaixo) |
+| Topo | o homenzinho pixelado, os contadores `agents`, `working`, `paused` e `done` da sessão e, à direita, o consumo do Claude Code e do Codex (veja [abaixo](#consumo-do-claude-code-e-do-codex)) |
 | Lista | agentes agrupados por pasta (com a contagem de cada uma): número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
 | Rodapé | `write a task`, `pc`, `who`, `worktree` e `where` para lançar novos agentes |
 
-Estados: `⠋` trabalhando · `‖` em amarelo, esperando você responder (aprovação, pergunta ou escolha dentro do agente) · `✔` terminou (ainda não visto) ·
-`●` ocioso · `$` terminal · `↻` interrompido (crash/reboot) · `✗` encerrado.
+### Estados
+
+| Símbolo | Estado |
+| :---: | --- |
+| `⠋` | trabalhando |
+| `‖` | em amarelo, esperando você responder (aprovação, pergunta ou escolha dentro do agente) |
+| `✔` | terminou (ainda não visto) |
+| `●` | ocioso |
+| `$` | terminal |
+| `↻` | interrompido (crash/reboot) |
+| `✗` | encerrado |
 
 Um terminal em que você roda `claude` ou `codex` vira esse agente sozinho: em até 2 segundos o
 overview passa a mostrar o tipo, o estado (trabalhando, esperando você, terminou), os subagents e os
@@ -109,7 +193,9 @@ plano, com o login que o próprio `claude` e o `codex` já guardam na máquina:
 Sem login aparece `not signed in`; com o login vencido, `login expired` (abrir o agente renova); e
 se a consulta falhar, o último valor continua na tela com `unavailable`.
 
-### Teclas
+## Teclas
+
+**Tarefas e lançamento**
 
 | Tecla | Ação |
 | --- | --- |
@@ -117,22 +203,36 @@ se a consulta falhar, o último valor continua na tela com `unavailable`.
 | `!comando` + `enter` | roda o comando num terminal novo, sem mudar o `who` (ex.: `!npm run dev`) |
 | `shift+enter` (ou `alt+enter`) | quebra de linha na tarefa, sem enviar; colar um texto com várias linhas também mantém as quebras |
 | `tab` / `shift+tab` | escolhe quem executa: claude, codex ou terminal |
-| `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja abaixo); clicar no nome de um projeto também |
+| `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja [abaixo](#escolhendo-a-pasta-where)); clicar no nome de um projeto também |
+| `ctrl+t` | liga/desliga a worktree própria para os próximos agentes (veja [abaixo](#uma-worktree-por-agente-ctrlt)) |
+| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/diff`, `/merge`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-do-claude-code-e-do-codex-skill)) |
+
+**Agentes**
+
+| Tecla | Ação |
+| --- | --- |
 | `↑` `↓` / mouse | seleciona; `enter` ou clique abre o agente numa aba |
 | `ctrl+]` | sai da aba do agente e volta para a visão geral |
 | `shift+pgup` / roda do mouse | histórico do agente |
 | `alt+1..9` | pula para uma aba aberta |
 | `alt+n` | abre o próximo agente esperando você (ou que terminou), de qualquer tela |
 | `ctrl+e` / `f2` | renomeia o agente |
-| `ctrl+t` | liga/desliga a worktree própria para os próximos agentes (veja abaixo) |
 | `delete` | para e remove o agente selecionado (com o texto vazio), após confirmar no popup |
 | `ctrl+x` | encerra um agente em execução / remove um encerrado (também pede confirmação no popup) |
 | `ctrl+r` | recupera os agentes interrompidos da sessão |
+
+**Sessões e geral**
+
+| Tecla | Ação |
+| --- | --- |
 | `ctrl+n` · `alt+↑↓` | nova sessão · troca de sessão |
-| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/diff`, `/merge`, `/help`, `/quit`, além das skills do `who` atual (veja abaixo) |
+| `f1` (ou `?` com o texto vazio) | mostra/esconde a ajuda |
 | `ctrl+c` / `ctrl+q` | sai do orkai; os agentes continuam rodando |
 
-### Escolhendo a pasta (`/where`)
+Dentro da aba de um agente todas as teclas vão para ele (Claude Code, Codex, PowerShell, bash…),
+inclusive `esc`, setas, colagem e mouse quando o programa usa mouse.
+
+## Escolhendo a pasta (`/where`)
 
 Digite `/where ` (ou `/cd `) no "write a task". A linha de baixo mostra, ao vivo, as pastas
 de onde você está (`where` atual) e vai filtrando conforme você digita. Caminhos relativos partem
@@ -146,7 +246,7 @@ do `where` atual; `~` é a sua pasta de usuário.
 
 `ctrl+l` (ou clicar em `where`) abre o mesmo seletor já preenchido com a pasta atual.
 
-### Uma worktree por agente (`ctrl+t`)
+## Uma worktree por agente (`ctrl+t`)
 
 Com `worktree on` no rodapé (`ctrl+t`, `/worktree` ou clique), cada novo agente `claude`/`codex` nasce numa
 [worktree do git](https://git-scm.com/docs/git-worktree) própria, numa branch `orkai/<nome-do-agente>` criada a
@@ -167,7 +267,7 @@ outro, e o seu checkout continua intacto. Terminais (`!comando`) continuam rodan
 - Apagar o agente (`delete` ou `ctrl+x`) apaga também a worktree e a branch `orkai/…`; o popup avisa antes.
 - Na linha de comando: `orkai new --worktree …`; `orkai rm` também apaga a worktree.
 
-### Skills do Claude Code e do Codex (`/skill`)
+## Skills do Claude Code e do Codex (`/skill`)
 
 Com `who` em `claude` ou `codex`, o `/` também sugere as skills que esse agente tem, lidas do disco
 e atualizadas sozinhas (instale uma skill e ela aparece em segundos):
@@ -181,12 +281,9 @@ e atualizadas sozinhas (instale uma skill e ela aparece em segundos):
 invocando a skill. No Codex o orkai envia no formato dele (`$skill argumentos`).
 Os comandos do próprio orkai têm prioridade quando o nome coincide.
 
-Dentro da aba de um agente todas as teclas vão para ele (Claude Code, Codex, PowerShell, bash…),
-inclusive `esc`, setas, colagem e mouse quando o programa usa mouse.
+## Linha de comando
 
-### Linha de comando
-
-```
+```text
 orkai ls [-s sessão]             lista agentes com o estado ao vivo
 orkai new -k claude -C <pasta> [--worktree] <tarefa...>
 orkai send <id> <texto...>       digita no agente e aperta enter
@@ -198,10 +295,41 @@ orkai sessions · orkai home
 orkai update                     baixa e instala a build mais nova
 ```
 
+## Atualização automática
+
+Cada push no `main` passa pelos testes nos três sistemas e vira uma nova build na release
+`latest`, com um `manifest.json` contendo o commit e o SHA-256 de cada binário.
+
+Toda vez que você abre `orkai`, ele consulta esse manifesto (timeout curto; sem internet,
+abre direto). Se houver uma build mais nova, ele baixa o binário da sua plataforma, confere
+tamanho e SHA-256, substitui o próprio executável e abre já atualizado. Os agentes em
+execução não são afetados, porque rodam de cópias próprias do binário.
+
+- `orkai update` atualiza na hora (também converte uma build local em build oficial);
+- `orkai --version` mostra a versão e o commit (`dev` para builds locais, que não se
+  auto-atualizam);
+- `ORKAI_NO_UPDATE=1` desliga a verificação; `ORKAI_UPDATE_URL` aponta para outro
+  servidor de builds.
+
 ## Persistência e recuperação
 
 Cada agente roda dentro de um processo `holder` próprio e destacado, dono do pseudo-terminal
-(ConPTY no Windows, PTY no Unix). A interface só se conecta a eles. Por isso:
+(ConPTY no Windows, PTY no Unix). A interface só se conecta a eles.
+
+```mermaid
+flowchart LR
+    ui["orkai · interface"]
+    subgraph holders["um holder por agente, destacado da interface"]
+        h1["holder"] -- "ConPTY / PTY" --> a1["claude"]
+        h2["holder"] -- "ConPTY / PTY" --> a2["codex"]
+        h3["holder"] -- "ConPTY / PTY" --> a3["pwsh / bash"]
+    end
+    ui -- "127.0.0.1 + token" --> h1
+    ui --> h2
+    ui --> h3
+```
+
+Por isso:
 
 - **Fechar, reiniciar ou atualizar o orkai não derruba nenhum agente.** Ao abrir de novo, ele
   reconecta em todos. O holder roda a partir de uma cópia do binário em `bin/`, então dá para
@@ -215,9 +343,15 @@ Cada agente roda dentro de um processo `holder` próprio e destacado, dono do ps
 - Toda a saída de cada agente é gravada (com rotação) em `agents/<id>/output.log`. Abrir um
   agente encerrado ou interrompido mostra a última tela, e `orkai logs <id>` imprime a transcrição.
 
-Os dados ficam em `orkai home` (Windows: `%LOCALAPPDATA%\orkai`, Linux:
-`~/.local/share/orkai`, macOS: `~/Library/Application Support/orkai`). A variável
-`ORKAI_HOME` muda esse local.
+Os dados ficam em `orkai home`:
+
+| Sistema | Pasta |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\orkai` |
+| Linux | `~/.local/share/orkai` |
+| macOS | `~/Library/Application Support/orkai` |
+
+A variável `ORKAI_HOME` muda esse local.
 
 ## Configuração
 
@@ -254,16 +388,16 @@ claude.ai/code. O Codex não tem um equivalente para a sessão interativa no ter
 
 ## Segurança
 
-Os holders escutam somente em `127.0.0.1`, numa porta aleatória, e exigem um token de 256
-bits por agente, que fica apenas na pasta de dados do usuário (permissões `0700`/`0600` no Unix).
-Para mostrar o consumo, o orkai lê o token de login do Claude Code e do Codex só na memória e o envia
-apenas, por HTTPS, ao serviço que o emitiu (`api.anthropic.com` e `chatgpt.com`); ele nunca é
-gravado, registrado em log ou renovado pelo orkai.
-Comandos `.cmd`/`.bat` no Windows nunca recebem texto livre como argumento: a tarefa é digitada
-no terminal do agente, não passada pela linha de comando.
-Os hooks do Claude Code e o `notify` do Codex chamam a cópia do orkai em `bin/` e só gravam o tipo do
-evento (trabalhando, esperando você, terminou) na pasta do agente; o conteúdo recebido do agente é
-descartado na memória.
+- Os holders escutam somente em `127.0.0.1`, numa porta aleatória, e exigem um token de 256
+  bits por agente, que fica apenas na pasta de dados do usuário (permissões `0700`/`0600` no Unix).
+- Para mostrar o consumo, o orkai lê o token de login do Claude Code e do Codex só na memória e o envia
+  apenas, por HTTPS, ao serviço que o emitiu (`api.anthropic.com` e `chatgpt.com`); ele nunca é
+  gravado, registrado em log ou renovado pelo orkai.
+- Comandos `.cmd`/`.bat` no Windows nunca recebem texto livre como argumento: a tarefa é digitada
+  no terminal do agente, não passada pela linha de comando.
+- Os hooks do Claude Code e o `notify` do Codex chamam a cópia do orkai em `bin/` e só gravam o tipo do
+  evento (trabalhando, esperando você, terminou) na pasta do agente; o conteúdo recebido do agente é
+  descartado na memória.
 
 ## Desenvolvimento
 
@@ -272,3 +406,13 @@ cargo test        # unitários + e2e com PTY real (holder e a própria TUI)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
+
+O CI roda os três em Windows, Linux e macOS a cada push no `main` e em cada pull request; cada push no
+`main` que passa vira a release [`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest).
+
+---
+
+<p align="center">
+  <img src="docs/banner.png" alt="orkai" width="120"><br>
+  <sub><a href="https://github.com/lucasmarujo/orkai-cli/issues">Reportar um problema</a> · <a href="https://github.com/lucasmarujo/orkai-cli/releases/tag/latest">Baixar a última build</a></sub>
+</p>
