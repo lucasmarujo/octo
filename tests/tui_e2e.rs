@@ -222,6 +222,7 @@ fn tui_keeps_pasted_line_breaks_and_deletes_running_agents() {
 
     tui.send(b"\r");
     tui.wait_for("echo-first-line");
+    wait_until("the agent record", || !fx.inner.list_agents().unwrap().is_empty());
     let agents = fx.inner.list_agents().unwrap();
     assert_eq!(agents.len(), 1);
     assert_eq!(agents[0].task, "echo first-line\necho second-line");
