@@ -11,7 +11,7 @@ const SKILLS_TTL: Duration = Duration::from_secs(5);
 pub const COMMANDS: &[&str] = &[
     "/where <path>",
     "/cd <path>",
-    "/who <claude|codex|terminal>",
+    "/who <agent>",
     "/session <name>",
     "/new-session [name]",
     "/rename-session <name>",

@@ -158,7 +158,13 @@ impl SubagentWatcher {
             let mut subagents = match parent.kind {
                 AgentKind::Claude => self.claude(parent, now),
                 AgentKind::Codex => self.codex(parent, now),
-                AgentKind::Terminal => Vec::new(),
+                AgentKind::Kilo
+                | AgentKind::Opencode
+                | AgentKind::Antigravity
+                | AgentKind::Grok
+                | AgentKind::Qwen
+                | AgentKind::Kimi
+                | AgentKind::Terminal => Vec::new(),
             };
             if subagents.is_empty() {
                 continue;

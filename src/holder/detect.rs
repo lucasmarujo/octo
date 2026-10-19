@@ -25,6 +25,29 @@ const WAITING_MARKERS: &[&str] = &[
     "› 1. yes",
 ];
 
+const OPENCODE_BUSY_MARKERS: &[&str] = &["esc interrupt", "esc again to interrupt"];
+const OPENCODE_WAITING_MARKERS: &[&str] = &["permission required", "type your own answer"];
+const ANTIGRAVITY_WAITING_MARKERS: &[&str] = &[
+    "run this command?",
+    "allow creation of this file?",
+    "accept this file edit",
+    "allow access to this",
+    "allow calling this tool?",
+    "trust this folder?",
+];
+const GROK_BUSY_MARKERS: &[&str] = &["[stop]"];
+const GROK_WAITING_MARKERS: &[&str] = &["tell grok what to do differently", "waiting on plan approval"];
+const QWEN_WAITING_MARKERS: &[&str] = &["waiting for user confirmation", "yes, allow once"];
+const KIMI_BUSY_MARKERS: &[&str] = &["working…", "🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"];
+const KIMI_WAITING_MARKERS: &[&str] = &["approve once", "trust this folder?", "ready to submit your answers?"];
+const QWEN_BUSY_GLYPH: char = '◐';
+const QWEN_WAITING_GLYPH: char = '✳';
+const GROK_ATTENTION: &str = "Action Required";
+const GROK_STATES: &[&str] = &["Thinking", "Responding", "Compacting", "Waiting", "Cancelling"];
+const GROK_RUNNING: &str = "Running:";
+const GROK_NAME: &str = "grok";
+const TITLE_SEPARATOR: &str = " - ";
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Signals {
     pub busy: bool,
@@ -33,12 +56,44 @@ pub struct Signals {
 
 const SPINNER_GLYPHS: &[char] = &['◐', '◓', '◑', '◒', '◴', '◵', '◶', '◷', '✢', '✶', '✻', '✽', '·'];
 
+fn is_braille_spinner(c: char) -> bool {
+    ('\u{2801}'..='\u{28FF}').contains(&c)
+}
+
 pub fn title_is_busy(title: &str) -> bool {
-    title
-        .trim_start()
-        .chars()
-        .next()
-        .is_some_and(|c| (('\u{2801}'..='\u{28FF}').contains(&c)) || SPINNER_GLYPHS.contains(&c))
+    title.trim_start().chars().next().is_some_and(|c| is_braille_spinner(c) || SPINNER_GLYPHS.contains(&c))
+}
+
+fn busy_markers(kind: AgentKind) -> &'static [&'static str] {
+    match kind {
+        AgentKind::Kilo | AgentKind::Opencode => OPENCODE_BUSY_MARKERS,
+        AgentKind::Grok => GROK_BUSY_MARKERS,
+        AgentKind::Kimi => KIMI_BUSY_MARKERS,
+        _ => &[],
+    }
+}
+
+fn waiting_markers(kind: AgentKind) -> &'static [&'static str] {
+    match kind {
+        AgentKind::Kilo | AgentKind::Opencode => OPENCODE_WAITING_MARKERS,
+        AgentKind::Antigravity => ANTIGRAVITY_WAITING_MARKERS,
+        AgentKind::Grok => GROK_WAITING_MARKERS,
+        AgentKind::Qwen => QWEN_WAITING_MARKERS,
+        AgentKind::Kimi => KIMI_WAITING_MARKERS,
+        _ => &[],
+    }
+}
+
+fn title_signals(kind: AgentKind, title: &str) -> Signals {
+    let lead = title.trim_start().chars().next();
+    match kind {
+        AgentKind::Claude => Signals { busy: title_is_busy(title), waiting: false },
+        AgentKind::Qwen => Signals { busy: lead == Some(QWEN_BUSY_GLYPH), waiting: lead == Some(QWEN_WAITING_GLYPH) },
+        AgentKind::Grok => {
+            Signals { busy: lead.is_some_and(is_braille_spinner), waiting: title.contains(GROK_ATTENTION) }
+        }
+        _ => Signals::default(),
+    }
 }
 
 pub fn strip_title_glyphs(title: &str) -> String {
@@ -54,9 +109,9 @@ pub fn analyze(kind: AgentKind, title: &str, tail: &str) -> Signals {
         return Signals::default();
     }
     let lower = tail.to_lowercase();
-    let waiting = WAITING_MARKERS.iter().any(|m| lower.contains(m));
-    let busy = !waiting
-        && (BUSY_MARKERS.iter().any(|m| lower.contains(m)) || (kind == AgentKind::Claude && title_is_busy(title)));
+    let title = title_signals(kind, title);
+    let waiting = title.waiting || WAITING_MARKERS.iter().chain(waiting_markers(kind)).any(|m| lower.contains(m));
+    let busy = !waiting && (title.busy || BUSY_MARKERS.iter().chain(busy_markers(kind)).any(|m| lower.contains(m)));
     Signals { busy, waiting }
 }
 
@@ -67,16 +122,63 @@ fn looks_like_program_path(text: &str) -> bool {
     is_program || (is_path && !lower.contains(' '))
 }
 
+fn generic_titles(kind: AgentKind) -> &'static [&'static str] {
+    match kind {
+        AgentKind::Claude => &["claude code", "claude"],
+        AgentKind::Codex => &["codex"],
+        AgentKind::Kilo => &["kilo cli", "kilo"],
+        AgentKind::Opencode => &["opencode"],
+        AgentKind::Antigravity => &["antigravity cli", "antigravity", "agy"],
+        AgentKind::Grok => &[GROK_NAME],
+        AgentKind::Qwen => &["qwen"],
+        AgentKind::Kimi => &["kimi code", "kimi"],
+        AgentKind::Terminal => &[],
+    }
+}
+
+fn title_prefix(kind: AgentKind) -> Option<&'static str> {
+    match kind {
+        AgentKind::Kilo => Some("Kilo CLI | "),
+        AgentKind::Opencode => Some("OC | "),
+        _ => None,
+    }
+}
+
+fn generic_prefix(kind: AgentKind) -> Option<&'static str> {
+    match kind {
+        AgentKind::Qwen => Some("Qwen - "),
+        _ => None,
+    }
+}
+
+fn grok_title(text: &str) -> String {
+    let parts: Vec<&str> = text
+        .split(TITLE_SEPARATOR)
+        .map(str::trim)
+        .filter(|part| !strip_title_glyphs(part).is_empty())
+        .filter(|part| !part.contains(GROK_ATTENTION) && !part.starts_with(GROK_RUNNING))
+        .filter(|part| !GROK_STATES.iter().any(|state| part.trim_end_matches('…').eq_ignore_ascii_case(state)))
+        .collect();
+    let parts = match parts.split_last() {
+        Some((last, rest)) if last.eq_ignore_ascii_case(GROK_NAME) => rest,
+        _ => &parts[..],
+    };
+    parts.join(TITLE_SEPARATOR)
+}
+
 pub fn activity_from_title(kind: AgentKind, title: &str) -> Option<String> {
     let text = strip_title_glyphs(title);
     if text.is_empty() || looks_like_program_path(title) || looks_like_program_path(&text) {
         return None;
     }
-    let generic = match kind {
-        AgentKind::Claude => text.eq_ignore_ascii_case("claude code") || text.eq_ignore_ascii_case("claude"),
-        AgentKind::Codex => text.eq_ignore_ascii_case("codex"),
-        AgentKind::Terminal => false,
+    if generic_prefix(kind).is_some_and(|prefix| text.starts_with(prefix)) {
+        return None;
+    }
+    let text = match kind {
+        AgentKind::Grok => grok_title(&text),
+        _ => title_prefix(kind).and_then(|prefix| text.strip_prefix(prefix)).unwrap_or(&text).trim().to_string(),
     };
+    let generic = text.is_empty() || generic_titles(kind).iter().any(|name| text.eq_ignore_ascii_case(name));
     (!generic).then_some(text)
 }
 
@@ -297,6 +399,86 @@ mod tests {
         assert_eq!(analyze(AgentKind::Claude, "⠐ Plan", CLAUDE_QUESTION), Signals { busy: false, waiting: true });
         assert_eq!(analyze(AgentKind::Codex, "", CODEX_QUESTION), Signals { busy: false, waiting: true });
         assert!(analyze(AgentKind::Codex, "", "Press enter to confirm or esc to cancel").waiting);
+    }
+
+    #[test]
+    fn opencode_and_kilo_screens_show_work_permissions_and_questions() {
+        for kind in [AgentKind::Opencode, AgentKind::Kilo] {
+            let working = "  ■■⬝⬝⬝⬝⬝⬝  esc interrupt\n";
+            assert_eq!(analyze(kind, "OpenCode", working), Signals { busy: true, waiting: false });
+            assert!(analyze(kind, "", "esc again to interrupt").busy);
+            let permission =
+                " △ Permission required\n   $ npm test\n  Allow once   Allow always   Reject\n  esc interrupt";
+            assert_eq!(analyze(kind, "", permission), Signals { busy: false, waiting: true });
+            assert!(analyze(kind, "", " 1. Keep it\n 2. Type your own answer\n").waiting);
+            let finished = "▣  Build · anthropic/claude-sonnet · 12.3s\n  tab agents  ctrl+p commands";
+            assert_eq!(analyze(kind, "OC | Fix login", finished), Signals::default());
+        }
+        assert!(!analyze(AgentKind::Claude, "", " △ Permission required").waiting, "markers are per agent");
+    }
+
+    #[test]
+    fn antigravity_approval_screens_wait_for_you() {
+        assert!(analyze(AgentKind::Antigravity, "", " Run this command?\n Yes, run command\n").waiting);
+        assert!(analyze(AgentKind::Antigravity, "", " Allow calling this tool?\n").waiting);
+        assert!(!analyze(AgentKind::Antigravity, "", " The user has a question about it.\n").waiting);
+        assert!(analyze(AgentKind::Antigravity, "", "Working… (esc to cancel)").busy);
+        assert_eq!(analyze(AgentKind::Antigravity, "", "> "), Signals::default());
+    }
+
+    #[test]
+    fn grok_title_and_screen_show_work_and_approvals() {
+        assert!(analyze(AgentKind::Grok, "⠋ - Thinking - fix login - grok", "").busy);
+        assert!(analyze(AgentKind::Grok, "fix login - grok", "⠧ Running… 12s   1m02s ⇣12k [stop]").busy);
+        let approval = "⚠ Action Required - ⠋ - Waiting - fix login - grok";
+        assert_eq!(analyze(AgentKind::Grok, approval, ""), Signals { busy: false, waiting: true });
+        let prompt = " Allow `npm`?\n 1. Yes, proceed\n 2. No, and tell Grok what to do differently\n";
+        assert_eq!(analyze(AgentKind::Grok, "fix login - grok", prompt), Signals { busy: false, waiting: true });
+        assert_eq!(analyze(AgentKind::Grok, "fix login - grok", "Worked for 2m5s\n> "), Signals::default());
+        assert!(!analyze(AgentKind::Claude, "⚠ Action Required - grok", "").waiting);
+    }
+
+    #[test]
+    fn qwen_title_glyphs_tell_working_from_waiting() {
+        let busy = format!("{QWEN_BUSY_GLYPH}\u{FE0E} Fix login{}", " ".repeat(40));
+        assert_eq!(analyze(AgentKind::Qwen, &busy, ""), Signals { busy: true, waiting: false });
+        let waiting = format!("{QWEN_WAITING_GLYPH}\u{FE0E} Fix login");
+        assert_eq!(analyze(AgentKind::Qwen, &waiting, ""), Signals { busy: false, waiting: true });
+        assert!(analyze(AgentKind::Qwen, "Qwen - app", "(5s · ↓ 1.2k tokens · esc to cancel)").busy);
+        assert!(analyze(AgentKind::Qwen, "", "Allow execution of: 'rm -rf build'?\n ● 1. Yes, allow once").waiting);
+        assert_eq!(analyze(AgentKind::Qwen, "Qwen - app", "> "), Signals::default());
+        assert!(!analyze(AgentKind::Claude, &waiting, "").waiting, "the idle claude title starts with the same glyph");
+    }
+
+    #[test]
+    fn kimi_spinners_and_approval_panel_are_detected() {
+        assert!(analyze(AgentKind::Kimi, "Kimi Code", "⠋ Working… · Tip: use /usage").busy);
+        assert!(analyze(AgentKind::Kimi, "Kimi Code", "🌓").busy);
+        let approval = "───\n ▶ Run this command?\n ▶ 1. Approve once\n   2. Approve for this session\n   3. Reject";
+        assert_eq!(analyze(AgentKind::Kimi, "", approval), Signals { busy: false, waiting: true });
+        assert!(analyze(AgentKind::Kimi, "", " Trust this folder?\n Trust and continue").waiting);
+        assert_eq!(analyze(AgentKind::Kimi, "Kimi Code", "Interrupted by user\n> "), Signals::default());
+    }
+
+    #[test]
+    fn titles_of_the_new_agents_give_their_session_names_only() {
+        assert_eq!(activity_from_title(AgentKind::Opencode, "OpenCode"), None);
+        assert_eq!(activity_from_title(AgentKind::Opencode, "OC | Fix login flow"), Some("Fix login flow".into()));
+        assert_eq!(activity_from_title(AgentKind::Kilo, "Kilo CLI"), None);
+        assert_eq!(activity_from_title(AgentKind::Kilo, "◔ Kilo CLI | Fix login"), Some("Fix login".into()));
+        assert_eq!(activity_from_title(AgentKind::Antigravity, "Antigravity CLI"), None);
+        assert_eq!(activity_from_title(AgentKind::Kimi, "Kimi Code"), None);
+        assert_eq!(activity_from_title(AgentKind::Kimi, "Refactor the parser"), Some("Refactor the parser".into()));
+        assert_eq!(activity_from_title(AgentKind::Qwen, "Qwen - orkai_cli          "), None);
+        assert_eq!(activity_from_title(AgentKind::Qwen, "◐\u{FE0E} Fix login   "), Some("Fix login".into()));
+        assert_eq!(activity_from_title(AgentKind::Grok, "grok"), None);
+        assert_eq!(activity_from_title(AgentKind::Grok, "fix login - grok"), Some("fix login".into()));
+        assert_eq!(activity_from_title(AgentKind::Grok, "⠋ - Thinking - fix login - grok"), Some("fix login".into()));
+        assert_eq!(
+            activity_from_title(AgentKind::Grok, "⚠ Action Required - ⠙ - Running: bash - a - b - grok"),
+            Some("a - b".into())
+        );
+        assert_eq!(activity_from_title(AgentKind::Grok, "⠋ - Responding… - grok"), None);
     }
 
     #[test]

@@ -428,6 +428,94 @@ fn hook_events_from_the_agent_drive_its_state() {
     wait_for_exit(&rx);
 }
 
+fn start_ai(fx: &Fixture, kind: AgentKind, program: PathBuf, args: Vec<String>) -> (AgentId, RuntimeInfo) {
+    let cwd = fx.dir.join("work");
+    let record = fx
+        .store
+        .create_agent(NewAgent {
+            session: "default".into(),
+            name: kind.label().into(),
+            kind,
+            cwd: cwd.clone(),
+            task: String::new(),
+        })
+        .unwrap();
+    let spec = LaunchSpec {
+        kind,
+        program,
+        args,
+        cwd,
+        env: Vec::new(),
+        env_remove: Vec::new(),
+        initial_input: None,
+        rows: 24,
+        cols: 100,
+    };
+    fx.store.write_launch(record.id, &spec).unwrap();
+    spawn_holder(fx.store.home(), record.id, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    (record.id, wait_for_runtime(&fx.store, record.id, TIMEOUT).unwrap())
+}
+
+#[test]
+fn plugin_and_qwen_hook_events_drive_the_state_of_the_new_agents() {
+    let fx = fixture("plugin-hooks");
+    let (program, args) = shell();
+    let (id, runtime) = start_ai(&fx, AgentKind::Opencode, program.clone(), args.clone());
+    let (conn, rx) = open(&runtime);
+    let agent = id.to_string();
+    assert!(run_hook(&fx, &["plugin", &agent, "busy"], b"").success());
+    let working = wait_for_state(&rx, AgentState::Working);
+    assert!(working.turn_started_ms.is_some());
+    assert!(run_hook(&fx, &["plugin", &agent, "waiting"], b"").success());
+    wait_for_state(&rx, AgentState::Paused);
+    assert!(run_hook(&fx, &["plugin", &agent, "busy"], b"").success());
+    wait_for_state(&rx, AgentState::Working);
+    assert!(run_hook(&fx, &["plugin", &agent, "finished"], b"").success());
+    assert!(wait_for_state(&rx, AgentState::Done).last_turn_ms.is_some());
+    assert!(run_hook(&fx, &["plugin", &agent, "nonsense"], b"").success());
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
+
+    let (id, runtime) = start_ai(&fx, AgentKind::Qwen, program, args);
+    let (conn, rx) = open(&runtime);
+    let agent = id.to_string();
+    let prompt = br#"{"session_id":"s","hook_event_name":"UserPromptSubmit","prompt":"secret"}"#;
+    assert!(run_hook(&fx, &["qwen", &agent], prompt).success());
+    wait_for_state(&rx, AgentState::Working);
+    let permission = br#"{"session_id":"s","hook_event_name":"PermissionRequest","tool_name":"run_shell_command"}"#;
+    assert!(run_hook(&fx, &["qwen", &agent], permission).success());
+    wait_for_state(&rx, AgentState::Paused);
+    let stop = br#"{"session_id":"s","hook_event_name":"Stop","stop_hook_active":false}"#;
+    assert!(run_hook(&fx, &["qwen", &agent], stop).success());
+    wait_for_state(&rx, AgentState::Done);
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
+}
+
+#[test]
+fn antigravity_program_status_reports_drive_its_state() {
+    let fx = fixture("osc7501");
+    let (program, args) = if cfg!(windows) {
+        let script = "$e=[char]27; $b=[char]7; [Console]::Write(\"$e]7501;state=working:app=agy$b\"); Start-Sleep -Milliseconds 1500; [Console]::Write(\"$e]7501;state=blocked:kind=permission$b\"); Start-Sleep -Milliseconds 1500; [Console]::Write(\"$e]7501;state=done$b\"); Start-Sleep -Seconds 60";
+        (
+            PathBuf::from("powershell.exe"),
+            vec!["-NoLogo".to_string(), "-NoProfile".to_string(), "-Command".to_string(), script.to_string()],
+        )
+    } else {
+        let script = r"printf '\033]7501;state=working:app=agy\007'; sleep 1.5; printf '\033]7501;state=blocked:kind=permission\007'; sleep 1.5; printf '\033]7501;state=done\007'; sleep 60";
+        (PathBuf::from("/bin/sh"), vec!["-c".to_string(), script.to_string()])
+    };
+    let (_, runtime) = start_ai(&fx, AgentKind::Antigravity, program, args);
+    let (conn, rx) = open(&runtime);
+    conn.send(&ClientMsg::Attach(TermSize { rows: 24, cols: 100 })).unwrap();
+    wait_for_state(&rx, AgentState::Working);
+    wait_for_state(&rx, AgentState::Paused);
+    let done = wait_for_state(&rx, AgentState::Done);
+    assert!(done.last_turn_ms.is_some());
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
+}
+
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
     assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));

@@ -87,6 +87,14 @@ impl Home {
         self.agent_dir(id).join("claude-settings.json")
     }
 
+    pub fn qwen_settings_file(&self, id: AgentId) -> PathBuf {
+        self.agent_dir(id).join("qwen-settings.json")
+    }
+
+    pub fn plugin_file(&self, id: AgentId) -> PathBuf {
+        self.agent_dir(id).join("orkai-plugin.js")
+    }
+
     pub fn sessions_file(&self) -> PathBuf {
         self.root.join("sessions.json")
     }

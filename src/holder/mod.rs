@@ -37,6 +37,7 @@ type Frame = Arc<Vec<u8>>;
 struct Watch {
     root: u32,
     claude_home: Option<PathBuf>,
+    qwen_home: Option<PathBuf>,
 }
 
 struct ClientSlot {
@@ -297,9 +298,11 @@ pub fn run(home: &Home, id: AgentId) -> io::Result<()> {
         let shared = Arc::clone(&shared);
         move || accept_clients(&shared, listener)
     })?;
-    let watch = child_pid
-        .filter(|_| spec.kind == AgentKind::Terminal)
-        .map(|root| Watch { root, claude_home: launch::claude_home() });
+    let watch = child_pid.filter(|_| spec.kind == AgentKind::Terminal).map(|root| Watch {
+        root,
+        claude_home: launch::claude_home(),
+        qwen_home: launch::qwen_home(),
+    });
     let inbox = spec.kind.is_ai().then(|| HookInbox::open(home.hooks_dir(id)));
     spawn_named("orkai-ticker", {
         let shared = Arc::clone(&shared);
@@ -369,7 +372,8 @@ fn tick(shared: &Arc<Shared>, watch: Option<&Watch>, mut inbox: Option<HookInbox
         if let Some(watch) = watch
             && ticks.is_multiple_of(nested::CHECK_EVERY_TICKS)
         {
-            let found = nested::detect(&nested::descendants(watch.root), watch.claude_home.as_deref(), now);
+            let processes = nested::descendants(watch.root);
+            let found = nested::detect(&processes, watch.claude_home.as_deref(), watch.qwen_home.as_deref(), now);
             lock(&shared.term).set_nested(found, now);
         }
         let events = inbox.as_mut().map(HookInbox::take).unwrap_or_default();

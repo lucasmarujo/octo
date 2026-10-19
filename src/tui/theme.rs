@@ -18,6 +18,12 @@ pub const INK: Color = Color::Rgb(18, 18, 24);
 pub const PAPER: Color = Color::Rgb(236, 236, 240);
 pub const CLAUDE: Color = Color::Rgb(222, 128, 92);
 pub const CODEX: Color = Color::Rgb(120, 175, 255);
+pub const KILO: Color = Color::Rgb(236, 226, 110);
+pub const OPENCODE: Color = Color::Rgb(250, 178, 131);
+pub const ANTIGRAVITY: Color = Color::Rgb(150, 150, 255);
+pub const GROK: Color = Color::Rgb(232, 232, 240);
+pub const QWEN: Color = Color::Rgb(186, 140, 255);
+pub const KIMI: Color = Color::Rgb(236, 128, 220);
 pub const TERMINAL: Color = Color::Rgb(90, 210, 210);
 pub const TAB_ACTIVE_BG: Color = Color::Rgb(44, 44, 58);
 pub const USAGE_WARN_PERCENT: f64 = 70.0;
@@ -43,6 +49,12 @@ pub fn kind_color(kind: AgentKind) -> Color {
     match kind {
         AgentKind::Claude => CLAUDE,
         AgentKind::Codex => CODEX,
+        AgentKind::Kilo => KILO,
+        AgentKind::Opencode => OPENCODE,
+        AgentKind::Antigravity => ANTIGRAVITY,
+        AgentKind::Grok => GROK,
+        AgentKind::Qwen => QWEN,
+        AgentKind::Kimi => KIMI,
         AgentKind::Terminal => TERMINAL,
     }
 }
@@ -99,6 +111,12 @@ mod tests {
         assert_eq!(usage_color(89.0), YELLOW);
         assert_eq!(usage_color(USAGE_ALERT_PERCENT), RED);
         assert_eq!(usage_color(130.0), RED);
+    }
+
+    #[test]
+    fn every_kind_has_its_own_color() {
+        let colors: std::collections::HashSet<Color> = AgentKind::ALL.iter().map(|kind| kind_color(*kind)).collect();
+        assert_eq!(colors.len(), AgentKind::ALL.len());
     }
 
     #[test]

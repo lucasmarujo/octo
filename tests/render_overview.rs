@@ -22,7 +22,7 @@ use orkai::store::Store;
 use orkai::subagents::Subagent;
 use orkai::tui::app::{App, AppEvent, Confirm, Link, Prompt};
 use orkai::tui::{render, theme};
-use orkai::usage::{Limits, Problem, Usage, Window};
+use orkai::usage::{self, Limits, Problem, Usage, Window};
 use orkai::util::now_ms;
 use orkai::worktree::Changes;
 
@@ -192,7 +192,7 @@ fn overview_shows_sessions_stats_projects_and_composer() {
     let window =
         |used_percent, minutes: u64| Some(Window { used_percent, resets_at_ms: Some(now + minutes * 60_000 + 30_000) });
     let usage = |session, weekly| Usage {
-        limits: Some(Limits { session, weekly }),
+        limits: Some(Limits { session, weekly, ..Limits::default() }),
         problem: None,
         updated_at_ms: Some(now - 34_000),
     };
@@ -384,14 +384,31 @@ fn unknown_folder_reports_error_and_keeps_where() {
     assert!(scenario.app.notice.as_ref().unwrap().text.contains("is not a directory"));
 }
 
-fn without_agent_programs(app: &mut App) {
+fn with_agent_programs(app: &mut App, present: &[AgentKind]) {
+    let command = |kind: AgentKind| {
+        if present.contains(&kind) {
+            std::env::current_exe().unwrap().to_string_lossy().into_owned()
+        } else {
+            format!("orkai-missing-{}", kind.label())
+        }
+    };
     let config = Config {
-        claude_command: "orkai-missing-claude".into(),
-        codex_command: "orkai-missing-codex".into(),
+        claude_command: command(AgentKind::Claude),
+        codex_command: command(AgentKind::Codex),
+        kilo_command: command(AgentKind::Kilo),
+        opencode_command: command(AgentKind::Opencode),
+        agy_command: command(AgentKind::Antigravity),
+        grok_command: command(AgentKind::Grok),
+        qwen_command: command(AgentKind::Qwen),
+        kimi_command: command(AgentKind::Kimi),
         ..Config::default()
     };
     let store = app.launcher.store().clone();
     app.launcher = Launcher::new(store, config, &std::env::current_exe().unwrap()).unwrap();
+}
+
+fn without_agent_programs(app: &mut App) {
+    with_agent_programs(app, &[]);
 }
 
 fn write_skill(dir: &std::path::Path, name: &str) {
@@ -606,8 +623,9 @@ fn usage_panel_sits_right_of_the_stats_and_counts_down_to_the_reset() {
     let claude = Limits {
         session: Some(Window { used_percent: 55.0, resets_at_ms: Some(now + 3 * 3_600_000 + 30_000) }),
         weekly: Some(Window { used_percent: 92.0, resets_at_ms: Some(now + 33 * 3_600_000 + 30_000) }),
+        ..Limits::default()
     };
-    let codex = Limits { session: None, weekly: Some(Window { used_percent: 75.0, resets_at_ms: None }) };
+    let codex = Limits { weekly: Some(Window { used_percent: 75.0, resets_at_ms: None }), ..Limits::default() };
     scenario.app.handle(AppEvent::Usage { kind: AgentKind::Claude, result: Ok(claude) });
     scenario.app.handle(AppEvent::Usage { kind: AgentKind::Codex, result: Ok(codex) });
     scenario.app.handle(AppEvent::Usage { kind: AgentKind::Codex, result: Err(Problem::Unavailable) });
@@ -641,23 +659,149 @@ fn usage_panel_sits_right_of_the_stats_and_counts_down_to_the_reset() {
     assert_eq!(buffer[(bar, y)].fg, theme::GREEN);
 }
 
+fn header(screen: &str) -> String {
+    screen.lines().take(usize::from(orkai::tui::sprite::HEIGHT)).collect::<Vec<_>>().join("\n")
+}
+
+fn render_at(app: &mut App, width: u16, height: u16) -> String {
+    app.screen = Rect::new(0, 0, width, height);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    terminal.draw(|frame| render::draw(frame, app)).unwrap();
+    text(terminal.backend().buffer())
+}
+
 #[test]
-fn usage_panel_explains_missing_logins_before_any_data() {
+fn usage_panel_shows_only_the_agents_you_are_signed_in_to() {
     let mut scenario = scenario();
     let screen = text(&render(&mut scenario.app));
     let (row, agents) = line_with(&screen, " agents ");
-    assert!(agents.contains("claude") && agents.contains("checking…"), "{agents}");
+    assert!(
+        !agents.contains("claude") && !agents.contains("checking"),
+        "nothing is listed before a login is found: {agents}"
+    );
     assert!(screen.lines().nth(row - 1).unwrap().contains("usage · checking…"), "{screen}");
 
     scenario.app.handle(AppEvent::Usage { kind: AgentKind::Claude, result: Err(Problem::Expired) });
-    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Codex, result: Err(Problem::SignedOut) });
+    for kind in usage::PROVIDERS.into_iter().filter(|kind| *kind != AgentKind::Claude) {
+        scenario.app.handle(AppEvent::Usage { kind, result: Err(Problem::SignedOut) });
+    }
     let screen = text(&render(&mut scenario.app));
     assert!(screen.lines().nth(row).unwrap().contains("claude  login expired"), "{screen}");
-    assert!(screen.lines().nth(row + 2).unwrap().contains("codex   not signed in"), "{screen}");
+    let top = header(&screen);
+    for kind in usage::PROVIDERS.into_iter().filter(|kind| *kind != AgentKind::Claude) {
+        assert!(!top.contains(kind.label()), "{} is not signed in:\n{top}", kind.label());
+    }
+    assert!(!top.contains("not signed in"), "{top}");
 
-    scenario.app.screen = Rect::new(0, 0, 60, 12);
-    let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
-    terminal.draw(|frame| render::draw(frame, &mut scenario.app)).unwrap();
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Opencode, result: Err(Problem::ApiKey) });
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.lines().nth(row + 2).unwrap().contains("opencode  api key · no plan limits"), "{screen}");
+
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Claude, result: Err(Problem::SignedOut) });
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Opencode, result: Err(Problem::SignedOut) });
+    let screen = text(&render(&mut scenario.app));
+    assert!(!screen.contains("usage ·"), "without any login there is no usage panel:\n{screen}");
+
+    render_at(&mut scenario.app, 60, 12);
+}
+
+#[test]
+fn many_signed_in_agents_fit_in_columns_without_moving_the_list() {
+    let mut scenario = scenario();
+    let list_row = line_with(&text(&render(&mut scenario.app)), "acme/web").0;
+    let narrow_row = line_with(&render_at(&mut scenario.app, 100, 40), "acme/web").0;
+    let now = now_ms();
+    let window =
+        |used_percent, hours: u64| Some(Window { used_percent, resets_at_ms: Some(now + hours * 3_600_000 + 30_000) });
+    let both = Limits { session: window(10.0, 2), weekly: window(20.0, 50), ..Limits::default() };
+    for kind in [AgentKind::Claude, AgentKind::Codex, AgentKind::Opencode] {
+        scenario.app.handle(AppEvent::Usage { kind, result: Ok(both) });
+    }
+    let kilo = Limits { monthly: window(25.0, 300), credits: Some(12.5), ..Limits::default() };
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Kilo, result: Ok(kilo) });
+    let grok = Limits { weekly: window(60.0, 90), ..Limits::default() };
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Grok, result: Ok(grok) });
+    let kimi = Limits { session: window(30.0, 3), monthly: window(40.0, 200), ..Limits::default() };
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Kimi, result: Ok(kimi) });
+    scenario.app.handle(AppEvent::Usage { kind: AgentKind::Antigravity, result: Err(Problem::SignedOut) });
+
+    let screen = text(&render(&mut scenario.app));
+    assert_eq!(line_with(&screen, "acme/web").0, list_row, "the list stays put:\n{screen}");
+    let top = header(&screen);
+    let (row, first) = line_with(&top, "claude");
+    assert!(first.contains("opencode") && column_of(first, "opencode") > column_of(first, "claude"), "{top}");
+    assert!(first.contains("10%") && first.contains("resets 2h00m"), "{first}");
+    let lines: Vec<&str> = top.lines().collect();
+    assert!(lines[row + 2].contains("codex") && lines[row + 2].contains("grok"), "{top}");
+    assert!(lines[row + 3].contains("week") && lines[row + 3].contains("60%"), "{top}");
+    assert!(lines[row + 4].contains("kilo") && lines[row + 4].contains("kimi"), "{top}");
+    assert!(
+        lines[row + 4].contains("month") && lines[row + 4].contains("25%") && lines[row + 4].contains("30%"),
+        "{top}"
+    );
+    assert!(lines[row + 5].contains("funds $12.50") && lines[row + 5].contains("40%"), "{top}");
+    assert!(lines[row - 1].contains("usage · updated 0s ago"), "{top}");
+    assert!(!top.contains("agy"), "{top}");
+
+    let narrow = render_at(&mut scenario.app, 100, 40);
+    let grown = line_with(&narrow, "acme/web").0;
+    assert!(grown > narrow_row, "a narrow screen stacks the agents and pushes the list down:\n{narrow}");
+    for label in ["claude", "codex", "kilo", "opencode", "grok", "kimi"] {
+        assert!(narrow.lines().take(grown).any(|line| line.contains(label)), "{label} missing:\n{narrow}");
+    }
+}
+
+#[test]
+fn tab_cycles_who_through_the_installed_agents_only() {
+    let mut scenario = scenario();
+    with_agent_programs(&mut scenario.app, &[AgentKind::Claude, AgentKind::Opencode, AgentKind::Kimi]);
+    let app = &mut scenario.app;
+    assert_eq!(app.who, AgentKind::Claude);
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        press(app, KeyCode::Tab, KeyModifiers::NONE);
+        seen.push(app.who);
+    }
+    assert_eq!(seen, [AgentKind::Opencode, AgentKind::Kimi, AgentKind::Terminal, AgentKind::Claude]);
+    press(app, KeyCode::BackTab, KeyModifiers::SHIFT);
+    assert_eq!(app.who, AgentKind::Terminal);
+    press(app, KeyCode::BackTab, KeyModifiers::SHIFT);
+    assert_eq!(app.who, AgentKind::Kimi);
+    assert!(text(&render(app)).contains("who kimi"));
+    assert_eq!(app.launcher.store().load_ui().who, AgentKind::Kimi);
+
+    app.run_command("/who grok");
+    assert_eq!(app.who, AgentKind::Grok, "any agent can be picked by name");
+    press(app, KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(app.who, AgentKind::Kimi);
+    app.run_command("/who gemini");
+    assert_eq!(app.who, AgentKind::Antigravity);
+    assert!(text(&render(app)).contains("who agy"));
+    app.run_command("/who vim");
+    assert_eq!(app.notice.as_ref().unwrap().text, "usage: /who claude|codex|kilo|opencode|agy|grok|qwen|kimi|terminal");
+}
+
+#[test]
+fn every_new_agent_launches_its_own_program() {
+    let mut scenario = scenario();
+    without_agent_programs(&mut scenario.app);
+    for kind in [
+        AgentKind::Kilo,
+        AgentKind::Opencode,
+        AgentKind::Antigravity,
+        AgentKind::Grok,
+        AgentKind::Qwen,
+        AgentKind::Kimi,
+    ] {
+        scenario.app.who = kind;
+        type_text(&mut scenario.app, &format!("check {} wiring", kind.label()));
+        press(&mut scenario.app, KeyCode::Enter, KeyModifiers::NONE);
+        let notice = scenario.app.notice.as_ref().unwrap().text.clone();
+        assert_eq!(notice, format!("starting {0} check-{0}-wiring…", kind.label()));
+        let error = launched(&scenario).unwrap_err();
+        assert!(error.contains(&format!("orkai-missing-{}", kind.label())), "{error}");
+    }
+    assert!(scenario.app.launcher.store().list_agents().unwrap().iter().all(|r| !r.name.starts_with("check-")));
 }
 
 #[test]

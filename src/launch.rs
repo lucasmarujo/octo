@@ -1,10 +1,13 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
+use std::thread;
 use std::time::{Duration, Instant};
+
+use serde::Deserialize;
 
 use crate::config::Config;
 use crate::fsutil;
@@ -20,7 +23,25 @@ pub const HOLDER_COMMAND: &str = "__holder";
 pub const HOLDER_PREFIX: &str = "orkai-holder-";
 const RUNTIME_POLL: Duration = Duration::from_millis(25);
 const DAY_MS: u64 = 86_400_000;
-const CODEX_CLOCK_SKEW_MS: u64 = 60_000;
+const SESSION_CLOCK_SKEW_MS: u64 = 60_000;
+const OUTPUT_POLL: Duration = Duration::from_millis(20);
+const MAX_OUTPUT_BYTES: u64 = 4 * 1024 * 1024;
+const OUTPUT_DRAIN: Duration = Duration::from_secs(2);
+const SESSION_LIST_TIMEOUT: Duration = Duration::from_secs(30);
+const SESSION_LIST_LIMIT: &str = "100";
+const LISTED_SESSION_PREFIX: &str = "ses_";
+const OPENCODE_CONFIG_CONTENT: &str = "OPENCODE_CONFIG_CONTENT";
+const KILO_CONFIG_CONTENT: &str = "KILO_CONFIG_CONTENT";
+const OPENCODE_PURE: &str = "OPENCODE_PURE";
+const KILO_PURE: &str = "KILO_PURE";
+const PURE_ON: &str = "1";
+const PROMPT_OPTION: &str = "--prompt";
+const AGY_STATUS_ENV: &str = "AGY_CLI_OSC7501";
+const AGY_STATUS_ON: &str = "on";
+const AGY_CONVERSATIONS: [&str; 2] = ["cache", "last_conversations.json"];
+const KIMI_SESSION_INDEX: &str = "session_index.jsonl";
+const KIMI_STATE: &str = "state.json";
+const MAX_INDEX_BYTES: u64 = 8 * 1024 * 1024;
 const ENV_REMOVE: &[&str] = &[
     "CLAUDECODE",
     "CLAUDE_CODE_ENTRYPOINT",
@@ -79,6 +100,26 @@ pub fn default_shell(config: &Config) -> (String, Vec<String>) {
 }
 
 const CMD_UNSAFE: &[char] = &['&', '|', '<', '>', '^', '%', '"', '(', ')', '!', '\r', '\n'];
+const SHIM_DIR_MARKERS: [&str; 2] = ["%dp0%\\", "%~dp0"];
+const SHIM_ARGS: &str = "%*";
+const MAX_SHIM_BYTES: u64 = 4 * 1024;
+
+pub fn npm_shim_target(shim: &Path) -> Option<PathBuf> {
+    if fs::metadata(shim).ok()?.len() > MAX_SHIM_BYTES {
+        return None;
+    }
+    let text = fs::read_to_string(shim).ok()?;
+    let line = text.lines().map(str::trim).rfind(|line| !line.is_empty())?;
+    let quoted = line.strip_suffix(SHIM_ARGS)?.trim();
+    let target = quoted.strip_prefix('"')?.strip_suffix('"')?;
+    let relative = SHIM_DIR_MARKERS.iter().find_map(|marker| target.strip_prefix(marker))?;
+    let is_exe = relative.to_ascii_lowercase().ends_with(".exe");
+    if !is_exe || relative.contains(['%', '"']) {
+        return None;
+    }
+    let exe = shim.parent()?.join(relative.replace('/', "\\"));
+    exe.is_file().then_some(exe)
+}
 
 pub fn wrap_for_platform(program: PathBuf, args: Vec<String>) -> io::Result<(PathBuf, Vec<String>)> {
     let is_batch = cfg!(windows)
@@ -88,6 +129,9 @@ pub fn wrap_for_platform(program: PathBuf, args: Vec<String>) -> io::Result<(Pat
             .is_some_and(|e| e == "cmd" || e == "bat");
     if !is_batch {
         return Ok((program, args));
+    }
+    if let Some(exe) = npm_shim_target(&program) {
+        return Ok((exe, args));
     }
     let program_text = program.to_string_lossy().into_owned();
     if program_text.contains(CMD_UNSAFE) || args.iter().any(|a| a.contains(CMD_UNSAFE)) {
@@ -102,25 +146,130 @@ pub fn wrap_for_platform(program: PathBuf, args: Vec<String>) -> io::Result<(Pat
     Ok((comspec, wrapped))
 }
 
+fn env_dir(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from)
+}
+
+fn home_dir(env: &str, default: &str) -> Option<PathBuf> {
+    env_dir(env).or_else(|| user_home().map(|h| h.join(default)))
+}
+
+fn xdg_data_dir(app: &str) -> Option<PathBuf> {
+    env_dir("XDG_DATA_HOME").or_else(|| user_home().map(|h| h.join(".local").join("share"))).map(|dir| dir.join(app))
+}
+
 pub fn claude_home() -> Option<PathBuf> {
-    std::env::var_os("CLAUDE_CONFIG_DIR")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| user_home().map(|h| h.join(".claude")))
+    home_dir("CLAUDE_CONFIG_DIR", ".claude")
 }
 
 pub fn codex_home() -> Option<PathBuf> {
-    std::env::var_os("CODEX_HOME")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| user_home().map(|h| h.join(".codex")))
+    home_dir("CODEX_HOME", ".codex")
+}
+
+fn xdg_config_dir(app: &str) -> Option<PathBuf> {
+    env_dir("XDG_CONFIG_HOME").or_else(|| user_home().map(|h| h.join(".config"))).map(|dir| dir.join(app))
+}
+
+pub fn kilo_config_dir() -> Option<PathBuf> {
+    xdg_config_dir("kilo")
+}
+
+pub fn opencode_config_dir() -> Option<PathBuf> {
+    xdg_config_dir("opencode")
+}
+
+pub fn kilo_data_dir() -> Option<PathBuf> {
+    xdg_data_dir("kilo")
+}
+
+pub fn opencode_data_dir() -> Option<PathBuf> {
+    xdg_data_dir("opencode")
+}
+
+pub fn antigravity_home() -> Option<PathBuf> {
+    user_home().map(|h| h.join(".gemini").join("antigravity-cli"))
+}
+
+pub fn grok_home() -> Option<PathBuf> {
+    home_dir("GROK_HOME", ".grok")
+}
+
+pub fn qwen_home() -> Option<PathBuf> {
+    home_dir("QWEN_HOME", ".qwen")
+}
+
+pub fn qwen_runtime_dir() -> Option<PathBuf> {
+    env_dir("QWEN_RUNTIME_DIR").or_else(qwen_home)
+}
+
+pub fn kimi_home() -> Option<PathBuf> {
+    home_dir("KIMI_CODE_HOME", ".kimi-code")
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Homes {
+    pub claude: Option<PathBuf>,
+    pub qwen: Option<PathBuf>,
+    pub grok: Option<PathBuf>,
+}
+
+impl Homes {
+    pub fn detect() -> Self {
+        Self { claude: claude_home(), qwen: qwen_runtime_dir(), grok: grok_home() }
+    }
+}
+
+fn found_under_any(parent: &Path, child: &Path) -> bool {
+    fs::read_dir(parent).map(|entries| entries.flatten().any(|e| e.path().join(child).exists())).unwrap_or(false)
 }
 
 pub fn claude_transcript_exists(claude_home: &Path, session_id: &str) -> bool {
-    let file = format!("{session_id}.jsonl");
-    fs::read_dir(claude_home.join("projects"))
-        .map(|entries| entries.flatten().any(|e| e.path().join(&file).is_file()))
-        .unwrap_or(false)
+    found_under_any(&claude_home.join("projects"), Path::new(&format!("{session_id}.jsonl")))
+}
+
+pub fn qwen_transcript_exists(qwen_runtime: &Path, session_id: &str) -> bool {
+    found_under_any(&qwen_runtime.join("projects"), &Path::new("chats").join(format!("{session_id}.jsonl")))
+}
+
+pub fn grok_session_exists(grok_home: &Path, session_id: &str) -> bool {
+    found_under_any(&grok_home.join("sessions"), Path::new(session_id))
+}
+
+#[cfg(windows)]
+fn without_console(command: &mut Command) -> &mut Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW)
+}
+
+#[cfg(unix)]
+fn without_console(command: &mut Command) -> &mut Command {
+    command
+}
+
+pub fn command_output(command: &mut Command, timeout: Duration) -> Option<String> {
+    let command = without_console(command).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child = command.spawn().ok()?;
+    let stdout = child.stdout.take()?;
+    let (sender, received) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let mut text = String::new();
+        let read = io::Read::read_to_string(&mut io::Read::take(stdout, MAX_OUTPUT_BYTES), &mut text);
+        let _ = sender.send(read.ok().map(|_| text));
+    });
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => thread::sleep(OUTPUT_POLL),
+            _ => {
+                kill_process_tree(child.id());
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+    received.recv_timeout(deadline.saturating_duration_since(Instant::now()).max(OUTPUT_DRAIN)).ok()?
 }
 
 fn sorted_dir_names(path: &Path) -> Vec<String> {
@@ -150,7 +299,7 @@ pub fn recent_codex_rollouts(codex_home: &Path, since_ms: u64) -> Vec<PathBuf> {
     let root = codex_home.join("sessions");
     let (y, m, d) = civil_date_from_ms(since_ms.saturating_sub(DAY_MS));
     let floor = format!("{y:04}/{m:02}/{d:02}");
-    let threshold = since_ms.saturating_sub(CODEX_CLOCK_SKEW_MS);
+    let threshold = since_ms.saturating_sub(SESSION_CLOCK_SKEW_MS);
     let mut files: Vec<PathBuf> = Vec::new();
     for year in sorted_dir_names(&root) {
         for month in sorted_dir_names(&root.join(&year)) {
@@ -193,41 +342,207 @@ pub fn find_codex_session(codex_home: &Path, cwd: &Path, since_ms: u64, exclude:
     None
 }
 
+#[derive(Deserialize)]
+struct ListedSession {
+    id: String,
+    #[serde(default)]
+    created: u64,
+    #[serde(default)]
+    directory: String,
+}
+
+pub fn pick_listed_session(listing: &str, cwd: &Path, since_ms: u64, exclude: &[String]) -> Option<String> {
+    let sessions: Vec<ListedSession> = serde_json::from_str(listing.trim()).ok()?;
+    let target = normalize_for_compare(cwd);
+    let threshold = since_ms.saturating_sub(SESSION_CLOCK_SKEW_MS);
+    sessions
+        .into_iter()
+        .filter(|s| s.id.starts_with(LISTED_SESSION_PREFIX) && is_safe_session_id(&s.id) && !exclude.contains(&s.id))
+        .filter(|s| s.created >= threshold && normalize_for_compare(Path::new(&s.directory)) == target)
+        .min_by_key(|s| (s.created < since_ms, s.created))
+        .map(|s| s.id)
+}
+
+fn listed_sessions(kind: AgentKind, program: &str, cwd: &Path) -> Option<String> {
+    let args = ["session", "list", "--format", "json", "-n", SESSION_LIST_LIMIT].map(str::to_string).to_vec();
+    let (program, args) = wrap_for_platform(resolve_program(program).ok()?, args).ok()?;
+    let pure = if kind == AgentKind::Kilo { KILO_PURE } else { OPENCODE_PURE };
+    command_output(Command::new(program).args(args).current_dir(cwd).env(pure, PURE_ON), SESSION_LIST_TIMEOUT)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KimiIndexEntry {
+    session_id: String,
+    #[serde(default)]
+    session_dir: Option<PathBuf>,
+    #[serde(default)]
+    work_dir: PathBuf,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct KimiState {
+    created_at: u64,
+}
+
+pub fn find_kimi_session(kimi_home: &Path, cwd: &Path, since_ms: u64, exclude: &[String]) -> Option<String> {
+    let index = kimi_home.join(KIMI_SESSION_INDEX);
+    if fs::metadata(&index).ok()?.len() > MAX_INDEX_BYTES {
+        return None;
+    }
+    let target = normalize_for_compare(cwd);
+    let threshold = since_ms.saturating_sub(SESSION_CLOCK_SKEW_MS);
+    fs::read_to_string(index)
+        .ok()?
+        .lines()
+        .filter_map(|line| serde_json::from_str::<KimiIndexEntry>(line).ok())
+        .filter(|e| is_safe_session_id(&e.session_id) && !exclude.contains(&e.session_id))
+        .filter(|e| normalize_for_compare(&e.work_dir) == target)
+        .filter_map(|e| {
+            let dir = e.session_dir.map(|dir| kimi_home.join(dir))?;
+            let state: KimiState = fsutil::read_json_opt(&dir.join(KIMI_STATE)).ok().flatten()?;
+            (state.created_at >= threshold).then_some(((state.created_at < since_ms, state.created_at), e.session_id))
+        })
+        .min()
+        .map(|(_, id)| id)
+}
+
+pub fn find_antigravity_conversation(agy_home: &Path, cwd: &Path, exclude: &[String]) -> Option<String> {
+    let file = AGY_CONVERSATIONS.iter().fold(agy_home.to_path_buf(), |dir, part| dir.join(part));
+    let latest: BTreeMap<String, String> = fsutil::read_json_opt(&file).ok().flatten()?;
+    let target = normalize_for_compare(cwd);
+    latest
+        .into_iter()
+        .find(|(dir, _)| normalize_for_compare(Path::new(dir)) == target)
+        .map(|(_, id)| id)
+        .filter(|id| is_uuid(id) && !exclude.contains(id))
+}
+
 pub struct HookSetup {
     pub exe: PathBuf,
     pub claude_settings: PathBuf,
+    pub qwen_settings: PathBuf,
+    pub plugin: PathBuf,
     pub codex_home: Option<PathBuf>,
+}
+
+#[derive(Default)]
+struct HookLaunch {
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+}
+
+impl HookLaunch {
+    fn args(args: Vec<String>) -> Self {
+        Self { args, env: Vec::new() }
+    }
+
+    fn env(name: &str, value: String) -> Self {
+        Self { args: Vec::new(), env: vec![(name.to_string(), value)] }
+    }
 }
 
 fn names_option(args: &[String], option: &str) -> bool {
     args.iter().any(|arg| arg == option || arg.starts_with(&format!("{option}=")))
 }
 
-fn hook_args(config: &Config, record: &AgentRecord, program: &Path, setup: &HookSetup) -> Vec<String> {
+fn env_is_set(name: &str) -> bool {
+    std::env::var_os(name).is_some()
+}
+
+fn hook_launch(config: &Config, record: &AgentRecord, program: &Path, setup: &HookSetup) -> HookLaunch {
     match record.kind {
         AgentKind::Claude => {
             if names_option(&config.claude_args, "--settings")
                 || !hooks::git_bash_available()
                 || !hooks::claude_supports_hooks(program)
             {
-                return Vec::new();
+                return HookLaunch::default();
             }
             let settings = hooks::claude_settings(&hooks::claude_hook_command(&setup.exe, record.id));
             match fsutil::write_json_atomic(&setup.claude_settings, &settings) {
-                Ok(()) => vec!["--settings".to_string(), setup.claude_settings.to_string_lossy().into_owned()],
-                Err(_) => Vec::new(),
+                Ok(()) => HookLaunch::args(vec![
+                    "--settings".to_string(),
+                    setup.claude_settings.to_string_lossy().into_owned(),
+                ]),
+                Err(_) => HookLaunch::default(),
             }
         }
         AgentKind::Codex => {
             let configured = config.codex_args.iter().any(|arg| arg.trim_start().starts_with("notify"))
                 || setup.codex_home.as_deref().is_some_and(hooks::codex_has_own_notify);
             if configured {
-                return Vec::new();
+                return HookLaunch::default();
             }
-            vec!["-c".to_string(), hooks::codex_notify_override(&setup.exe, record.id)]
+            HookLaunch::args(vec!["-c".to_string(), hooks::codex_notify_override(&setup.exe, record.id)])
         }
-        AgentKind::Terminal => Vec::new(),
+        AgentKind::Kilo | AgentKind::Opencode => {
+            let variable = if record.kind == AgentKind::Kilo { KILO_CONFIG_CONTENT } else { OPENCODE_CONFIG_CONTENT };
+            if env_is_set(variable) {
+                return HookLaunch::default();
+            }
+            match fsutil::write_atomic(&setup.plugin, hooks::opencode_plugin(&setup.exe, record.id).as_bytes()) {
+                Ok(()) => HookLaunch::env(variable, hooks::plugin_config(&setup.plugin)),
+                Err(_) => HookLaunch::default(),
+            }
+        }
+        AgentKind::Antigravity if !env_is_set(AGY_STATUS_ENV) => HookLaunch::env(AGY_STATUS_ENV, AGY_STATUS_ON.into()),
+        AgentKind::Qwen => {
+            if env_is_set(hooks::QWEN_SYSTEM_DEFAULTS_ENV) || hooks::qwen_system_defaults().exists() {
+                return HookLaunch::default();
+            }
+            let Some(command) = hooks::qwen_hook_command(&setup.exe, record.id) else {
+                return HookLaunch::default();
+            };
+            match fsutil::write_json_atomic(&setup.qwen_settings, &hooks::claude_settings(&command)) {
+                Ok(()) => {
+                    HookLaunch::env(hooks::QWEN_SYSTEM_DEFAULTS_ENV, setup.qwen_settings.to_string_lossy().into_owned())
+                }
+                Err(_) => HookLaunch::default(),
+            }
+        }
+        AgentKind::Antigravity | AgentKind::Grok | AgentKind::Kimi | AgentKind::Terminal => HookLaunch::default(),
     }
+}
+
+fn chosen_session_id(record: &mut AgentRecord) -> io::Result<String> {
+    match record.conversation_id.as_deref() {
+        Some(id) if is_uuid(id) => Ok(id.to_string()),
+        _ => {
+            let id = new_uuid_v4()?;
+            record.conversation_id = Some(id.clone());
+            Ok(id)
+        }
+    }
+}
+
+fn chosen_session_exists(kind: AgentKind, homes: &Homes, session_id: &str) -> bool {
+    match kind {
+        AgentKind::Claude => homes.claude.as_deref().is_some_and(|dir| claude_transcript_exists(dir, session_id)),
+        AgentKind::Qwen => homes.qwen.as_deref().is_some_and(|dir| qwen_transcript_exists(dir, session_id)),
+        AgentKind::Grok => homes.grok.as_deref().is_some_and(|dir| grok_session_exists(dir, session_id)),
+        _ => false,
+    }
+}
+
+fn chosen_session_args(kind: AgentKind, session_id: &str, resume: bool) -> Vec<String> {
+    match (kind, resume) {
+        (AgentKind::Grok, true) => vec![format!("--resume={session_id}")],
+        (AgentKind::Qwen, true) => vec!["--resume".to_string(), session_id.to_string()],
+        _ => vec!["--session-id".to_string(), session_id.to_string()],
+    }
+}
+
+fn resume_args(kind: AgentKind, session_id: &str) -> Vec<String> {
+    match kind {
+        AgentKind::Antigravity => vec![format!("--conversation={session_id}")],
+        _ => vec!["--session".to_string(), session_id.to_string()],
+    }
+}
+
+fn agent_command(config: &Config, kind: AgentKind) -> (String, Vec<String>) {
+    config.agent(kind).map(|(command, args)| (command.to_string(), args.to_vec())).unwrap_or_default()
 }
 
 fn non_empty(text: &str) -> Option<String> {
@@ -240,21 +555,13 @@ pub fn build_spec(
     record: &mut AgentRecord,
     mode: LaunchMode,
     size: TermSize,
-    claude_dir: Option<&Path>,
+    homes: &Homes,
     hooks: Option<&HookSetup>,
 ) -> io::Result<LaunchSpec> {
     let (program_name, args, initial_input) = match record.kind {
         AgentKind::Claude => {
-            let session_id = match record.conversation_id.as_deref() {
-                Some(id) if is_uuid(id) => id.to_string(),
-                _ => {
-                    let id = new_uuid_v4()?;
-                    record.conversation_id = Some(id.clone());
-                    id
-                }
-            };
-            let resume =
-                mode == LaunchMode::Resume && claude_dir.is_some_and(|dir| claude_transcript_exists(dir, &session_id));
+            let session_id = chosen_session_id(record)?;
+            let resume = mode == LaunchMode::Resume && chosen_session_exists(record.kind, homes, &session_id);
             let mut args = config.claude_args.clone();
             args.push("--remote-control".to_string());
             if resume {
@@ -277,6 +584,27 @@ pub fn build_spec(
                 None => (config.codex_command.clone(), config.codex_args.clone(), non_empty(&record.task)),
             }
         }
+        AgentKind::Grok | AgentKind::Qwen => {
+            let session_id = chosen_session_id(record)?;
+            let resume = mode == LaunchMode::Resume && chosen_session_exists(record.kind, homes, &session_id);
+            let (command, mut args) = agent_command(config, record.kind);
+            args.extend(chosen_session_args(record.kind, &session_id, resume));
+            let input = if resume { None } else { non_empty(&record.task) };
+            (command, args, input)
+        }
+        AgentKind::Kilo | AgentKind::Opencode | AgentKind::Antigravity | AgentKind::Kimi => {
+            let resume_id =
+                record.conversation_id.clone().filter(|id| mode == LaunchMode::Resume && is_safe_session_id(id));
+            let (command, mut args) = agent_command(config, record.kind);
+            let input = match resume_id {
+                Some(id) => {
+                    args.extend(resume_args(record.kind, &id));
+                    None
+                }
+                None => non_empty(&record.task),
+            };
+            (command, args, input)
+        }
         AgentKind::Terminal => {
             let (shell, args) = default_shell(config);
             (shell, args, non_empty(&record.task))
@@ -289,14 +617,22 @@ pub fn build_spec(
         ));
     }
     let resolved = resolve_program(&program_name)?;
-    let extra = hooks.map(|setup| hook_args(config, record, &resolved, setup)).unwrap_or_default();
-    let with_hooks = match record.kind {
+    let HookLaunch { args: extra, env: hook_env } =
+        hooks.map(|setup| hook_launch(config, record, &resolved, setup)).unwrap_or_default();
+    let with_hooks: Vec<String> = match record.kind {
         AgentKind::Codex => extra.iter().chain(&args).cloned().collect(),
         _ => args.iter().chain(&extra).cloned().collect(),
     };
-    let (program, args) = match wrap_for_platform(resolved.clone(), with_hooks) {
-        Ok(wrapped) => wrapped,
-        Err(_) if !extra.is_empty() => wrap_for_platform(resolved, args)?,
+    let prompt = match (record.kind, initial_input.as_deref()) {
+        (AgentKind::Kilo | AgentKind::Opencode, Some(task)) => vec![PROMPT_OPTION.to_string(), task.to_string()],
+        _ => Vec::new(),
+    };
+    let with_prompt = with_hooks.iter().chain(&prompt).cloned().collect();
+    let ((program, args), initial_input) = match wrap_for_platform(resolved.clone(), with_prompt) {
+        Ok(wrapped) if !prompt.is_empty() => (wrapped, None),
+        Ok(wrapped) => (wrapped, initial_input),
+        Err(_) if !prompt.is_empty() => (wrap_for_platform(resolved, with_hooks)?, initial_input),
+        Err(_) if !extra.is_empty() => (wrap_for_platform(resolved, args)?, initial_input),
         Err(err) => return Err(err),
     };
     let mut env = vec![
@@ -307,6 +643,7 @@ pub fn build_spec(
     if cfg!(unix) {
         env.push(("TERM".to_string(), "xterm-256color".to_string()));
     }
+    env.extend(hook_env);
     Ok(LaunchSpec {
         kind: record.kind,
         program,
@@ -559,17 +896,20 @@ impl Launcher {
     pub fn start(&self, record: &mut AgentRecord, mode: LaunchMode, size: TermSize) -> io::Result<()> {
         if mode == LaunchMode::Resume {
             self.stop_stale_holder(record.id);
-            if record.kind == AgentKind::Codex && record.conversation_id.is_none() {
-                record.conversation_id = self.discover_codex_session(record)?;
+            if record.conversation_id.is_none() {
+                record.conversation_id = self.discover_session(record)?;
             }
         }
         let exe = holder_executable(self.store.home(), &self.source).unwrap_or_else(|_| self.exe.clone());
+        let home = self.store.home();
         let setup = HookSetup {
             exe: exe.clone(),
-            claude_settings: self.store.home().claude_settings_file(record.id),
+            claude_settings: home.claude_settings_file(record.id),
+            qwen_settings: home.qwen_settings_file(record.id),
+            plugin: home.plugin_file(record.id),
             codex_home: codex_home(),
         };
-        let spec = build_spec(&self.config, record, mode, size, claude_home().as_deref(), Some(&setup))?;
+        let spec = build_spec(&self.config, record, mode, size, &Homes::detect(), Some(&setup))?;
         record.launches = record.launches.saturating_add(1);
         self.store.save_agent(record)?;
         self.store.clear_runtime_markers(record.id)?;
@@ -577,16 +917,35 @@ impl Launcher {
         spawn_holder(self.store.home(), record.id, &exe)
     }
 
-    fn discover_codex_session(&self, record: &AgentRecord) -> io::Result<Option<String>> {
-        let Some(home) = codex_home() else { return Ok(None) };
+    fn discover_session(&self, record: &AgentRecord) -> io::Result<Option<String>> {
+        let discovers = matches!(
+            record.kind,
+            AgentKind::Codex | AgentKind::Kilo | AgentKind::Opencode | AgentKind::Antigravity | AgentKind::Kimi
+        );
+        if !discovers {
+            return Ok(None);
+        }
         let claimed: Vec<String> = self
             .store
             .list_agents()?
             .into_iter()
-            .filter(|r| r.id != record.id && r.kind == AgentKind::Codex)
+            .filter(|r| r.id != record.id && r.kind == record.kind)
             .filter_map(|r| r.conversation_id)
             .collect();
-        Ok(find_codex_session(&home, &record.cwd, record.created_at_ms, &claimed))
+        let (cwd, since) = (&record.cwd, record.created_at_ms);
+        Ok(match record.kind {
+            AgentKind::Codex => codex_home().and_then(|home| find_codex_session(&home, cwd, since, &claimed)),
+            AgentKind::Kimi => kimi_home().and_then(|home| find_kimi_session(&home, cwd, since, &claimed)),
+            AgentKind::Antigravity => {
+                antigravity_home().and_then(|home| find_antigravity_conversation(&home, cwd, &claimed))
+            }
+            AgentKind::Kilo | AgentKind::Opencode => {
+                let (program, _) = agent_command(&self.config, record.kind);
+                listed_sessions(record.kind, &program, cwd)
+                    .and_then(|listing| pick_listed_session(&listing, cwd, since, &claimed))
+            }
+            _ => None,
+        })
     }
 
     fn stop_stale_holder(&self, id: AgentId) {
@@ -645,8 +1004,15 @@ mod tests {
         let dir = temp_dir("claude-fresh");
         let program = fake_program(&dir);
         let mut r = record(AgentKind::Claude, dir.clone(), "  fix the build ");
-        let spec =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(30, 100), None, None).unwrap();
+        let spec = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Fresh,
+            TermSize::new(30, 100),
+            &Homes::default(),
+            None,
+        )
+        .unwrap();
         let id = r.conversation_id.clone().unwrap();
         assert!(is_uuid(&id));
         assert_eq!(spec.args, vec!["--remote-control".to_string(), "--session-id".to_string(), id]);
@@ -674,7 +1040,7 @@ mod tests {
             &mut r,
             LaunchMode::Resume,
             TermSize::new(24, 80),
-            Some(&claude_dir),
+            &Homes { claude: Some(claude_dir.clone()), ..Homes::default() },
             None,
         )
         .unwrap();
@@ -690,9 +1056,15 @@ mod tests {
         let id = "123e4567-e89b-42d3-a456-426614174000";
         let mut r = record(AgentKind::Claude, dir.clone(), "task");
         r.conversation_id = Some(id.into());
-        let spec =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), Some(&dir), None)
-                .unwrap();
+        let spec = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Resume,
+            TermSize::new(24, 80),
+            &Homes { claude: Some(dir.clone()), ..Homes::default() },
+            None,
+        )
+        .unwrap();
         assert_eq!(spec.args, vec!["--remote-control".to_string(), "--session-id".to_string(), id.to_string()]);
         assert_eq!(spec.initial_input.as_deref(), Some("task"));
         fs::remove_dir_all(dir).unwrap();
@@ -706,7 +1078,8 @@ mod tests {
         let id = "123e4567-e89b-42d3-a456-426614174000";
         let mut r = record(AgentKind::Claude, dir.clone(), "task");
         r.conversation_id = Some(id.into());
-        let spec = build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, None).unwrap();
+        let spec =
+            build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), &Homes::default(), None).unwrap();
         assert_eq!(spec.args, vec!["--model", "opus", "--remote-control", "--session-id", id]);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -717,12 +1090,26 @@ mod tests {
         let program = fake_program(&dir);
         let mut r = record(AgentKind::Codex, dir.clone(), "task");
         r.conversation_id = Some("abc-123".into());
-        let spec =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), None, None).unwrap();
+        let spec = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Resume,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            None,
+        )
+        .unwrap();
         assert_eq!(spec.args, vec!["resume".to_string(), "abc-123".to_string()]);
         assert_eq!(spec.initial_input, None);
-        let fresh =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, None).unwrap();
+        let fresh = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Fresh,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            None,
+        )
+        .unwrap();
         assert!(fresh.args.is_empty());
         assert_eq!(fresh.initial_input.as_deref(), Some("task"));
         fs::remove_dir_all(dir).unwrap();
@@ -733,8 +1120,15 @@ mod tests {
         let dir = temp_dir("terminal");
         let program = fake_program(&dir);
         let mut r = record(AgentKind::Terminal, dir.clone(), "npm run dev");
-        let spec =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), None, None).unwrap();
+        let spec = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Resume,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            None,
+        )
+        .unwrap();
         assert_eq!(spec.program, program);
         assert_eq!(spec.initial_input.as_deref(), Some("npm run dev"));
         fs::remove_dir_all(dir).unwrap();
@@ -745,8 +1139,15 @@ mod tests {
         let dir = temp_dir("missing");
         let program = fake_program(&dir);
         let mut r = record(AgentKind::Terminal, dir.join("does-not-exist"), "");
-        let err = build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, None)
-            .unwrap_err();
+        let err = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Fresh,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            None,
+        )
+        .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -874,6 +1275,8 @@ mod tests {
         HookSetup {
             exe: dir.join("bin").join("orkai-holder"),
             claude_settings: dir.join("claude-settings.json"),
+            qwen_settings: dir.join("qwen-settings.json"),
+            plugin: dir.join("orkai-plugin.js"),
             codex_home: Some(dir.join("codex-home")),
         }
     }
@@ -897,7 +1300,7 @@ mod tests {
             &mut r,
             LaunchMode::Fresh,
             TermSize::new(24, 80),
-            None,
+            &Homes::default(),
             Some(&hooks),
         )
         .unwrap();
@@ -917,15 +1320,22 @@ mod tests {
         let hooks = setup(&dir);
         let old = versioned_claude(&dir, "2.1.77 (Claude Code)");
         let mut r = record(AgentKind::Claude, dir.clone(), "task");
-        let spec =
-            build_spec(&claude_config(&old, &[]), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks))
-                .unwrap();
+        let spec = build_spec(
+            &claude_config(&old, &[]),
+            &mut r,
+            LaunchMode::Fresh,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            Some(&hooks),
+        )
+        .unwrap();
         assert!(!spec.args.contains(&"--settings".to_string()));
         assert!(!hooks.claude_settings.exists());
 
         let current = versioned_claude(&dir, "2.1.302 (Claude Code)");
         let own = claude_config(&current, &["--settings", "mine.json"]);
-        let spec = build_spec(&own, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks)).unwrap();
+        let spec = build_spec(&own, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), &Homes::default(), Some(&hooks))
+            .unwrap();
         assert_eq!(spec.args.iter().filter(|a| *a == "--settings").count(), 1);
         assert!(spec.args.contains(&"mine.json".to_string()));
         fs::remove_dir_all(dir).unwrap();
@@ -938,25 +1348,45 @@ mod tests {
         let hooks = setup(&dir);
         let notify = hooks::codex_notify_override(&hooks.exe, 5);
         let mut r = record(AgentKind::Codex, dir.clone(), "task");
-        let fresh =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks))
-                .unwrap();
+        let fresh = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Fresh,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            Some(&hooks),
+        )
+        .unwrap();
         assert_eq!(fresh.args, vec!["-c".to_string(), notify.clone()]);
         r.conversation_id = Some("abc-123".into());
-        let resumed =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Resume, TermSize::new(24, 80), None, Some(&hooks))
-                .unwrap();
+        let resumed = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Resume,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            Some(&hooks),
+        )
+        .unwrap();
         assert_eq!(resumed.args, vec!["-c".to_string(), notify, "resume".into(), "abc-123".into()]);
 
         let own_args = Config { codex_args: vec!["-c".into(), "notify=[\"say\"]".into()], ..config_with(&program) };
-        let spec = build_spec(&own_args, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks)).unwrap();
+        let spec =
+            build_spec(&own_args, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), &Homes::default(), Some(&hooks))
+                .unwrap();
         assert_eq!(spec.args, vec!["-c", "notify=[\"say\"]"]);
 
         fs::create_dir_all(dir.join("codex-home")).unwrap();
         fs::write(dir.join("codex-home").join("config.toml"), "notify = [\"notify-send\", \"Codex\"]\n").unwrap();
-        let spec =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks))
-                .unwrap();
+        let spec = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Fresh,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            Some(&hooks),
+        )
+        .unwrap();
         assert!(spec.args.is_empty());
         fs::remove_dir_all(dir).unwrap();
     }
@@ -967,9 +1397,15 @@ mod tests {
         let program = fake_program(&dir);
         let hooks = setup(&dir);
         let mut r = record(AgentKind::Terminal, dir.clone(), "npm run dev");
-        let spec =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks))
-                .unwrap();
+        let spec = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Fresh,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            Some(&hooks),
+        )
+        .unwrap();
         assert!(spec.args.is_empty());
         fs::remove_dir_all(dir).unwrap();
     }
@@ -982,16 +1418,369 @@ mod tests {
         fs::write(&program, b"@echo off\r\n").unwrap();
         let hooks = HookSetup { exe: PathBuf::from(r"C:\Users\me (work)\orkai-holder.exe"), ..setup(&dir) };
         let mut r = record(AgentKind::Codex, dir.clone(), "task");
-        let spec =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&hooks))
-                .unwrap();
+        let spec = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Fresh,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            Some(&hooks),
+        )
+        .unwrap();
         assert!(spec.program.to_string_lossy().to_ascii_lowercase().ends_with("cmd.exe"));
         assert!(!spec.args.iter().any(|a| a.starts_with("notify=")));
         let safe = setup(&dir);
-        let spec =
-            build_spec(&config_with(&program), &mut r, LaunchMode::Fresh, TermSize::new(24, 80), None, Some(&safe))
-                .unwrap();
+        let spec = build_spec(
+            &config_with(&program),
+            &mut r,
+            LaunchMode::Fresh,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            Some(&safe),
+        )
+        .unwrap();
         assert!(spec.args.iter().any(|a| a.starts_with("notify=")));
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn every_agent(program: &Path) -> Config {
+        let command = program.to_string_lossy().into_owned();
+        Config {
+            kilo_command: command.clone(),
+            opencode_command: command.clone(),
+            agy_command: command.clone(),
+            grok_command: command.clone(),
+            qwen_command: command.clone(),
+            kimi_command: command,
+            ..config_with(program)
+        }
+    }
+
+    fn spec_for(config: &Config, r: &mut AgentRecord, mode: LaunchMode, homes: &Homes) -> LaunchSpec {
+        build_spec(config, r, mode, TermSize::new(24, 80), homes, None).unwrap()
+    }
+
+    #[test]
+    fn grok_and_qwen_start_on_a_chosen_session_and_resume_it_once_it_exists() {
+        let dir = temp_dir("chosen-sessions");
+        let config = every_agent(&fake_program(&dir));
+        let grok_home = dir.join("grok-home");
+        let qwen_runtime = dir.join("qwen-runtime");
+        let homes = Homes { grok: Some(grok_home.clone()), qwen: Some(qwen_runtime.clone()), ..Homes::default() };
+
+        let mut grok = record(AgentKind::Grok, dir.clone(), " fix the login ");
+        let fresh = spec_for(&config, &mut grok, LaunchMode::Fresh, &homes);
+        let id = grok.conversation_id.clone().unwrap();
+        assert!(is_uuid(&id));
+        assert_eq!(fresh.args, vec!["--session-id".to_string(), id.clone()]);
+        assert_eq!(fresh.initial_input.as_deref(), Some("fix the login"));
+        let not_saved = spec_for(&config, &mut grok, LaunchMode::Resume, &homes);
+        assert_eq!(not_saved.args, vec!["--session-id".to_string(), id.clone()], "a session never saved starts again");
+        fs::create_dir_all(grok_home.join("sessions").join("C%3A%5Cwork").join(&id)).unwrap();
+        let resumed = spec_for(&config, &mut grok, LaunchMode::Resume, &homes);
+        assert_eq!(resumed.args, vec![format!("--resume={id}")]);
+        assert_eq!(resumed.initial_input, None);
+
+        let mut qwen = record(AgentKind::Qwen, dir.clone(), "write docs");
+        let fresh = spec_for(&config, &mut qwen, LaunchMode::Fresh, &homes);
+        let id = qwen.conversation_id.clone().unwrap();
+        assert_eq!(fresh.args, vec!["--session-id".to_string(), id.clone()]);
+        let chats = qwen_runtime.join("projects").join("c--work").join("chats");
+        fs::create_dir_all(&chats).unwrap();
+        fs::write(chats.join(format!("{id}.jsonl")), b"{}\n").unwrap();
+        let resumed = spec_for(&config, &mut qwen, LaunchMode::Resume, &homes);
+        assert_eq!(resumed.args, vec!["--resume".to_string(), id]);
+        assert_eq!(resumed.initial_input, None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn discovered_sessions_are_resumed_with_each_agent_flag_after_its_own_args() {
+        let dir = temp_dir("discovered-sessions");
+        let program = fake_program(&dir);
+        let config = Config { opencode_args: vec!["--model".into(), "x/y".into()], ..every_agent(&program) };
+        let cases = [
+            (
+                AgentKind::Opencode,
+                "ses_f5ded97fdffeDWMNJBgPBTSqRU",
+                vec!["--model", "x/y", "--session", "ses_f5ded97fdffeDWMNJBgPBTSqRU"],
+            ),
+            (AgentKind::Kilo, "ses_f5ded97fdffeDWMNJBgPBTSqRU", vec!["--session", "ses_f5ded97fdffeDWMNJBgPBTSqRU"]),
+            (
+                AgentKind::Kimi,
+                "session_123e4567-e89b-42d3-a456-426614174000",
+                vec!["--session", "session_123e4567-e89b-42d3-a456-426614174000"],
+            ),
+            (
+                AgentKind::Antigravity,
+                "055a398f-db14-4c5f-abbb-1bf03f8120a7",
+                vec!["--conversation=055a398f-db14-4c5f-abbb-1bf03f8120a7"],
+            ),
+        ];
+        for (kind, id, expected) in cases {
+            let mut r = record(kind, dir.clone(), "task");
+            let fresh = spec_for(&config, &mut r, LaunchMode::Fresh, &Homes::default());
+            let prompted = matches!(kind, AgentKind::Opencode | AgentKind::Kilo);
+            let typed = if prompted { None } else { Some("task") };
+            assert_eq!(fresh.initial_input.as_deref(), typed, "{kind:?}");
+            assert_eq!(fresh.args.ends_with(&["--prompt".to_string(), "task".to_string()]), prompted, "{kind:?}");
+            assert_eq!(r.conversation_id, None, "{kind:?} never invents a session id");
+            r.conversation_id = Some(id.into());
+            let resumed = spec_for(&config, &mut r, LaunchMode::Resume, &Homes::default());
+            assert_eq!(resumed.args, expected, "{kind:?}");
+            assert_eq!(resumed.initial_input, None, "{kind:?}");
+            let restarted = spec_for(&config, &mut r, LaunchMode::Fresh, &Homes::default());
+            assert!(!restarted.args.iter().any(|arg| arg.contains(id)), "{kind:?}");
+            r.conversation_id = Some("a&b".into());
+            let unsafe_id = spec_for(&config, &mut r, LaunchMode::Resume, &Homes::default());
+            assert_eq!(unsafe_id.initial_input.as_deref(), typed, "{kind:?}");
+            assert!(!unsafe_id.args.iter().any(|arg| arg.contains("a&b")), "{kind:?}");
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn env_of<'a>(spec: &'a LaunchSpec, name: &str) -> Option<&'a str> {
+        spec.env.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_str())
+    }
+
+    #[test]
+    fn opencode_and_kilo_load_the_orkai_plugin_from_their_config_env() {
+        let dir = temp_dir("plugin");
+        let config = every_agent(&fake_program(&dir));
+        let hooks = setup(&dir);
+        for (kind, variable, other) in [
+            (AgentKind::Opencode, OPENCODE_CONFIG_CONTENT, KILO_CONFIG_CONTENT),
+            (AgentKind::Kilo, KILO_CONFIG_CONTENT, OPENCODE_CONFIG_CONTENT),
+        ] {
+            let _ = fs::remove_file(&hooks.plugin);
+            let mut r = record(kind, dir.clone(), "task");
+            let spec =
+                build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), &Homes::default(), Some(&hooks))
+                    .unwrap();
+            assert_eq!(spec.args, vec!["--prompt", "task"], "{kind:?}");
+            assert_eq!(env_of(&spec, other), None);
+            if env_is_set(variable) {
+                assert_eq!(env_of(&spec, variable), None, "a config the user already passes is left alone");
+                continue;
+            }
+            assert_eq!(env_of(&spec, variable), Some(hooks::plugin_config(&hooks.plugin).as_str()), "{kind:?}");
+            let plugin = fs::read_to_string(&hooks.plugin).unwrap();
+            assert_eq!(plugin, hooks::opencode_plugin(&hooks.exe, r.id));
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn antigravity_is_asked_to_report_its_status_over_osc_7501() {
+        let dir = temp_dir("agy-status");
+        let config = every_agent(&fake_program(&dir));
+        let hooks = setup(&dir);
+        let mut r = record(AgentKind::Antigravity, dir.clone(), "task");
+        let spec =
+            build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), &Homes::default(), Some(&hooks))
+                .unwrap();
+        let expected = if env_is_set(AGY_STATUS_ENV) { None } else { Some(AGY_STATUS_ON) };
+        assert_eq!(env_of(&spec, AGY_STATUS_ENV), expected);
+        assert!(spec.args.is_empty());
+        let plain = spec_for(&config, &mut r, LaunchMode::Fresh, &Homes::default());
+        assert_eq!(env_of(&plain, AGY_STATUS_ENV), None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn qwen_gets_claude_style_hooks_through_its_system_defaults_file() {
+        let dir = temp_dir("qwen-hooks");
+        let config = every_agent(&fake_program(&dir));
+        let hooks = setup(&dir);
+        let mut r = record(AgentKind::Qwen, dir.clone(), "task");
+        let spec =
+            build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), &Homes::default(), Some(&hooks))
+                .unwrap();
+        let taken = env_is_set(hooks::QWEN_SYSTEM_DEFAULTS_ENV) || hooks::qwen_system_defaults().exists();
+        match hooks::qwen_hook_command(&hooks.exe, r.id).filter(|_| !taken) {
+            Some(command) => {
+                let path = hooks.qwen_settings.to_string_lossy().into_owned();
+                assert_eq!(env_of(&spec, hooks::QWEN_SYSTEM_DEFAULTS_ENV), Some(path.as_str()));
+                let written: serde_json::Value = fsutil::read_json(&hooks.qwen_settings).unwrap();
+                assert_eq!(written, hooks::claude_settings(&command));
+            }
+            None => assert_eq!(env_of(&spec, hooks::QWEN_SYSTEM_DEFAULTS_ENV), None),
+        }
+        assert!(spec.args.starts_with(&["--session-id".to_string()]));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn grok_and_kimi_have_no_hooks_to_inject() {
+        let dir = temp_dir("no-hooks");
+        let config = every_agent(&fake_program(&dir));
+        let hooks = setup(&dir);
+        for kind in [AgentKind::Grok, AgentKind::Kimi] {
+            let mut r = record(kind, dir.clone(), "task");
+            let with =
+                build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), &Homes::default(), Some(&hooks))
+                    .unwrap();
+            let without = spec_for(&config, &mut r, LaunchMode::Fresh, &Homes::default());
+            assert_eq!(with.args, without.args, "{kind:?}");
+            assert_eq!(with.env, without.env, "{kind:?}");
+        }
+        assert!(!hooks.plugin.exists() && !hooks.qwen_settings.exists() && !hooks.claude_settings.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn npm_shims_of_native_programs_run_the_program_itself() {
+        let dir = temp_dir("npm-shims");
+        let exe = dir.join("node_modules").join("opencode-ai").join("bin").join("opencode.exe");
+        fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        fs::write(&exe, b"").unwrap();
+        let classic = dir.join("opencode.cmd");
+        let shim = "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\"%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe\"   %*\r\n";
+        fs::write(&classic, shim).unwrap();
+        let short = dir.join("short.cmd");
+        fs::write(&short, "@ECHO off\r\n\"%~dp0node_modules\\opencode-ai\\bin\\opencode.exe\" %*\r\n").unwrap();
+        for shim in [&classic, &short] {
+            assert_eq!(npm_shim_target(shim).as_deref(), Some(exe.as_path()));
+            let (program, args) =
+                wrap_for_platform(shim.clone(), vec!["--prompt".into(), "fix (it) & ship".into()]).unwrap();
+            assert_eq!(program, exe);
+            assert_eq!(args, vec!["--prompt", "fix (it) & ship"]);
+        }
+        let node = dir.join("codex.cmd");
+        fs::write(&node, "@ECHO off\r\n\"%_prog%\"  \"%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js\" %*\r\n")
+            .unwrap();
+        assert_eq!(npm_shim_target(&node), None);
+        let missing = dir.join("missing.cmd");
+        fs::write(&missing, "\"%~dp0nowhere\\gone.exe\" %*\r\n").unwrap();
+        assert_eq!(npm_shim_target(&missing), None);
+        let escape = dir.join("escape.cmd");
+        fs::write(&escape, "\"%~dp0%OTHER%\\x.exe\" %*\r\n").unwrap();
+        assert_eq!(npm_shim_target(&escape), None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_task_that_cmd_cannot_carry_is_typed_into_opencode_instead() {
+        let dir = temp_dir("prompt-fallback");
+        let shim = dir.join("kilo.cmd");
+        fs::write(&shim, "@ECHO off\r\nnode \"%~dp0kilo.js\" %*\r\n").unwrap();
+        let config = Config { kilo_command: shim.to_string_lossy().into_owned(), ..Config::default() };
+        let mut r = record(AgentKind::Kilo, dir.clone(), "fix the login");
+        let safe = spec_for(&config, &mut r, LaunchMode::Fresh, &Homes::default());
+        assert!(safe.args.ends_with(&["--prompt".to_string(), "fix the login".to_string()]), "{:?}", safe.args);
+        assert_eq!(safe.initial_input, None);
+        r.task = "fix the login (urgent) & deploy".into();
+        let typed = spec_for(&config, &mut r, LaunchMode::Fresh, &Homes::default());
+        assert!(!typed.args.iter().any(|arg| arg == "--prompt"), "{:?}", typed.args);
+        assert_eq!(typed.initial_input.as_deref(), Some("fix the login (urgent) & deploy"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn listed_opencode_sessions_are_matched_by_folder_and_start_time() {
+        let cwd = if cfg!(windows) { PathBuf::from(r"C:\Users\me\work") } else { PathBuf::from("/home/me/work") };
+        let directory = if cfg!(windows) { "C:/Users/me/work" } else { "/home/me/work" };
+        let since = 1_800_000_000_000u64;
+        let listing = serde_json::json!([
+            { "id": "ses_newest", "created": since + 9_000, "updated": since + 9_500, "directory": directory },
+            { "id": "ses_claimed", "created": since + 1_000, "directory": directory },
+            { "id": "ses_wanted", "created": since + 2_000, "directory": directory },
+            { "id": "ses_other_folder", "created": since + 1_500, "directory": "/elsewhere" },
+            { "id": "ses_before", "created": since - SESSION_CLOCK_SKEW_MS - 1, "directory": directory },
+            { "id": "not-a-session", "created": since + 1_200, "directory": directory },
+            { "id": "ses_bad&id", "created": since + 1_100, "directory": directory },
+        ])
+        .to_string();
+        let claimed = vec!["ses_claimed".to_string()];
+        assert_eq!(pick_listed_session(&listing, &cwd, since, &claimed).as_deref(), Some("ses_wanted"));
+        let neighbours = serde_json::json!([
+            { "id": "ses_started_just_before", "created": since - 5_000, "directory": directory },
+            { "id": "ses_mine", "created": since + 3_000, "directory": directory },
+        ])
+        .to_string();
+        assert_eq!(
+            pick_listed_session(&neighbours, &cwd, since, &[]).as_deref(),
+            Some("ses_mine"),
+            "an agent started a moment earlier in the same folder keeps its own session"
+        );
+        let skewed =
+            serde_json::json!([{ "id": "ses_skewed", "created": since - 5_000, "directory": directory }]).to_string();
+        assert_eq!(pick_listed_session(&skewed, &cwd, since, &[]).as_deref(), Some("ses_skewed"));
+        assert_eq!(pick_listed_session("", &cwd, since, &[]), None, "no sessions print nothing");
+        assert_eq!(pick_listed_session("Error: boom", &cwd, since, &[]), None);
+        assert_eq!(pick_listed_session("[]", &cwd, since, &[]), None);
+    }
+
+    #[test]
+    fn kimi_sessions_are_found_in_the_session_index() {
+        let dir = temp_dir("kimi-index");
+        let home = dir.join("kimi-home");
+        let cwd = dir.join("project");
+        let since = now_ms();
+        let session = |id: &str, work: &Path, created: u64| {
+            let session_dir = home.join("sessions").join("wd_project_0123").join(id);
+            fs::create_dir_all(&session_dir).unwrap();
+            fs::write(session_dir.join(KIMI_STATE), serde_json::json!({ "id": id, "createdAt": created }).to_string())
+                .unwrap();
+            serde_json::json!({ "sessionId": id, "sessionDir": session_dir, "workDir": work }).to_string()
+        };
+        let lines = [
+            session("session_old", &cwd, since - SESSION_CLOCK_SKEW_MS - 10),
+            session("session_neighbour", &cwd, since - 5_000),
+            session("session_claimed", &cwd, since + 10),
+            session("session_wanted", &cwd, since + 20),
+            session("session_later", &cwd, since + 30),
+            session("session_elsewhere", &dir.join("other"), since + 5),
+            "not json".to_string(),
+        ];
+        fs::write(home.join(KIMI_SESSION_INDEX), lines.join("\n")).unwrap();
+        let claimed = vec!["session_claimed".to_string()];
+        assert_eq!(find_kimi_session(&home, &cwd, since, &claimed).as_deref(), Some("session_wanted"));
+        assert_eq!(find_kimi_session(&home, &dir.join("nowhere"), since, &[]), None);
+        assert_eq!(find_kimi_session(&dir.join("missing"), &cwd, since, &[]), None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn antigravity_resumes_the_last_conversation_of_the_folder() {
+        let dir = temp_dir("agy-conversations");
+        let home = dir.join("agy-home");
+        let cwd = dir.join("project");
+        let id = "055a398f-db14-4c5f-abbb-1bf03f8120a7";
+        let file = home.join("cache").join("last_conversations.json");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let map = serde_json::json!({ cwd.to_string_lossy(): id, "/other": "123e4567-e89b-42d3-a456-426614174000" });
+        fs::write(&file, map.to_string()).unwrap();
+        assert_eq!(find_antigravity_conversation(&home, &cwd, &[]).as_deref(), Some(id));
+        assert_eq!(find_antigravity_conversation(&home, &cwd, &[id.to_string()]), None, "another agent owns it");
+        assert_eq!(find_antigravity_conversation(&home, &dir.join("x"), &[]), None);
+        fs::write(&file, serde_json::json!({ cwd.to_string_lossy(): "../escape" }).to_string()).unwrap();
+        assert_eq!(find_antigravity_conversation(&home, &cwd, &[]), None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn command_output_returns_stdout_and_gives_up_on_hung_programs() {
+        let (program, quick, slow): (&str, Vec<&str>, Vec<&str>) = if cfg!(windows) {
+            ("cmd.exe", vec!["/d", "/c", "echo orkai-output"], vec!["/d", "/c", "ping -n 30 127.0.0.1 >nul"])
+        } else {
+            ("/bin/sh", vec!["-c", "echo orkai-output"], vec!["-c", "sleep 30"])
+        };
+        let output = command_output(Command::new(program).args(&quick), Duration::from_secs(20)).unwrap();
+        assert_eq!(output.trim(), "orkai-output");
+        let started = Instant::now();
+        assert_eq!(command_output(Command::new(program).args(&slow), Duration::from_millis(300)), None);
+        assert!(started.elapsed() < Duration::from_secs(20));
+        assert_eq!(command_output(&mut Command::new("orkai-definitely-missing-program"), Duration::from_secs(1)), None);
+        let orphan: Vec<&str> = if cfg!(windows) {
+            vec!["/d", "/c", "start /b ping -n 20 127.0.0.1 & echo orkai-output"]
+        } else {
+            vec!["-c", "sleep 20 & echo orkai-output"]
+        };
+        let started = Instant::now();
+        let _ = command_output(Command::new(program).args(&orphan), Duration::from_secs(2));
+        assert!(started.elapsed() < Duration::from_secs(10), "a child left holding the output never blocks the caller");
     }
 }

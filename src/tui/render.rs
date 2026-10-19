@@ -11,7 +11,7 @@ use crate::tui::complete::matching_commands;
 use crate::tui::format::{duration_short, pad, pad_left, truncate, truncate_start, width};
 use crate::tui::sprite;
 use crate::tui::theme;
-use crate::usage::{self, Problem, Window};
+use crate::usage::{self, Limits, Problem, Usage, Window};
 use crate::util::now_ms;
 use crate::worktree::Changes;
 
@@ -34,9 +34,17 @@ const USAGE_GAP: u16 = 4;
 const USAGE_NAME_WIDTH: u16 = 8;
 const USAGE_WINDOW_WIDTH: usize = 6;
 const USAGE_BAR_WIDTH: usize = 12;
+const USAGE_BAR_MIN_WIDTH: usize = 6;
 const USAGE_PERCENT_WIDTH: usize = 4;
+const USAGE_RESET_WIDTH: usize = 13;
+const USAGE_NAME_GAP: usize = 2;
+const USAGE_ROWS: u16 = 2;
+const USAGE_PER_COLUMN: u16 = 3;
+const USAGE_COLUMN_GAP: u16 = 4;
 const USAGE_SESSION_LABEL: &str = "5h";
 const USAGE_WEEKLY_LABEL: &str = "week";
+const USAGE_MONTHLY_LABEL: &str = "month";
+const USAGE_CREDITS_LABEL: &str = "funds";
 const BRANCH_GLYPH: &str = "⎇";
 const DIFF_HINT: &str = "esc close · ↑↓ pgup pgdn scroll · /merge merges it";
 const BASE_SHORT: usize = 8;
@@ -240,9 +248,9 @@ fn draw_overview(app: &mut App, area: Rect, buf: &mut Buffer) {
     if area.height == 0 || area.width == 0 {
         return;
     }
-    let header_height = sprite::HEIGHT.min(area.height);
+    let sprite_height = sprite::HEIGHT.min(area.height);
     sprite::render(
-        Rect::new(area.x, area.y, sprite::WIDTH.min(area.width), header_height),
+        Rect::new(area.x, area.y, sprite::WIDTH.min(area.width), sprite_height),
         buf,
         app.any_working(),
         app.tick / 3,
@@ -256,7 +264,7 @@ fn draw_overview(app: &mut App, area: Rect, buf: &mut Buffer) {
         (stats.paused, "paused", theme::RED, theme::PAPER),
         (stats.done, "done", theme::GREEN, theme::INK),
     ];
-    let first = area.y + header_height.saturating_sub(4);
+    let first = area.y + sprite_height.saturating_sub(4);
     let mut stats_right = stats_x;
     for (i, (value, label, bg, ink)) in rows.iter().enumerate() {
         let y = first + u16::try_from(i).unwrap_or(0);
@@ -267,8 +275,10 @@ fn draw_overview(app: &mut App, area: Rect, buf: &mut Buffer) {
             stats_right = stats_right.max(put(buf, after + 1, y, label, fg(theme::MUTED), right));
         }
     }
-    let usage_area = Rect::new(area.x, area.y, area.width, header_height);
-    draw_usage(app, stats_right + USAGE_GAP, first, usage_area, buf);
+    let usage_x = stats_right + USAGE_GAP;
+    let grid = usage_grid(app, usage_x, right);
+    let header_height = sprite_height.max(1 + USAGE_ROWS * grid.rows).min(area.height);
+    draw_usage(app, &grid, usage_x, first, Rect::new(area.x, area.y, area.width, header_height), buf);
     let list_top = area.y + header_height + 1;
     if list_top < area.bottom() {
         draw_agent_list(app, Rect::new(area.x, list_top, area.width, area.bottom() - list_top), buf);
@@ -280,11 +290,11 @@ fn usage_cells(used_percent: f64, cells: usize) -> usize {
     ((share * cells as f64).round() as usize).min(cells)
 }
 
-fn draw_usage_window(window: &Window, now: u64, x: u16, y: u16, right: u16, buf: &mut Buffer) -> u16 {
+fn draw_usage_window(window: &Window, bar: usize, now: u64, x: u16, y: u16, right: u16, buf: &mut Buffer) -> u16 {
     let color = theme::usage_color(window.used_percent);
-    let filled = usage_cells(window.used_percent, USAGE_BAR_WIDTH);
+    let filled = usage_cells(window.used_percent, bar);
     let mut x = put(buf, x, y, &"━".repeat(filled), fg(color), right);
-    x = put(buf, x, y, &"─".repeat(USAGE_BAR_WIDTH - filled), fg(theme::RULE), right);
+    x = put(buf, x, y, &"─".repeat(bar - filled), fg(theme::RULE), right);
     let percent = pad_left(&format!("{:.0}%", window.used_percent), USAGE_PERCENT_WIDTH);
     x = put(buf, x + 1, y, &percent, fg(color).add_modifier(Modifier::BOLD), right);
     if let Some(resets_at) = window.resets_at_ms {
@@ -298,44 +308,118 @@ fn draw_usage_window(window: &Window, now: u64, x: u16, y: u16, right: u16, buf:
     x
 }
 
-fn draw_usage(app: &App, x: u16, first: u16, area: Rect, buf: &mut Buffer) {
+struct UsageGrid {
+    kinds: Vec<AgentKind>,
+    columns: u16,
+    rows: u16,
+    name_width: u16,
+    column_width: u16,
+    bar_width: usize,
+}
+
+fn usage_column_width(name_width: u16, bar: usize) -> u16 {
+    let windows = USAGE_WINDOW_WIDTH + bar + 1 + USAGE_PERCENT_WIDTH + 2 + USAGE_RESET_WIDTH;
+    name_width.saturating_add(u16::try_from(windows).unwrap_or(u16::MAX))
+}
+
+fn usage_grid(app: &App, x: u16, right: u16) -> UsageGrid {
+    let kinds: Vec<AgentKind> =
+        usage::PROVIDERS.iter().copied().filter(|kind| app.usage.get(kind).is_some_and(Usage::is_signed_in)).collect();
+    let longest = kinds.iter().map(|kind| width(kind.label()) + USAGE_NAME_GAP).max().unwrap_or(0);
+    let name_width = u16::try_from(longest).unwrap_or(u16::MAX).max(USAGE_NAME_WIDTH);
+    let count = u16::try_from(kinds.len()).unwrap_or(u16::MAX);
+    let wanted = count.div_ceil(USAGE_PER_COLUMN).max(1);
+    let fit = |bar: usize| {
+        let column_width = usage_column_width(name_width, bar);
+        (
+            bar,
+            column_width,
+            (right.saturating_sub(x) + USAGE_COLUMN_GAP) / column_width.saturating_add(USAGE_COLUMN_GAP),
+        )
+    };
+    let (bar_width, column_width, fit) = (USAGE_BAR_MIN_WIDTH..=USAGE_BAR_WIDTH)
+        .rev()
+        .step_by(2)
+        .map(fit)
+        .find(|(_, _, fit)| *fit >= wanted)
+        .unwrap_or_else(|| fit(USAGE_BAR_WIDTH));
+    let columns = wanted.min(fit).max(1);
+    UsageGrid { rows: count.div_ceil(columns), kinds, columns, name_width, column_width, bar_width }
+}
+
+enum UsageRow {
+    Window(&'static str, Option<Window>),
+    Credits(f64),
+}
+
+fn usage_rows(limits: &Limits) -> Vec<UsageRow> {
+    let windowed = limits.session.is_some() || limits.weekly.is_some();
+    if windowed || (limits.monthly.is_none() && limits.credits.is_none()) {
+        let long = match (limits.weekly, limits.monthly) {
+            (None, Some(monthly)) => UsageRow::Window(USAGE_MONTHLY_LABEL, Some(monthly)),
+            (weekly, _) => UsageRow::Window(USAGE_WEEKLY_LABEL, weekly),
+        };
+        return vec![UsageRow::Window(USAGE_SESSION_LABEL, limits.session), long];
+    }
+    let monthly = limits.monthly.map(|monthly| UsageRow::Window(USAGE_MONTHLY_LABEL, Some(monthly)));
+    monthly.into_iter().chain(limits.credits.map(UsageRow::Credits)).collect()
+}
+
+fn draw_usage(app: &App, grid: &UsageGrid, x: u16, first: u16, area: Rect, buf: &mut Buffer) {
     let right = area.right();
-    if x >= right || first >= area.bottom() {
+    let checking = app.usage.len() < usage::PROVIDERS.len();
+    let top = first.min(area.bottom().saturating_sub(USAGE_ROWS * grid.rows));
+    if x >= right || top >= area.bottom() || (grid.kinds.is_empty() && !checking) {
         return;
     }
     let now = now_ms();
-    if first > area.y {
-        let updated = app.usage.values().filter_map(|u| u.updated_at_ms).max();
+    if top > area.y {
+        let updated = grid.kinds.iter().filter_map(|kind| app.usage.get(kind)?.updated_at_ms).max();
         let status = match updated {
             Some(at) => format!(" · updated {} ago", duration_short(now.saturating_sub(at))),
             None => " · checking…".to_string(),
         };
-        let after = put(buf, x, first - 1, "usage", fg(theme::MUTED), right);
-        put(buf, after, first - 1, &status, fg(theme::FAINT), right);
+        let after = put(buf, x, top - 1, "usage", fg(theme::MUTED), right);
+        put(buf, after, top - 1, &status, fg(theme::FAINT), right);
     }
-    for (index, kind) in usage::PROVIDERS.iter().enumerate() {
-        let y = first + 2 * u16::try_from(index).unwrap_or(0);
-        if y >= area.bottom() {
-            return;
+    for (index, kind) in grid.kinds.iter().enumerate() {
+        let index = u16::try_from(index).unwrap_or(u16::MAX);
+        let column = index / grid.rows;
+        let column_x = x.saturating_add(column.saturating_mul(grid.column_width + USAGE_COLUMN_GAP));
+        let right = if column + 1 < grid.columns {
+            column_x.saturating_add(grid.column_width + USAGE_COLUMN_GAP - 1).min(right)
+        } else {
+            right
+        };
+        let y = top + USAGE_ROWS * (index % grid.rows);
+        if y >= area.bottom() || column_x >= right {
+            continue;
         }
         let entry = app.usage.get(kind);
-        put(buf, x, y, kind.label(), fg(theme::kind_color(*kind)), right);
-        let window_x = x + USAGE_NAME_WIDTH;
+        put(buf, column_x, y, kind.label(), fg(theme::kind_color(*kind)), right);
+        let window_x = column_x + grid.name_width;
         let Some(limits) = entry.and_then(|u| u.limits) else {
             let text = entry.and_then(|u| u.problem).map_or("checking…", Problem::label);
             put(buf, window_x, y, text, fg(theme::FAINT), right);
             continue;
         };
-        let windows = [(USAGE_SESSION_LABEL, limits.session), (USAGE_WEEKLY_LABEL, limits.weekly)];
-        for (row, (label, window)) in windows.iter().enumerate() {
+        for (row, usage_row) in usage_rows(&limits).iter().enumerate() {
             let y = y + u16::try_from(row).unwrap_or(0);
             if y >= area.bottom() {
-                return;
+                break;
             }
+            let label = match usage_row {
+                UsageRow::Window(label, _) => label,
+                UsageRow::Credits(_) => USAGE_CREDITS_LABEL,
+            };
             let cx = put(buf, window_x, y, &pad(label, USAGE_WINDOW_WIDTH), fg(theme::DIM), right);
-            let end = match window {
-                Some(window) => draw_usage_window(window, now, cx, y, right, buf),
-                None => put(buf, cx, y, "n/a", fg(theme::FAINT), right),
+            let end = match usage_row {
+                UsageRow::Window(_, Some(window)) => draw_usage_window(window, grid.bar_width, now, cx, y, right, buf),
+                UsageRow::Window(_, None) => put(buf, cx, y, "n/a", fg(theme::FAINT), right),
+                UsageRow::Credits(credits) => {
+                    let color = if *credits > 0.0 { theme::GREEN } else { theme::RED };
+                    put(buf, cx, y, &format!("${credits:.2}"), fg(color).add_modifier(Modifier::BOLD), right)
+                }
             };
             if row == 0
                 && let Some(problem) = entry.and_then(|u| u.problem)
@@ -901,7 +985,7 @@ fn draw_confirm(app: &App, confirm: &Confirm, screen: Rect, buf: &mut Buffer) {
 const HELP: &[(&str, &str)] = &[
     ("type + enter", "start an agent with that task"),
     ("shift+enter", "new line in the task (alt+enter also works)"),
-    ("tab / shift+tab", "who runs it: claude, codex or terminal"),
+    ("tab / shift+tab", "who runs it: an installed agent or terminal"),
     ("!command", "run a shell command in a new terminal"),
     ("/where · ctrl+l", "folder for this session: type, tab enters or cycles"),
     ("ctrl+t /worktree", "new agents in their own git worktree and branch"),
@@ -985,6 +1069,33 @@ mod tests {
         let layout = areas(Rect::new(0, 0, 60, 20), false, false, 1);
         assert!(layout.sidebar.is_none());
         assert_eq!(layout.body.x, 1);
+    }
+
+    #[test]
+    fn usage_rows_keep_the_5h_and_week_layout_and_fall_back_to_month_and_funds() {
+        let window = |used_percent| Some(Window { used_percent, resets_at_ms: None });
+        let labels = |limits: &Limits| -> Vec<String> {
+            usage_rows(limits)
+                .iter()
+                .map(|row| match row {
+                    UsageRow::Window(label, Some(w)) => format!("{label} {}", w.used_percent),
+                    UsageRow::Window(label, None) => format!("{label} n/a"),
+                    UsageRow::Credits(credits) => format!("funds {credits}"),
+                })
+                .collect()
+        };
+        let claude = Limits { session: window(55.0), weekly: window(92.0), monthly: window(1.0), ..Limits::default() };
+        assert_eq!(labels(&claude), ["5h 55", "week 92"]);
+        let free_codex = Limits { weekly: window(75.0), ..Limits::default() };
+        assert_eq!(labels(&free_codex), ["5h n/a", "week 75"]);
+        let kimi = Limits { session: window(30.0), monthly: window(10.0), ..Limits::default() };
+        assert_eq!(labels(&kimi), ["5h 30", "month 10"]);
+        let grok = Limits { monthly: window(7.0), ..Limits::default() };
+        assert_eq!(labels(&grok), ["month 7"]);
+        let kilo = Limits { monthly: window(25.0), credits: Some(12.5), ..Limits::default() };
+        assert_eq!(labels(&kilo), ["month 25", "funds 12.5"]);
+        assert_eq!(labels(&Limits { credits: Some(0.0), ..Limits::default() }), ["funds 0"]);
+        assert_eq!(labels(&Limits::default()), ["5h n/a", "week n/a"]);
     }
 
     #[test]

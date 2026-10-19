@@ -8,7 +8,9 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::fsutil;
-use crate::launch::{claude_home, codex_home};
+use crate::launch::{
+    antigravity_home, claude_home, codex_home, grok_home, kilo_config_dir, kimi_home, opencode_config_dir, qwen_home,
+};
 use crate::model::AgentKind;
 use crate::paths::user_home;
 
@@ -21,7 +23,16 @@ const SYNCED_SKILLS_DIR: &str = "synced";
 const CODEX_SYSTEM_SKILLS_DIR: &str = ".system";
 const CODEX_ADMIN_SKILLS_DIR: &str = "/etc/codex/skills";
 const CODEX_SKILL_SIGIL: char = '$';
+const KIMI_SKILL_PREFIX: &str = "/skill:";
 const PLUGIN_SEPARATOR: char = ':';
+const PATH_SEPARATOR: char = '/';
+const SKILL_DIRS: [&str; 2] = ["skill", "skills"];
+const COMMAND_DIRS: [&str; 2] = ["command", "commands"];
+const SHARED_SKILL_DIRS: [&str; 2] = [".claude", ".agents"];
+const KILO_PROJECT_DIRS: [&str; 2] = [".kilo", ".kilocode"];
+const OPENCODE_PROJECT_DIRS: [&str; 1] = [".opencode"];
+const GROK_DIRS: [&str; 4] = [".grok", ".agents", ".claude", ".cursor"];
+const ANTIGRAVITY_PROJECT_DIRS: [&str; 2] = [".agents", ".agent"];
 
 struct Frontmatter {
     name: Option<String>,
@@ -58,6 +69,20 @@ pub fn discover(kind: AgentKind, cwd: &Path) -> Vec<String> {
     match kind {
         AgentKind::Claude => claude_skills(claude_home().as_deref(), cwd),
         AgentKind::Codex => codex_skills(codex_home().as_deref(), user_home().as_deref(), cwd),
+        AgentKind::Kilo => {
+            let home = user_home();
+            let roots = [kilo_config_dir(), home.as_ref().map(|h| h.join(".kilo"))];
+            opencode_skills(&roots, home.as_deref(), &KILO_PROJECT_DIRS, cwd)
+        }
+        AgentKind::Opencode => {
+            let home = user_home();
+            let roots = [opencode_config_dir(), home.as_ref().map(|h| h.join(".opencode"))];
+            opencode_skills(&roots, home.as_deref(), &OPENCODE_PROJECT_DIRS, cwd)
+        }
+        AgentKind::Antigravity => antigravity_skills(antigravity_home().as_deref(), cwd),
+        AgentKind::Grok => grok_skills(grok_home().as_deref(), user_home().as_deref(), cwd),
+        AgentKind::Qwen => qwen_skills(qwen_home().as_deref(), user_home().as_deref(), cwd),
+        AgentKind::Kimi => kimi_skills(kimi_home().as_deref(), user_home().as_deref(), cwd),
         AgentKind::Terminal => Vec::new(),
     }
 }
@@ -66,8 +91,104 @@ pub fn invocation(kind: AgentKind, line: &str) -> String {
     let line = line.trim();
     match kind {
         AgentKind::Codex => format!("{CODEX_SKILL_SIGIL}{}", line.trim_start_matches('/')),
+        AgentKind::Kimi => format!("{KIMI_SKILL_PREFIX}{}", line.trim_start_matches('/')),
         _ => line.to_string(),
     }
+}
+
+fn shared_skills(user_home: Option<&Path>, cwd: &Path, names: &mut BTreeSet<String>) {
+    for dir in SHARED_SKILL_DIRS {
+        if let Some(home) = user_home {
+            skills_in(&home.join(dir).join("skills"), "", names);
+        }
+        for project in project_dirs(cwd) {
+            skills_in(&project.join(dir).join("skills"), "", names);
+        }
+    }
+}
+
+pub fn opencode_skills(
+    roots: &[Option<PathBuf>],
+    user_home: Option<&Path>,
+    project: &[&str],
+    cwd: &Path,
+) -> Vec<String> {
+    let mut names = BTreeSet::new();
+    let mut dirs: Vec<PathBuf> = roots.iter().flatten().cloned().collect();
+    for dir in project_dirs(cwd) {
+        dirs.extend(project.iter().map(|name| dir.join(name)));
+    }
+    for dir in &dirs {
+        for skills in SKILL_DIRS {
+            skills_in(&dir.join(skills), "", &mut names);
+        }
+        for commands in COMMAND_DIRS {
+            commands_in(&dir.join(commands), "", PATH_SEPARATOR, &mut names);
+        }
+    }
+    shared_skills(user_home, cwd, &mut names);
+    names.into_iter().collect()
+}
+
+pub fn antigravity_skills(agy_home: Option<&Path>, cwd: &Path) -> Vec<String> {
+    let mut names = BTreeSet::new();
+    if let Some(home) = agy_home {
+        skills_in(&home.join("skills"), "", &mut names);
+    }
+    for dir in project_dirs(cwd) {
+        for project in ANTIGRAVITY_PROJECT_DIRS {
+            skills_in(&dir.join(project).join("skills"), "", &mut names);
+        }
+    }
+    names.into_iter().collect()
+}
+
+pub fn grok_skills(grok_home: Option<&Path>, user_home: Option<&Path>, cwd: &Path) -> Vec<String> {
+    let mut names = BTreeSet::new();
+    let mut dirs: Vec<PathBuf> = grok_home.into_iter().map(Path::to_path_buf).collect();
+    if let Some(home) = user_home {
+        dirs.extend(GROK_DIRS.iter().skip(1).map(|dir| home.join(dir)));
+    }
+    for dir in project_dirs(cwd) {
+        dirs.extend(GROK_DIRS.iter().map(|name| dir.join(name)));
+    }
+    for dir in &dirs {
+        skills_in(&dir.join("skills"), "", &mut names);
+        commands_in(&dir.join("commands"), "", PLUGIN_SEPARATOR, &mut names);
+    }
+    names.into_iter().collect()
+}
+
+pub fn qwen_skills(qwen_home: Option<&Path>, user_home: Option<&Path>, cwd: &Path) -> Vec<String> {
+    let mut names = BTreeSet::new();
+    if let Some(home) = qwen_home {
+        skills_in(&home.join("skills"), "", &mut names);
+        commands_in(&home.join("commands"), "", PLUGIN_SEPARATOR, &mut names);
+    }
+    if let Some(home) = user_home {
+        skills_in(&home.join(".agents").join("skills"), "", &mut names);
+    }
+    for dir in project_dirs(cwd) {
+        skills_in(&dir.join(".qwen").join("skills"), "", &mut names);
+        skills_in(&dir.join(".agents").join("skills"), "", &mut names);
+        commands_in(&dir.join(".qwen").join("commands"), "", PLUGIN_SEPARATOR, &mut names);
+    }
+    names.into_iter().collect()
+}
+
+pub fn kimi_skills(kimi_home: Option<&Path>, user_home: Option<&Path>, cwd: &Path) -> Vec<String> {
+    let mut names = BTreeSet::new();
+    if let Some(home) = kimi_home {
+        skills_in(&home.join("skills"), "", &mut names);
+    }
+    if let Some(home) = user_home {
+        skills_in(&home.join(".agents").join("skills"), "", &mut names);
+    }
+    for dir in project_dirs(cwd) {
+        skills_in(&dir.join(".kimi-code").join("skills"), "", &mut names);
+        skills_in(&dir.join(".agents").join("skills"), "", &mut names);
+    }
+    names.into_iter().collect()
 }
 
 pub fn claude_skills(claude_home: Option<&Path>, cwd: &Path) -> Vec<String> {
@@ -75,11 +196,11 @@ pub fn claude_skills(claude_home: Option<&Path>, cwd: &Path) -> Vec<String> {
     if let Some(home) = claude_home {
         skills_in(&home.join("skills"), "", &mut names);
         skills_in(&home.join("skills").join(SYNCED_SKILLS_DIR), "", &mut names);
-        commands_in(&home.join("commands"), "", &mut names);
+        commands_in(&home.join("commands"), "", PLUGIN_SEPARATOR, &mut names);
     }
     for dir in project_dirs(cwd) {
         skills_in(&dir.join(".claude").join("skills"), "", &mut names);
-        commands_in(&dir.join(".claude").join("commands"), "", &mut names);
+        commands_in(&dir.join(".claude").join("commands"), "", PLUGIN_SEPARATOR, &mut names);
     }
     if let Some(home) = claude_home {
         plugin_skills(home, cwd, &mut names);
@@ -170,7 +291,7 @@ fn command_at(file: &Path, namespace: &str, prefix: &str, names: &mut BTreeSet<S
     }
 }
 
-fn commands_in(dir: &Path, prefix: &str, names: &mut BTreeSet<String>) {
+fn commands_in(dir: &Path, prefix: &str, separator: char, names: &mut BTreeSet<String>) {
     let mut pending = vec![(dir.to_path_buf(), String::new(), 0)];
     while let Some((dir, namespace, depth)) = pending.pop() {
         let Ok(entries) = fs::read_dir(&dir) else { continue };
@@ -182,7 +303,7 @@ fn commands_in(dir: &Path, prefix: &str, names: &mut BTreeSet<String>) {
             }
             if path.is_dir() {
                 if depth < MAX_COMMAND_DEPTH {
-                    pending.push((path, format!("{namespace}{name}{PLUGIN_SEPARATOR}"), depth + 1));
+                    pending.push((path, format!("{namespace}{name}{separator}"), depth + 1));
                 }
             } else {
                 command_at(&path, &namespace, prefix, names);
@@ -250,7 +371,7 @@ fn plugin_skills(claude_home: &Path, cwd: &Path, names: &mut BTreeSet<String>) {
         }
         for path in manifest_paths(&root, "commands", &manifest.commands) {
             if path.is_dir() {
-                commands_in(&path, &prefix, names);
+                commands_in(&path, &prefix, PLUGIN_SEPARATOR, names);
             } else {
                 command_at(&path, "", &prefix, names);
             }
@@ -363,6 +484,61 @@ mod tests {
     }
 
     #[test]
+    fn opencode_and_kilo_list_their_own_and_shared_skills_and_commands() {
+        let t = tree("opencode");
+        let user = t.0.join("user");
+        let config = t.0.join("config").join("opencode");
+        let repo = t.0.join("repo");
+        let cwd = repo.join("web");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(&cwd).unwrap();
+        skill(&config.join("skills"), "global-skill", "name: global-skill");
+        skill(&config.join("skill"), "legacy-skill", "name: legacy-skill");
+        write(&config.join("commands").join("git").join("commit.md"), "Commit $ARGUMENTS");
+        write(&repo.join(".opencode").join("command").join("deploy.md"), "Deploy");
+        skill(&user.join(".claude").join("skills"), "from-claude", "name: from-claude");
+        skill(&cwd.join(".agents").join("skills"), "repo-agents", "name: repo-agents");
+        skill(&repo.join(".kilo").join("skills"), "only-kilo", "name: only-kilo");
+
+        let names = opencode_skills(&[Some(config.clone()), None], Some(&user), &OPENCODE_PROJECT_DIRS, &cwd);
+        assert_eq!(names, ["deploy", "from-claude", "git/commit", "global-skill", "legacy-skill", "repo-agents"]);
+        let kilo = opencode_skills(&[None], Some(&user), &KILO_PROJECT_DIRS, &cwd);
+        assert_eq!(kilo, ["from-claude", "only-kilo", "repo-agents"]);
+    }
+
+    #[test]
+    fn grok_qwen_kimi_and_antigravity_read_their_folders() {
+        let t = tree("others");
+        let user = t.0.join("user");
+        let cwd = t.0.join("project");
+        fs::create_dir_all(&cwd).unwrap();
+        skill(&user.join(".agents").join("skills"), "shared", "name: shared");
+        skill(&cwd.join(".agents").join("skills"), "repo", "name: repo");
+
+        let grok = user.join(".grok");
+        skill(&grok.join("skills"), "grok-own", "name: grok-own");
+        skill(&user.join(".cursor").join("skills"), "from-cursor", "name: from-cursor");
+        write(&cwd.join(".claude").join("commands").join("ship.md"), "Ship it");
+        assert_eq!(grok_skills(Some(&grok), Some(&user), &cwd), ["from-cursor", "grok-own", "repo", "shared", "ship"]);
+
+        let qwen = user.join(".qwen");
+        skill(&qwen.join("skills"), "qwen-own", "name: qwen-own");
+        write(&qwen.join("commands").join("git").join("commit.md"), "---\ndescription: c\n---\n");
+        write(&cwd.join(".qwen").join("commands").join("old.toml"), "prompt = 'x'");
+        assert_eq!(qwen_skills(Some(&qwen), Some(&user), &cwd), ["git:commit", "qwen-own", "repo", "shared"]);
+
+        let kimi = user.join(".kimi-code");
+        skill(&kimi.join("skills"), "kimi-own", "name: kimi-own");
+        skill(&cwd.join(".kimi-code").join("skills"), "kimi-repo", "name: kimi-repo");
+        assert_eq!(kimi_skills(Some(&kimi), Some(&user), &cwd), ["kimi-own", "kimi-repo", "repo", "shared"]);
+
+        let agy = user.join(".gemini").join("antigravity-cli");
+        skill(&agy.join("skills"), "agy-own", "name: agy-own");
+        skill(&cwd.join(".agent").join("skills"), "legacy", "name: legacy");
+        assert_eq!(antigravity_skills(Some(&agy), &cwd), ["agy-own", "legacy", "repo"]);
+    }
+
+    #[test]
     fn missing_folders_yield_no_skills() {
         let t = tree("empty");
         assert!(claude_skills(Some(&t.0.join("nope")), &t.0.join("nowhere")).is_empty());
@@ -383,5 +559,7 @@ mod tests {
     fn codex_invocations_use_the_dollar_sigil() {
         assert_eq!(invocation(AgentKind::Codex, "/skill-creator make one"), "$skill-creator make one");
         assert_eq!(invocation(AgentKind::Claude, " /review 12 "), "/review 12");
+        assert_eq!(invocation(AgentKind::Kimi, "/review 12"), "/skill:review 12");
+        assert_eq!(invocation(AgentKind::Opencode, "/git/commit now"), "/git/commit now");
     }
 }

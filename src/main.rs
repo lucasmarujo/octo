@@ -32,7 +32,12 @@ enum Command {
     Sessions,
     #[command(about = "Start a new agent")]
     New {
-        #[arg(short, long, default_value = "claude", help = "claude, codex or terminal")]
+        #[arg(
+            short,
+            long,
+            default_value = "claude",
+            help = "claude, codex, kilo, opencode, agy, grok, qwen, kimi or terminal"
+        )]
         kind: String,
         #[arg(short, long, default_value = DEFAULT_SESSION)]
         session: String,
@@ -102,7 +107,10 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
         Some(Command::Sessions) => cli::sessions(&store),
         Some(Command::New { kind, session, cwd, name, worktree, task }) => {
             let kind = AgentKind::parse(&kind).ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::InvalidInput, "kind must be claude, codex or terminal")
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("kind must be one of {}", AgentKind::names()),
+                )
             })?;
             cli::new_agent(&launcher(store)?, kind, session, cwd, name, task.join(" "), worktree)
         }

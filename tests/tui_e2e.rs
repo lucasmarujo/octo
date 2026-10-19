@@ -211,8 +211,7 @@ fn tui_keeps_pasted_line_breaks_and_deletes_running_agents() {
     let fx = fixture();
     let mut tui = start_tui(&fx);
     tui.wait_for("who claude");
-    tui.send(b"\t");
-    tui.send(b"\t");
+    tui.send(b"\x1b[Z");
     tui.wait_for("who terminal");
 
     tui.send(b"echo first-line\recho second-line");
@@ -248,8 +247,7 @@ fn tui_launches_agent_opens_it_and_agent_survives_restart() {
     tui.wait_for("who claude");
     tui.wait_for_title(orkai::tui::WINDOW_TITLE);
 
-    tui.send(b"\t");
-    tui.send(b"\t");
+    tui.send(b"\x1b[Z");
     tui.wait_for("who terminal");
 
     tui.type_text("echo orkai-tui-marker");

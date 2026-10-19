@@ -14,16 +14,38 @@ pub const MAX_AGENT_NAME_LEN: usize = 40;
 pub enum AgentKind {
     Claude,
     Codex,
+    Kilo,
+    Opencode,
+    Antigravity,
+    Grok,
+    Qwen,
+    Kimi,
     Terminal,
 }
 
 impl AgentKind {
-    pub const ALL: [AgentKind; 3] = [AgentKind::Claude, AgentKind::Codex, AgentKind::Terminal];
+    pub const ALL: [AgentKind; 9] = [
+        AgentKind::Claude,
+        AgentKind::Codex,
+        AgentKind::Kilo,
+        AgentKind::Opencode,
+        AgentKind::Antigravity,
+        AgentKind::Grok,
+        AgentKind::Qwen,
+        AgentKind::Kimi,
+        AgentKind::Terminal,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             AgentKind::Claude => "claude",
             AgentKind::Codex => "codex",
+            AgentKind::Kilo => "kilo",
+            AgentKind::Opencode => "opencode",
+            AgentKind::Antigravity => "agy",
+            AgentKind::Grok => "grok",
+            AgentKind::Qwen => "qwen",
+            AgentKind::Kimi => "kimi",
             AgentKind::Terminal => "terminal",
         }
     }
@@ -32,26 +54,32 @@ impl AgentKind {
         !matches!(self, AgentKind::Terminal)
     }
 
+    fn position(self) -> usize {
+        AgentKind::ALL.iter().position(|kind| *kind == self).unwrap_or(0)
+    }
+
     pub fn next(self) -> Self {
-        match self {
-            AgentKind::Claude => AgentKind::Codex,
-            AgentKind::Codex => AgentKind::Terminal,
-            AgentKind::Terminal => AgentKind::Claude,
-        }
+        AgentKind::ALL[(self.position() + 1) % AgentKind::ALL.len()]
     }
 
     pub fn prev(self) -> Self {
-        match self {
-            AgentKind::Claude => AgentKind::Terminal,
-            AgentKind::Codex => AgentKind::Claude,
-            AgentKind::Terminal => AgentKind::Codex,
-        }
+        AgentKind::ALL[(self.position() + AgentKind::ALL.len() - 1) % AgentKind::ALL.len()]
+    }
+
+    pub fn names() -> String {
+        AgentKind::ALL.iter().map(|kind| kind.label()).collect::<Vec<_>>().join("|")
     }
 
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "claude" | "cc" => Some(AgentKind::Claude),
             "codex" => Some(AgentKind::Codex),
+            "kilo" | "kilocode" => Some(AgentKind::Kilo),
+            "opencode" | "oc" => Some(AgentKind::Opencode),
+            "agy" | "antigravity" | "gemini" => Some(AgentKind::Antigravity),
+            "grok" => Some(AgentKind::Grok),
+            "qwen" => Some(AgentKind::Qwen),
+            "kimi" => Some(AgentKind::Kimi),
             "terminal" | "term" | "shell" => Some(AgentKind::Terminal),
             _ => None,
         }
@@ -288,12 +316,20 @@ mod tests {
     #[test]
     fn kind_cycles_through_all_values() {
         let mut kind = AgentKind::Claude;
-        for _ in 0..3 {
+        let mut seen = Vec::new();
+        for _ in 0..AgentKind::ALL.len() {
+            seen.push(kind);
             kind = kind.next();
         }
         assert_eq!(kind, AgentKind::Claude);
+        assert_eq!(seen, AgentKind::ALL);
         assert_eq!(AgentKind::Claude.prev(), AgentKind::Terminal);
         assert_eq!(AgentKind::Terminal.next(), AgentKind::Claude);
+        assert_eq!(AgentKind::Codex.next(), AgentKind::Kilo);
+        assert_eq!(AgentKind::Kimi.next(), AgentKind::Terminal);
+        for kind in AgentKind::ALL {
+            assert_eq!(kind.next().prev(), kind);
+        }
     }
 
     #[test]
@@ -302,11 +338,22 @@ mod tests {
         assert_eq!(AgentKind::parse("shell"), Some(AgentKind::Terminal));
         assert_eq!(AgentKind::parse("codex"), Some(AgentKind::Codex));
         assert_eq!(AgentKind::parse("vim"), None);
+        for kind in AgentKind::ALL {
+            assert_eq!(AgentKind::parse(kind.label()), Some(kind));
+        }
+        assert_eq!(AgentKind::parse("KiloCode"), Some(AgentKind::Kilo));
+        assert_eq!(AgentKind::parse("oc"), Some(AgentKind::Opencode));
+        assert_eq!(AgentKind::parse("gemini"), Some(AgentKind::Antigravity));
+        assert_eq!(AgentKind::parse("Antigravity"), Some(AgentKind::Antigravity));
+        assert_eq!(AgentKind::names(), "claude|codex|kilo|opencode|agy|grok|qwen|kimi|terminal");
     }
 
     #[test]
     fn kind_serializes_lowercase() {
         assert_eq!(serde_json::to_string(&AgentKind::Terminal).unwrap(), "\"terminal\"");
+        assert_eq!(serde_json::to_string(&AgentKind::Opencode).unwrap(), "\"opencode\"");
+        assert_eq!(serde_json::from_str::<AgentKind>("\"kimi\"").unwrap(), AgentKind::Kimi);
+        assert_eq!(serde_json::to_string(&AgentKind::Antigravity).unwrap(), "\"antigravity\"");
         assert_eq!(serde_json::to_string(&AgentState::Paused).unwrap(), "\"paused\"");
     }
 

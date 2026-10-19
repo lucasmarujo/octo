@@ -302,6 +302,7 @@ pub struct App {
     subagent_requests: Option<Sender<Vec<Parent>>>,
     change_requests: Option<Sender<Vec<(AgentId, Worktree)>>>,
     alerts: Vec<Alert>,
+    installed: Option<Vec<AgentKind>>,
 }
 
 impl App {
@@ -364,6 +365,7 @@ impl App {
             subagent_requests: None,
             change_requests: None,
             alerts: Vec::new(),
+            installed: None,
         };
         app.ensure_selection();
         Ok(app)
@@ -457,9 +459,10 @@ impl App {
     fn spawn_usage_watchers(&self) {
         for kind in usage::PROVIDERS {
             let tx = self.tx.clone();
+            let config = self.launcher.config().clone();
             let _ = thread::Builder::new().name("orkai-usage".into()).spawn(move || {
                 loop {
-                    if tx.send(AppEvent::Usage { kind, result: usage::fetch(kind) }).is_err() {
+                    if tx.send(AppEvent::Usage { kind, result: usage::fetch(kind, &config) }).is_err() {
                         return;
                     }
                     thread::sleep(usage::REFRESH_EVERY);
@@ -1122,11 +1125,7 @@ impl App {
     fn default_name(&self, kind: AgentKind, task: &str) -> String {
         let slug = slugify(task, NAME_WORDS, NAME_MAX_LEN);
         let base = if slug.is_empty() {
-            let prefix = match kind {
-                AgentKind::Terminal => "term",
-                AgentKind::Claude => "claude",
-                AgentKind::Codex => "codex",
-            };
+            let prefix = if kind == AgentKind::Terminal { "term" } else { kind.label() };
             return (1..)
                 .map(|n| format!("{prefix}-{n}"))
                 .find(|candidate| !self.name_taken(candidate))
@@ -1166,7 +1165,7 @@ impl App {
         self.worktree = on;
         self.persist_ui();
         let text = if on {
-            "new claude and codex agents start in their own git worktree and branch"
+            "new ai agents start in their own git worktree and branch"
         } else {
             "new agents run directly in the where folder"
         };
@@ -1490,7 +1489,33 @@ impl App {
             }
             return;
         }
-        self.who = if backwards { self.who.prev() } else { self.who.next() };
+        self.cycle_who(backwards);
+    }
+
+    fn installed_kinds(&mut self) -> Vec<AgentKind> {
+        let config = self.launcher.config();
+        self.installed
+            .get_or_insert_with(|| {
+                AgentKind::ALL
+                    .into_iter()
+                    .filter(|kind| {
+                        config.agent(*kind).is_none_or(|(command, _)| launch::resolve_program(command).is_ok())
+                    })
+                    .collect()
+            })
+            .clone()
+    }
+
+    fn cycle_who(&mut self, backwards: bool) {
+        let installed = self.installed_kinds();
+        let mut kind = self.who;
+        for _ in 0..AgentKind::ALL.len() {
+            kind = if backwards { kind.prev() } else { kind.next() };
+            if installed.contains(&kind) {
+                break;
+            }
+        }
+        self.who = kind;
         self.persist_ui();
     }
 
@@ -1824,7 +1849,7 @@ impl App {
                     self.who = kind;
                     self.persist_ui();
                 }
-                None => self.set_notice(Tone::Error, "usage: /who claude|codex|terminal"),
+                None => self.set_notice(Tone::Error, format!("usage: /who {}", AgentKind::names())),
             },
             "session" | "s" => {
                 if arg.is_empty() {
@@ -1935,8 +1960,7 @@ impl App {
                     Some(Hit::CloseTab(id)) => self.close_tab(id),
                     Some(Hit::Overview) => self.show_overview(),
                     Some(Hit::Who) => {
-                        self.who = self.who.next();
-                        self.persist_ui();
+                        self.cycle_who(false);
                         self.sync_suggestions();
                     }
                     Some(Hit::Where) => {

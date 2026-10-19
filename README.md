@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>Orquestre vários agentes de IA em vários projetos, de um terminal só.</b><br>
-  Claude Code, Codex e terminais comuns lado a lado, organizados em sessões.<br>
+  Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi Code e terminais comuns lado a lado, organizados em sessões.<br>
   Binário único, nativo e sem runtime, para Windows, Linux e macOS.
 </p>
 
@@ -12,7 +12,7 @@
   <a href="https://github.com/lucasmarujo/orkai-cli/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lucasmarujo/orkai-cli/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="https://github.com/lucasmarujo/orkai-cli/releases/tag/latest"><img alt="Download" src="https://img.shields.io/badge/download-latest-fe5d87?style=flat-square"></a>
   <img alt="Windows · Linux · macOS" src="https://img.shields.io/badge/Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-1f1d29?style=flat-square">
-  <img alt="Claude Code · Codex" src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex-1f1d29?style=flat-square">
+  <img alt="Claude Code · Codex · +6 agentes" src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20%2B6%20agentes-1f1d29?style=flat-square">
   <img alt="Rust 1.88+" src="https://img.shields.io/badge/Rust-1.88%2B-1f1d29?style=flat-square&logo=rust">
 </p>
 
@@ -37,22 +37,61 @@ https://github.com/user-attachments/assets/ee120388-6e26-485f-ad0b-b2f8d08cdbc9
 
 ## Destaques
 
-- **Todos os agentes numa tela.** Claude Code, Codex e terminais agrupados por pasta, com estado, tempo,
-  tipo, a frase do que cada um está fazendo e os subagents que ele disparou.
-- **Estado exato, na hora.** Os hooks do Claude Code e o `notify` do Codex dizem quando o agente está
-  trabalhando, esperando você ou terminou, sem depender do texto da tela.
+- **Todos os agentes numa tela.** Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi
+  Code e terminais agrupados por pasta, com estado, tempo, tipo, a frase do que cada um está fazendo e os
+  subagents que o Claude Code e o Codex disparam.
+- **Estado exato, na hora.** Hooks, plugins e os protocolos de cada agente dizem quando ele está
+  trabalhando, esperando você ou terminou, sem depender do texto da tela (veja
+  [Agentes suportados](#agentes-suportados)).
 - **Você sabe quando precisam de você.** Sino, notificação do terminal, título da janela e `alt+n` para abrir
   direto o agente que está esperando; ou mande o aviso para o celular.
 - **Uma worktree por agente.** Vários agentes no mesmo repositório, cada um na sua branch, com `/diff` e
   `/merge` sem sair do orkai.
-- **Consumo dos planos à vista.** Janela de 5 horas e semanal do Claude Code e do Codex, com contagem
-  regressiva até o reset.
+- **Consumo dos planos à vista.** Janelas de 5 horas, semana e mês (ou o saldo) de cada agente em que você
+  está logado, com contagem regressiva até o reset; quem não tem login não aparece.
 - **Nada se perde.** Fechar, travar ou atualizar a interface não derruba nenhum agente; depois de um reboot,
   `ctrl+r` retoma cada conversa de onde parou.
-- **Skills no `/`.** As skills do Claude Code e do Codex aparecem no autocomplete e iniciam um agente já
-  invocando a skill.
+- **Skills no `/`.** As skills de cada agente aparecem no autocomplete e iniciam um agente já invocando a
+  skill.
 - **Binário único que se atualiza sozinho.** Cada build nova é conferida por tamanho e SHA-256 antes de
   substituir o executável.
+
+## Agentes suportados
+
+| `who` | Agente | Programa | Estado exato | Consumo no overview | Retomada após reboot |
+| --- | --- | --- | --- | --- | --- |
+| `claude` | Claude Code | `claude` | hooks (`--settings`) | 5h e semana | `--resume <id>` |
+| `codex` | Codex | `codex` | `notify` | 5h e semana | `codex resume <id>` |
+| `kilo` | Kilo CLI | `kilo` | plugin de eventos | saldo (`funds`) e Kilo Pass | `--session <id>` |
+| `opencode` | OpenCode | `opencode` | plugin de eventos | OpenCode Go (5h e semana) | `--session <id>` |
+| `agy` | Antigravity CLI (sucessor do Gemini CLI) | `agy` | OSC 7501 | 5h e semana | `--conversation=<id>` |
+| `grok` | Grok Build | `grok` | título da janela | semana ou mês | `--resume=<id>` |
+| `qwen` | Qwen Code | `qwen` | hooks (system defaults) | sem API de consumo | `--resume <id>` |
+| `kimi` | Kimi Code | `kimi` | tela | 5h, semana ou mês | `--session <id>` |
+| `terminal` | PowerShell, bash… | `shell` | atividade da saída | — | reexecuta o comando |
+
+- **Lançamento.** A tarefa entra no agente assim que ele fica pronto. No OpenCode e no Kilo ela vai pelo
+  `--prompt`, que eles mesmos enviam quando terminam de carregar; nos outros, o orkai digita a tarefa e
+  aperta `enter`. O Claude Code, o Grok e o Qwen Code nascem com um id de sessão escolhido pelo orkai. Nos
+  outros, o orkai descobre a sessão na hora de retomar: pelo `session list` do OpenCode/Kilo, pelo
+  `session_index.jsonl` do Kimi Code (`~/.kimi-code`) ou pelo `last_conversations.json` do Antigravity. Em
+  cada caso, é a sessão daquela pasta criada depois do agente e que nenhum outro agente já usa.
+- **Estado exato.** Além da leitura da tela, que vale para todos:
+  - OpenCode e Kilo carregam um plugin do orkai (`OPENCODE_CONFIG_CONTENT`/`KILO_CONFIG_CONTENT`, só
+    naquele processo) que avisa quando a sessão trabalha, pede permissão ou faz uma pergunta, e quando fica
+    ociosa;
+  - o Qwen Code recebe hooks no formato do Claude Code por um arquivo de system defaults próprio do agente
+    (`QWEN_CODE_SYSTEM_DEFAULTS_PATH`), que soma aos seus hooks;
+  - o Antigravity é iniciado com `AGY_CLI_OSC7501=on` e informa trabalhando, bloqueado e terminado pelo
+    protocolo OSC 7501;
+  - o Grok Build mostra o estado no título da janela (spinner e `⚠ Action Required`), e o Qwen Code também
+    (`◐` e `✳`).
+
+  O orkai não mexe em nenhum arquivo de configuração seu. Se você já define uma dessas variáveis, ele não a
+  substitui. O Grok Build e o Kimi Code só aceitam hooks na configuração global do usuário, então ficam
+  na leitura da tela e do título.
+- **Skills no `/`.** Cada agente sugere as skills e os comandos das pastas que ele mesmo lê (veja
+  [abaixo](#skills-dos-agentes-skill)).
 
 ## Instalação
 
@@ -93,7 +132,8 @@ if ($path -notlike "*$dir*") { [Environment]::SetEnvironmentVariable("Path", "$p
 Abra um terminal novo e digite `orkai` no PowerShell, Bash ou zsh.
 
 > [!IMPORTANT]
-> Para usar agentes de IA, `claude` e/ou `codex` precisam estar no `PATH`.
+> Para usar um agente de IA, o programa dele precisa estar no `PATH`: `claude`, `codex`, `kilo`, `opencode`,
+> `agy`, `grok`, `qwen` ou `kimi` (ou aponte o caminho em [Configuração](#configuração)).
 
 > [!TIP]
 > Deixe o `orkai` numa pasta em que o seu usuário possa escrever, como as dos exemplos acima: a
@@ -113,7 +153,8 @@ Builds locais aparecem como `dev` e não se auto-atualizam; `orkai update` conve
 
 1. Abra o orkai em qualquer terminal: `orkai`.
 2. Escolha a pasta do projeto com `ctrl+l` (ou `/where <pasta>`).
-3. Escolha quem executa com `tab`: claude, codex ou terminal.
+3. Escolha quem executa com `tab`: um dos agentes instalados (claude, codex, opencode…) ou terminal; `/who <nome>`
+   escolhe direto.
 4. Escreva a tarefa no "write a task" e aperte `enter`: o agente nasce já trabalhando nela.
 5. `enter` (ou um clique) abre o agente numa aba; `ctrl+]` volta para a visão geral.
 
@@ -124,8 +165,8 @@ Pode sair quando quiser (`ctrl+q`): os agentes continuam rodando e o orkai recon
 | Área | O que mostra |
 | --- | --- |
 | Lateral | máquina, sessões com o número de agentes ativos em cada uma, `+ new session` |
-| Topo | o homenzinho pixelado, os contadores `agents`, `working`, `paused` e `done` da sessão e, à direita, o consumo do Claude Code e do Codex (veja [abaixo](#consumo-do-claude-code-e-do-codex)) |
-| Lista | agentes agrupados por pasta (com a contagem de cada uma): número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
+| Topo | o homenzinho pixelado, os contadores `agents`, `working`, `paused` e `done` da sessão e, à direita, o consumo dos agentes em que você está logado (veja [abaixo](#consumo-dos-planos)) |
+| Lista | agentes agrupados por pasta (com a contagem de cada uma): número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`, `kimi`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
 | Rodapé | `write a task`, `pc`, `who`, `worktree` e `where` para lançar novos agentes |
 
 ### Estados
@@ -140,9 +181,11 @@ Pode sair quando quiser (`ctrl+q`): os agentes continuam rodando e o orkai recon
 | `↻` | interrompido (crash/reboot) |
 | `✗` | encerrado |
 
-Um terminal em que você roda `claude` ou `codex` vira esse agente sozinho: em até 2 segundos o
-overview passa a mostrar o tipo, o estado (trabalhando, esperando você, terminou), os subagents e os
-contadores como os de um agente lançado pelo orkai. Ao sair do `claude`/`codex`, volta a ser `terminal`.
+Um terminal em que você roda um agente (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen` ou
+`kimi`) vira esse agente sozinho: em até 2 segundos o overview passa a mostrar o tipo, o estado
+(trabalhando, esperando você, terminou), os subagents e os contadores como os de um agente lançado pelo
+orkai. Ao sair do agente, volta a ser `terminal`. O Qwen Code roda sobre o Node e é reconhecido pelo registro
+de sessões dele (`~/.qwen/sessions`), como o Claude Code.
 
 ### Estado exato pelos hooks
 
@@ -150,7 +193,8 @@ Ao lançar o Claude Code (2.1.78 ou mais novo), o orkai passa um `--settings` co
 atrasam o agente. Eles avisam o orkai quando você envia uma tarefa, quando o agente usa uma ferramenta, pede
 permissão ou faz uma pergunta, e quando o turno termina. Assim o estado muda na hora, sem depender do texto
 da tela; por exemplo, uma resposta final que termina com "Would you like to…?" não vira mais `‖`. No Codex,
-o orkai usa o `notify` para saber quando o turno termina.
+o orkai usa o `notify` para saber quando o turno termina. Os outros agentes estão em
+[Agentes suportados](#agentes-suportados).
 
 - Os hooks somam-se aos seus (do usuário, do projeto e dos plugins), sem substituí-los. Se você já passa
   `--settings` em `claude_args`, ou já tem um `notify` no `config.toml` do Codex, o orkai não mexe.
@@ -180,18 +224,32 @@ estas variáveis de ambiente: `ORKAI_MESSAGE`, `ORKAI_AGENT_ID`, `ORKAI_AGENT_NA
 `ORKAI_AGENT_STATE` (`paused` ou `done`), `ORKAI_SESSION`, `ORKAI_AGENT_CWD` e `ORKAI_AGENT_ACTIVITY`
 (a frase do que o agente está fazendo). Ele é encerrado se passar de 30 s.
 
-### Consumo do Claude Code e do Codex
+### Consumo dos planos
 
-À direita dos contadores, o overview mostra quanto já foi usado da janela de 5 horas (`5h`) e da
-semanal (`week`) de cada plano, com uma barra (verde, amarela a partir de 70%, vermelha a partir de
-90%) e a contagem regressiva até o reset. Os valores são consultados a cada 2 minutos, em segundo
-plano, com o login que o próprio `claude` e o `codex` já guardam na máquina:
+À direita dos contadores, o overview mostra o consumo **só dos agentes em que você está logado**, use você
+o agente agora ou não; quem não tem login não aparece, para a tela não poluir. Para cada um aparecem duas
+linhas: a janela de 5 horas (`5h`) e a semanal (`week`), ou a mensal (`month`) quando o plano não tem semana,
+ou o saldo (`funds`). Cada janela tem uma barra (verde, amarela a partir de 70%, vermelha a partir de 90%) e a
+contagem regressiva até o reset. Até três agentes ficam numa coluna ao lado do homenzinho; com mais, eles
+se dividem em colunas, e só numa tela estreita o topo cresce. Os valores são consultados a cada 2 minutos, em
+segundo plano, com o login que o próprio agente já guarda na máquina:
 
 - **Claude Code**: `~/.claude/.credentials.json` (ou `CLAUDE_CONFIG_DIR`; no macOS, o Keychain);
-- **Codex**: `~/.codex/auth.json` (ou `CODEX_HOME`), com login do ChatGPT.
+- **Codex**: `~/.codex/auth.json` (ou `CODEX_HOME`), com login do ChatGPT;
+- **Kilo CLI**: a conta Kilo em `~/.local/share/kilo/auth.json`, com o saldo em dólar e o Kilo Pass do mês;
+- **OpenCode**: a chave do OpenCode Go em `~/.local/share/opencode/auth.json` (5h, semana e mês). Só a chave
+  do Zen aparece como `api key · no plan limits`; outros provedores do OpenCode não contam;
+- **Antigravity**: `agy -p /usage --output-format json`, a consulta que o próprio `agy` faz sem gastar
+  quota (o login dele fica no cofre do sistema e o orkai não o lê);
+- **Grok Build**: `~/.grok/auth.json` (ou `GROK_HOME`/`GROK_AUTH_PATH`), com o período semanal ou mensal da
+  assinatura;
+- **Kimi Code**: `~/.kimi-code/credentials` (ou `KIMI_CODE_HOME`), no endpoint do `config.toml` dele.
 
-Sem login aparece `not signed in`; com o login vencido, `login expired` (abrir o agente renova); e
-se a consulta falhar, o último valor continua na tela com `unavailable`.
+O Qwen Code não tem API de consumo (o plano gratuito por OAuth acabou em abril de 2026, e o Coding Plan só
+mostra o uso no console da Alibaba Cloud), então ele não aparece no topo.
+
+Com o login vencido aparece `login expired` (abrir o agente renova); se a consulta falhar, o último valor
+continua na tela com `unavailable`.
 
 ## Teclas
 
@@ -202,10 +260,10 @@ se a consulta falhar, o último valor continua na tela com `unavailable`.
 | digitar + `enter` | inicia um agente com a tarefa digitada |
 | `!comando` + `enter` | roda o comando num terminal novo, sem mudar o `who` (ex.: `!npm run dev`) |
 | `shift+enter` (ou `alt+enter`) | quebra de linha na tarefa, sem enviar; colar um texto com várias linhas também mantém as quebras |
-| `tab` / `shift+tab` | escolhe quem executa: claude, codex ou terminal |
+| `tab` / `shift+tab` | escolhe quem executa entre os agentes instalados e o terminal; `/who <nome>` escolhe qualquer um |
 | `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja [abaixo](#escolhendo-a-pasta-where)); clicar no nome de um projeto também |
 | `ctrl+t` | liga/desliga a worktree própria para os próximos agentes (veja [abaixo](#uma-worktree-por-agente-ctrlt)) |
-| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/diff`, `/merge`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-do-claude-code-e-do-codex-skill)) |
+| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/diff`, `/merge`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-dos-agentes-skill)) |
 
 **Agentes**
 
@@ -229,7 +287,7 @@ se a consulta falhar, o último valor continua na tela com `unavailable`.
 | `f1` (ou `?` com o texto vazio) | mostra/esconde a ajuda |
 | `ctrl+c` / `ctrl+q` | sai do orkai; os agentes continuam rodando |
 
-Dentro da aba de um agente todas as teclas vão para ele (Claude Code, Codex, PowerShell, bash…),
+Dentro da aba de um agente todas as teclas vão para ele (Claude Code, OpenCode, PowerShell, bash…),
 inclusive `esc`, setas, colagem e mouse quando o programa usa mouse.
 
 ## Escolhendo a pasta (`/where`)
@@ -248,14 +306,14 @@ do `where` atual; `~` é a sua pasta de usuário.
 
 ## Uma worktree por agente (`ctrl+t`)
 
-Com `worktree on` no rodapé (`ctrl+t`, `/worktree` ou clique), cada novo agente `claude`/`codex` nasce numa
+Com `worktree on` no rodapé (`ctrl+t`, `/worktree` ou clique), cada novo agente de IA nasce numa
 [worktree do git](https://git-scm.com/docs/git-worktree) própria, numa branch `orkai/<nome-do-agente>` criada a
 partir do último commit da pasta do `where`. Assim vários agentes mexem no mesmo repositório sem pisar um no
 outro, e o seu checkout continua intacto. Terminais (`!comando`) continuam rodando direto na pasta.
 
 - A worktree fica em `orkai home`/`worktrees/<número do agente>`, na mesma subpasta do repositório em que você
-  estava. Mudanças não commitadas e arquivos fora do git (como `.env`) não vão para ela. O Claude Code e o
-  Codex podem perguntar se você confia na pasta nova.
+  estava. Mudanças não commitadas e arquivos fora do git (como `.env`) não vão para ela. O agente pode
+  perguntar se você confia na pasta nova.
 - Na lista, o agente continua no grupo do projeto e mostra `⎇ 4 files +12 −3`: o que mudou desde que ele
   começou, contando commits, edições e arquivos novos (atualizado a cada 10 s). Dentro da aba, a barra
   mostra a branch.
@@ -267,25 +325,32 @@ outro, e o seu checkout continua intacto. Terminais (`!comando`) continuam rodan
 - Apagar o agente (`delete` ou `ctrl+x`) apaga também a worktree e a branch `orkai/…`; o popup avisa antes.
 - Na linha de comando: `orkai new --worktree …`; `orkai rm` também apaga a worktree.
 
-## Skills do Claude Code e do Codex (`/skill`)
+## Skills dos agentes (`/skill`)
 
-Com `who` em `claude` ou `codex`, o `/` também sugere as skills que esse agente tem, lidas do disco
-e atualizadas sozinhas (instale uma skill e ela aparece em segundos):
+Com um agente de IA no `who`, o `/` também sugere as skills e os comandos que esse agente tem, lidos do
+disco e atualizados sozinhos (instale uma skill e ela aparece em segundos). As pastas de projeto vão da
+pasta do `where` até a raiz do repositório:
 
-- **Claude Code**: `~/.claude/skills`, `~/.claude/commands`, `.claude/skills` e `.claude/commands`
-  da pasta do `where` até a raiz do repositório, e as skills dos plugins habilitados (`/plugin:skill`);
-- **Codex**: `.agents/skills` da pasta até a raiz do repositório, `~/.agents/skills` e
-  `~/.codex/skills` (incluindo as skills de sistema).
+- **Claude Code**: `~/.claude/skills`, `~/.claude/commands`, `.claude/skills` e `.claude/commands`, e as
+  skills dos plugins habilitados (`/plugin:skill`);
+- **Codex**: `.agents/skills`, `~/.agents/skills` e `~/.codex/skills` (incluindo as skills de sistema);
+- **OpenCode** e **Kilo CLI**: `skill(s)` e `command(s)` de `~/.config/opencode` (ou `~/.config/kilo`),
+  `~/.opencode` (`~/.kilo`) e `.opencode` (`.kilo`, `.kilocode`), além de `.claude/skills` e
+  `.agents/skills`; comandos em subpastas viram `/pasta/comando`;
+- **Antigravity**: `~/.gemini/antigravity-cli/skills` e `.agents/skills` (ou o antigo `.agent/skills`);
+- **Grok Build**: `skills` e `commands` de `~/.grok`, `.grok`, `.agents`, `.claude` e `.cursor`;
+- **Qwen Code**: `~/.qwen/skills`, `~/.qwen/commands`, `.qwen/skills`, `.qwen/commands` e `.agents/skills`;
+- **Kimi Code**: `~/.kimi-code/skills`, `.kimi-code/skills` e `.agents/skills`.
 
 `tab` completa (ou estende o prefixo comum), e `/skill argumentos` + `enter` inicia um agente já
-invocando a skill. No Codex o orkai envia no formato dele (`$skill argumentos`).
-Os comandos do próprio orkai têm prioridade quando o nome coincide.
+invocando a skill. No Codex o orkai envia no formato dele (`$skill argumentos`) e no Kimi Code como
+`/skill:skill argumentos`. Os comandos do próprio orkai têm prioridade quando o nome coincide.
 
 ## Linha de comando
 
 ```text
 orkai ls [-s sessão]             lista agentes com o estado ao vivo
-orkai new -k claude -C <pasta> [--worktree] <tarefa...>
+orkai new -k <agente> -C <pasta> [--worktree] <tarefa...>   (claude, codex, kilo, opencode, agy, grok, qwen, kimi, terminal)
 orkai send <id> <texto...>       digita no agente e aperta enter
 orkai attach <id>                usa o terminal atual direto no agente (ctrl+] solta)
 orkai logs <id> [-n linhas]      transcrição gravada do agente
@@ -338,8 +403,8 @@ Por isso:
 - **Se um holder morrer ou a máquina reiniciar**, o agente aparece como `↻ interrupted`.
   `ctrl+r` (ou `orkai recover`) relança todos os agentes interrompidos da sessão, cada um na
   sua pasta: o Claude Code volta com `--resume <id da conversa>` (o orkai inicia cada Claude
-  com um `--session-id` conhecido), o Codex com `codex resume <id>` e os terminais reexecutam
-  o comando original.
+  com um `--session-id` conhecido), o Codex com `codex resume <id>`, os outros agentes como em
+  [Agentes suportados](#agentes-suportados), e os terminais reexecutam o comando original.
 - Toda a saída de cada agente é gravada (com rotação) em `agents/<id>/output.log`. Abrir um
   agente encerrado ou interrompido mostra a última tela, e `orkai logs <id>` imprime a transcrição.
 
@@ -365,6 +430,18 @@ A variável `ORKAI_HOME` muda esse local.
   "claude_args": [],
   "codex_command": "codex",
   "codex_args": [],
+  "kilo_command": "kilo",
+  "kilo_args": [],
+  "opencode_command": "opencode",
+  "opencode_args": [],
+  "agy_command": "agy",
+  "agy_args": [],
+  "grok_command": "grok",
+  "grok_args": [],
+  "qwen_command": "qwen",
+  "qwen_args": [],
+  "kimi_command": "kimi",
+  "kimi_args": [],
   "notify": true,
   "notify_command": null,
   "notify_args": []
@@ -372,7 +449,8 @@ A variável `ORKAI_HOME` muda esse local.
 ```
 
 `shell` nulo usa `pwsh`/`powershell` no Windows e `$SHELL` no Unix.
-Exemplo: `"claude_args": ["--model", "opus"]`.
+Exemplos: `"claude_args": ["--model", "opus"]`, `"opencode_args": ["-m", "opencode/big-pickle"]`. Campos que
+faltam no arquivo usam o padrão, então um `config.json` antigo continua valendo.
 
 `notify: false` desliga o sino e a notificação do terminal. `notify_command` funciona independente dele;
 por exemplo, para mandar ao celular pelo [ntfy](https://ntfy.sh):
@@ -390,14 +468,17 @@ claude.ai/code. O Codex não tem um equivalente para a sessão interativa no ter
 
 - Os holders escutam somente em `127.0.0.1`, numa porta aleatória, e exigem um token de 256
   bits por agente, que fica apenas na pasta de dados do usuário (permissões `0700`/`0600` no Unix).
-- Para mostrar o consumo, o orkai lê o token de login do Claude Code e do Codex só na memória e o envia
-  apenas, por HTTPS, ao serviço que o emitiu (`api.anthropic.com` e `chatgpt.com`); ele nunca é
-  gravado, registrado em log ou renovado pelo orkai.
-- Comandos `.cmd`/`.bat` no Windows nunca recebem texto livre como argumento: a tarefa é digitada
-  no terminal do agente, não passada pela linha de comando.
-- Os hooks do Claude Code e o `notify` do Codex chamam a cópia do orkai em `bin/` e só gravam o tipo do
-  evento (trabalhando, esperando você, terminou) na pasta do agente; o conteúdo recebido do agente é
-  descartado na memória.
+- Para mostrar o consumo, o orkai lê o token de login de cada agente só na memória e o envia apenas, por
+  HTTPS, ao serviço que o emitiu (`api.anthropic.com`, `chatgpt.com`, `api.kilo.ai`, `opencode.ai`,
+  `cli-chat-proxy.grok.com` e o `base_url` HTTPS do Kimi Code); ele nunca é gravado, registrado em log ou
+  renovado pelo orkai. O login do Antigravity não é lido: o próprio `agy` faz a consulta.
+- Comandos `.cmd`/`.bat` no Windows só recebem argumentos sem os caracteres especiais do cmd; uma tarefa com
+  algum deles é digitada no terminal do agente. Shims do npm que apenas repassam para um `.exe` (como o do
+  OpenCode) rodam o `.exe` direto, sem cmd.exe.
+- Os hooks do Claude Code e do Qwen Code, o `notify` do Codex e o plugin do OpenCode e do Kilo chamam a cópia
+  do orkai em `bin/` e só gravam o tipo do evento (trabalhando, esperando você, terminou) na pasta do agente;
+  o conteúdo recebido do agente é descartado na memória. Os arquivos de hook e o plugin ficam na pasta do
+  agente e só valem para o processo que o orkai lançou; nenhum arquivo de configuração seu é alterado.
 
 ## Desenvolvimento
 

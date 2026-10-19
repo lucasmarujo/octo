@@ -2,10 +2,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{Mutex, OnceLock};
-use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -16,8 +15,12 @@ use crate::paths::Home;
 use crate::util::{lock, now_ms};
 
 pub const HOOK_COMMAND: &str = "__hook";
+pub const PROGRAM_STATUS_OSC: &str = "7501";
+const PROGRAM_STATUS_FIELD: &str = "state=";
 pub const CLAUDE_SOURCE: &str = "claude";
 pub const CODEX_SOURCE: &str = "codex";
+pub const QWEN_SOURCE: &str = "qwen";
+pub const PLUGIN_SOURCE: &str = "plugin";
 pub const MIN_CLAUDE_VERSION: (u32, u32, u32) = (2, 1, 78);
 pub const CLAUDE_EVENTS: [&str; 6] =
     ["UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "StopFailure"];
@@ -25,8 +28,55 @@ pub const HOOK_TIMEOUT_SECS: u64 = 10;
 pub const MAX_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_EVENTS_PER_POLL: usize = 64;
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
-const VERSION_POLL: Duration = Duration::from_millis(20);
-const QUESTION_TOOLS: [&str; 2] = ["AskUserQuestion", "ExitPlanMode"];
+const QUESTION_TOOLS: [&str; 4] = ["AskUserQuestion", "ExitPlanMode", "ask_user_question", "exit_plan_mode"];
+const PLUGIN_TEMPLATE: &str = r#"import { spawn } from "node:child_process"
+
+const program = __ORKAI_PROGRAM__
+const args = __ORKAI_ARGS__
+const busy = new Set()
+const replies = ["permission.replied", "question.replied", "question.rejected"]
+let last = ""
+
+function report(signal) {
+  if (signal === last) return
+  last = signal
+  try {
+    const child = spawn(program, [...args, signal], { stdio: "ignore", windowsHide: true })
+    child.on("error", () => {})
+    child.unref()
+  } catch {}
+}
+
+export default {
+  id: "orkai",
+  server: async () => ({
+    event: async ({ event }) => {
+      const properties = event.properties ?? {}
+      if (event.type === "session.status") {
+        if (properties.status?.type === "idle") {
+          busy.delete(properties.sessionID)
+          if (busy.size === 0) report("finished")
+        } else {
+          busy.add(properties.sessionID)
+          report("busy")
+        }
+      } else if (event.type === "permission.asked" || event.type === "question.asked") {
+        report("waiting")
+      } else if (replies.includes(event.type) && busy.size > 0) {
+        report("busy")
+      }
+    },
+  }),
+}
+"#;
+const PLUGIN_PROGRAM: &str = "__ORKAI_PROGRAM__";
+const PLUGIN_ARGS: &str = "__ORKAI_ARGS__";
+const FILE_URL_SAFE: &[u8] = b"-._~/:";
+const QWEN_SYSTEM_SETTINGS_ENV: &str = "QWEN_CODE_SYSTEM_SETTINGS_PATH";
+pub const QWEN_SYSTEM_DEFAULTS_ENV: &str = "QWEN_CODE_SYSTEM_DEFAULTS_PATH";
+const QWEN_SYSTEM_DEFAULTS_FILE: &str = "system-defaults.json";
+const QWEN_SYSTEM_SETTINGS_FILE: &str = "settings.json";
+const PLAIN_COMMAND_SAFE: &[char] = &['-', '_', '.', '/', ':', '~'];
 const EVENT_SUFFIX: &str = ".json";
 const GIT_BASH_NAMES: [&str; 4] = ["bash.exe", "sh.exe", "bash", "sh"];
 const GIT_BASH_LOCATIONS: [&str; 2] =
@@ -76,6 +126,20 @@ pub fn codex_signal(payload: &str) -> Option<HookSignal> {
     (notification.kind == "agent-turn-complete").then_some(HookSignal::Finished)
 }
 
+pub fn plugin_signal(payload: &str) -> Option<HookSignal> {
+    serde_json::from_value(serde_json::Value::String(payload.to_string())).ok()
+}
+
+pub fn program_status_signal(report: &str) -> Option<HookSignal> {
+    let state = report.split([':', ';']).find_map(|field| field.trim().strip_prefix(PROGRAM_STATUS_FIELD))?;
+    match state {
+        "working" => Some(HookSignal::Busy),
+        "blocked" => Some(HookSignal::Waiting),
+        "done" | "idle" | "error" => Some(HookSignal::Finished),
+        _ => None,
+    }
+}
+
 fn read_payload(mut input: impl Read) -> Vec<u8> {
     let mut payload = Vec::new();
     let mut chunk = [0u8; 64 * 1024];
@@ -101,8 +165,9 @@ fn read_payload(mut input: impl Read) -> Vec<u8> {
 
 pub fn signal_from(source: &str, payload: Option<&str>, stdin: impl Read) -> Option<HookSignal> {
     match source {
-        CLAUDE_SOURCE => claude_signal(&read_payload(stdin)),
+        CLAUDE_SOURCE | QWEN_SOURCE => claude_signal(&read_payload(stdin)),
         CODEX_SOURCE => codex_signal(payload?),
+        PLUGIN_SOURCE => plugin_signal(payload?),
         _ => None,
     }
 }
@@ -172,6 +237,58 @@ pub fn claude_hook_command(exe: &Path, id: AgentId) -> String {
     format!("{} {HOOK_COMMAND} {CLAUDE_SOURCE} {id}", shell_quote(&program))
 }
 
+pub fn qwen_hook_command(exe: &Path, id: AgentId) -> Option<String> {
+    let program = exe.to_string_lossy().replace('\\', "/");
+    if cfg!(unix) {
+        return Some(format!("{} {HOOK_COMMAND} {QWEN_SOURCE} {id}", shell_quote(&program)));
+    }
+    let plain = program.chars().all(|c| c.is_ascii_alphanumeric() || PLAIN_COMMAND_SAFE.contains(&c));
+    plain.then(|| format!("{program} {HOOK_COMMAND} {QWEN_SOURCE} {id}"))
+}
+
+pub fn qwen_system_defaults() -> PathBuf {
+    if let Some(path) = std::env::var_os(QWEN_SYSTEM_DEFAULTS_ENV).filter(|v| !v.is_empty()) {
+        return PathBuf::from(path);
+    }
+    let settings = std::env::var_os(QWEN_SYSTEM_SETTINGS_ENV).filter(|v| !v.is_empty()).map(PathBuf::from);
+    let settings = settings.unwrap_or_else(|| {
+        let dir = if cfg!(windows) {
+            r"C:\ProgramData\qwen-code"
+        } else if cfg!(target_os = "macos") {
+            "/Library/Application Support/QwenCode"
+        } else {
+            "/etc/qwen-code"
+        };
+        Path::new(dir).join(QWEN_SYSTEM_SETTINGS_FILE)
+    });
+    settings
+        .parent()
+        .map_or_else(|| PathBuf::from(QWEN_SYSTEM_DEFAULTS_FILE), |dir| dir.join(QWEN_SYSTEM_DEFAULTS_FILE))
+}
+
+pub fn opencode_plugin(exe: &Path, id: AgentId) -> String {
+    let program = serde_json::to_string(&exe.to_string_lossy()).unwrap_or_default();
+    let args = serde_json::to_string(&[HOOK_COMMAND, PLUGIN_SOURCE, &id.to_string()]).unwrap_or_default();
+    PLUGIN_TEMPLATE.replace(PLUGIN_PROGRAM, &program).replace(PLUGIN_ARGS, &args)
+}
+
+pub fn file_url(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    let mut url = String::from(if text.starts_with('/') { "file://" } else { "file:///" });
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || FILE_URL_SAFE.contains(&byte) {
+            url.push(char::from(byte));
+        } else {
+            url.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    url
+}
+
+pub fn plugin_config(plugin: &Path) -> String {
+    serde_json::json!({ "plugin": [file_url(plugin)] }).to_string()
+}
+
 pub fn claude_settings(command: &str) -> serde_json::Value {
     let handler = serde_json::json!([{
         "hooks": [{ "type": "command", "command": command, "async": true, "timeout": HOOK_TIMEOUT_SECS }]
@@ -211,31 +328,7 @@ pub fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
 
 fn program_version(program: &Path) -> Option<(u32, u32, u32)> {
     let (program, args) = launch::wrap_for_platform(program.to_path_buf(), vec!["--version".to_string()]).ok()?;
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-    let mut stdout = child.stdout.take()?;
-    let reader = thread::spawn(move || {
-        let mut text = String::new();
-        stdout.read_to_string(&mut text).ok().map(|_| text)
-    });
-    let deadline = Instant::now() + VERSION_TIMEOUT;
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => thread::sleep(VERSION_POLL),
-            _ => {
-                launch::kill_process_tree(child.id());
-                let _ = child.wait();
-                return None;
-            }
-        }
-    }
-    parse_version(&reader.join().ok()??)
+    parse_version(&launch::command_output(Command::new(program).args(args), VERSION_TIMEOUT)?)
 }
 
 type VersionKey = (Option<SystemTime>, u64);
@@ -309,6 +402,76 @@ mod tests {
         assert_eq!(claude("SessionStart", None), None);
         assert_eq!(claude_signal(b"not json"), None);
         assert_eq!(claude_signal(b"{}"), None);
+    }
+
+    #[test]
+    fn program_status_reports_map_to_agent_signals() {
+        assert_eq!(program_status_signal("state=working"), Some(HookSignal::Busy));
+        assert_eq!(program_status_signal("state=blocked:kind=question:app=agy"), Some(HookSignal::Waiting));
+        assert_eq!(program_status_signal("app=agy:state=done:msg=aGk="), Some(HookSignal::Finished));
+        assert_eq!(program_status_signal("state=idle"), Some(HookSignal::Finished));
+        assert_eq!(program_status_signal("state=error;msg=x"), Some(HookSignal::Finished));
+        assert_eq!(program_status_signal("state=clear"), None);
+        assert_eq!(program_status_signal("?"), None);
+        assert_eq!(program_status_signal(""), None);
+    }
+
+    #[test]
+    fn qwen_hooks_share_the_claude_payload_and_plugins_send_the_signal_name() {
+        let permission = br#"{"session_id":"s","hook_event_name":"PermissionRequest","tool_name":"run_shell_command"}"#;
+        assert_eq!(signal_from(QWEN_SOURCE, None, &permission[..]), Some(HookSignal::Waiting));
+        let question = br#"{"hook_event_name":"PreToolUse","tool_name":"ask_user_question"}"#;
+        assert_eq!(signal_from(QWEN_SOURCE, None, &question[..]), Some(HookSignal::Waiting));
+        assert_eq!(signal_from(QWEN_SOURCE, None, &br#"{"hook_event_name":"Stop"}"#[..]), Some(HookSignal::Finished));
+        assert_eq!(signal_from(PLUGIN_SOURCE, Some("busy"), io::empty()), Some(HookSignal::Busy));
+        assert_eq!(signal_from(PLUGIN_SOURCE, Some("waiting"), io::empty()), Some(HookSignal::Waiting));
+        assert_eq!(signal_from(PLUGIN_SOURCE, Some("finished"), io::empty()), Some(HookSignal::Finished));
+        assert_eq!(signal_from(PLUGIN_SOURCE, Some("\"busy\""), io::empty()), None);
+        assert_eq!(signal_from(PLUGIN_SOURCE, None, io::empty()), None);
+    }
+
+    #[test]
+    fn qwen_hook_commands_run_under_cmd_and_bash_without_quoting() {
+        let unix = qwen_hook_command(Path::new("/home/o'neil/orkai-holder"), 2);
+        let windows = qwen_hook_command(Path::new(r"C:\Users\me\AppData\Local\orkai\bin\orkai-holder-1.exe"), 2);
+        if cfg!(unix) {
+            assert_eq!(unix.as_deref(), Some(r"'/home/o'\''neil/orkai-holder' __hook qwen 2"));
+        } else {
+            assert_eq!(
+                windows.as_deref(),
+                Some("C:/Users/me/AppData/Local/orkai/bin/orkai-holder-1.exe __hook qwen 2")
+            );
+            assert_eq!(qwen_hook_command(Path::new(r"C:\Users\John Smith\orkai.exe"), 2), None);
+            assert_eq!(qwen_hook_command(Path::new(r"C:\Users\a&b\orkai.exe"), 2), None);
+        }
+    }
+
+    #[test]
+    fn the_opencode_plugin_reports_through_the_holder_binary() {
+        let plugin = opencode_plugin(Path::new(r"C:\Users\me\orkai\bin\orkai-holder.exe"), 7);
+        assert!(plugin.contains(r#"const program = "C:\\Users\\me\\orkai\\bin\\orkai-holder.exe""#), "{plugin}");
+        assert!(plugin.contains(r#"const args = ["__hook","plugin","7"]"#), "{plugin}");
+        for event in ["session.status", "permission.asked", "question.asked", "permission.replied", "question.replied"]
+        {
+            assert!(plugin.contains(event), "{event} is not handled");
+        }
+        assert!(!plugin.contains(PLUGIN_PROGRAM) && !plugin.contains(PLUGIN_ARGS));
+        assert!(plugin.contains("windowsHide: true"));
+    }
+
+    #[test]
+    fn plugin_paths_become_file_urls() {
+        assert_eq!(
+            file_url(Path::new(r"C:\Users\Jo Ana\orkai\agents\3\plugin.js")),
+            "file:///C:/Users/Jo%20Ana/orkai/agents/3/plugin.js"
+        );
+        assert_eq!(
+            file_url(Path::new("/home/me/.local/share/orkai/a#b.js")),
+            "file:///home/me/.local/share/orkai/a%23b.js"
+        );
+        assert_eq!(file_url(Path::new("/home/josé/p.js")), "file:///home/jos%C3%A9/p.js");
+        let config: serde_json::Value = serde_json::from_str(&plugin_config(Path::new("/x/p.js"))).unwrap();
+        assert_eq!(config, serde_json::json!({ "plugin": ["file:///x/p.js"] }));
     }
 
     #[test]

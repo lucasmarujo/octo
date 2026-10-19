@@ -10,8 +10,18 @@ use crate::util::is_uuid;
 pub const CHECK_EVERY_TICKS: u32 = 10;
 pub const MAX_PROCESSES: usize = 256;
 const CLAUDE_SESSIONS_DIR: &str = "sessions";
-const CLAUDE_PROGRAM: &str = "claude";
-const CODEX_PROGRAM: &str = "codex";
+const QWEN_SESSIONS_DIR: &str = "sessions";
+const PROGRAMS: [(&str, AgentKind); 9] = [
+    ("claude", AgentKind::Claude),
+    ("codex", AgentKind::Codex),
+    ("kilo", AgentKind::Kilo),
+    ("kilocode", AgentKind::Kilo),
+    ("opencode", AgentKind::Opencode),
+    ("agy", AgentKind::Antigravity),
+    ("grok", AgentKind::Grok),
+    ("qwen", AgentKind::Qwen),
+    ("kimi", AgentKind::Kimi),
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Process {
@@ -21,7 +31,7 @@ pub struct Process {
 
 #[derive(Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
-struct ClaudeSession {
+struct SessionFile {
     pid: u32,
     session_id: String,
     cwd: Option<PathBuf>,
@@ -35,28 +45,35 @@ pub fn program_name(name: &str) -> String {
     }
 }
 
-fn claude_session(claude_home: &Path, pid: u32) -> Option<ClaudeSession> {
-    let path = claude_home.join(CLAUDE_SESSIONS_DIR).join(format!("{pid}.json"));
-    let session: ClaudeSession = fsutil::read_json_opt(&path).ok().flatten()?;
+fn session_file(dir: &Path, pid: u32) -> Option<SessionFile> {
+    let session: SessionFile = fsutil::read_json_opt(&dir.join(format!("{pid}.json"))).ok().flatten()?;
     (session.pid == pid && is_uuid(&session.session_id)).then_some(session)
 }
 
-pub fn detect(processes: &[Process], claude_home: Option<&Path>, now: u64) -> Option<NestedAgent> {
+pub fn detect(
+    processes: &[Process],
+    claude_home: Option<&Path>,
+    qwen_home: Option<&Path>,
+    now: u64,
+) -> Option<NestedAgent> {
+    let registries = [
+        (AgentKind::Claude, claude_home.map(|home| home.join(CLAUDE_SESSIONS_DIR))),
+        (AgentKind::Qwen, qwen_home.map(|home| home.join(QWEN_SESSIONS_DIR))),
+    ];
     processes.iter().find_map(|process| {
-        if let Some(session) = claude_home.and_then(|home| claude_session(home, process.pid)) {
-            return Some(NestedAgent {
-                kind: AgentKind::Claude,
-                pid: process.pid,
-                conversation_id: Some(session.session_id),
-                cwd: session.cwd,
-                since_ms: now,
-            });
+        for (kind, dir) in &registries {
+            if let Some(session) = dir.as_deref().and_then(|dir| session_file(dir, process.pid)) {
+                return Some(NestedAgent {
+                    kind: *kind,
+                    pid: process.pid,
+                    conversation_id: Some(session.session_id),
+                    cwd: session.cwd,
+                    since_ms: now,
+                });
+            }
         }
-        let kind = match program_name(&process.name).as_str() {
-            CLAUDE_PROGRAM => AgentKind::Claude,
-            CODEX_PROGRAM => AgentKind::Codex,
-            _ => return None,
-        };
+        let name = program_name(&process.name);
+        let kind = PROGRAMS.iter().find(|(program, _)| *program == name)?.1;
         Some(NestedAgent { kind, pid: process.pid, conversation_id: None, cwd: None, since_ms: now })
     })
 }
@@ -256,7 +273,7 @@ mod tests {
         let session = format!(r#"{{"pid":12,"sessionId":"{SESSION}","cwd":"/work/app","kind":"interactive"}}"#);
         let home = claude_home(&[(12, &session)]);
         let processes = [process(11, "cmd.exe"), process(12, "node.exe"), process(13, "codex.exe")];
-        let found = detect(&processes, Some(&home.0), 500).unwrap();
+        let found = detect(&processes, Some(&home.0), None, 500).unwrap();
         assert_eq!(found.kind, AgentKind::Claude);
         assert_eq!(found.pid, 12);
         assert_eq!(found.conversation_id.as_deref(), Some(SESSION));
@@ -267,12 +284,41 @@ mod tests {
     #[test]
     fn programs_are_recognized_by_name_when_there_is_no_session_file() {
         let home = claude_home(&[]);
-        let codex = detect(&[process(5, "bash"), process(6, "codex")], Some(&home.0), 1).unwrap();
+        let codex = detect(&[process(5, "bash"), process(6, "codex")], Some(&home.0), None, 1).unwrap();
         assert_eq!((codex.kind, codex.pid, codex.conversation_id), (AgentKind::Codex, 6, None));
-        let claude = detect(&[process(7, "claude.exe")], None, 1).unwrap();
+        let claude = detect(&[process(7, "claude.exe")], None, None, 1).unwrap();
         assert_eq!((claude.kind, claude.pid), (AgentKind::Claude, 7));
-        assert_eq!(detect(&[process(8, "npm"), process(9, "node")], Some(&home.0), 1), None);
-        assert_eq!(detect(&[], Some(&home.0), 1), None);
+        assert_eq!(detect(&[process(8, "npm"), process(9, "node")], Some(&home.0), Some(&home.0), 1), None);
+        assert_eq!(detect(&[], Some(&home.0), None, 1), None);
+        for (name, kind) in [
+            ("kilo.exe", AgentKind::Kilo),
+            ("kilocode", AgentKind::Kilo),
+            ("opencode.exe", AgentKind::Opencode),
+            ("agy.exe", AgentKind::Antigravity),
+            ("/home/me/.grok/bin/grok", AgentKind::Grok),
+            ("qwen", AgentKind::Qwen),
+            ("kimi.exe", AgentKind::Kimi),
+        ] {
+            assert_eq!(
+                detect(&[process(3, "pwsh.exe"), process(4, name)], None, None, 1).unwrap().kind,
+                kind,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn qwen_running_on_node_is_found_through_its_session_registry() {
+        let session =
+            format!(r#"{{"pid":31,"sessionId":"{SESSION}","cwd":"/work/api","name":"qwen","kind":"interactive"}}"#);
+        let claude = claude_home(&[]);
+        let qwen = claude_home(&[(31, &session)]);
+        let processes = [process(30, "node.exe"), process(31, "node.exe")];
+        let found = detect(&processes, Some(&claude.0), Some(&qwen.0), 9).unwrap();
+        assert_eq!((found.kind, found.pid), (AgentKind::Qwen, 31));
+        assert_eq!(found.conversation_id.as_deref(), Some(SESSION));
+        assert_eq!(found.cwd, Some(PathBuf::from("/work/api")));
+        assert_eq!(detect(&processes, Some(&claude.0), None, 9), None);
     }
 
     #[test]
@@ -283,7 +329,7 @@ mod tests {
             (22, "not json"),
         ]);
         let processes = [process(20, "node"), process(21, "node"), process(22, "node")];
-        assert_eq!(detect(&processes, Some(&home.0), 1), None);
+        assert_eq!(detect(&processes, Some(&home.0), Some(&home.0), 1), None);
     }
 
     #[test]
@@ -295,7 +341,7 @@ mod tests {
         ]);
         let processes = walk(1, |pid| tree.get(&pid).cloned().unwrap_or_default());
         assert_eq!(processes.iter().map(|p| p.pid).collect::<Vec<_>>(), vec![2, 3, 4]);
-        assert_eq!(detect(&processes, None, 1).unwrap().kind, AgentKind::Codex);
+        assert_eq!(detect(&processes, None, None, 1).unwrap().kind, AgentKind::Codex);
     }
 
     #[test]

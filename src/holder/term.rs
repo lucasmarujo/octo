@@ -1,6 +1,6 @@
 use crate::holder::detect::{self, Detector, Signals, TAIL_ROWS};
 use crate::holder::input::LineTracker;
-use crate::hooks::HookSignal;
+use crate::hooks::{self, HookSignal};
 use crate::model::{AgentKind, ExitInfo, NestedAgent, StatusReport};
 use crate::protocol::TermSize;
 use crate::termfmt;
@@ -19,6 +19,7 @@ pub const SUBMIT_NO_ECHO_TIMEOUT_MS: u64 = 20_000;
 pub struct Responder {
     pub title: String,
     pub responses: Vec<u8>,
+    pub signals: Vec<HookSignal>,
 }
 
 impl vt100::Callbacks for Responder {
@@ -54,6 +55,11 @@ impl vt100::Callbacks for Responder {
         match params {
             [b"10", b"?"] => self.responses.extend_from_slice(b"\x1b]10;rgb:d0d0/d0d0/d0d0\x1b\\"),
             [b"11", b"?"] => self.responses.extend_from_slice(b"\x1b]11;rgb:1616/1616/1e1e\x1b\\"),
+            [code, report @ ..] if *code == hooks::PROGRAM_STATUS_OSC.as_bytes() => {
+                let report: Vec<String> =
+                    report.iter().map(|part| String::from_utf8_lossy(part).into_owned()).collect();
+                self.signals.extend(hooks::program_status_signal(&report.join(";")));
+            }
             _ => {}
         }
     }
@@ -103,6 +109,9 @@ impl TermState {
 
     pub fn process(&mut self, bytes: &[u8], now: u64) -> Vec<u8> {
         self.parser.process(bytes);
+        for signal in std::mem::take(&mut self.parser.callbacks_mut().signals) {
+            self.apply_hook(signal, now);
+        }
         self.last_output_at = now;
         if self.echoed_at.is_none() && self.submit_after.is_some_and(|typed_at| now > typed_at) {
             self.echoed_at = Some(now);
@@ -290,6 +299,29 @@ mod tests {
         let mut t = state(AgentKind::Codex);
         let replies = t.process(b"abc\x1b[6nxyz", 1);
         assert_eq!(replies, b"\x1b[1;4R");
+    }
+
+    #[test]
+    fn program_status_reports_drive_the_state_like_hooks() {
+        let mut t = state(AgentKind::Antigravity);
+        assert!(t.process(b"\x1b]7501;state=working:app=agy\x07", 1_000).is_empty());
+        assert!(!t.evaluate(1_000));
+        assert_eq!(t.report(None).state, AgentState::Working);
+        t.process(b"\x1b]7501;state=blocked:kind=permission\x1b\\", 2_000);
+        assert_eq!(t.report(None).state, AgentState::Paused);
+        t.note_input(b"1");
+        t.process(b"\x1b]7501;state=working\x07", 3_000);
+        assert_eq!(t.report(None).state, AgentState::Working);
+        t.process(b"\x1b]7501;state=done:msg=ZG9uZQ==\x07", 9_000);
+        let report = t.report(None);
+        assert_eq!(report.state, AgentState::Done);
+        assert_eq!(report.last_turn_ms, Some(8_000));
+        t.process(b"\x1b]7501;?\x07\x1b]7501;state=clear\x07", 10_000);
+        assert_eq!(t.report(None).state, AgentState::Done);
+
+        let mut terminal = state(AgentKind::Terminal);
+        terminal.process(b"\x1b]7501;state=working\x07", 1_000);
+        assert_eq!(terminal.report(None).state, AgentState::Idle, "only ai agents follow status reports");
     }
 
     #[test]
