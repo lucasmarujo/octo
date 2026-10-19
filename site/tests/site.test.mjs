@@ -1,0 +1,279 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const REPO = join(ROOT, '..');
+const SITE = 'https://orkai.marujo.dev/';
+const read = (file) => readFileSync(join(ROOT, file), 'utf8');
+const html = read('index.html');
+const css = read('assets/site.css');
+const app = read('assets/app.js');
+const readme = readFileSync(join(REPO, 'README.md'), 'utf8');
+const head = html.slice(0, html.indexOf('</head>'));
+const body = html.slice(html.indexOf('<body>'));
+const size = (file) => statSync(join(ROOT, file)).size;
+const localPath = (url) => join(ROOT, new URL(url, SITE).pathname);
+const decode = (text) => text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+const stripTags = (text) => decode(text.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+
+function meta(attr, key) {
+  const match = head.match(new RegExp(`<meta ${attr}="${key}" content="([^"]*)">`));
+  return match && match[1];
+}
+
+function jsonLd() {
+  const match = head.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+  assert.ok(match, 'JSON-LD ausente no <head>');
+  return JSON.parse(match[1])['@graph'];
+}
+
+function rustFrame(source, name) {
+  return [...source.match(new RegExp(`const ${name}: \\[&str; 16\\] = \\[([\\s\\S]*?)\\];`))[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+}
+
+function rustPalette(source) {
+  return Object.fromEntries([...source.matchAll(/b'(\w)' => Color::Rgb\((\d+), (\d+), (\d+)\)/g)].map(([, code, r, g, b]) => [code, hex(r, g, b)]));
+}
+
+function hex(...channels) {
+  return `#${channels.map((c) => Number(c).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function rasterize(svgGroups, keep) {
+  const grid = Array.from({ length: 16 }, () => Array(14).fill(null));
+  for (const [, name, rects] of svgGroups) {
+    if (!keep.includes(name)) continue;
+    for (const [, x, y, w, fill] of rects.matchAll(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="1" fill="(#[0-9a-f]{6})"\/>/g)) {
+      for (let i = 0; i < Number(w); i += 1) {
+        assert.equal(grid[Number(y)][Number(x) + i], null, `pixel ${Number(x) + i},${y} pintado duas vezes`);
+        grid[Number(y)][Number(x) + i] = fill;
+      }
+    }
+  }
+  return grid;
+}
+
+function expectedGrid(frame, palette) {
+  return frame.map((row) => [...row].map((code) => (code === '.' ? null : palette[code])));
+}
+
+function readmeTable(heading) {
+  const start = readme.indexOf(heading);
+  assert.ok(start >= 0, `${heading} não encontrado no README`);
+  const lines = readme.slice(start).split('\n');
+  const first = lines.findIndex((line) => line.startsWith('|'));
+  const end = lines.findIndex((line, i) => i > first && !line.startsWith('|'));
+  return lines.slice(first + 2, end).map((line) => line.split('|').slice(1, -1).map((cell) => cell.trim().replace(/`/g, '')));
+}
+
+function readmeBlock(label) {
+  const start = readme.indexOf(label);
+  assert.ok(start >= 0, `${label} não encontrado no README`);
+  const match = readme.slice(start).match(/```\w*\n([\s\S]*?)\n```/);
+  return match[1];
+}
+
+function installBlock(id) {
+  const match = html.match(new RegExp(`<code data-install="${id}">([\\s\\S]*?)</code>`));
+  assert.ok(match, `bloco ${id} ausente`);
+  return decode(match[1]);
+}
+
+test('title começa com a marca e cabe no SERP', () => {
+  const title = head.match(/<title>([^<]+)<\/title>/)[1];
+  assert.ok(title.startsWith('orkai'), title);
+  assert.ok(title.length <= 60, `title com ${title.length} caracteres`);
+});
+
+test('meta description cita os agentes principais e tem tamanho de snippet', () => {
+  const description = meta('name', 'description');
+  ['Claude Code', 'Codex', 'Windows', 'Linux', 'macOS'].forEach((word) => assert.ok(description.includes(word), word));
+  assert.ok(description.length >= 70 && description.length <= 160, `description com ${description.length} caracteres`);
+});
+
+test('canonical, Open Graph e Twitter apontam para o domínio e para uma imagem 1200x630 leve', () => {
+  assert.match(head, new RegExp(`<link rel="canonical" href="${SITE}">`));
+  assert.equal(meta('property', 'og:url'), SITE);
+  const image = meta('property', 'og:image');
+  assert.equal(image, `${SITE}og-image.png`);
+  assert.equal(meta('name', 'twitter:image'), image);
+  assert.equal(meta('name', 'twitter:card'), 'summary_large_image');
+  const png = readFileSync(localPath(image));
+  assert.equal(png.readUInt32BE(16), 1200);
+  assert.equal(png.readUInt32BE(20), 630);
+  assert.ok(png.length < 200 * 1024, `og-image com ${png.length} bytes`);
+});
+
+test('favicons referenciados existem e não são data URI', () => {
+  const icons = [...head.matchAll(/<link rel="(?:icon|apple-touch-icon)" href="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(icons.length >= 3);
+  icons.forEach((href) => {
+    assert.ok(!href.startsWith('data:'), href);
+    assert.ok(existsSync(localPath(href)), href);
+  });
+});
+
+test('JSON-LD descreve o software e o vídeo com arquivos que existem', () => {
+  const graph = jsonLd();
+  const byType = (type) => graph.find((node) => node['@type'] === type);
+  const software = byType('SoftwareApplication');
+  const video = byType('VideoObject');
+  const page = byType('WebPage');
+  assert.equal(software.name, 'orkai');
+  ['Windows', 'Linux', 'macOS'].forEach((os) => assert.ok(software.operatingSystem.includes(os), os));
+  assert.equal(software.downloadUrl, 'https://github.com/lucasmarujo/orkai-cli/releases/tag/latest');
+  assert.ok(existsSync(localPath(software.screenshot)), software.screenshot);
+  assert.ok(existsSync(localPath(video.contentUrl)), video.contentUrl);
+  assert.ok(existsSync(localPath(video.thumbnailUrl)), video.thumbnailUrl);
+  assert.equal(video.duration, 'PT50S');
+  const ids = new Set(graph.map((node) => node['@id']));
+  [page.isPartOf, page.about, page.video].forEach((ref) => assert.ok(ids.has(ref['@id']), ref['@id']));
+  assert.match(page.dateModified, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
+});
+
+test('sitemap e robots apontam para o domínio e batem com o dateModified', () => {
+  const page = jsonLd().find((node) => node['@type'] === 'WebPage');
+  const sitemap = read('sitemap.xml');
+  assert.match(sitemap, new RegExp(`<loc>${SITE}</loc>`));
+  assert.equal(sitemap.match(/<lastmod>([^<]+)<\/lastmod>/)[1], page.dateModified);
+  assert.match(read('robots.txt'), /^Sitemap: https:\/\/orkai\.marujo\.dev\/sitemap\.xml$/m);
+});
+
+test('um único H1, com o texto no HTML estático, sem depender de JavaScript', () => {
+  const h1s = html.match(/<h1[\s\S]*?<\/h1>/g);
+  assert.equal(h1s.length, 1);
+  assert.equal(stripTags(h1s[0]), 'todos os seus agentes. um terminal só.');
+});
+
+test('todo mascote da página é o sprite IDLE/BUSY do src/tui/sprite.rs, pixel a pixel', () => {
+  const sprite = readFileSync(join(REPO, 'src/tui/sprite.rs'), 'utf8');
+  const palette = rustPalette(sprite);
+  const idle = expectedGrid(rustFrame(sprite, 'IDLE'), palette);
+  const busy = expectedGrid(rustFrame(sprite, 'BUSY'), palette);
+  const svgs = [...html.matchAll(/<svg class="mascot[^"]*"[^>]*>([\s\S]*?)<\/svg>/g)].map((m) => m[1]);
+  assert.ok(svgs.length >= 5, `${svgs.length} mascotes`);
+  svgs.forEach((svg, i) => {
+    const groups = [...svg.matchAll(/<g class="m-(base|idle|busy)">([\s\S]*?)<\/g>/g)];
+    assert.deepEqual(rasterize(groups, ['base', 'idle']), idle, `mascote ${i} (idle)`);
+    assert.deepEqual(rasterize(groups, ['base', 'busy']), busy, `mascote ${i} (busy)`);
+  });
+  const favicon = read('favicon.svg');
+  assert.deepEqual(rasterize([[null, 'base', favicon]], ['base']), idle, 'favicon.svg');
+});
+
+test('a paleta do CSS é a mesma do src/tui/theme.rs', () => {
+  const theme = readFileSync(join(REPO, 'src/tui/theme.rs'), 'utf8');
+  const constants = Object.fromEntries([...theme.matchAll(/pub const (\w+): Color = Color::Rgb\((\d+), (\d+), (\d+)\);/g)].map(([, name, r, g, b]) => [name, hex(r, g, b)]));
+  const tokens = {
+    INK: 'ink', TEXT: 'text', MUTED: 'muted', DIM: 'dim', FAINT: 'faint', RULE: 'rule', ACCENT: 'pink', LINK: 'link', GREEN: 'green', YELLOW: 'yellow', RED: 'red',
+    PAPER: 'paper', CLAUDE: 'claude', CODEX: 'codex', KILO: 'kilo', OPENCODE: 'opencode', ANTIGRAVITY: 'agy', GROK: 'grok', QWEN: 'qwen', KIMI: 'kimi', TERMINAL: 'terminal', TAB_ACTIVE_BG: 'tab',
+  };
+  for (const [constant, token] of Object.entries(tokens)) {
+    assert.ok(constants[constant], constant);
+    assert.match(css, new RegExp(`--${token}: ${constants[constant]};`), `--${token} deveria ser ${constants[constant]} (${constant})`);
+  }
+  const project = [...theme.match(/PROJECT_PALETTE: \[Color; \d+\] = \[([\s\S]*?)\];/)[1].matchAll(/Color::Rgb\((\d+), (\d+), (\d+)\)/g)].map(([, r, g, b]) => hex(r, g, b));
+  project.forEach((color, i) => assert.match(css, new RegExp(`--p${i}: ${color};`), `--p${i}`));
+});
+
+test('a tabela de agentes é idêntica à do README', () => {
+  const expected = readmeTable('## Agentes suportados');
+  const tbody = html.match(/<table class="agents-table"[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)[1];
+  const actual = [...tbody.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(([, row]) => [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(([, cell]) => stripTags(cell)));
+  assert.deepEqual(actual, expected);
+});
+
+test('o marquee lista todos os agentes de IA do README', () => {
+  const marquee = html.match(/<section class="marquee"[\s\S]*?<\/section>/)[0];
+  readmeTable('## Agentes suportados').map(([who]) => who).filter((who) => who !== 'terminal').forEach((who) => assert.match(marquee, new RegExp(`class="k-${who}"`), who));
+});
+
+test('os comandos de instalação são os mesmos do README', () => {
+  const unix = readmeBlock('**Linux e macOS**');
+  assert.equal(installBlock('linux'), unix);
+  assert.equal(installBlock('macos'), unix.replace('orkai-x86_64-unknown-linux-musl', 'orkai-aarch64-apple-darwin'));
+  assert.equal(installBlock('windows'), readmeBlock('**Windows** (PowerShell)'));
+  assert.equal(installBlock('source'), readmeBlock('**Do código-fonte**'));
+});
+
+test('os downloads diretos são os binários da tabela de plataformas do README', () => {
+  const files = readmeTable('| Plataforma | Arquivo |').map(([, file]) => file);
+  const links = [...html.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/download\/latest\/([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual([...links].sort(), [...files].sort());
+});
+
+test('nenhum recurso de terceiros e nada inline que a CSP bloqueie', () => {
+  assert.doesNotMatch(html, /<(?:script|img|video|source|iframe)[^>]+src="https?:/);
+  assert.doesNotMatch(html, /<link[^>]+rel="(?:stylesheet|preload)"[^>]+href="https?:/);
+  assert.doesNotMatch(html, /\sstyle="/, 'atributo style bloqueado pela CSP');
+  assert.doesNotMatch(html, /<style[\s>]/, '<style> bloqueado pela CSP');
+  const scripts = [...html.matchAll(/<script([^>]*)>/g)].map((m) => m[1]);
+  scripts.forEach((attrs) => assert.ok(/type="application\/ld\+json"/.test(attrs) || /src="\/assets\//.test(attrs), attrs));
+  assert.doesNotMatch(css, /url\(["']?https?:/);
+  assert.doesNotMatch(css, /@import/);
+  assert.doesNotMatch(app, /fetch\(|XMLHttpRequest|https?:\/\//);
+});
+
+test('todo arquivo local referenciado existe e toda âncora aponta para um id', () => {
+  const refs = [...html.matchAll(/(?:src|href|poster)="(\/[^"#]*)"/g)].map((m) => m[1]).filter((p) => p !== '/');
+  refs.forEach((ref) => assert.ok(existsSync(join(ROOT, ref)), ref));
+  [...css.matchAll(/url\("([^"]+)"\)/g)].forEach(([, ref]) => assert.ok(existsSync(join(ROOT, ref)), ref));
+  const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+  [...html.matchAll(/href="#([^"]+)"/g)].forEach(([, id]) => assert.ok(ids.has(id), `#${id}`));
+  [...html.matchAll(/aria-(?:controls|labelledby)="([^"]+)"/g)].forEach(([, id]) => assert.ok(ids.has(id), id));
+});
+
+test('animações: a cena caos→ordem e o tour têm as peças que o app.js espera', () => {
+  const chaos = html.match(/<section class="chaos"[\s\S]*?<\/section>/)[0];
+  const windows = (chaos.match(/<div class="win[ "]/g) || []).length;
+  const rows = [...chaos.matchAll(/data-row="(\d+)"/g)].map((m) => Number(m[1]));
+  const scatter = app.match(/const CHAOS_SCATTER = \[([\s\S]*?)\];\n/)[1].match(/\[[^\]]+\]/g).length;
+  assert.equal(windows, 8);
+  assert.deepEqual(rows, [...Array(windows).keys()]);
+  assert.equal(scatter, windows);
+  const steps = (html.match(/class="tour-step"/g) || []).length;
+  const dots = html.match(/<ol class="tour-dots"[^>]*>([\s\S]*?)<\/ol>/)[1].match(/<li>/g).length;
+  const scenes = app.match(/const scenes = \[([\s\S]*?)\n  \];/)[1].match(/^    async \(mine\) => \{/gm).length;
+  assert.equal(steps, 5);
+  assert.equal(dots, steps);
+  assert.equal(scenes, steps);
+});
+
+test('o vídeo só baixa quando o usuário pede e tem poster', () => {
+  const video = html.match(/<video[^>]*>/)[0];
+  assert.match(video, /preload="none"/);
+  const poster = video.match(/poster="([^"]+)"/)[1];
+  assert.ok(existsSync(join(ROOT, poster)));
+});
+
+test('orçamento de peso para carregar rápido', () => {
+  assert.ok(size('index.html') < 120 * 1024, `index.html ${size('index.html')}`);
+  assert.ok(size('assets/site.css') + size('assets/app.js') + size('assets/tui.js') < 120 * 1024, 'css + js');
+  const fonts = readdirSync(join(ROOT, 'assets/fonts')).reduce((sum, file) => sum + size(`assets/fonts/${file}`), 0);
+  assert.ok(fonts < 220 * 1024, `fontes ${fonts}`);
+  assert.ok(size('assets/orkai-demo.mp4') < 5 * 1024 * 1024, 'vídeo');
+  assert.ok(size('assets/orkai-demo-poster.webp') < 50 * 1024, 'poster');
+  assert.ok(size('assets/overview.webp') < 120 * 1024, 'overview');
+});
+
+test('nginx: CSP estrita, bloqueio de arquivos internos e compose no padrão da VPS', () => {
+  const conf = read('nginx.conf');
+  const csp = conf.match(/add_header Content-Security-Policy "([^"]+)" always;/)[1];
+  ["default-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'"].forEach((rule) => assert.ok(csp.includes(rule), rule));
+  assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval|https?:/);
+  const dot = new RegExp(conf.match(/location ~ (\S+) \{\s*return 404;/)[1]);
+  ['/.git/config', '/.env'].forEach((path) => assert.ok(dot.test(path), path));
+  assert.ok(!dot.test('/.well-known/security.txt'));
+  const internal = new RegExp(conf.match(/location ~ (\^\/\(README[^ ]+) \{/)[1]);
+  ['/README.md', '/docker-compose.yml', '/nginx.conf', '/tests/site.test.mjs'].forEach((path) => assert.ok(internal.test(path), path));
+  assert.match(conf, /add_header X-Content-Type-Options "nosniff" always;/);
+  assert.match(conf, /location \/ \{\s*expires -1;/);
+  const compose = read('docker-compose.yml');
+  assert.match(compose, /container_name: orkai-site/);
+  assert.match(compose, /\.\/nginx\.conf:\/etc\/nginx\/conf\.d\/default\.conf:ro/);
+  assert.match(compose, /\.\/:\/usr\/share\/nginx\/html:ro/);
+  assert.match(compose, /proxy:\s*\n\s*external: true/);
+});

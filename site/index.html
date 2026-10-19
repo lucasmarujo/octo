@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>orkai · Claude Code, Codex e mais agentes num terminal só</title>
+<meta name="description" content="Orquestre Claude Code, Codex, OpenCode e mais agentes de IA em vários projetos, de um terminal só. Binário único e nativo para Windows, Linux e macOS.">
+<meta name="author" content="Lucas Marujo Amadeu">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<meta name="theme-color" content="#121218">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="https://orkai.marujo.dev/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="orkai">
+<meta property="og:locale" content="pt_BR">
+<meta property="og:url" content="https://orkai.marujo.dev/">
+<meta property="og:title" content="orkai · todos os seus agentes de IA, um terminal só">
+<meta property="og:description" content="Claude Code, Codex, OpenCode, Kilo, Antigravity, Grok, Qwen Code e Kimi Code lado a lado, com estado ao vivo e avisos quando precisam de você.">
+<meta property="og:image" content="https://orkai.marujo.dev/og-image.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="O marinheiro pixelado do orkai ao lado da frase: todos os seus agentes, um terminal só.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="orkai · todos os seus agentes de IA, um terminal só">
+<meta name="twitter:description" content="Claude Code, Codex, OpenCode, Kilo, Antigravity, Grok, Qwen Code e Kimi Code lado a lado, com estado ao vivo e avisos quando precisam de você.">
+<meta name="twitter:image" content="https://orkai.marujo.dev/og-image.png">
+<meta name="twitter:image:alt" content="O marinheiro pixelado do orkai ao lado da frase: todos os seus agentes, um terminal só.">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/assets/fonts/Barlow-900.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/Barlow-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css">
+<script type="module" src="/assets/app.js"></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://orkai.marujo.dev/#website",
+      "url": "https://orkai.marujo.dev/",
+      "name": "orkai",
+      "inLanguage": "pt-BR",
+      "publisher": { "@id": "https://marujo.dev/#person" }
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://orkai.marujo.dev/#webpage",
+      "url": "https://orkai.marujo.dev/",
+      "name": "orkai · Claude Code, Codex e mais agentes num terminal só",
+      "inLanguage": "pt-BR",
+      "dateModified": "2026-10-19T20:00:00-03:00",
+      "isPartOf": { "@id": "https://orkai.marujo.dev/#website" },
+      "about": { "@id": "https://orkai.marujo.dev/#software" },
+      "video": { "@id": "https://orkai.marujo.dev/#video" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://orkai.marujo.dev/#software",
+      "name": "orkai",
+      "description": "Orquestrador de terminal que roda e vigia vários agentes de IA (Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code e Kimi Code) e terminais comuns em vários projetos ao mesmo tempo.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Windows, Linux, macOS",
+      "url": "https://orkai.marujo.dev/",
+      "downloadUrl": "https://github.com/lucasmarujo/orkai-cli/releases/tag/latest",
+      "installUrl": "https://orkai.marujo.dev/#instalar",
+      "image": "https://orkai.marujo.dev/og-image.png",
+      "screenshot": "https://orkai.marujo.dev/assets/overview.webp",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "BRL" },
+      "author": { "@id": "https://marujo.dev/#person" },
+      "sameAs": ["https://github.com/lucasmarujo/orkai-cli"]
+    },
+    {
+      "@type": "VideoObject",
+      "@id": "https://orkai.marujo.dev/#video",
+      "name": "O orkai em 50 segundos",
+      "description": "Vários agentes de IA em vários projetos, de um terminal só: lançar agentes, avisos quando precisam de você, uma worktree por agente e recuperação depois de um reboot.",
+      "thumbnailUrl": "https://orkai.marujo.dev/assets/orkai-demo-poster.webp",
+      "contentUrl": "https://orkai.marujo.dev/assets/orkai-demo.mp4",
+      "uploadDate": "2026-10-18T18:53:00-03:00",
+      "duration": "PT50S",
+      "inLanguage": "pt-BR"
+    },
+    {
+      "@type": "Person",
+      "@id": "https://marujo.dev/#person",
+      "name": "Lucas Marujo Amadeu",
+      "alternateName": "Lucas Marujo",
+      "url": "https://marujo.dev/",
+      "sameAs": ["https://github.com/lucasmarujo"]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#conteudo">Pular para o conteúdo</a>
+
+<header class="top" data-top>
+  <div class="wrap top-in">
+    <a class="brand" href="#topo" aria-label="orkai, voltar ao início">
+      <svg class="mascot brand-mascot" viewBox="0 0 14 16" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><g class="m-base"><rect x="2" y="0" width="1" height="1" fill="#9c6636"/><rect x="3" y="0" width="1" height="1" fill="#40c8d2"/><rect x="2" y="1" width="1" height="1" fill="#9c6636"/><rect x="3" y="1" width="2" height="1" fill="#40c8d2"/><rect x="7" y="1" width="3" height="1" fill="#2c3c78"/><rect x="2" y="2" width="1" height="1" fill="#9c6636"/><rect x="3" y="2" width="2" height="1" fill="#40c8d2"/><rect x="6" y="2" width="5" height="1" fill="#2c3c78"/><rect x="2" y="3" width="1" height="1" fill="#9c6636"/><rect x="5" y="3" width="7" height="1" fill="#ececf2"/><rect x="2" y="4" width="1" height="1" fill="#9c6636"/><rect x="6" y="4" width="5" height="1" fill="#f2c08e"/><rect x="2" y="5" width="1" height="1" fill="#9c6636"/><rect x="6" y="5" width="1" height="1" fill="#f2c08e"/><rect x="7" y="5" width="1" height="1" fill="#1c1c22"/><rect x="8" y="5" width="1" height="1" fill="#f2c08e"/><rect x="9" y="5" width="1" height="1" fill="#1c1c22"/><rect x="10" y="5" width="1" height="1" fill="#f2c08e"/><rect x="2" y="6" width="1" height="1" fill="#9c6636"/><rect x="6" y="6" width="5" height="1" fill="#f2c08e"/><rect x="2" y="7" width="1" height="1" fill="#9c6636"/><rect x="6" y="7" width="1" height="1" fill="#f2c08e"/><rect x="7" y="7" width="3" height="1" fill="#aa6a34"/><rect x="10" y="7" width="1" height="1" fill="#f2c08e"/><rect x="2" y="8" width="1" height="1" fill="#9c6636"/><rect x="5" y="8" width="8" height="1" fill="#3856a8"/><rect x="1" y="9" width="1" height="1" fill="#f2c08e"/><rect x="2" y="9" width="1" height="1" fill="#9c6636"/><rect x="3" y="9" width="1" height="1" fill="#f2c08e"/><rect x="4" y="9" width="1" height="1" fill="#3856a8"/><rect x="5" y="9" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="9" width="1" height="1" fill="#3856a8"/><rect x="2" y="10" width="1" height="1" fill="#9c6636"/><rect x="5" y="10" width="8" height="1" fill="#3856a8"/><rect x="2" y="11" width="1" height="1" fill="#9c6636"/><rect x="5" y="11" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="11" width="1" height="1" fill="#f2c08e"/><rect x="2" y="12" width="1" height="1" fill="#9c6636"/><rect x="5" y="12" width="7" height="1" fill="#404060"/><rect x="2" y="13" width="1" height="1" fill="#9c6636"/><rect x="5" y="13" width="3" height="1" fill="#404060"/><rect x="9" y="13" width="3" height="1" fill="#404060"/><rect x="2" y="14" width="1" height="1" fill="#9c6636"/><rect x="5" y="14" width="3" height="1" fill="#404060"/><rect x="9" y="14" width="3" height="1" fill="#404060"/><rect x="2" y="15" width="1" height="1" fill="#9c6636"/><rect x="4" y="15" width="3" height="1" fill="#744626"/><rect x="9" y="15" width="3" height="1" fill="#744626"/></g><g class="m-idle"><rect x="5" y="2" width="1" height="1" fill="#40c8d2"/><rect x="3" y="3" width="1" height="1" fill="#40c8d2"/></g><g class="m-busy"><rect x="4" y="0" width="1" height="1" fill="#40c8d2"/><rect x="5" y="1" width="1" height="1" fill="#40c8d2"/></g></svg>
+      <span class="wordmark">orkai</span>
+    </a>
+    <nav class="nav" aria-label="Seções">
+      <a href="#recursos">recursos</a>
+      <a href="#agentes">agentes</a>
+      <a href="#como-funciona">como funciona</a>
+      <a href="#seguranca">segurança</a>
+    </nav>
+    <div class="top-cta">
+      <a class="btn btn-ghost btn-sm" href="https://github.com/lucasmarujo/orkai-cli">github <span aria-hidden="true">↗</span></a>
+      <a class="btn btn-pink btn-sm" href="#instalar">instalar</a>
+    </div>
+  </div>
+  <div class="top-progress" aria-hidden="true"><span class="top-bar" data-progress></span><svg class="mascot top-runner waving" viewBox="0 0 14 16" shape-rendering="crispEdges" focusable="false" data-runner><g class="m-base"><rect x="2" y="0" width="1" height="1" fill="#9c6636"/><rect x="3" y="0" width="1" height="1" fill="#40c8d2"/><rect x="2" y="1" width="1" height="1" fill="#9c6636"/><rect x="3" y="1" width="2" height="1" fill="#40c8d2"/><rect x="7" y="1" width="3" height="1" fill="#2c3c78"/><rect x="2" y="2" width="1" height="1" fill="#9c6636"/><rect x="3" y="2" width="2" height="1" fill="#40c8d2"/><rect x="6" y="2" width="5" height="1" fill="#2c3c78"/><rect x="2" y="3" width="1" height="1" fill="#9c6636"/><rect x="5" y="3" width="7" height="1" fill="#ececf2"/><rect x="2" y="4" width="1" height="1" fill="#9c6636"/><rect x="6" y="4" width="5" height="1" fill="#f2c08e"/><rect x="2" y="5" width="1" height="1" fill="#9c6636"/><rect x="6" y="5" width="1" height="1" fill="#f2c08e"/><rect x="7" y="5" width="1" height="1" fill="#1c1c22"/><rect x="8" y="5" width="1" height="1" fill="#f2c08e"/><rect x="9" y="5" width="1" height="1" fill="#1c1c22"/><rect x="10" y="5" width="1" height="1" fill="#f2c08e"/><rect x="2" y="6" width="1" height="1" fill="#9c6636"/><rect x="6" y="6" width="5" height="1" fill="#f2c08e"/><rect x="2" y="7" width="1" height="1" fill="#9c6636"/><rect x="6" y="7" width="1" height="1" fill="#f2c08e"/><rect x="7" y="7" width="3" height="1" fill="#aa6a34"/><rect x="10" y="7" width="1" height="1" fill="#f2c08e"/><rect x="2" y="8" width="1" height="1" fill="#9c6636"/><rect x="5" y="8" width="8" height="1" fill="#3856a8"/><rect x="1" y="9" width="1" height="1" fill="#f2c08e"/><rect x="2" y="9" width="1" height="1" fill="#9c6636"/><rect x="3" y="9" width="1" height="1" fill="#f2c08e"/><rect x="4" y="9" width="1" height="1" fill="#3856a8"/><rect x="5" y="9" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="9" width="1" height="1" fill="#3856a8"/><rect x="2" y="10" width="1" height="1" fill="#9c6636"/><rect x="5" y="10" width="8" height="1" fill="#3856a8"/><rect x="2" y="11" width="1" height="1" fill="#9c6636"/><rect x="5" y="11" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="11" width="1" height="1" fill="#f2c08e"/><rect x="2" y="12" width="1" height="1" fill="#9c6636"/><rect x="5" y="12" width="7" height="1" fill="#404060"/><rect x="2" y="13" width="1" height="1" fill="#9c6636"/><rect x="5" y="13" width="3" height="1" fill="#404060"/><rect x="9" y="13" width="3" height="1" fill="#404060"/><rect x="2" y="14" width="1" height="1" fill="#9c6636"/><rect x="5" y="14" width="3" height="1" fill="#404060"/><rect x="9" y="14" width="3" height="1" fill="#404060"/><rect x="2" y="15" width="1" height="1" fill="#9c6636"/><rect x="4" y="15" width="3" height="1" fill="#744626"/><rect x="9" y="15" width="3" height="1" fill="#744626"/></g><g class="m-idle"><rect x="5" y="2" width="1" height="1" fill="#40c8d2"/><rect x="3" y="3" width="1" height="1" fill="#40c8d2"/></g><g class="m-busy"><rect x="4" y="0" width="1" height="1" fill="#40c8d2"/><rect x="5" y="1" width="1" height="1" fill="#40c8d2"/></g></svg></div>
+</header>
+
+<main id="conteudo">
+
+<section class="hero" id="topo" aria-labelledby="hero-title">
+  <div class="wrap">
+    <div class="chrome" data-rise="1"><span class="kicker">orquestrador de agentes de ia</span><span class="chrome-meta">windows · linux · macos</span></div>
+    <div class="hero-grid">
+      <h1 class="display" id="hero-title" data-split="load" data-hero-title><span class="line">todos os seus agentes.</span> <span class="line pink">um terminal só.</span></h1>
+      <div class="hero-copy">
+        <p class="lead" data-rise="3">Claude Code, Codex, OpenCode, Kilo, Antigravity, Grok, Qwen Code e Kimi Code lado a lado, em todos os seus projetos. O orkai mostra quem está trabalhando, quem terminou e quem está esperando você, e te leva até ele com uma tecla.</p>
+        <div class="cta-row" data-rise="4">
+          <a class="btn btn-pink btn-lg" href="#instalar">instalar o orkai</a>
+          <a class="btn btn-ghost btn-lg" href="https://github.com/lucasmarujo/orkai-cli">ver no github <span aria-hidden="true">↗</span></a>
+        </div>
+        <ul class="facts" data-rise="5">
+          <li>binário único e nativo</li>
+          <li>sem runtime</li>
+          <li>atualiza sozinho</li>
+          <li>grátis</li>
+        </ul>
+      </div>
+      <div class="hero-mark" aria-hidden="true" data-rise="6">
+        <svg class="mascot hero-mascot waving" viewBox="0 0 14 16" shape-rendering="crispEdges" focusable="false"><g class="m-base"><rect x="2" y="0" width="1" height="1" fill="#9c6636"/><rect x="3" y="0" width="1" height="1" fill="#40c8d2"/><rect x="2" y="1" width="1" height="1" fill="#9c6636"/><rect x="3" y="1" width="2" height="1" fill="#40c8d2"/><rect x="7" y="1" width="3" height="1" fill="#2c3c78"/><rect x="2" y="2" width="1" height="1" fill="#9c6636"/><rect x="3" y="2" width="2" height="1" fill="#40c8d2"/><rect x="6" y="2" width="5" height="1" fill="#2c3c78"/><rect x="2" y="3" width="1" height="1" fill="#9c6636"/><rect x="5" y="3" width="7" height="1" fill="#ececf2"/><rect x="2" y="4" width="1" height="1" fill="#9c6636"/><rect x="6" y="4" width="5" height="1" fill="#f2c08e"/><rect x="2" y="5" width="1" height="1" fill="#9c6636"/><rect x="6" y="5" width="1" height="1" fill="#f2c08e"/><rect x="7" y="5" width="1" height="1" fill="#1c1c22"/><rect x="8" y="5" width="1" height="1" fill="#f2c08e"/><rect x="9" y="5" width="1" height="1" fill="#1c1c22"/><rect x="10" y="5" width="1" height="1" fill="#f2c08e"/><rect x="2" y="6" width="1" height="1" fill="#9c6636"/><rect x="6" y="6" width="5" height="1" fill="#f2c08e"/><rect x="2" y="7" width="1" height="1" fill="#9c6636"/><rect x="6" y="7" width="1" height="1" fill="#f2c08e"/><rect x="7" y="7" width="3" height="1" fill="#aa6a34"/><rect x="10" y="7" width="1" height="1" fill="#f2c08e"/><rect x="2" y="8" width="1" height="1" fill="#9c6636"/><rect x="5" y="8" width="8" height="1" fill="#3856a8"/><rect x="1" y="9" width="1" height="1" fill="#f2c08e"/><rect x="2" y="9" width="1" height="1" fill="#9c6636"/><rect x="3" y="9" width="1" height="1" fill="#f2c08e"/><rect x="4" y="9" width="1" height="1" fill="#3856a8"/><rect x="5" y="9" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="9" width="1" height="1" fill="#3856a8"/><rect x="2" y="10" width="1" height="1" fill="#9c6636"/><rect x="5" y="10" width="8" height="1" fill="#3856a8"/><rect x="2" y="11" width="1" height="1" fill="#9c6636"/><rect x="5" y="11" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="11" width="1" height="1" fill="#f2c08e"/><rect x="2" y="12" width="1" height="1" fill="#9c6636"/><rect x="5" y="12" width="7" height="1" fill="#404060"/><rect x="2" y="13" width="1" height="1" fill="#9c6636"/><rect x="5" y="13" width="3" height="1" fill="#404060"/><rect x="9" y="13" width="3" height="1" fill="#404060"/><rect x="2" y="14" width="1" height="1" fill="#9c6636"/><rect x="5" y="14" width="3" height="1" fill="#404060"/><rect x="9" y="14" width="3" height="1" fill="#404060"/><rect x="2" y="15" width="1" height="1" fill="#9c6636"/><rect x="4" y="15" width="3" height="1" fill="#744626"/><rect x="9" y="15" width="3" height="1" fill="#744626"/></g><g class="m-idle"><rect x="5" y="2" width="1" height="1" fill="#40c8d2"/><rect x="3" y="3" width="1" height="1" fill="#40c8d2"/></g><g class="m-busy"><rect x="4" y="0" width="1" height="1" fill="#40c8d2"/><rect x="5" y="1" width="1" height="1" fill="#40c8d2"/></g></svg>
+        <span class="hero-prompt"><span class="t-dim">$</span> orkai<span class="caret"></span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <figure class="stage" data-rise="7" data-tilt>
+      <div class="tui" data-tui aria-hidden="true">
+        <div class="tui-title"><span class="tui-bell" data-bell></span><span data-title>Orkai</span></div>
+        <div class="tui-body">
+          <div class="tui-side">
+            <div class="t-bold">workstation</div>
+            <div class="tui-sess is-on"><span>› default</span><span data-session-count>0</span></div>
+            <div class="tui-sess"><span>&nbsp;&nbsp;session-2</span><span>0</span></div>
+            <div class="tui-sess"><span>&nbsp;&nbsp;session-3</span><span>0</span></div>
+            <div class="t-link">&nbsp;&nbsp;+ new session</div>
+            <div class="tui-side-foot t-dim">f1 help</div>
+          </div>
+          <div class="tui-main">
+            <div class="tui-head">
+              <svg class="mascot tui-mascot waving" viewBox="0 0 14 16" shape-rendering="crispEdges" focusable="false"><g class="m-base"><rect x="2" y="0" width="1" height="1" fill="#9c6636"/><rect x="3" y="0" width="1" height="1" fill="#40c8d2"/><rect x="2" y="1" width="1" height="1" fill="#9c6636"/><rect x="3" y="1" width="2" height="1" fill="#40c8d2"/><rect x="7" y="1" width="3" height="1" fill="#2c3c78"/><rect x="2" y="2" width="1" height="1" fill="#9c6636"/><rect x="3" y="2" width="2" height="1" fill="#40c8d2"/><rect x="6" y="2" width="5" height="1" fill="#2c3c78"/><rect x="2" y="3" width="1" height="1" fill="#9c6636"/><rect x="5" y="3" width="7" height="1" fill="#ececf2"/><rect x="2" y="4" width="1" height="1" fill="#9c6636"/><rect x="6" y="4" width="5" height="1" fill="#f2c08e"/><rect x="2" y="5" width="1" height="1" fill="#9c6636"/><rect x="6" y="5" width="1" height="1" fill="#f2c08e"/><rect x="7" y="5" width="1" height="1" fill="#1c1c22"/><rect x="8" y="5" width="1" height="1" fill="#f2c08e"/><rect x="9" y="5" width="1" height="1" fill="#1c1c22"/><rect x="10" y="5" width="1" height="1" fill="#f2c08e"/><rect x="2" y="6" width="1" height="1" fill="#9c6636"/><rect x="6" y="6" width="5" height="1" fill="#f2c08e"/><rect x="2" y="7" width="1" height="1" fill="#9c6636"/><rect x="6" y="7" width="1" height="1" fill="#f2c08e"/><rect x="7" y="7" width="3" height="1" fill="#aa6a34"/><rect x="10" y="7" width="1" height="1" fill="#f2c08e"/><rect x="2" y="8" width="1" height="1" fill="#9c6636"/><rect x="5" y="8" width="8" height="1" fill="#3856a8"/><rect x="1" y="9" width="1" height="1" fill="#f2c08e"/><rect x="2" y="9" width="1" height="1" fill="#9c6636"/><rect x="3" y="9" width="1" height="1" fill="#f2c08e"/><rect x="4" y="9" width="1" height="1" fill="#3856a8"/><rect x="5" y="9" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="9" width="1" height="1" fill="#3856a8"/><rect x="2" y="10" width="1" height="1" fill="#9c6636"/><rect x="5" y="10" width="8" height="1" fill="#3856a8"/><rect x="2" y="11" width="1" height="1" fill="#9c6636"/><rect x="5" y="11" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="11" width="1" height="1" fill="#f2c08e"/><rect x="2" y="12" width="1" height="1" fill="#9c6636"/><rect x="5" y="12" width="7" height="1" fill="#404060"/><rect x="2" y="13" width="1" height="1" fill="#9c6636"/><rect x="5" y="13" width="3" height="1" fill="#404060"/><rect x="9" y="13" width="3" height="1" fill="#404060"/><rect x="2" y="14" width="1" height="1" fill="#9c6636"/><rect x="5" y="14" width="3" height="1" fill="#404060"/><rect x="9" y="14" width="3" height="1" fill="#404060"/><rect x="2" y="15" width="1" height="1" fill="#9c6636"/><rect x="4" y="15" width="3" height="1" fill="#744626"/><rect x="9" y="15" width="3" height="1" fill="#744626"/></g><g class="m-idle"><rect x="5" y="2" width="1" height="1" fill="#40c8d2"/><rect x="3" y="3" width="1" height="1" fill="#40c8d2"/></g><g class="m-busy"><rect x="4" y="0" width="1" height="1" fill="#40c8d2"/><rect x="5" y="1" width="1" height="1" fill="#40c8d2"/></g></svg>
+              <div class="tui-stats" data-stats></div>
+              <div class="tui-usage" data-usage></div>
+            </div>
+            <div class="tui-list" data-list></div>
+          </div>
+        </div>
+        <div class="tui-foot">
+          <div class="tui-input" data-input><span class="t-faint">write a task</span></div>
+          <div class="tui-status"><span class="t-muted">pc</span> <span class="t-link">workstation</span><span class="gap"></span><span class="t-muted">who</span> <span class="k-claude">claude</span><span class="gap"></span><span class="t-muted">worktree</span> <span class="t-dim">off</span><span class="gap"></span><span class="t-muted hide-sm">where</span> <span class="t-link hide-sm">~/dev/acme/web</span></div>
+          <div class="tui-hint t-dim" data-hint></div>
+        </div>
+        <div class="tui-key" data-key></div>
+      </div>
+      <noscript><img class="stage-fallback" src="/assets/overview.webp" width="1500" height="840" alt="Visão geral do orkai: sessões na lateral, contadores e consumo no topo, agentes agrupados por projeto."></noscript>
+      <figcaption class="stage-cap"><span class="kicker-dim">simulação ao vivo da visão geral</span><span class="hide-sm">agentes agrupados por projeto, com estado, tempo e o que cada um está fazendo</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="marquee" aria-labelledby="marquee-title">
+  <div class="wrap"><h2 class="kicker marquee-kicker" id="marquee-title">funciona com</h2></div>
+  <div class="marquee-row" data-marquee="1">
+    <p class="marquee-track"><span class="k-claude">claude code</span><span class="px" aria-hidden="true"></span><span class="k-codex">codex</span><span class="px" aria-hidden="true"></span><span class="k-kilo">kilo</span><span class="px" aria-hidden="true"></span><span class="k-opencode">opencode</span><span class="px" aria-hidden="true"></span><span class="k-agy">antigravity</span><span class="px" aria-hidden="true"></span><span class="k-grok">grok build</span><span class="px" aria-hidden="true"></span><span class="k-qwen">qwen code</span><span class="px" aria-hidden="true"></span><span class="k-kimi">kimi code</span><span class="px" aria-hidden="true"></span></p>
+  </div>
+  <div class="marquee-row marquee-alt" data-marquee="-1">
+    <p class="marquee-track"><span>e o seu terminal</span><span class="px" aria-hidden="true"></span><span>powershell</span><span class="px" aria-hidden="true"></span><span>bash</span><span class="px" aria-hidden="true"></span><span>zsh</span><span class="px" aria-hidden="true"></span><span>windows</span><span class="px" aria-hidden="true"></span><span>linux</span><span class="px" aria-hidden="true"></span><span>macos</span><span class="px" aria-hidden="true"></span></p>
+  </div>
+</section>
+
+<section class="chaos" id="problema" aria-labelledby="problema-title" data-chaos>
+  <div class="chaos-sticky">
+    <div class="wrap chaos-stage">
+      <div class="chrome" data-reveal><span class="kicker">o problema</span><span class="chrome-num">01</span></div>
+      <div class="chaos-heads">
+        <h2 class="h2 chaos-q" id="problema-title">qual deles está <span class="pink">esperando você?</span></h2>
+        <p class="h2 chaos-a" aria-hidden="true">um overview <span class="pink">só.</span></p>
+      </div>
+      <div class="chaos-field" data-chaos-field>
+        <div class="chaos-wins" aria-hidden="true">
+          <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-claude">claude</span> · checkout-redesign</div><div class="win-b">Committing changes…<br>git commit -m "checkout"</div></div>
+          <div class="win is-ask"><div class="win-h"><span class="win-bell"></span><span class="k-codex">codex</span> · payment-tests</div><div class="win-b">Run the migrations now?<br><span class="t-yellow">(y/n) ▌</span></div></div>
+          <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-claude">claude</span> · simulator-builds</div><div class="win-b">Compiling SimulatorKit<br>(12/48)</div></div>
+          <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-opencode">opencode</span> · physics-merge</div><div class="win-b">Merging the new physics<br>engine</div></div>
+          <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-terminal">bash</span> · localhost-server</div><div class="win-b">ready on localhost:5173<br>GET / 200 in 12ms</div></div>
+          <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-agy">agy</span> · container-ssh</div><div class="win-b">docker exec -it api sh<br>…</div></div>
+          <div class="win is-done"><div class="win-h"><span class="win-bell"></span><span class="k-kimi">kimi</span> · folder-icon-update</div><div class="win-b">Done.<br>3 files changed</div></div>
+          <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-claude">claude</span> · docker-install</div><div class="win-b">Installing docker-ce…<br>apt-get install -y</div></div>
+        </div>
+        <div class="chaos-list tui" data-chaos-list>
+          <div class="tui-title chaos-fade"><span class="tui-bell is-on"></span><span>‖1 ✔2 · Orkai</span></div>
+          <div class="chaos-rows">
+            <div class="r r-head chaos-fade"><span class="p6">acme/web</span><span class="t-dim"> › </span><span class="t-faint">2</span></div>
+            <div class="r" data-row="0"><span class="c-num">1</span><span class="c-sel"> </span><span class="c-g t-green">✔</span><span class="c-name t-green">checkout-redesign</span><span class="c-kind k-claude">claude</span><span class="c-act t-muted">Running design update and committing changes</span></div>
+            <div class="r" data-row="1"><span class="c-num">2</span><span class="c-sel">▸</span><span class="c-g t-yellow">‖</span><span class="c-name t-yellow">payment-tests</span><span class="c-kind k-codex">codex</span><span class="c-act t-yellow">waiting for you · Run the migrations now?</span></div>
+            <div class="r r-head chaos-fade"><span class="p2">acme/mobile</span><span class="t-dim"> › </span><span class="t-faint">1</span></div>
+            <div class="r" data-row="2"><span class="c-num">3</span><span class="c-sel"> </span><span class="c-g t-yellow" data-spin>⠋</span><span class="c-name t-text">simulator-builds</span><span class="c-kind k-claude">claude</span><span class="c-act t-text">Building and launching both apps in simulators</span></div>
+            <div class="r r-head chaos-fade"><span class="p6">studio/game</span><span class="t-dim"> › </span><span class="t-faint">2</span></div>
+            <div class="r" data-row="3"><span class="c-num">4</span><span class="c-sel"> </span><span class="c-g t-yellow" data-spin>⠋</span><span class="c-name t-text">physics-merge</span><span class="c-kind k-opencode">opencode</span><span class="c-act t-text">Merging the new physics engine</span></div>
+            <div class="r" data-row="4"><span class="c-num">5</span><span class="c-sel"> </span><span class="c-g">$</span><span class="c-name t-text">localhost-server</span><span class="c-kind k-terminal">terminal</span><span class="c-act t-text">npm run dev</span></div>
+            <div class="r r-head chaos-fade"><span class="p1">lab/infra</span><span class="t-dim"> › </span><span class="t-faint">1</span></div>
+            <div class="r" data-row="5"><span class="c-num">6</span><span class="c-sel"> </span><span class="c-g t-dim">●</span><span class="c-name t-muted">container-ssh</span><span class="c-kind k-agy">agy</span><span class="c-act t-muted">Retrieving container SSH credentials</span></div>
+            <div class="r r-head chaos-fade"><span class="p2">orkai/cli</span><span class="t-dim"> › </span><span class="t-faint">2</span></div>
+            <div class="r" data-row="6"><span class="c-num">7</span><span class="c-sel"> </span><span class="c-g t-green">✔</span><span class="c-name t-green">folder-icon-update</span><span class="c-kind k-kimi">kimi</span><span class="c-act t-muted">Folder icon update</span></div>
+            <div class="r" data-row="7"><span class="c-num">8</span><span class="c-sel"> </span><span class="c-g t-yellow" data-spin>⠋</span><span class="c-name t-text">docker-install</span><span class="c-kind k-claude">claude</span><span class="c-act t-text">Installing Docker inside the container</span></div>
+          </div>
+          <div class="tui-hint is-warn chaos-fade">payment-tests is waiting for you · alt+n opens it</div>
+        </div>
+      </div>
+      <div class="chaos-copy">
+        <p class="chaos-before">Dez abas, seis projetos. Você alterna entre elas para descobrir quem terminou, quem travou e quem pediu uma aprovação há vinte minutos.</p>
+        <p class="chaos-after">O orkai junta todos os agentes de todos os projetos numa tela, agrupados por pasta, com o estado de cada um ao vivo. Quando alguém precisa de você, ele avisa.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="video" aria-labelledby="video-title">
+  <div class="wrap">
+    <div class="chrome" data-reveal><span class="kicker">em 50 segundos</span><span class="chrome-num">02</span></div>
+    <h2 class="h2" id="video-title" data-split>veja o orkai <span class="pink">trabalhando.</span></h2>
+    <div class="player" data-player data-zoom>
+      <video src="/assets/orkai-demo.mp4" poster="/assets/orkai-demo-poster.webp" preload="none" playsinline width="1920" height="1080" data-video aria-label="Vídeo de 50 segundos mostrando o orkai: lançar agentes, avisos, worktrees e recuperação depois de um reboot."></video>
+      <button class="player-play" type="button" data-play aria-label="Assistir ao vídeo de 50 segundos">
+        <span class="player-icon" aria-hidden="true"></span>
+        <span class="player-label">assistir · 0:50</span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="recursos" aria-labelledby="recursos-title">
+  <div class="wrap">
+    <div class="chrome" data-reveal><span class="kicker">recursos</span><span class="chrome-num">03</span></div>
+    <h2 class="h2" id="recursos-title" data-split>feito para quem roda <span class="pink">dez agentes de uma vez.</span></h2>
+
+  </div>
+  <div class="wrap tour" data-tour>
+    <div class="tour-steps">
+      <article class="tour-step" data-step="0">
+        <span class="spot-num">03.1</span>
+        <h3 class="h3">escreva a tarefa. o agente nasce.</h3>
+        <p>Escolha a pasta com <kbd>ctrl</kbd><kbd>l</kbd> e quem executa com <kbd>tab</kbd>. Escreva a tarefa e aperte <kbd>enter</kbd>: o agente já começa trabalhando nela e aparece no grupo do projeto, com o tempo e a frase do que está fazendo.</p>
+      </article>
+      <article class="tour-step" data-step="1">
+        <span class="spot-num">03.2</span>
+        <h3 class="h3">um deles precisa de você.</h3>
+        <p>Quando um agente que você não está olhando pede uma aprovação ou termina, o terminal toca o sino, mostra a notificação e o título da janela conta quem espera, mesmo com o orkai em segundo plano.</p>
+      </article>
+      <article class="tour-step" data-step="2">
+        <span class="spot-num">03.3</span>
+        <h3 class="h3"><kbd>alt</kbd><kbd>n</kbd> e você está lá.</h3>
+        <p>Abre direto o agente que espera há mais tempo, de qualquer tela, até de dentro de outro agente. Quer o aviso no celular? Um <code>notify_command</code> manda pelo ntfy ou para onde você quiser.</p>
+      </article>
+      <article class="tour-step" data-step="3">
+        <span class="spot-num">03.4</span>
+        <h3 class="h3">dois agentes. um repo.</h3>
+        <p>Com <kbd>ctrl</kbd><kbd>t</kbd>, cada agente nasce numa worktree do git, na branch <code>orkai/&lt;nome&gt;</code>. Vários agentes mexem no mesmo repositório sem pisar um no outro. <code>/diff</code> mostra o que mudou; <code>/merge</code> traz para a sua branch.</p>
+      </article>
+      <article class="tour-step" data-step="4">
+        <span class="spot-num">03.5</span>
+        <h3 class="h3">reiniciou a máquina?</h3>
+        <p>Cada agente roda num processo próprio, dono do terminal dele: fechar ou atualizar a interface não derruba ninguém. Depois de um reboot, <kbd>ctrl</kbd><kbd>r</kbd> retoma cada conversa de onde parou.</p>
+      </article>
+    </div>
+    <div class="tour-pin">
+      <div class="tour-screen">
+        <div class="tui tour-tui" aria-hidden="true" data-tour-tui>
+          <div class="tui-title"><span class="tui-bell" data-t-bell></span><span data-t-title>Orkai</span></div>
+          <div class="tour-body">
+            <div class="r r-head"><span class="p6">acme/web</span><span class="t-dim"> › </span><span class="t-faint" data-t-count>3</span></div>
+            <div data-t-list></div>
+          </div>
+          <div class="tui-foot">
+            <div class="tui-input" data-t-input></div>
+            <div class="tui-status"><span class="t-muted">pc</span> <span class="t-link">workstation</span><span class="gap"></span><span class="t-muted">who</span> <span class="k-claude">claude</span><span class="gap"></span><span class="t-muted">worktree</span> <span class="t-dim" data-t-wt>off</span></div>
+            <div class="tui-hint t-dim" data-t-hint></div>
+          </div>
+          <div class="tui-key" data-t-key></div>
+        </div>
+        <ol class="tour-dots" aria-hidden="true"><li></li><li></li><li></li><li></li><li></li></ol>
+      </div>
+    </div>
+  </div>
+  <div class="wrap">
+    <article class="spot" data-reveal>
+      <div class="spot-copy">
+        <span class="spot-num">03.6</span>
+        <h3 class="h3">estado exato, na hora.</h3>
+        <p>Hooks, plugins e o protocolo de cada agente dizem ao orkai quando ele está trabalhando, esperando você ou terminou. Sem adivinhar pelo texto da tela: uma resposta que termina com “Would you like to…?” não vira pergunta.</p>
+        <p class="spot-note">Os hooks só gravam o tipo do evento. O prompt, os comandos e as respostas nunca vão para o disco.</p>
+      </div>
+      <div class="panel spot-visual">
+        <div class="legend">
+          <div><span class="g t-yellow" data-spin>⠋</span><span>trabalhando</span></div>
+          <div><span class="g t-yellow">‖</span><span>esperando você</span></div>
+          <div><span class="g t-green">✔</span><span>terminou</span></div>
+          <div><span class="g t-dim">●</span><span>ocioso</span></div>
+          <div><span class="g">$</span><span>terminal</span></div>
+          <div><span class="g t-red">↻</span><span>interrompido</span></div>
+          <div><span class="g t-faint">✗</span><span>encerrado</span></div>
+        </div>
+        <ol class="events" aria-label="Eventos de hook do Claude Code e o estado resultante">
+          <li><span class="t-muted">UserPromptSubmit</span><span class="t-yellow">working</span></li>
+          <li><span class="t-muted">PreToolUse · Bash</span><span class="t-yellow">working</span></li>
+          <li><span class="t-muted">PermissionRequest</span><span class="t-yellow">waiting for you</span></li>
+          <li><span class="t-muted">Stop</span><span class="t-green">done</span></li>
+        </ol>
+      </div>
+    </article>
+    <article class="spot spot-flip" data-reveal>
+      <div class="spot-copy">
+        <span class="spot-num">03.7</span>
+        <h3 class="h3">consumo dos planos à vista.</h3>
+        <p>As janelas de 5 horas, semana e mês (ou o saldo) de cada agente em que você está logado, com a contagem até o reset. Verde, amarelo a partir de 70%, vermelho a partir de 90%. Quem não tem login não aparece.</p>
+      </div>
+      <div class="panel spot-visual usage-visual" data-usage-demo>
+        <div class="t-muted">usage <span class="t-faint">· updated 34s ago</span></div>
+        <div class="u-row"><span class="k-claude">claude</span><span class="t-muted">5h</span><span class="bar" data-pct="62"><span class="t-green">━━━━━━━</span><span class="t-rule">─────</span></span><span class="t-green b">62%</span><span class="t-dim hide-sm">resets 2h14m</span></div>
+        <div class="u-row"><span></span><span class="t-muted">week</span><span class="bar" data-pct="23"><span class="t-green">━━━</span><span class="t-rule">─────────</span></span><span class="t-green b">23%</span><span class="t-dim hide-sm">resets 4d05h</span></div>
+        <div class="u-row"><span class="k-codex">codex</span><span class="t-muted">5h</span><span class="bar" data-pct="12"><span class="t-green">━</span><span class="t-rule">───────────</span></span><span class="t-green b">12%</span><span class="t-dim hide-sm">resets 3h41m</span></div>
+        <div class="u-row"><span></span><span class="t-muted">week</span><span class="bar" data-pct="76"><span class="t-yellow">━━━━━━━━━</span><span class="t-rule">───</span></span><span class="t-yellow b">76%</span><span class="t-dim hide-sm">resets 58h00m</span></div>
+        <div class="u-row"><span class="k-kimi">kimi</span><span class="t-muted">5h</span><span class="bar" data-pct="93"><span class="t-red">━━━━━━━━━━━</span><span class="t-rule">─</span></span><span class="t-red b">93%</span><span class="t-dim hide-sm">resets 48m00s</span></div>
+      </div>
+    </article>
+    <ul class="grid-cards" data-reveal>
+      <li class="card">
+        <h3 class="h4">skills no <code>/</code></h3>
+        <p>As skills e os comandos de cada agente aparecem no autocomplete. <code>/skill argumentos</code> inicia um agente já invocando a skill.</p>
+      </li>
+      <li class="card">
+        <h3 class="h4">subagents à vista</h3>
+        <p>Os subagents que o Claude Code e o Codex disparam aparecem logo abaixo do agente, com a descrição e a ferramenta em uso.</p>
+      </li>
+      <li class="card">
+        <h3 class="h4"><code>!comando</code></h3>
+        <p><code>!npm run dev</code> roda o comando num terminal novo, sem trocar quem executa as próximas tarefas.</p>
+      </li>
+      <li class="card">
+        <h3 class="h4">terminal que vira agente</h3>
+        <p>Rodou <code>claude</code> dentro de um terminal? Em até 2 segundos ele aparece no overview com tipo, estado e subagents.</p>
+      </li>
+      <li class="card">
+        <h3 class="h4">remote control</h3>
+        <p>Todo Claude Code iniciado pelo orkai abre com Remote Control ligado: continue a sessão no app do Claude ou em claude.ai/code.</p>
+      </li>
+      <li class="card">
+        <h3 class="h4">atualiza sozinho</h3>
+        <p>Cada build nova é conferida por tamanho e SHA-256 antes de substituir o executável. Os agentes em execução não são afetados.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section class="section" id="agentes" aria-labelledby="agentes-title">
+  <div class="wrap">
+    <div class="chrome" data-reveal><span class="kicker">agentes suportados</span><span class="chrome-num">04</span></div>
+    <h2 class="h2" id="agentes-title" data-split>oito agentes e o seu shell. <span class="pink">uma tela.</span></h2>
+    <p class="section-lead" data-reveal>O orkai não mexe em nenhum arquivo de configuração seu. Hooks, plugins e variáveis valem só para o processo que ele lançou, e somam aos seus.</p>
+    <div class="table-wrap" data-reveal>
+      <table class="agents-table" data-agents>
+        <thead>
+          <tr><th scope="col"><code>who</code></th><th scope="col">Agente</th><th scope="col">Programa</th><th scope="col">Estado exato</th><th scope="col">Consumo no overview</th><th scope="col">Retomada após reboot</th></tr>
+        </thead>
+        <tbody>
+          <tr><td data-label="who"><code class="k-claude">claude</code></td><td data-label="Agente">Claude Code</td><td data-label="Programa"><code>claude</code></td><td data-label="Estado exato">hooks (<code>--settings</code>)</td><td data-label="Consumo">5h e semana</td><td data-label="Retomada"><code>--resume &lt;id&gt;</code></td></tr>
+          <tr><td data-label="who"><code class="k-codex">codex</code></td><td data-label="Agente">Codex</td><td data-label="Programa"><code>codex</code></td><td data-label="Estado exato"><code>notify</code></td><td data-label="Consumo">5h e semana</td><td data-label="Retomada"><code>codex resume &lt;id&gt;</code></td></tr>
+          <tr><td data-label="who"><code class="k-kilo">kilo</code></td><td data-label="Agente">Kilo CLI</td><td data-label="Programa"><code>kilo</code></td><td data-label="Estado exato">plugin de eventos</td><td data-label="Consumo">saldo (<code>funds</code>) e Kilo Pass</td><td data-label="Retomada"><code>--session &lt;id&gt;</code></td></tr>
+          <tr><td data-label="who"><code class="k-opencode">opencode</code></td><td data-label="Agente">OpenCode</td><td data-label="Programa"><code>opencode</code></td><td data-label="Estado exato">plugin de eventos</td><td data-label="Consumo">OpenCode Go (5h e semana)</td><td data-label="Retomada"><code>--session &lt;id&gt;</code></td></tr>
+          <tr><td data-label="who"><code class="k-agy">agy</code></td><td data-label="Agente">Antigravity CLI (sucessor do Gemini CLI)</td><td data-label="Programa"><code>agy</code></td><td data-label="Estado exato">OSC 7501</td><td data-label="Consumo">5h e semana</td><td data-label="Retomada"><code>--conversation=&lt;id&gt;</code></td></tr>
+          <tr><td data-label="who"><code class="k-grok">grok</code></td><td data-label="Agente">Grok Build</td><td data-label="Programa"><code>grok</code></td><td data-label="Estado exato">título da janela</td><td data-label="Consumo">semana ou mês</td><td data-label="Retomada"><code>--resume=&lt;id&gt;</code></td></tr>
+          <tr><td data-label="who"><code class="k-qwen">qwen</code></td><td data-label="Agente">Qwen Code</td><td data-label="Programa"><code>qwen</code></td><td data-label="Estado exato">hooks (system defaults)</td><td data-label="Consumo">sem API de consumo</td><td data-label="Retomada"><code>--resume &lt;id&gt;</code></td></tr>
+          <tr><td data-label="who"><code class="k-kimi">kimi</code></td><td data-label="Agente">Kimi Code</td><td data-label="Programa"><code>kimi</code></td><td data-label="Estado exato">tela</td><td data-label="Consumo">5h, semana ou mês</td><td data-label="Retomada"><code>--session &lt;id&gt;</code></td></tr>
+          <tr><td data-label="who"><code class="k-terminal">terminal</code></td><td data-label="Agente">PowerShell, bash…</td><td data-label="Programa"><code>shell</code></td><td data-label="Estado exato">atividade da saída</td><td data-label="Consumo">—</td><td data-label="Retomada">reexecuta o comando</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="como-funciona" aria-labelledby="como-title">
+  <div class="wrap">
+    <div class="chrome" data-reveal><span class="kicker">como funciona</span><span class="chrome-num">05</span></div>
+    <h2 class="h2" id="como-title" data-split>a interface vai e volta. <span class="pink">os agentes ficam.</span></h2>
+    <p class="section-lead" data-reveal>Cada agente roda dentro de um processo <code>holder</code> próprio e destacado, dono do pseudo-terminal (ConPTY no Windows, PTY no Unix). A interface só se conecta a eles.</p>
+    <div class="arch" data-reveal data-arch role="img" aria-label="Diagrama: a interface do orkai se conecta por 127.0.0.1 com token a um holder por agente; cada holder é dono do terminal do seu agente, como claude, codex ou pwsh.">
+      <div class="arch-ui panel"><span class="kicker-dim">interface</span><b>orkai</b><span class="t-dim" data-arch-state>pode fechar, travar ou atualizar</span></div>
+      <div class="arch-link"><span class="arch-label">127.0.0.1 + token</span></div>
+      <div class="arch-holders">
+        <div class="arch-row"><span class="panel arch-holder">holder</span><span class="arch-pty">ConPTY / PTY</span><span class="panel arch-agent k-claude"><span class="t-yellow" data-spin>⠋</span> claude</span></div>
+        <div class="arch-row"><span class="panel arch-holder">holder</span><span class="arch-pty">ConPTY / PTY</span><span class="panel arch-agent k-codex"><span class="t-yellow" data-spin>⠋</span> codex</span></div>
+        <div class="arch-row"><span class="panel arch-holder">holder</span><span class="arch-pty">ConPTY / PTY</span><span class="panel arch-agent k-terminal"><span class="t-yellow" data-spin>⠋</span> pwsh / bash</span></div>
+      </div>
+    </div>
+    <ul class="stats3" data-reveal>
+      <li class="stat"><span class="stat-value">fechou?</span><p>Fechar, reiniciar ou atualizar o orkai não derruba nenhum agente. Ao abrir de novo, ele reconecta em todos.</p></li>
+      <li class="stat"><span class="stat-value"><span class="t-red">↻</span> reboot?</span><p>O agente aparece como interrompido e <kbd>ctrl</kbd><kbd>r</kbd> relança cada um na sua pasta, retomando a conversa.</p></li>
+      <li class="stat"><span class="stat-value">e o histórico?</span><p>Toda a saída de cada agente é gravada, com rotação. <code>orkai logs &lt;id&gt;</code> imprime a transcrição.</p></li>
+    </ul>
+  </div>
+</section>
+
+<section class="section" id="teclado" aria-labelledby="teclado-title">
+  <div class="wrap">
+    <div class="chrome" data-reveal><span class="kicker">teclado</span><span class="chrome-num">06</span></div>
+    <h2 class="h2" id="teclado-title" data-split>tudo no <span class="pink">teclado.</span></h2>
+    <p class="kicker-dim keys-hint" data-reveal>experimente: aperte <kbd>enter</kbd>, <kbd>tab</kbd> ou <kbd>alt</kbd><kbd>n</kbd> agora</p>
+    <ul class="keys" data-reveal data-keys>
+      <li data-key="enter"><span class="keys-k"><kbd>enter</kbd></span><span>inicia um agente com a tarefa digitada</span></li>
+      <li data-key="tab"><span class="keys-k"><kbd>tab</kbd></span><span>escolhe quem executa: um agente ou o terminal</span></li>
+      <li data-key="ctrl+l"><span class="keys-k"><kbd>ctrl</kbd><kbd>l</kbd></span><span>escolhe a pasta do projeto</span></li>
+      <li data-key="ctrl+t"><span class="keys-k"><kbd>ctrl</kbd><kbd>t</kbd></span><span>liga a worktree própria para os próximos agentes</span></li>
+      <li data-key="alt+n"><span class="keys-k"><kbd>alt</kbd><kbd>n</kbd></span><span>abre o próximo agente esperando você</span></li>
+      <li data-key="ctrl+]"><span class="keys-k"><kbd>ctrl</kbd><kbd>]</kbd></span><span>volta da aba do agente para a visão geral</span></li>
+      <li data-key="ctrl+r"><span class="keys-k"><kbd>ctrl</kbd><kbd>r</kbd></span><span>recupera os agentes interrompidos</span></li>
+      <li data-key="!"><span class="keys-k"><kbd>!</kbd><kbd>cmd</kbd></span><span>roda o comando num terminal novo</span></li>
+      <li data-key="/"><span class="keys-k"><kbd>/</kbd></span><span>comandos do orkai e skills do agente</span></li>
+    </ul>
+    <div class="cli panel" data-reveal>
+      <div class="cli-head"><span class="kicker-dim">também na linha de comando</span></div>
+<pre><code><span class="t-pink">orkai ls</span> <span class="t-dim">[-s sessão]</span>             <span class="t-muted">lista agentes com o estado ao vivo</span>
+<span class="t-pink">orkai new</span> <span class="t-dim">-k &lt;agente&gt; -C &lt;pasta&gt;</span> <span class="t-muted">inicia um agente com uma tarefa</span>
+<span class="t-pink">orkai send</span> <span class="t-dim">&lt;id&gt; &lt;texto...&gt;</span>       <span class="t-muted">digita no agente e aperta enter</span>
+<span class="t-pink">orkai attach</span> <span class="t-dim">&lt;id&gt;</span>                <span class="t-muted">usa o terminal atual direto no agente</span>
+<span class="t-pink">orkai logs</span> <span class="t-dim">&lt;id&gt; [-n linhas]</span>      <span class="t-muted">transcrição gravada do agente</span>
+<span class="t-pink">orkai recover</span> <span class="t-dim">[-s sessão]</span>        <span class="t-muted">relança agentes interrompidos</span>
+<span class="t-pink">orkai update</span>                     <span class="t-muted">baixa e instala a build mais nova</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="seguranca" aria-labelledby="seguranca-title">
+  <div class="wrap">
+    <div class="chrome" data-reveal><span class="kicker">segurança</span><span class="chrome-num">07</span></div>
+    <h2 class="h2" id="seguranca-title" data-split>seu código, <span class="pink">sua máquina.</span></h2>
+    <ul class="stats4" data-reveal>
+      <li class="stat"><span class="stat-value" data-scramble>127.0.0.1</span><p>Os holders escutam só em localhost, numa porta aleatória.</p></li>
+      <li class="stat"><span class="stat-value" data-scramble>256 bits</span><p>Um token por agente, guardado só na sua pasta de dados.</p></li>
+      <li class="stat"><span class="stat-value" data-scramble>0</span><p>arquivos de configuração seus alterados. Hooks e plugins valem só para o processo lançado.</p></li>
+      <li class="stat"><span class="stat-value" data-scramble>SHA-256</span><p>conferido, com o tamanho, em cada atualização antes de trocar o binário.</p></li>
+    </ul>
+    <p class="section-lead" data-reveal>Para mostrar o consumo, o orkai lê o token de login de cada agente só em memória e o envia apenas, por HTTPS, ao serviço que o emitiu. Ele nunca é gravado, registrado em log ou renovado pelo orkai.</p>
+  </div>
+</section>
+
+<section class="section" id="instalar" aria-labelledby="instalar-title">
+  <div class="wrap">
+    <div class="chrome" data-reveal><span class="kicker">instalar</span><span class="chrome-num">08</span></div>
+    <h2 class="h2" id="instalar-title" data-split>instale em <span class="pink">um minuto.</span></h2>
+    <div class="install" data-reveal>
+      <div class="install-main">
+        <div class="tabs" role="tablist" aria-label="Sistema operacional" data-tabs>
+          <button type="button" role="tab" id="tab-linux" aria-controls="pane-linux" aria-selected="true" data-os="linux">linux</button>
+          <button type="button" role="tab" id="tab-macos" aria-controls="pane-macos" aria-selected="false" tabindex="-1" data-os="macos">macos</button>
+          <button type="button" role="tab" id="tab-windows" aria-controls="pane-windows" aria-selected="false" tabindex="-1" data-os="windows">windows</button>
+          <button type="button" role="tab" id="tab-source" aria-controls="pane-source" aria-selected="false" tabindex="-1" data-os="source">código-fonte</button>
+        </div>
+        <div class="pane" role="tabpanel" id="pane-linux" aria-labelledby="tab-linux" tabindex="0">
+          <div class="code"><button class="copy" type="button" data-copy>copiar</button><pre><code data-install="linux">target=orkai-x86_64-unknown-linux-musl
+mkdir -p ~/.local/bin
+curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/$target"
+chmod +x ~/.local/bin/orkai</code></pre></div>
+          <p class="pane-note">Se <code>~/.local/bin</code> ainda não estiver no <code>PATH</code>, adicione <code>export PATH="$HOME/.local/bin:$PATH"</code> ao <code>~/.bashrc</code> ou ao <code>~/.zshrc</code>. O binário é estático e roda em qualquer distro.</p>
+        </div>
+        <div class="pane" role="tabpanel" id="pane-macos" aria-labelledby="tab-macos" tabindex="0" hidden>
+          <div class="code"><button class="copy" type="button" data-copy>copiar</button><pre><code data-install="macos">target=orkai-aarch64-apple-darwin
+mkdir -p ~/.local/bin
+curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/$target"
+chmod +x ~/.local/bin/orkai</code></pre></div>
+          <p class="pane-note">Mac com Intel: troque o <code>target</code> por <code>orkai-x86_64-apple-darwin</code>. Se <code>~/.local/bin</code> ainda não estiver no <code>PATH</code>, adicione <code>export PATH="$HOME/.local/bin:$PATH"</code> ao <code>~/.zshrc</code>.</p>
+        </div>
+        <div class="pane" role="tabpanel" id="pane-windows" aria-labelledby="tab-windows" tabindex="0" hidden>
+          <div class="code"><button class="copy" type="button" data-copy>copiar</button><pre><code data-install="windows">$dir = "$env:LOCALAPPDATA\Programs\orkai"
+$url = "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-pc-windows-msvc.exe"
+New-Item -ItemType Directory -Force $dir | Out-Null
+Invoke-WebRequest $url -OutFile "$dir\orkai.exe"
+$path = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($path -notlike "*$dir*") { [Environment]::SetEnvironmentVariable("Path", "$path;$dir", "User") }</code></pre></div>
+          <p class="pane-note">Rode no PowerShell. Depois abra um terminal novo e digite <code>orkai</code> no PowerShell, Bash ou zsh.</p>
+        </div>
+        <div class="pane" role="tabpanel" id="pane-source" aria-labelledby="tab-source" tabindex="0" hidden>
+          <div class="code"><button class="copy" type="button" data-copy>copiar</button><pre><code data-install="source">git clone https://github.com/lucasmarujo/orkai-cli.git
+cd orkai-cli
+cargo install --path .</code></pre></div>
+          <p class="pane-note">Com Rust 1.88+, vai para <code>~/.cargo/bin</code>. Builds locais aparecem como <code>dev</code> e não se auto-atualizam; <code>orkai update</code> converte uma delas em build oficial.</p>
+        </div>
+        <p class="sr-only" role="status" data-copy-status></p>
+        <div class="callout">
+          <span class="kicker-dim">importante</span>
+          <p>Para usar um agente de IA, o programa dele precisa estar no <code>PATH</code>: <code>claude</code>, <code>codex</code>, <code>kilo</code>, <code>opencode</code>, <code>agy</code>, <code>grok</code>, <code>qwen</code> ou <code>kimi</code>. Deixe o <code>orkai</code> numa pasta em que o seu usuário possa escrever: a atualização automática substitui o próprio executável.</p>
+        </div>
+      </div>
+      <aside class="install-side">
+        <h3 class="kicker-dim">downloads diretos</h3>
+        <ul class="downloads">
+          <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-pc-windows-msvc.exe"><span>Windows x64</span><code>orkai-x86_64-pc-windows-msvc.exe</code></a></li>
+          <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-unknown-linux-musl"><span>Linux x64</span><code>orkai-x86_64-unknown-linux-musl</code></a></li>
+          <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-aarch64-apple-darwin"><span>macOS Apple Silicon</span><code>orkai-aarch64-apple-darwin</code></a></li>
+          <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-apple-darwin"><span>macOS Intel</span><code>orkai-x86_64-apple-darwin</code></a></li>
+        </ul>
+        <p class="side-note">Renomeie para <code>orkai</code> (<code>orkai.exe</code> no Windows) e coloque numa pasta do <code>PATH</code>.</p>
+        <h3 class="kicker-dim steps-title">primeiros passos</h3>
+        <ol class="steps">
+          <li>Abra o orkai em qualquer terminal: <code>orkai</code>.</li>
+          <li>Escolha a pasta do projeto com <kbd>ctrl</kbd><kbd>l</kbd>.</li>
+          <li>Escolha quem executa com <kbd>tab</kbd>.</li>
+          <li>Escreva a tarefa e aperte <kbd>enter</kbd>: o agente nasce já trabalhando nela.</li>
+          <li><kbd>enter</kbd> abre o agente numa aba; <kbd>ctrl</kbd><kbd>]</kbd> volta para a visão geral.</li>
+        </ol>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section class="finale" aria-labelledby="finale-title" data-finale>
+  <canvas class="finale-pixels" data-pixels aria-hidden="true"></canvas>
+  <div class="wrap finale-in">
+    <svg class="mascot finale-mascot waving" data-walk viewBox="0 0 14 16" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><g class="m-base"><rect x="2" y="0" width="1" height="1" fill="#9c6636"/><rect x="3" y="0" width="1" height="1" fill="#40c8d2"/><rect x="2" y="1" width="1" height="1" fill="#9c6636"/><rect x="3" y="1" width="2" height="1" fill="#40c8d2"/><rect x="7" y="1" width="3" height="1" fill="#2c3c78"/><rect x="2" y="2" width="1" height="1" fill="#9c6636"/><rect x="3" y="2" width="2" height="1" fill="#40c8d2"/><rect x="6" y="2" width="5" height="1" fill="#2c3c78"/><rect x="2" y="3" width="1" height="1" fill="#9c6636"/><rect x="5" y="3" width="7" height="1" fill="#ececf2"/><rect x="2" y="4" width="1" height="1" fill="#9c6636"/><rect x="6" y="4" width="5" height="1" fill="#f2c08e"/><rect x="2" y="5" width="1" height="1" fill="#9c6636"/><rect x="6" y="5" width="1" height="1" fill="#f2c08e"/><rect x="7" y="5" width="1" height="1" fill="#1c1c22"/><rect x="8" y="5" width="1" height="1" fill="#f2c08e"/><rect x="9" y="5" width="1" height="1" fill="#1c1c22"/><rect x="10" y="5" width="1" height="1" fill="#f2c08e"/><rect x="2" y="6" width="1" height="1" fill="#9c6636"/><rect x="6" y="6" width="5" height="1" fill="#f2c08e"/><rect x="2" y="7" width="1" height="1" fill="#9c6636"/><rect x="6" y="7" width="1" height="1" fill="#f2c08e"/><rect x="7" y="7" width="3" height="1" fill="#aa6a34"/><rect x="10" y="7" width="1" height="1" fill="#f2c08e"/><rect x="2" y="8" width="1" height="1" fill="#9c6636"/><rect x="5" y="8" width="8" height="1" fill="#3856a8"/><rect x="1" y="9" width="1" height="1" fill="#f2c08e"/><rect x="2" y="9" width="1" height="1" fill="#9c6636"/><rect x="3" y="9" width="1" height="1" fill="#f2c08e"/><rect x="4" y="9" width="1" height="1" fill="#3856a8"/><rect x="5" y="9" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="9" width="1" height="1" fill="#3856a8"/><rect x="2" y="10" width="1" height="1" fill="#9c6636"/><rect x="5" y="10" width="8" height="1" fill="#3856a8"/><rect x="2" y="11" width="1" height="1" fill="#9c6636"/><rect x="5" y="11" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="11" width="1" height="1" fill="#f2c08e"/><rect x="2" y="12" width="1" height="1" fill="#9c6636"/><rect x="5" y="12" width="7" height="1" fill="#404060"/><rect x="2" y="13" width="1" height="1" fill="#9c6636"/><rect x="5" y="13" width="3" height="1" fill="#404060"/><rect x="9" y="13" width="3" height="1" fill="#404060"/><rect x="2" y="14" width="1" height="1" fill="#9c6636"/><rect x="5" y="14" width="3" height="1" fill="#404060"/><rect x="9" y="14" width="3" height="1" fill="#404060"/><rect x="2" y="15" width="1" height="1" fill="#9c6636"/><rect x="4" y="15" width="3" height="1" fill="#744626"/><rect x="9" y="15" width="3" height="1" fill="#744626"/></g><g class="m-idle"><rect x="5" y="2" width="1" height="1" fill="#40c8d2"/><rect x="3" y="3" width="1" height="1" fill="#40c8d2"/></g><g class="m-busy"><rect x="4" y="0" width="1" height="1" fill="#40c8d2"/><rect x="5" y="1" width="1" height="1" fill="#40c8d2"/></g></svg>
+    <div class="finale-copy">
+      <h2 class="display finale-title" id="finale-title" data-split>digite <span class="finale-word">orkai.</span></h2>
+      <p class="finale-lead" data-reveal>Todos os seus agentes de IA. Um terminal só.</p>
+      <div class="cta-row" data-reveal>
+        <a class="btn btn-ink btn-lg" href="#instalar">instalar o orkai</a>
+        <a class="btn btn-ink-ghost btn-lg" href="https://github.com/lucasmarujo/orkai-cli">ver no github <span aria-hidden="true">↗</span></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <div class="foot-brand">
+      <a class="brand" href="#topo" aria-label="orkai, voltar ao início">
+        <svg class="mascot brand-mascot" viewBox="0 0 14 16" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><g class="m-base"><rect x="2" y="0" width="1" height="1" fill="#9c6636"/><rect x="3" y="0" width="1" height="1" fill="#40c8d2"/><rect x="2" y="1" width="1" height="1" fill="#9c6636"/><rect x="3" y="1" width="2" height="1" fill="#40c8d2"/><rect x="7" y="1" width="3" height="1" fill="#2c3c78"/><rect x="2" y="2" width="1" height="1" fill="#9c6636"/><rect x="3" y="2" width="2" height="1" fill="#40c8d2"/><rect x="6" y="2" width="5" height="1" fill="#2c3c78"/><rect x="2" y="3" width="1" height="1" fill="#9c6636"/><rect x="5" y="3" width="7" height="1" fill="#ececf2"/><rect x="2" y="4" width="1" height="1" fill="#9c6636"/><rect x="6" y="4" width="5" height="1" fill="#f2c08e"/><rect x="2" y="5" width="1" height="1" fill="#9c6636"/><rect x="6" y="5" width="1" height="1" fill="#f2c08e"/><rect x="7" y="5" width="1" height="1" fill="#1c1c22"/><rect x="8" y="5" width="1" height="1" fill="#f2c08e"/><rect x="9" y="5" width="1" height="1" fill="#1c1c22"/><rect x="10" y="5" width="1" height="1" fill="#f2c08e"/><rect x="2" y="6" width="1" height="1" fill="#9c6636"/><rect x="6" y="6" width="5" height="1" fill="#f2c08e"/><rect x="2" y="7" width="1" height="1" fill="#9c6636"/><rect x="6" y="7" width="1" height="1" fill="#f2c08e"/><rect x="7" y="7" width="3" height="1" fill="#aa6a34"/><rect x="10" y="7" width="1" height="1" fill="#f2c08e"/><rect x="2" y="8" width="1" height="1" fill="#9c6636"/><rect x="5" y="8" width="8" height="1" fill="#3856a8"/><rect x="1" y="9" width="1" height="1" fill="#f2c08e"/><rect x="2" y="9" width="1" height="1" fill="#9c6636"/><rect x="3" y="9" width="1" height="1" fill="#f2c08e"/><rect x="4" y="9" width="1" height="1" fill="#3856a8"/><rect x="5" y="9" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="9" width="1" height="1" fill="#3856a8"/><rect x="2" y="10" width="1" height="1" fill="#9c6636"/><rect x="5" y="10" width="8" height="1" fill="#3856a8"/><rect x="2" y="11" width="1" height="1" fill="#9c6636"/><rect x="5" y="11" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="11" width="1" height="1" fill="#f2c08e"/><rect x="2" y="12" width="1" height="1" fill="#9c6636"/><rect x="5" y="12" width="7" height="1" fill="#404060"/><rect x="2" y="13" width="1" height="1" fill="#9c6636"/><rect x="5" y="13" width="3" height="1" fill="#404060"/><rect x="9" y="13" width="3" height="1" fill="#404060"/><rect x="2" y="14" width="1" height="1" fill="#9c6636"/><rect x="5" y="14" width="3" height="1" fill="#404060"/><rect x="9" y="14" width="3" height="1" fill="#404060"/><rect x="2" y="15" width="1" height="1" fill="#9c6636"/><rect x="4" y="15" width="3" height="1" fill="#744626"/><rect x="9" y="15" width="3" height="1" fill="#744626"/></g><g class="m-idle"><rect x="5" y="2" width="1" height="1" fill="#40c8d2"/><rect x="3" y="3" width="1" height="1" fill="#40c8d2"/></g><g class="m-busy"><rect x="4" y="0" width="1" height="1" fill="#40c8d2"/><rect x="5" y="1" width="1" height="1" fill="#40c8d2"/></g></svg>
+        <span class="wordmark">orkai</span>
+      </a>
+      <p>Orquestrador de terminal para vários agentes de IA em vários projetos. Feito em Rust por <a href="https://marujo.dev/">Lucas Marujo</a>.</p>
+    </div>
+    <nav class="foot-nav" aria-label="Rodapé">
+      <div>
+        <h2 class="kicker-dim">produto</h2>
+        <a href="#recursos">recursos</a>
+        <a href="#agentes">agentes</a>
+        <a href="#video">vídeo</a>
+        <a href="#instalar">instalar</a>
+      </div>
+      <div>
+        <h2 class="kicker-dim">projeto</h2>
+        <a href="https://github.com/lucasmarujo/orkai-cli">github</a>
+        <a href="https://github.com/lucasmarujo/orkai-cli/releases/tag/latest">última build</a>
+        <a href="https://github.com/lucasmarujo/orkai-cli/issues">reportar um problema</a>
+        <a href="https://github.com/lucasmarujo/orkai-cli#readme">documentação</a>
+      </div>
+    </nav>
+  </div>
+  <div class="wrap foot-base"><span>© 2026 Lucas Marujo</span><span class="t-dim">orkai.marujo.dev</span></div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,17 @@
+services:
+  orkai:
+    image: nginx:alpine
+    container_name: orkai-site
+
+    restart: unless-stopped
+
+    volumes:
+      - ./:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

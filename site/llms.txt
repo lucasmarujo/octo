@@ -1,0 +1,27 @@
+# orkai
+
+> Orquestrador de terminal, em Rust, que roda e vigia vários agentes de IA (Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok Build, Qwen Code e Kimi Code) e terminais comuns em vários projetos ao mesmo tempo, organizados em sessões. Binário único, nativo e sem runtime, para Windows, Linux e macOS.
+
+O orkai mostra todos os agentes numa visão geral, agrupados por pasta de projeto, com o estado exato de cada um (trabalhando, esperando você, terminou), o tempo, o tipo, a frase do que cada agente está fazendo e os subagents que o Claude Code e o Codex disparam. O estado vem dos hooks, plugins e protocolos de cada agente, sem depender do texto da tela.
+
+## Destaques
+
+- Avisos quando um agente espera você ou termina: sino, notificação do terminal (OSC 9), título da janela e alt+n para abrir direto o agente; `notify_command` para mandar o aviso ao celular.
+- Uma worktree do git por agente (ctrl+t), na branch `orkai/<nome>`, com `/diff` e `/merge`.
+- Consumo dos planos (janelas de 5 horas, semana, mês ou saldo) dos agentes em que você está logado, com contagem até o reset.
+- Cada agente roda num processo holder próprio: fechar, travar ou atualizar a interface não derruba nenhum agente; depois de um reboot, ctrl+r retoma cada conversa.
+- Skills de cada agente no autocomplete do `/`.
+- Atualização automática conferida por tamanho e SHA-256.
+
+## Segurança
+
+- Holders escutam só em 127.0.0.1, numa porta aleatória, com um token de 256 bits por agente.
+- Tokens de login são lidos só em memória e enviados apenas, por HTTPS, ao serviço que os emitiu.
+- Nenhum arquivo de configuração do usuário é alterado.
+
+## Links
+
+- Site: https://orkai.marujo.dev/
+- Código e documentação: https://github.com/lucasmarujo/orkai-cli
+- Última build: https://github.com/lucasmarujo/orkai-cli/releases/tag/latest
+- Autor: Lucas Marujo (https://marujo.dev/)
