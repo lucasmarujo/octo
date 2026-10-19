@@ -27,6 +27,7 @@ use ratatui::layout::Rect;
 
 use crate::launch::Launcher;
 use crate::notify::{self, Notifier};
+use crate::sound::{Chime, Player};
 use crate::terminal_profile::{self, Switch};
 use app::{App, AppEvent};
 
@@ -158,14 +159,15 @@ fn spawn_ticker(tx: mpsc::Sender<AppEvent>) -> io::Result<()> {
         .map(|_| ())
 }
 
-fn deliver_alerts(app: &mut App, notifier: &Notifier, ring: bool) {
+fn deliver_alerts(app: &mut App, notifier: &Notifier, ring: bool, player: Option<&Player>) {
     let alerts = app.take_alerts();
     if alerts.is_empty() {
         return;
     }
     if ring {
+        let chimed = player.zip(Chime::for_alerts(&alerts)).is_some_and(|(player, chime)| player.play(chime));
         let mut stdout = io::stdout();
-        let _ = stdout.write_all(&notify::terminal_sequence(&alerts)).and_then(|()| stdout.flush());
+        let _ = stdout.write_all(&notify::terminal_sequence(&alerts, !chimed)).and_then(|()| stdout.flush());
     }
     for alert in alerts {
         notifier.send(alert);
@@ -192,6 +194,7 @@ pub fn run(launcher: Launcher) -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
     let notifier = Notifier::start(launcher.config());
     let ring = launcher.config().notify;
+    let player = if launcher.config().notify_sound { Player::new(launcher.store().home()) } else { None };
     let mut profile =
         std::env::current_exe().ok().and_then(|exe| terminal_profile::install(launcher.store().home(), &exe));
     let started = Instant::now();
@@ -212,7 +215,7 @@ pub fn run(launcher: Launcher) -> io::Result<()> {
         drain(&mut app, &rx);
         app.flush_input();
         app.sync_attached_size();
-        deliver_alerts(&mut app, &notifier, ring);
+        deliver_alerts(&mut app, &notifier, ring, player.as_ref());
         switch_profile(&mut profile, started);
         if !app.take_dirty() {
             continue;

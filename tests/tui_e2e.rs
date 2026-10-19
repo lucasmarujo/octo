@@ -327,7 +327,7 @@ fn tui_rings_and_retitles_when_an_agent_finishes_out_of_sight() {
     let (shell, args) = if cfg!(windows) { ("cmd.exe", vec!["/q"]) } else { ("/bin/sh", vec![]) };
     write_json_atomic(
         &fx.inner.home().config_file(),
-        &serde_json::json!({ "shell": shell, "shell_args": args, "claude_command": fake }),
+        &serde_json::json!({ "shell": shell, "shell_args": args, "claude_command": fake, "notify_sound": false }),
     )
     .unwrap();
     let mut tui = start_tui(&fx);

@@ -28,6 +28,7 @@ pub struct Config {
     pub kimi_command: String,
     pub kimi_args: Vec<String>,
     pub notify: bool,
+    pub notify_sound: bool,
     pub notify_command: Option<String>,
     pub notify_args: Vec<String>,
 }
@@ -54,6 +55,7 @@ impl Default for Config {
             kimi_command: "kimi".to_string(),
             kimi_args: Vec::new(),
             notify: true,
+            notify_sound: true,
             notify_command: None,
             notify_args: Vec::new(),
         }
@@ -103,16 +105,19 @@ mod tests {
         assert!(config.kilo_args.is_empty());
         assert!(config.shell.is_none());
         assert!(config.notify);
+        assert!(config.notify_sound);
         assert!(config.notify_command.is_none());
         assert!(config.notify_args.is_empty());
     }
 
     #[test]
     fn notifications_can_be_turned_off_or_sent_to_a_command() {
-        let config: Config =
-            serde_json::from_str(r#"{"notify":false,"notify_command":"ntfy","notify_args":["publish","orkai"]}"#)
-                .unwrap();
+        let config: Config = serde_json::from_str(
+            r#"{"notify":false,"notify_sound":false,"notify_command":"ntfy","notify_args":["publish","orkai"]}"#,
+        )
+        .unwrap();
         assert!(!config.notify);
+        assert!(!config.notify_sound);
         assert_eq!(config.notify_command.as_deref(), Some("ntfy"));
         assert_eq!(config.notify_args, vec!["publish", "orkai"]);
     }

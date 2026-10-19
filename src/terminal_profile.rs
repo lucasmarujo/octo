@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::fsutil::write_atomic;
+use crate::fsutil::write_if_changed;
 use crate::paths::Home;
 use crate::update::BUILD_COMMIT;
 use crate::util::fnv1a64;
@@ -71,17 +71,6 @@ pub fn install(home: &Home, exe: &Path) -> Option<Switch> {
             None
         }
     }
-}
-
-pub fn write_if_changed(path: &Path, data: &[u8]) -> io::Result<bool> {
-    if fs::read(path).is_ok_and(|current| current == data) {
-        return Ok(false);
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    write_atomic(path, data)?;
-    Ok(true)
 }
 
 pub fn fragment(exe: &Path) -> String {

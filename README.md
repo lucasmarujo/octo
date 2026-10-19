@@ -208,8 +208,12 @@ o orkai usa o `notify` para saber quando o turno termina. Os outros agentes est�
 
 Quando um agente que você não está olhando passa a esperar você (`‖`) ou termina (`✔`):
 
-- o terminal toca o sino (no Windows Terminal, a barra de tarefas pisca) e recebe uma notificação de
-  área de trabalho (OSC 9, mostrada pelo iTerm2, WezTerm, Ghostty, kitty e outros);
+- toca o sininho do orkai, em dois tons: descendo quando um agente espera você, subindo quando termina, com o
+  timbre do sino do vídeo de lançamento, sintetizado pelo próprio orkai (no Windows pelo sistema, no macOS pelo
+  `afplay` e no Linux pelo `paplay`, `pw-play` ou `aplay`). Por SSH, ou sem nenhum desses players, o terminal
+  toca o sino padrão (no Windows Terminal, a barra de tarefas pisca);
+- o terminal recebe uma notificação de área de trabalho (OSC 9, mostrada pelo iTerm2, WezTerm, Ghostty, kitty
+  e outros);
 - o rodapé avisa `<agente> is waiting for you · alt+n opens it`;
 - o título da janela mostra quantos estão esperando e quantos terminaram, em todas as sessões
   (`‖2 ✔1 · Orkai`), visível na barra de tarefas mesmo com o orkai em segundo plano.
@@ -443,6 +447,7 @@ A variável `ORKAI_HOME` muda esse local.
   "kimi_command": "kimi",
   "kimi_args": [],
   "notify": true,
+  "notify_sound": true,
   "notify_command": null,
   "notify_args": []
 }
@@ -452,7 +457,8 @@ A variável `ORKAI_HOME` muda esse local.
 Exemplos: `"claude_args": ["--model", "opus"]`, `"opencode_args": ["-m", "opencode/big-pickle"]`. Campos que
 faltam no arquivo usam o padrão, então um `config.json` antigo continua valendo.
 
-`notify: false` desliga o sino e a notificação do terminal. `notify_command` funciona independente dele;
+`notify: false` desliga o sininho, o sino e a notificação do terminal; `notify_sound: false` troca o sininho do
+orkai pelo sino padrão do terminal. `notify_command` funciona independente deles;
 por exemplo, para mandar ao celular pelo [ntfy](https://ntfy.sh):
 
 ```json

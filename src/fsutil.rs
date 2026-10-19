@@ -52,6 +52,17 @@ fn is_transient(err: &io::Error) -> bool {
     matches!(err.kind(), io::ErrorKind::PermissionDenied) || err.raw_os_error() == Some(32)
 }
 
+pub fn write_if_changed(path: &Path, data: &[u8]) -> io::Result<bool> {
+    if fs::read(path).is_ok_and(|current| current == data) {
+        return Ok(false);
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_atomic(path, data)?;
+    Ok(true)
+}
+
 pub fn create_private_file(path: &Path) -> io::Result<File> {
     let mut options = OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -131,6 +142,17 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
             .collect();
         assert!(leftovers.is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn write_if_changed_skips_identical_content_and_creates_folders() {
+        let dir = temp_dir("changed");
+        let path = dir.join("nested").join("file.bin");
+        assert!(write_if_changed(&path, b"one").unwrap());
+        assert!(!write_if_changed(&path, b"one").unwrap());
+        assert!(write_if_changed(&path, b"two").unwrap());
+        assert_eq!(fs::read(&path).unwrap(), b"two");
         fs::remove_dir_all(dir).unwrap();
     }
 

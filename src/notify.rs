@@ -52,13 +52,13 @@ fn printable(text: &str) -> String {
     text.chars().filter(|c| !c.is_control()).collect()
 }
 
-pub fn terminal_sequence(alerts: &[Alert]) -> Vec<u8> {
+pub fn terminal_sequence(alerts: &[Alert], bell: bool) -> Vec<u8> {
     let body = match alerts {
         [] => return Vec::new(),
         [alert] => alert.message(),
         many => format!("{} agents need you", many.len()),
     };
-    let mut out = vec![BELL];
+    let mut out = if bell { vec![BELL] } else { Vec::new() };
     out.extend_from_slice(format!("\x1b]9;{NOTIFICATION_TITLE}: {}\x07", printable(&body)).as_bytes());
     out
 }
@@ -134,13 +134,20 @@ mod tests {
 
     #[test]
     fn terminal_sequence_rings_once_and_sends_one_notification() {
-        assert!(terminal_sequence(&[]).is_empty());
-        let one = terminal_sequence(&[alert("fix-login", AgentState::Paused)]);
+        assert!(terminal_sequence(&[], true).is_empty());
+        let one = terminal_sequence(&[alert("fix-login", AgentState::Paused)], true);
         assert_eq!(one, b"\x07\x1b]9;orkai: fix-login is waiting for you\x07");
-        let many = terminal_sequence(&[alert("a", AgentState::Paused), alert("b", AgentState::Done)]);
+        let many = terminal_sequence(&[alert("a", AgentState::Paused), alert("b", AgentState::Done)], true);
         assert_eq!(many, b"\x07\x1b]9;orkai: 2 agents need you\x07");
-        let hostile = terminal_sequence(&[alert("x\x07\x1b]0;pwned\u{9c}", AgentState::Done)]);
+        let hostile = terminal_sequence(&[alert("x\x07\x1b]0;pwned\u{9c}", AgentState::Done)], true);
         assert_eq!(hostile, b"\x07\x1b]9;orkai: x]0;pwned finished\x07");
+    }
+
+    #[test]
+    fn without_the_bell_only_the_notification_is_sent() {
+        let quiet = terminal_sequence(&[alert("fix-login", AgentState::Done)], false);
+        assert_eq!(quiet, b"\x1b]9;orkai: fix-login finished\x07");
+        assert!(terminal_sequence(&[], false).is_empty());
     }
 
     #[test]

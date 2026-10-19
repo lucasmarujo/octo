@@ -10,6 +10,7 @@ pub mod notify;
 pub mod paths;
 pub mod protocol;
 pub mod skills;
+pub mod sound;
 pub mod store;
 pub mod subagents;
 pub mod termfmt;
