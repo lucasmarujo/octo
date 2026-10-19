@@ -464,6 +464,25 @@ Todo Claude Code iniciado ou retomado pelo orkai abre com Remote Control ligado
 (`--remote-control`), então qualquer sessão pode ser continuada no app do Claude ou em
 claude.ai/code. O Codex não tem um equivalente para a sessão interativa no terminal.
 
+## Ícone nos terminais
+
+Nenhum terminal deixa um programa trocar o ícone de uma aba já aberta, então o orkai usa o que cada terminal
+oferece. Ao abrir o orkai:
+
+- **Windows Terminal**: o perfil `orkai`, com o ícone do marinheiro, aparece no menu `+` (um
+  [fragment](https://learn.microsoft.com/windows/terminal/json-fragment-extensions) em
+  `%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\orkai`). Abra o orkai por ele, ou deixe-o como perfil
+  padrão, e a aba mostra o ícone. O `orkai.exe` também traz o ícone (Explorer, barra de tarefas, Alt+Tab).
+- **iTerm2**: um perfil dinâmico `orkai · <seu perfil>` herda tudo do perfil da aba e só troca o ícone; a aba
+  usa esse perfil enquanto o orkai está aberto e volta ao seu ao sair. Na primeira vez, o ícone aparece depois
+  que o iTerm2 carrega o perfil novo (cerca de um segundo).
+- **Linux**: o atalho `orkai` entra no menu de aplicativos (`~/.local/share/applications/orkai.desktop`); os
+  terminais do Linux não mostram ícone por aba.
+
+São arquivos novos nas pastas que cada terminal reserva para extensões; o `settings.json` do Windows Terminal
+e os seus perfis do iTerm2 não são alterados. Builds locais (`dev`) não criam nada, e
+`ORKAI_NO_TERMINAL_PROFILE=1` desliga.
+
 ## Segurança
 
 - Os holders escutam somente em `127.0.0.1`, numa porta aleatória, e exigem um token de 256
@@ -479,6 +498,8 @@ claude.ai/code. O Codex não tem um equivalente para a sessão interativa no ter
   do orkai em `bin/` e só gravam o tipo do evento (trabalhando, esperando você, terminou) na pasta do agente;
   o conteúdo recebido do agente é descartado na memória. Os arquivos de hook e o plugin ficam na pasta do
   agente e só valem para o processo que o orkai lançou; nenhum arquivo de configuração seu é alterado.
+- O perfil com o ícone (veja [Ícone nos terminais](#ícone-nos-terminais)) só aponta para o executável do orkai e
+  para a imagem do ícone, gravada na pasta de dados.
 
 ## Desenvolvimento
 

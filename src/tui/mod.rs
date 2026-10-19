@@ -27,6 +27,7 @@ use ratatui::layout::Rect;
 
 use crate::launch::Launcher;
 use crate::notify::{self, Notifier};
+use crate::terminal_profile::{self, Switch};
 use app::{App, AppEvent};
 
 const TICK: Duration = Duration::from_millis(120);
@@ -39,6 +40,7 @@ const PUSH_TITLE: &str = "\x1b[22;0t";
 const POP_TITLE: &str = "\x1b[23;0t";
 
 static SAVED_TITLE: OnceLock<Option<String>> = OnceLock::new();
+static SWITCHED_PROFILE: OnceLock<String> = OnceLock::new();
 
 #[cfg(windows)]
 fn current_title() -> Option<String> {
@@ -78,11 +80,27 @@ fn restore_window_title() {
     }
 }
 
+fn switch_profile(pending: &mut Option<Switch>, started: Instant) {
+    let Some(switch) = pending.take_if(|switch| started.elapsed() >= switch.delay) else { return };
+    let mut stdout = io::stdout();
+    let sequence = terminal_profile::set_profile_sequence(&switch.to);
+    if stdout.write_all(sequence.as_bytes()).and_then(|()| stdout.flush()).is_ok() {
+        let _ = SWITCHED_PROFILE.set(switch.back);
+    }
+}
+
+fn restore_profile() {
+    let Some(back) = SWITCHED_PROFILE.get() else { return };
+    let mut stdout = io::stdout();
+    let _ = stdout.write_all(terminal_profile::set_profile_sequence(back).as_bytes()).and_then(|()| stdout.flush());
+}
+
 fn restore_terminal() {
     let _ = disable_raw_mode();
     let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste, LeaveAlternateScreen);
     let _ = execute!(io::stdout(), ratatui::crossterm::cursor::Show);
     restore_window_title();
+    restore_profile();
 }
 
 struct TerminalGuard;
@@ -174,6 +192,9 @@ pub fn run(launcher: Launcher) -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
     let notifier = Notifier::start(launcher.config());
     let ring = launcher.config().notify;
+    let mut profile =
+        std::env::current_exe().ok().and_then(|exe| terminal_profile::install(launcher.store().home(), &exe));
+    let started = Instant::now();
     let (mut terminal, guard) = setup_terminal()?;
     let size = terminal.size()?;
     let mut app = App::new(launcher, tx.clone(), Rect::new(0, 0, size.width, size.height))?;
@@ -192,6 +213,7 @@ pub fn run(launcher: Launcher) -> io::Result<()> {
         app.flush_input();
         app.sync_attached_size();
         deliver_alerts(&mut app, &notifier, ring);
+        switch_profile(&mut profile, started);
         if !app.take_dirty() {
             continue;
         }

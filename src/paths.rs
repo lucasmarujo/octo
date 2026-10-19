@@ -106,6 +106,10 @@ impl Home {
     pub fn config_file(&self) -> PathBuf {
         self.root.join("config.json")
     }
+
+    pub fn icon_file(&self) -> PathBuf {
+        self.root.join("orkai.png")
+    }
 }
 
 pub fn create_private_dir(path: &Path) -> io::Result<()> {
@@ -253,6 +257,7 @@ mod tests {
         assert_eq!(home.agent_file(7), PathBuf::from("/tmp/orkai-test/agents/7/agent.json"));
         assert_eq!(home.runtime_file(7), PathBuf::from("/tmp/orkai-test/agents/7/runtime.json"));
         assert_eq!(home.sessions_file(), PathBuf::from("/tmp/orkai-test/sessions.json"));
+        assert_eq!(home.icon_file(), PathBuf::from("/tmp/orkai-test/orkai.png"));
     }
 
     #[test]

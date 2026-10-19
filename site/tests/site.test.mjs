@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { inflateSync } from 'node:zlib';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REPO = join(ROOT, '..');
@@ -58,6 +59,35 @@ function rasterize(svgGroups, keep) {
 
 function expectedGrid(frame, palette) {
   return frame.map((row) => [...row].map((code) => (code === '.' ? null : palette[code])));
+}
+
+function decodePng(png) {
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  assert.equal(png[24], 8, 'profundidade de 8 bits');
+  assert.equal(png[25], 6, 'RGBA');
+  const chunks = [];
+  for (let at = 8; at < png.length;) {
+    const length = png.readUInt32BE(at);
+    if (png.toString('ascii', at + 4, at + 8) === 'IDAT') chunks.push(png.subarray(at + 8, at + 8 + length));
+    at += length + 12;
+  }
+  const raw = inflateSync(Buffer.concat(chunks));
+  const stride = width * 4;
+  const pixels = Buffer.alloc(height * stride);
+  for (let y = 0; y < height; y += 1) {
+    assert.equal(raw[y * (stride + 1)], 0, 'linhas sem filtro');
+    raw.copy(pixels, y * stride, y * (stride + 1) + 1, (y + 1) * (stride + 1));
+  }
+  return { width, height, pixels };
+}
+
+function icoFrames(ico) {
+  assert.deepEqual([...ico.subarray(0, 4)], [0, 0, 1, 0]);
+  return Array.from({ length: ico.readUInt16LE(4) }, (_, i) => {
+    const entry = 6 + i * 16;
+    return ico.subarray(ico.readUInt32LE(entry + 12), ico.readUInt32LE(entry + 12) + ico.readUInt32LE(entry + 8));
+  });
 }
 
 function readmeTable(heading) {
@@ -162,6 +192,40 @@ test('todo mascote da página é o sprite IDLE/BUSY do src/tui/sprite.rs, pixel 
   });
   const favicon = read('favicon.svg');
   assert.deepEqual(rasterize([[null, 'base', favicon]], ['base']), idle, 'favicon.svg');
+});
+
+test('o ícone do orkai (exe, terminais e site) é o sprite IDLE em cada tamanho', () => {
+  const sprite = readFileSync(join(REPO, 'src/tui/sprite.rs'), 'utf8');
+  const palette = rustPalette(sprite);
+  const idle = rustFrame(sprite, 'IDLE');
+  const ico = readFileSync(join(REPO, 'assets/orkai.ico'));
+  assert.deepEqual(readFileSync(join(ROOT, 'orkai.ico')), ico, 'site/orkai.ico');
+  assert.deepEqual(readFileSync(join(ROOT, 'favicon.ico')), ico, 'site/favicon.ico');
+  const pngs = [...icoFrames(ico), readFileSync(join(REPO, 'assets/orkai.png'))];
+  const sizes = pngs.map((png) => decodePng(png).width);
+  [16, 32, 48, 256].forEach((size) => assert.ok(sizes.includes(size), `falta ${size}px`));
+  for (const png of pngs) {
+    const { width, height, pixels } = decodePng(png);
+    assert.equal(width, height);
+    const scale = height / 16;
+    const offset = (width - 14 * scale) / 2;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const sx = Math.floor((x - offset) / scale);
+        const code = sx >= 0 && sx < 14 ? idle[Math.floor(y / scale)][sx] : '.';
+        const at = (y * width + x) * 4;
+        const actual = pixels[at + 3] === 0 ? null : hex(pixels[at], pixels[at + 1], pixels[at + 2]);
+        assert.equal(actual, code === '.' ? null : palette[code], `${width}px, pixel ${x},${y}`);
+      }
+    }
+  }
+});
+
+test('a URL do ícone do perfil do Windows Terminal existe no site com o mesmo nome de arquivo', () => {
+  const source = readFileSync(join(REPO, 'src/terminal_profile.rs'), 'utf8');
+  const url = source.match(/pub const ICON_URL: &str = "([^"]+)";/)[1];
+  assert.ok(url.startsWith(SITE), url);
+  assert.ok(existsSync(localPath(url)), url);
 });
 
 test('a paleta do CSS é a mesma do src/tui/theme.rs', () => {
