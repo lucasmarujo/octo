@@ -23,6 +23,7 @@ use crate::skills;
 use crate::subagents::{Parent, Subagent, SubagentWatcher};
 use crate::tui::complete::{PathCompleter, SkillCatalog, complete_command, where_argument};
 use crate::tui::format::{display_path, project_label, slugify};
+use crate::tui::history::TaskHistory;
 use crate::tui::keys;
 use crate::tui::line::LineInput;
 use crate::tui::render;
@@ -292,6 +293,7 @@ pub struct App {
     pub usage: BTreeMap<AgentKind, Usage>,
     pub worktree: bool,
     pub diff: Option<DiffPane>,
+    history: TaskHistory,
     dirty: bool,
     next_generation: u64,
     last_rescan: Instant,
@@ -355,6 +357,7 @@ impl App {
             usage: BTreeMap::new(),
             worktree: ui.worktree,
             diff: None,
+            history: TaskHistory::default(),
             dirty: true,
             next_generation: 1,
             last_rescan: Instant::now(),
@@ -1780,6 +1783,8 @@ impl App {
                 }
             }
             KeyCode::Char(keys::NEXT_WAITING_KEY) if alt && !ctrl => self.open_next_waiting(),
+            KeyCode::Up if ctrl && !alt => self.recall_older(),
+            KeyCode::Down if ctrl && !alt => self.recall_newer(),
             KeyCode::Up if alt => self.cycle_session(-1),
             KeyCode::Down if alt => self.cycle_session(1),
             KeyCode::Up => self.move_selection(-1),
@@ -1796,6 +1801,23 @@ impl App {
             KeyCode::Enter => self.submit(),
             _ => edit_line(&mut self.task, &key, ctrl),
         }
+    }
+
+    fn recall_older(&mut self) {
+        if let Some(text) = self.history.older(&self.task.text()) {
+            self.replace_task(&text);
+        }
+    }
+
+    fn recall_newer(&mut self) {
+        if let Some(text) = self.history.newer() {
+            self.replace_task(&text);
+        }
+    }
+
+    fn replace_task(&mut self, text: &str) {
+        self.task.clear();
+        self.task.insert_multiline(text);
     }
 
     fn begin_rename(&mut self) {
@@ -1822,10 +1844,14 @@ impl App {
         if let Some(command) = text.strip_prefix(SHELL_PREFIX) {
             match command.trim() {
                 "" => self.set_notice(Tone::Error, "type a command after ! to run it in a new terminal"),
-                command => self.launch_task(AgentKind::Terminal, command.to_string()),
+                command => {
+                    self.history.record(&text);
+                    self.launch_task(AgentKind::Terminal, command.to_string());
+                }
             }
             return;
         }
+        self.history.record(&text);
         self.launch_task(self.who, text);
     }
 

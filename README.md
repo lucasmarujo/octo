@@ -264,6 +264,7 @@ continua na tela com `unavailable`.
 | digitar + `enter` | inicia um agente com a tarefa digitada |
 | `!comando` + `enter` | roda o comando num terminal novo, sem mudar o `who` (ex.: `!npm run dev`) |
 | `shift+enter` (ou `alt+enter`) | quebra de linha na tarefa, sem enviar; colar um texto com várias linhas também mantém as quebras |
+| `ctrl+↑` (e `ctrl+↓`) | recupera as tarefas que você já mandou nesta sessão; o histórico é esquecido quando o orkai fecha |
 | `tab` / `shift+tab` | escolhe quem executa entre os agentes instalados e o terminal; `/who <nome>` escolhe qualquer um |
 | `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja [abaixo](#escolhendo-a-pasta-where)); clicar no nome de um projeto também |
 | `ctrl+t` | liga/desliga a worktree própria para os próximos agentes (veja [abaixo](#uma-worktree-por-agente-ctrlt)) |

@@ -1,6 +1,7 @@
 pub mod app;
 pub mod complete;
 pub mod format;
+pub mod history;
 pub mod keys;
 pub mod line;
 pub mod render;

@@ -985,6 +985,7 @@ fn draw_confirm(app: &App, confirm: &Confirm, screen: Rect, buf: &mut Buffer) {
 const HELP: &[(&str, &str)] = &[
     ("type + enter", "start an agent with that task"),
     ("shift+enter", "new line in the task (alt+enter also works)"),
+    ("ctrl+↑ · ctrl+↓", "recall the tasks you sent in this session"),
     ("tab / shift+tab", "who runs it: an installed agent or terminal"),
     ("!command", "run a shell command in a new terminal"),
     ("/where · ctrl+l", "folder for this session: type, tab enters or cycles"),

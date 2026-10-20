@@ -284,6 +284,39 @@ fn tui_launches_agent_opens_it_and_agent_survives_restart() {
     again.wait_for_exit();
 }
 
+#[test]
+fn ctrl_up_recalls_the_tasks_sent_in_this_session() {
+    let fx = fixture();
+    let mut tui = start_tui(&fx);
+    tui.wait_for("who claude");
+    tui.send(b"\x1b[Z");
+    tui.wait_for("who terminal");
+
+    tui.type_text("echo orkai-recall");
+    tui.send(b"\r");
+    wait_until("the first agent", || fx.inner.list_agents().unwrap().len() == 1);
+
+    tui.send(b"\x1b[1;5A");
+    tui.send(b"\r");
+    wait_until("the second agent", || fx.inner.list_agents().unwrap().len() == 2);
+    let agents = fx.inner.list_agents().unwrap();
+    assert_eq!(agents[0].task, "echo orkai-recall");
+    assert_eq!(agents[1].task, "echo orkai-recall");
+
+    tui.send(b"\x03");
+    tui.wait_for_exit();
+
+    let mut again = start_tui(&fx);
+    again.wait_for("write a task");
+    again.send(b"\x1b[1;5A");
+    again.send(b"\r");
+    std::thread::sleep(Duration::from_millis(1000));
+    assert_eq!(fx.inner.list_agents().unwrap().len(), 2, "a fresh orkai must not recall the previous tasks");
+    again.send(b"\x1d");
+    again.send(b"\x03");
+    again.wait_for_exit();
+}
+
 fn fake_agent(dir: &Path) -> PathBuf {
     if cfg!(windows) {
         let script = dir.join("fake-claude.cmd");
