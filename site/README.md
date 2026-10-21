@@ -14,6 +14,7 @@ node --test
 
 Os testes comparam a página com a fonte da verdade do repositório: o sprite e a paleta da TUI, a tabela de
 agentes, os comandos de instalação e os binários do `README.md`. Ao mudar algum deles, atualize a página junto.
+A página é em inglês: a tabela de agentes é a do README traduzida pelo `README_AGENTS_EN` de `tests/site.test.mjs`.
 
 ## Deploy
 

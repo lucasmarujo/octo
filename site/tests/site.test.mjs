@@ -19,6 +19,20 @@ const size = (file) => statSync(join(ROOT, file)).size;
 const localPath = (url) => join(ROOT, new URL(url, SITE).pathname);
 const decode = (text) => text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
 const stripTags = (text) => decode(text.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+const README_AGENTS_EN = {
+  'plugin de eventos': 'event plugin',
+  '5h e semana': '5h and weekly',
+  'saldo (funds) e Kilo Pass': 'balance (funds) and Kilo Pass',
+  'OpenCode Go (5h e semana)': 'OpenCode Go (5h and weekly)',
+  'Antigravity CLI (sucessor do Gemini CLI)': 'Antigravity CLI (successor to Gemini CLI)',
+  'título da janela': 'window title',
+  'semana ou mês': 'weekly or monthly',
+  'sem API de consumo': 'no usage API',
+  tela: 'screen',
+  '5h, semana ou mês': '5h, weekly or monthly',
+  'atividade da saída': 'output activity',
+  'reexecuta o comando': 'reruns the command',
+};
 
 function meta(attr, key) {
   const match = head.match(new RegExp(`<meta ${attr}="${key}" content="([^"]*)">`));
@@ -175,7 +189,18 @@ test('sitemap e robots apontam para o domínio e batem com o dateModified', () =
 test('um único H1, com o texto no HTML estático, sem depender de JavaScript', () => {
   const h1s = html.match(/<h1[\s\S]*?<\/h1>/g);
   assert.equal(h1s.length, 1);
-  assert.equal(stripTags(h1s[0]), 'todos os seus agentes. um terminal só.');
+  assert.equal(stripTags(h1s[0]), 'all your agents. one terminal.');
+});
+
+test('a página, os metadados e os textos do app.js estão em inglês', () => {
+  assert.match(html, /<html lang="en">/);
+  assert.equal(meta('property', 'og:locale'), 'en_US');
+  jsonLd().filter((node) => node.inLanguage).forEach((node) => assert.equal(node.inLanguage, 'en', node['@id']));
+  const attributes = [...html.matchAll(/\s(?:alt|aria-label|content|data-label)="([^"]*)"/g)].map((m) => m[1]);
+  const strings = [...app.matchAll(/'([^'\n]*)'/g)].map((m) => m[1]);
+  const text = [stripTags(body), head.match(/<title>([^<]+)<\/title>/)[1], JSON.stringify(jsonLd()), ...attributes, ...strings].join('\n');
+  assert.doesNotMatch(text, /[áàâãéêíóôõúç]/i);
+  assert.doesNotMatch(text, /\b(?:para|uma|seus|seu|sua|agentes|quem|sem|todos|voce|projetos|tarefa)\b/i);
 });
 
 test('todo mascote da página é o sprite IDLE/BUSY do src/tui/sprite.rs, pixel a pixel', () => {
@@ -243,8 +268,8 @@ test('a paleta do CSS é a mesma do src/tui/theme.rs', () => {
   project.forEach((color, i) => assert.match(css, new RegExp(`--p${i}: ${color};`), `--p${i}`));
 });
 
-test('a tabela de agentes é idêntica à do README', () => {
-  const expected = readmeTable('## Agentes suportados');
+test('a tabela de agentes é a do README, traduzida para o inglês', () => {
+  const expected = readmeTable('## Agentes suportados').map((row) => row.map((cell) => README_AGENTS_EN[cell] ?? cell));
   const tbody = html.match(/<table class="agents-table"[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)[1];
   const actual = [...tbody.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(([, row]) => [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(([, cell]) => stripTags(cell)));
   assert.deepEqual(actual, expected);

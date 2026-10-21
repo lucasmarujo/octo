@@ -771,10 +771,10 @@ function mountArch(root) {
       await sleep(3_200);
       if (!visible || document.hidden) continue;
       root.classList.add('is-closed');
-      setText(label, 'fechado · os agentes seguem');
+      setText(label, 'closed · agents keep running');
       await sleep(2_400);
       root.classList.remove('is-closed');
-      setText(label, 'reconectado em todos');
+      setText(label, 'reconnected to all');
       await sleep(1_600);
       setText(label, original);
     }
@@ -898,19 +898,19 @@ function mountCopy() {
       const code = button.parentElement.querySelector('code');
       try {
         await navigator.clipboard.writeText(code.textContent);
-        setText(button, 'copiado');
-        setText(status, 'Comando copiado para a área de transferência.');
+        setText(button, 'copied');
+        setText(status, 'Command copied to the clipboard.');
       } catch {
         const range = document.createRange();
         range.selectNodeContents(code);
         getSelection().removeAllRanges();
         getSelection().addRange(range);
-        setText(button, 'selecionado');
-        setText(status, 'Comando selecionado. Copie com ctrl+c.');
+        setText(button, 'selected');
+        setText(status, 'Command selected. Copy it with ctrl+c.');
       }
       button.classList.add('is-done');
       setTimeout(() => {
-        setText(button, 'copiar');
+        setText(button, 'copy');
         button.classList.remove('is-done');
       }, 1_800);
     });

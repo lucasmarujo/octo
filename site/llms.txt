@@ -1,27 +1,27 @@
 # orkai
 
-> Orquestrador de terminal, em Rust, que roda e vigia vários agentes de IA (Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok Build, Qwen Code e Kimi Code) e terminais comuns em vários projetos ao mesmo tempo, organizados em sessões. Binário único, nativo e sem runtime, para Windows, Linux e macOS.
+> Terminal orchestrator, written in Rust, that runs and monitors multiple AI coding agents (Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok Build, Qwen Code and Kimi Code) and plain terminals across multiple projects at once, organized into sessions. A single native binary with no runtime, for Windows, Linux and macOS.
 
-O orkai mostra todos os agentes numa visão geral, agrupados por pasta de projeto, com o estado exato de cada um (trabalhando, esperando você, terminou), o tempo, o tipo, a frase do que cada agente está fazendo e os subagents que o Claude Code e o Codex disparam. O estado vem dos hooks, plugins e protocolos de cada agente, sem depender do texto da tela.
+orkai shows every agent in one overview, grouped by project folder, with each one's exact status (working, waiting for you, done), time, type, a line saying what the agent is doing and the subagents that Claude Code and Codex spawn. The status comes from each agent's hooks, plugins and protocols, without relying on screen text.
 
-## Destaques
+## Highlights
 
-- Avisos quando um agente espera você ou termina: sino, notificação do terminal (OSC 9), título da janela e alt+n para abrir direto o agente; `notify_command` para mandar o aviso ao celular.
-- Uma worktree do git por agente (ctrl+t), na branch `orkai/<nome>`, com `/diff` e `/merge`.
-- Consumo dos planos (janelas de 5 horas, semana, mês ou saldo) dos agentes em que você está logado, com contagem até o reset.
-- Cada agente roda num processo holder próprio: fechar, travar ou atualizar a interface não derruba nenhum agente; depois de um reboot, ctrl+r retoma cada conversa.
-- Skills de cada agente no autocomplete do `/`.
-- Atualização automática conferida por tamanho e SHA-256.
+- Alerts when an agent is waiting for you or finishes: bell, terminal notification (OSC 9), window title and alt+n to jump straight to the agent; `notify_command` to send the alert to your phone.
+- One git worktree per agent (ctrl+t), on the `orkai/<name>` branch, with `/diff` and `/merge`.
+- Plan usage (5-hour, weekly and monthly windows, or balance) for the agents you're logged into, with a countdown to the reset.
+- Each agent runs in its own holder process: closing, crashing or updating the interface takes down no agent; after a reboot, ctrl+r resumes every conversation.
+- Each agent's skills in the `/` autocomplete.
+- Auto-update verified by size and SHA-256.
 
-## Segurança
+## Security
 
-- Holders escutam só em 127.0.0.1, numa porta aleatória, com um token de 256 bits por agente.
-- Tokens de login são lidos só em memória e enviados apenas, por HTTPS, ao serviço que os emitiu.
-- Nenhum arquivo de configuração do usuário é alterado.
+- Holders listen on 127.0.0.1 only, on a random port, with a 256-bit token per agent.
+- Login tokens are read in memory only and sent, over HTTPS, solely to the service that issued them.
+- No user config file is ever changed.
 
 ## Links
 
 - Site: https://orkai.marujo.dev/
-- Código e documentação: https://github.com/lucasmarujo/orkai-cli
-- Última build: https://github.com/lucasmarujo/orkai-cli/releases/tag/latest
-- Autor: Lucas Marujo (https://marujo.dev/)
+- Code and documentation: https://github.com/lucasmarujo/orkai-cli
+- Latest build: https://github.com/lucasmarujo/orkai-cli/releases/tag/latest
+- Author: Lucas Marujo (https://marujo.dev/)
