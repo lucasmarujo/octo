@@ -28,6 +28,9 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test
+      - name: Test the Windows installer
+        if: matrix.os == 'windows-latest'
+        run: cargo test --test installer_e2e -- --ignored
 
   build:
     name: build ${{ matrix.target }}
@@ -57,6 +60,10 @@ jobs:
     env:
       ORKAI_BUILD_COMMIT: ${{ github.sha }}
       RUSTFLAGS: ${{ matrix.rustflags }}
+      SIGN: ${{ matrix.os == 'windows-latest' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      SIGNPATH_PROJECT_SLUG: orkai-cli
+      SIGNPATH_POLICY_SLUG: release-signing
+      SIGNPATH_TIMEOUT_SECONDS: 3600
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -70,11 +77,84 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Read the version
+        id: version
+        if: env.SIGN == 'true'
+        shell: bash
+        run: echo "version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - name: Upload the binary for signing
+        id: unsigned-binary
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signing-orkai-exe
+          path: target/${{ matrix.target }}/release/orkai.exe
+          if-no-files-found: error
+      - name: Sign the binary
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: orkai-exe
+          github-artifact-id: ${{ steps.unsigned-binary.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: ${{ env.SIGNPATH_TIMEOUT_SECONDS }}
+          output-artifact-directory: target/signed/binary
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+      - name: Use the signed binary
+        if: env.SIGN == 'true'
+        shell: bash
+        run: mv -f target/signed/binary/orkai.exe "target/${{ matrix.target }}/release/orkai.exe"
+      - name: Build the installer
+        if: matrix.os == 'windows-latest'
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DBinary=$PWD\target\${{ matrix.target }}\release\orkai.exe" installer\orkai.iss
+      - name: Upload the installer for signing
+        id: unsigned-installer
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signing-orkai-setup
+          path: target/installer/orkai-setup.exe
+          if-no-files-found: error
+      - name: Sign the installer
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: orkai-setup
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion-timeout-in-seconds: ${{ env.SIGNPATH_TIMEOUT_SECONDS }}
+          output-artifact-directory: target/signed/installer
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+      - name: Use the signed installer
+        if: env.SIGN == 'true'
+        shell: bash
+        run: mv -f target/signed/installer/orkai-setup.exe target/installer/orkai-setup.exe
+      - name: Check the signatures
+        if: env.SIGN == 'true'
+        run: |
+          foreach ($file in "target\${{ matrix.target }}\release\orkai.exe", "target\installer\orkai-setup.exe") {
+            $signature = Get-AuthenticodeSignature $file
+            if ($signature.Status -ne 'Valid') { throw "$file is not signed: $($signature.Status) $($signature.StatusMessage)" }
+            "$file is signed by $($signature.SignerCertificate.Subject)"
+          }
+      - name: Warn that the Windows build is unsigned
+        if: matrix.os == 'windows-latest' && env.SIGN != 'true'
+        run: echo "::warning::SIGNPATH_ORGANIZATION_ID is not set, so orkai.exe and orkai-setup.exe are published unsigned"
       - name: Stage
         shell: bash
         run: |
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/orkai${{ matrix.ext }}" "dist/orkai-${{ matrix.target }}${{ matrix.ext }}"
+          cp "target/${{ matrix.target }}/release/orkai${{ matrix.ext }}" "dist/orkai-${{ matrix.target }}"
+          if [ "${{ matrix.os }}" = windows-latest ]; then cp target/installer/orkai-setup.exe dist/; fi
       - uses: actions/upload-artifact@v4
         with:
           name: orkai-${{ matrix.target }}
@@ -108,6 +188,7 @@ jobs:
         if: steps.head.outputs.publish == 'true'
         with:
           path: dist
+          pattern: orkai-*
           merge-multiple: true
       - name: Write manifest
         if: steps.head.outputs.publish == 'true'
@@ -116,11 +197,12 @@ jobs:
           python3 - <<'EOF'
           import datetime, hashlib, json, os, pathlib
           dist = pathlib.Path("dist")
+          installer = "orkai-setup.exe"
           assets = {}
           for path in sorted(dist.iterdir()):
-              if not path.name.startswith("orkai-"):
+              if not path.name.startswith("orkai-") or path.name == installer:
                   continue
-              target = path.name[len("orkai-"):].removesuffix(".exe")
+              target = path.name[len("orkai-"):]
               data = path.read_bytes()
               assets[target] = {"name": path.name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
           manifest = {
@@ -141,5 +223,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "orkai latest (${GITHUB_SHA::7})" \
-            --notes "Continuous build of main at $GITHUB_SHA: $subject" \
+            --notes "Continuous build of main at $GITHUB_SHA: $subject
+
+          On Windows, run orkai-setup.exe. Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy" \
             --latest

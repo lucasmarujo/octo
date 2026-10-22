@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Terminal orchestrator for multiple AI coding agents across many projects"
+license = "MIT"
 repository = "https://github.com/lucasmarujo/orkai-cli"
 readme = "README.md"
 keywords = ["tui", "agents", "claude", "codex", "terminal"]

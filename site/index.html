@@ -493,13 +493,10 @@ chmod +x ~/.local/bin/orkai</code></pre></div>
           <p class="pane-note">Intel Mac: change the <code>target</code> to <code>orkai-x86_64-apple-darwin</code>. If <code>~/.local/bin</code> isn't on your <code>PATH</code> yet, add <code>export PATH="$HOME/.local/bin:$PATH"</code> to your <code>~/.zshrc</code>.</p>
         </div>
         <div class="pane" role="tabpanel" id="pane-windows" aria-labelledby="tab-windows" tabindex="0" hidden>
-          <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="windows">$dir = "$env:LOCALAPPDATA\Programs\orkai"
-$url = "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-pc-windows-msvc.exe"
-New-Item -ItemType Directory -Force $dir | Out-Null
-Invoke-WebRequest $url -OutFile "$dir\orkai.exe"
-$path = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($path -notlike "*$dir*") { [Environment]::SetEnvironmentVariable("Path", "$path;$dir", "User") }</code></pre></div>
-          <p class="pane-note">Run it in PowerShell. Then open a new terminal and type <code>orkai</code> in PowerShell, Bash or zsh.</p>
+          <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="windows">$setup = "$env:TEMP\orkai-setup.exe"
+Invoke-WebRequest "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-setup.exe" -OutFile $setup
+Start-Process $setup -Wait</code></pre></div>
+          <p class="pane-note">Run it in PowerShell, or just download and run <code>orkai-setup.exe</code>. It installs orkai for your user, without admin rights, and offers to add it to your <code>PATH</code>. Then open a new terminal and type <code>orkai</code> in PowerShell, Bash or zsh.</p>
         </div>
         <div class="pane" role="tabpanel" id="pane-source" aria-labelledby="tab-source" tabindex="0" hidden>
           <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="source">git clone https://github.com/lucasmarujo/orkai-cli.git
@@ -516,12 +513,12 @@ cargo install --path .</code></pre></div>
       <aside class="install-side">
         <h3 class="kicker-dim">direct downloads</h3>
         <ul class="downloads">
-          <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-pc-windows-msvc.exe"><span>Windows x64</span><code>orkai-x86_64-pc-windows-msvc.exe</code></a></li>
+          <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-setup.exe"><span>Windows x64 installer</span><code>orkai-setup.exe</code></a></li>
           <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-unknown-linux-musl"><span>Linux x64</span><code>orkai-x86_64-unknown-linux-musl</code></a></li>
           <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-aarch64-apple-darwin"><span>macOS Apple Silicon</span><code>orkai-aarch64-apple-darwin</code></a></li>
           <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-apple-darwin"><span>macOS Intel</span><code>orkai-x86_64-apple-darwin</code></a></li>
         </ul>
-        <p class="side-note">Rename it to <code>orkai</code> (<code>orkai.exe</code> on Windows) and put it in a folder on your <code>PATH</code>.</p>
+        <p class="side-note">On Windows, run the installer. On Linux and macOS, rename the file to <code>orkai</code> and put it in a folder on your <code>PATH</code>.</p>
         <h3 class="kicker-dim steps-title">getting started</h3>
         <ol class="steps">
           <li>Open orkai in any terminal: <code>orkai</code>.</li>
@@ -575,6 +572,7 @@ cargo install --path .</code></pre></div>
         <a href="https://github.com/lucasmarujo/orkai-cli/releases/tag/latest">latest build</a>
         <a href="https://github.com/lucasmarujo/orkai-cli/issues">report an issue</a>
         <a href="https://github.com/lucasmarujo/orkai-cli#readme">documentation</a>
+        <a href="https://github.com/lucasmarujo/orkai-cli#code-signing-policy">code signing policy</a>
       </div>
     </nav>
   </div>

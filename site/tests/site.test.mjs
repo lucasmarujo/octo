@@ -273,7 +273,7 @@ test('os comandos de instalação são os mesmos do README', () => {
   const unix = readmeBlock('**Linux and macOS**');
   assert.equal(installBlock('linux'), unix);
   assert.equal(installBlock('macos'), unix.replace('orkai-x86_64-unknown-linux-musl', 'orkai-aarch64-apple-darwin'));
-  assert.equal(installBlock('windows'), readmeBlock('**Windows** (PowerShell)'));
+  assert.equal(installBlock('windows'), readmeBlock('**Windows**'));
   assert.equal(installBlock('source'), readmeBlock('**From source**'));
 });
 
@@ -281,6 +281,15 @@ test('os downloads diretos são os binários da tabela de plataformas do README'
   const files = readmeTable('| Platform | File |').map(([, file]) => file);
   const links = [...html.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/download\/latest\/([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual([...links].sort(), [...files].sort());
+});
+
+test('a página e os dois READMEs mostram a code signing policy da SignPath', () => {
+  const attribution = 'Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by\n[SignPath Foundation](https://signpath.org).';
+  for (const source of [readme, readmePtBr]) {
+    assert.ok(source.includes(`## Code signing policy\n\n${attribution}`), 'seção Code signing policy com a atribuição da SignPath');
+  }
+  const footer = html.match(/<footer[\s\S]*?<\/footer>/)[0];
+  assert.match(footer, /<a href="https:\/\/github\.com\/lucasmarujo\/orkai-cli#code-signing-policy">code signing policy<\/a>/);
 });
 
 test('o README é em inglês e aponta para o README.pt-BR.md, que aponta de volta', () => {

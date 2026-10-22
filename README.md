@@ -102,13 +102,13 @@ https://github.com/user-attachments/assets/285d782a-42e9-4f08-b1c7-c46d4c763a8b
 
 ## Installation
 
-Download the binary for your platform from the
+On Windows, run the installer. On Linux and macOS, download the binary for your platform from the
 [`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest) release, rename it to
-`orkai` (`orkai.exe` on Windows) and put it in a folder on your `PATH`:
+`orkai` and put it in a folder on your `PATH`:
 
 | Platform | File |
 | --- | --- |
-| Windows x64 | `orkai-x86_64-pc-windows-msvc.exe` |
+| Windows x64 (installer) | `orkai-setup.exe` |
 | Linux x64 (static, any distro) | `orkai-x86_64-unknown-linux-musl` |
 | macOS Apple Silicon | `orkai-aarch64-apple-darwin` |
 | macOS Intel | `orkai-x86_64-apple-darwin` |
@@ -125,16 +125,21 @@ chmod +x ~/.local/bin/orkai
 If `~/.local/bin` isn't on your `PATH` yet, add `export PATH="$HOME/.local/bin:$PATH"` to
 `~/.bashrc` or `~/.zshrc`.
 
-**Windows** (PowerShell):
+**Windows**: download and run
+[`orkai-setup.exe`](https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-setup.exe). It
+installs orkai for your user in `%LOCALAPPDATA%\Programs\orkai`, without admin rights, and offers to add it to
+your `PATH` so `orkai` works in any terminal. Running it again upgrades orkai in place, even while it's open,
+and Settings › Apps uninstalls it. Or, in PowerShell:
 
 ```powershell
-$dir = "$env:LOCALAPPDATA\Programs\orkai"
-$url = "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-pc-windows-msvc.exe"
-New-Item -ItemType Directory -Force $dir | Out-Null
-Invoke-WebRequest $url -OutFile "$dir\orkai.exe"
-$path = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($path -notlike "*$dir*") { [Environment]::SetEnvironmentVariable("Path", "$path;$dir", "User") }
+$setup = "$env:TEMP\orkai-setup.exe"
+Invoke-WebRequest "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-setup.exe" -OutFile $setup
+Start-Process $setup -Wait
 ```
+
+For an unattended install, pass `/VERYSILENT` to the installer (`/MERGETASKS=!addtopath` leaves the `PATH`
+alone). The release also carries `orkai-x86_64-pc-windows-msvc`, the bare binary that
+[auto-update](#auto-update) downloads; rename it to `orkai.exe` to use orkai without installing it.
 
 Open a new terminal and type `orkai` in PowerShell, Bash or zsh.
 
@@ -610,6 +615,28 @@ and your iTerm2 profiles aren't changed. Local builds (`dev`) don't create anyth
   secret (see [orkai on your phone](#orkai-on-your-phone-pwa)). The tunnel never gets the secret, which
   travels in the URL fragment, and only carries AES-256-GCM frames with a counter nonce.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+`orkai.exe` and `orkai-setup.exe` are signed only when the [CI](.github/workflows/ci.yml) builds them from
+this repository, and every signing request is approved by hand.
+
+- Committers and reviewers: [Lucas Marujo](https://github.com/lucasmarujo)
+- Approvers: [Lucas Marujo](https://github.com/lucasmarujo)
+
+**Privacy.** orkai has no telemetry and sends nothing about you or your projects. It only uses the network
+for:
+
+- updates: each time it opens, it reads the `manifest.json` of this repository's `latest` release on GitHub
+  and downloads the new build when there is one (`ORKAI_NO_UPDATE=1` turns it off, see
+  [Auto-update](#auto-update));
+- plan usage: each agent's login token goes only to the service that issued it (see Security, above);
+- the orkai PWA, only after you turn it on: the Cloudflare quick tunnel, with `cloudflared` downloaded from
+  Cloudflare's GitHub release, or `tailscale serve`;
+- the Windows Terminal profile, whose icon Windows Terminal loads from `https://orkai.marujo.dev/orkai.ico`.
+
 ## Development
 
 ```sh
@@ -620,6 +647,12 @@ cargo fmt --check
 
 CI runs all three on Windows, Linux and macOS on every push to `main` and on every pull request; every push to
 `main` that passes becomes the [`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest) release.
+The Windows installer is built from [`installer/orkai.iss`](installer/orkai.iss) (see
+[`installer/README.md`](installer/README.md)).
+
+## License
+
+[MIT](LICENSE).
 
 ---
 
