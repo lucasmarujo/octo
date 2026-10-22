@@ -35,6 +35,8 @@ const KILO_CONFIG_CONTENT: &str = "KILO_CONFIG_CONTENT";
 const OPENCODE_PURE: &str = "OPENCODE_PURE";
 const KILO_PURE: &str = "KILO_PURE";
 const PURE_ON: &str = "1";
+const KILO_NO_DAEMON: &str = "KILO_NO_DAEMON";
+const NO_DAEMON_ON: &str = "1";
 const PROMPT_OPTION: &str = "--prompt";
 const AGY_STATUS_ENV: &str = "AGY_CLI_OSC7501";
 const AGY_STATUS_ON: &str = "on";
@@ -541,6 +543,31 @@ fn resume_args(kind: AgentKind, session_id: &str) -> Vec<String> {
     }
 }
 
+fn bypass_flag(kind: AgentKind) -> Option<&'static str> {
+    match kind {
+        AgentKind::Claude | AgentKind::Antigravity => Some("--dangerously-skip-permissions"),
+        AgentKind::Codex => Some("--dangerously-bypass-approvals-and-sandbox"),
+        AgentKind::Kilo | AgentKind::Opencode | AgentKind::Kimi => Some("--auto"),
+        AgentKind::Grok => Some("--always-approve"),
+        AgentKind::Qwen => Some("--yolo"),
+        AgentKind::Terminal => None,
+    }
+}
+
+fn permission_options(kind: AgentKind) -> &'static [&'static str] {
+    match kind {
+        AgentKind::Claude | AgentKind::Antigravity => &["--dangerously-skip-permissions"],
+        AgentKind::Codex => {
+            &["--dangerously-bypass-approvals-and-sandbox", "--yolo", "--ask-for-approval", "-a", "--approve-for-me"]
+        }
+        AgentKind::Kilo | AgentKind::Opencode => &["--auto", "--yolo", "--dangerously-skip-permissions"],
+        AgentKind::Grok => &["--always-approve", "--yolo", "--dangerously-skip-permissions"],
+        AgentKind::Qwen => &["--yolo", "-y", "--approval-mode"],
+        AgentKind::Kimi => &["--auto", "--yolo", "-y", "--yes", "--auto-approve"],
+        AgentKind::Terminal => &[],
+    }
+}
+
 fn agent_command(config: &Config, kind: AgentKind) -> (String, Vec<String>) {
     config.agent(kind).map(|(command, args)| (command.to_string(), args.to_vec())).unwrap_or_default()
 }
@@ -558,7 +585,7 @@ pub fn build_spec(
     homes: &Homes,
     hooks: Option<&HookSetup>,
 ) -> io::Result<LaunchSpec> {
-    let (program_name, args, initial_input) = match record.kind {
+    let (program_name, mut args, initial_input) = match record.kind {
         AgentKind::Claude => {
             let session_id = chosen_session_id(record)?;
             let resume = mode == LaunchMode::Resume && chosen_session_exists(record.kind, homes, &session_id);
@@ -610,6 +637,12 @@ pub fn build_spec(
             (shell, args, non_empty(&record.task))
         }
     };
+    if record.bypass
+        && let Some(flag) = bypass_flag(record.kind)
+        && !permission_options(record.kind).iter().any(|option| names_option(&args, option))
+    {
+        args.push(flag.to_string());
+    }
     if !record.cwd.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -644,6 +677,9 @@ pub fn build_spec(
         env.push(("TERM".to_string(), "xterm-256color".to_string()));
     }
     env.extend(hook_env);
+    if record.bypass && record.kind == AgentKind::Kilo && !env_is_set(KILO_NO_DAEMON) {
+        env.push((KILO_NO_DAEMON.to_string(), NO_DAEMON_ON.to_string()));
+    }
     Ok(LaunchSpec {
         kind: record.kind,
         program,
@@ -869,8 +905,9 @@ impl Launcher {
         &self.exe
     }
 
-    pub fn create(&self, draft: NewAgent, size: TermSize, isolate: bool) -> io::Result<AgentRecord> {
+    pub fn create(&self, draft: NewAgent, size: TermSize, isolate: bool, bypass: bool) -> io::Result<AgentRecord> {
         let mut record = self.store.create_agent(draft)?;
+        record.bypass = bypass;
         let started =
             self.isolate(&mut record, isolate).and_then(|()| self.start(&mut record, LaunchMode::Fresh, size));
         if let Err(err) = started {
@@ -981,6 +1018,7 @@ mod tests {
             conversation_id: None,
             launches: 0,
             worktree: None,
+            bypass: false,
         }
     }
 
@@ -1625,6 +1663,97 @@ mod tests {
             assert_eq!(with.env, without.env, "{kind:?}");
         }
         assert!(!hooks.plugin.exists() && !hooks.qwen_settings.exists() && !hooks.claude_settings.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn bypass_starts_each_agent_with_its_own_flag_and_keeps_it_when_resumed() {
+        let dir = temp_dir("bypass");
+        let config = every_agent(&fake_program(&dir));
+        let cases = [
+            (AgentKind::Claude, Some("--dangerously-skip-permissions")),
+            (AgentKind::Codex, Some("--dangerously-bypass-approvals-and-sandbox")),
+            (AgentKind::Kilo, Some("--auto")),
+            (AgentKind::Opencode, Some("--auto")),
+            (AgentKind::Antigravity, Some("--dangerously-skip-permissions")),
+            (AgentKind::Grok, Some("--always-approve")),
+            (AgentKind::Qwen, Some("--yolo")),
+            (AgentKind::Kimi, Some("--auto")),
+            (AgentKind::Terminal, None),
+        ];
+        assert_eq!(cases.len(), AgentKind::ALL.len(), "every agent kind is covered");
+        let id = "123e4567-e89b-42d3-a456-426614174000";
+        for (kind, flag) in cases {
+            let count = |spec: &LaunchSpec| spec.args.iter().filter(|arg| Some(arg.as_str()) == flag).count();
+            let mut r = record(kind, dir.clone(), "task");
+            let asking = spec_for(&config, &mut r, LaunchMode::Fresh, &Homes::default());
+            assert_eq!(count(&asking), 0, "{kind:?} asks for permissions unless bypass is on");
+            r.bypass = true;
+            let fresh = spec_for(&config, &mut r, LaunchMode::Fresh, &Homes::default());
+            assert_eq!(count(&fresh), usize::from(flag.is_some()), "{kind:?}: {:?}", fresh.args);
+            r.conversation_id = Some(id.into());
+            let resumed = spec_for(&config, &mut r, LaunchMode::Resume, &Homes::default());
+            assert_eq!(count(&resumed), usize::from(flag.is_some()), "{kind:?}: {:?}", resumed.args);
+        }
+        let mut codex = record(AgentKind::Codex, dir.clone(), "task");
+        codex.bypass = true;
+        codex.conversation_id = Some("abc-123".into());
+        let resumed = spec_for(&config, &mut codex, LaunchMode::Resume, &Homes::default());
+        assert_eq!(resumed.args, vec!["resume", "abc-123", "--dangerously-bypass-approvals-and-sandbox"]);
+        let mut kilo = record(AgentKind::Kilo, dir.clone(), "task");
+        kilo.bypass = true;
+        let fresh = spec_for(&config, &mut kilo, LaunchMode::Fresh, &Homes::default());
+        assert_eq!(fresh.args, vec!["--auto", "--prompt", "task"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn bypass_leaves_a_permission_mode_chosen_in_the_config_alone() {
+        let dir = temp_dir("bypass-configured");
+        let program = fake_program(&dir);
+        let cases: [(AgentKind, &[&str], &str); 6] = [
+            (AgentKind::Codex, &["-a", "on-request"], "--dangerously-bypass-approvals-and-sandbox"),
+            (AgentKind::Codex, &["--yolo"], "--dangerously-bypass-approvals-and-sandbox"),
+            (AgentKind::Qwen, &["--approval-mode", "auto-edit"], "--yolo"),
+            (AgentKind::Kimi, &["--yolo"], "--auto"),
+            (AgentKind::Grok, &["--yolo"], "--always-approve"),
+            (AgentKind::Claude, &["--dangerously-skip-permissions"], "--dangerously-skip-permissions"),
+        ];
+        for (kind, configured, flag) in cases {
+            let mut config = every_agent(&program);
+            let own: Vec<String> = configured.iter().map(|arg| arg.to_string()).collect();
+            match kind {
+                AgentKind::Codex => config.codex_args = own.clone(),
+                AgentKind::Qwen => config.qwen_args = own.clone(),
+                AgentKind::Kimi => config.kimi_args = own.clone(),
+                AgentKind::Grok => config.grok_args = own.clone(),
+                _ => config.claude_args = own.clone(),
+            }
+            let mut r = record(kind, dir.clone(), "task");
+            r.bypass = true;
+            let spec = spec_for(&config, &mut r, LaunchMode::Fresh, &Homes::default());
+            let expected = usize::from(configured.contains(&flag));
+            assert_eq!(spec.args.iter().filter(|arg| *arg == flag).count(), expected, "{kind:?}: {:?}", spec.args);
+            assert!(spec.args.starts_with(&own), "{kind:?}: {:?}", spec.args);
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn kilo_bypass_runs_without_the_daemon_that_would_drop_auto() {
+        let dir = temp_dir("kilo-bypass");
+        let config = every_agent(&fake_program(&dir));
+        let mut kilo = record(AgentKind::Kilo, dir.clone(), "task");
+        let asking = spec_for(&config, &mut kilo, LaunchMode::Fresh, &Homes::default());
+        assert_eq!(env_of(&asking, KILO_NO_DAEMON), None);
+        kilo.bypass = true;
+        let bypassed = spec_for(&config, &mut kilo, LaunchMode::Fresh, &Homes::default());
+        let expected = if env_is_set(KILO_NO_DAEMON) { None } else { Some(NO_DAEMON_ON) };
+        assert_eq!(env_of(&bypassed, KILO_NO_DAEMON), expected, "a value the user already sets is left alone");
+        let mut opencode = record(AgentKind::Opencode, dir.clone(), "task");
+        opencode.bypass = true;
+        let spec = spec_for(&config, &mut opencode, LaunchMode::Fresh, &Homes::default());
+        assert_eq!(env_of(&spec, KILO_NO_DAEMON), None);
         fs::remove_dir_all(dir).unwrap();
     }
 

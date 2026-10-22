@@ -22,6 +22,7 @@ pub const COMMANDS: &[&str] = &[
     "/recover",
     "/open <n>",
     "/worktree [on|off]",
+    "/bypass [on|off]",
     "/diff",
     "/merge",
     "/help",

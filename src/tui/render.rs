@@ -834,6 +834,13 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
     cx = put(buf, cx, y, state, style, right);
     app.hits.push((Rect::new(worktree_start, y, cx - worktree_start, 1), Hit::Worktree));
     cx = put(buf, cx, y, "   ", Style::default(), right);
+    let bypass_start = cx;
+    cx = put(buf, cx, y, "bypass ", fg(theme::DIM), right);
+    let (state, style) =
+        if app.bypass { ("on", fg(theme::YELLOW).add_modifier(Modifier::BOLD)) } else { ("off", fg(theme::FAINT)) };
+    cx = put(buf, cx, y, state, style, right);
+    app.hits.push((Rect::new(bypass_start, y, cx - bypass_start, 1), Hit::Bypass));
+    cx = put(buf, cx, y, "   ", Style::default(), right);
     let where_start = cx;
     cx = put(buf, cx, y, "where ", fg(theme::DIM), right);
     let where_text = app.display(&app.where_dir);
@@ -994,6 +1001,7 @@ const HELP: &[(&str, &str)] = &[
     ("!command", "run a shell command in a new terminal"),
     ("/where · ctrl+l", "folder for this session: type, tab enters or cycles"),
     ("ctrl+t /worktree", "new agents in their own git worktree and branch"),
+    ("/bypass", "new agents skip every permission prompt"),
     ("/diff · /merge", "see or merge the selected agent's worktree"),
     ("↑ ↓ / mouse", "select agent · click or enter opens it"),
     ("alt+1..9", "jump to an open tab"),

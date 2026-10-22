@@ -485,6 +485,18 @@ mod tests {
     }
 
     #[test]
+    fn initial_input_waits_for_the_bypass_mode_warning_to_be_accepted() {
+        let mut t =
+            TermState::new(AgentKind::Claude, TermSize { rows: 8, cols: 80 }, 0, "fix".into(), Some("fix".into()));
+        t.process(b"\x1b[?2004h WARNING: Claude Code running in Bypass Permissions mode\r\n \xe2\x9d\xaf 1. No, exit\r\n   2. Yes, I accept", 1_000);
+        t.evaluate(1_000);
+        assert!(t.take_ready_input(60_000).is_none(), "an enter typed here would pick No, exit");
+        t.process(b"\x1b[2J\x1b[H> \r\n  bypass permissions on", 61_000);
+        t.evaluate(61_000);
+        assert_eq!(t.take_ready_input(61_000 + INPUT_QUIET_MS).unwrap(), b"fix");
+    }
+
+    #[test]
     fn initial_input_is_sent_when_program_stays_silent() {
         let mut t =
             TermState::new(AgentKind::Terminal, TermSize { rows: 6, cols: 40 }, 0, String::new(), Some("ls".into()));

@@ -1103,7 +1103,7 @@ fn the_worktree_switch_is_shown_clickable_and_remembered() {
     let mut scenario = scenario();
     let app = &mut scenario.app;
     let footer = |app: &mut App| text(&render(app)).lines().nth(HEIGHT as usize - 2).unwrap().to_string();
-    assert!(footer(app).contains("who claude   worktree off   where"), "{}", footer(app));
+    assert!(footer(app).contains("who claude   worktree off   bypass off   where"), "{}", footer(app));
 
     press(app, KeyCode::Char('t'), KeyModifiers::CONTROL);
     assert!(app.worktree);
@@ -1128,6 +1128,77 @@ fn the_worktree_switch_is_shown_clickable_and_remembered() {
     assert_eq!(app.notice.as_ref().unwrap().text, "usage: /worktree [on|off]");
     app.run_command("/wt");
     assert!(app.worktree);
+}
+
+#[test]
+fn the_bypass_switch_sits_right_of_worktree_and_is_clickable_and_remembered() {
+    let mut scenario = scenario();
+    let app = &mut scenario.app;
+    let footer = |app: &mut App| text(&render(app)).lines().nth(HEIGHT as usize - 2).unwrap().to_string();
+    let line = footer(app);
+    assert!(line.contains("worktree off   bypass off   where"), "{line}");
+    assert!(!app.bypass);
+
+    let click = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: column_of(&line, "bypass"),
+        row: HEIGHT - 2,
+        modifiers: KeyModifiers::NONE,
+    };
+    app.handle(AppEvent::Input(Event::Mouse(click)));
+    assert!(app.bypass);
+    assert!(!app.worktree, "the click toggles bypass only");
+    let on = footer(app);
+    assert!(on.contains("worktree off   bypass on   where"), "{on}");
+    let buffer = render(app);
+    let cell = &buffer[(column_of(&on, "bypass on") + "bypass ".len() as u16, HEIGHT - 2)];
+    assert_eq!(cell.fg, theme::YELLOW);
+    assert!(cell.modifier.contains(Modifier::BOLD));
+    assert_eq!(app.notice.as_ref().unwrap().text, "new ai agents start with every permission check bypassed");
+    assert!(app.launcher.store().load_ui().bypass);
+
+    app.run_command("/bypass off");
+    assert!(!app.bypass);
+    assert!(!app.launcher.store().load_ui().bypass);
+    app.run_command("/bypass on");
+    assert!(app.bypass);
+    app.run_command("/bypass maybe");
+    assert_eq!(app.notice.as_ref().unwrap().text, "usage: /bypass [on|off]");
+    assert!(app.bypass);
+    app.run_command("/bypass");
+    assert!(!app.bypass);
+    app.run_command("/bypass on");
+
+    let launcher = app.launcher.clone();
+    let (tx, _events) = mpsc::channel();
+    let reopened = App::new(launcher, tx, Rect::new(0, 0, WIDTH, HEIGHT)).unwrap();
+    assert!(reopened.bypass, "the switch survives closing and reopening orkai");
+}
+
+#[test]
+fn a_task_sent_with_bypass_on_says_so_and_terminals_never_bypass() {
+    let mut scenario = scenario();
+    let store = scenario.app.launcher.store().clone();
+    let config = Config {
+        shell: Some("orkai-missing-shell".into()),
+        claude_command: "orkai-missing-claude".into(),
+        ..Config::default()
+    };
+    scenario.app.launcher = Launcher::new(store, config, &std::env::current_exe().unwrap()).unwrap();
+    scenario.app.run_command("/bypass on");
+
+    type_text(&mut scenario.app, "!npm run dev");
+    press(&mut scenario.app, KeyCode::Enter, KeyModifiers::NONE);
+    let notice = scenario.app.notice.as_ref().unwrap().text.clone();
+    assert_eq!(notice, "starting terminal npm-run-dev…", "a shell has no permission prompts to bypass");
+    let _ = launched(&scenario);
+
+    type_text(&mut scenario.app, "refactor the engine");
+    press(&mut scenario.app, KeyCode::Enter, KeyModifiers::NONE);
+    let notice = scenario.app.notice.as_ref().unwrap().text.clone();
+    assert_eq!(notice, "starting claude refactor-engine with permissions bypassed…");
+    let error = launched(&scenario).unwrap_err();
+    assert!(error.contains("orkai-missing-claude"), "{error}");
 }
 
 #[test]

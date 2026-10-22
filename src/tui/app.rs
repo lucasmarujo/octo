@@ -234,6 +234,7 @@ pub enum Hit {
     Who,
     Where,
     Worktree,
+    Bypass,
     Recover,
     Project(PathBuf),
     Terminal,
@@ -298,6 +299,7 @@ pub struct App {
     pub launching: usize,
     pub usage: BTreeMap<AgentKind, Usage>,
     pub worktree: bool,
+    pub bypass: bool,
     pub diff: Option<DiffPane>,
     history: TaskHistory,
     dirty: bool,
@@ -362,6 +364,7 @@ impl App {
             launching: 0,
             usage: BTreeMap::new(),
             worktree: ui.worktree,
+            bypass: ui.bypass,
             diff: None,
             history: TaskHistory::default(),
             dirty: true,
@@ -531,6 +534,7 @@ impl App {
             tabs: self.tabs.clone(),
             session_dirs: self.session_dirs.clone(),
             worktree: self.worktree,
+            bypass: self.bypass,
         };
         let _ = self.launcher.store().save_ui(&state);
     }
@@ -1160,12 +1164,14 @@ impl App {
         let launcher = self.launcher.clone();
         let tx = self.tx.clone();
         let isolate = self.worktree && kind.is_ai();
+        let bypass = self.bypass && kind.is_ai();
         self.launching += 1;
         self.task.clear();
         let place = if isolate { " in a new worktree" } else { "" };
-        self.set_notice(Tone::Info, format!("starting {} {name}{place}…", kind.label()));
+        let mode = if bypass { " with permissions bypassed" } else { "" };
+        self.set_notice(Tone::Info, format!("starting {} {name}{place}{mode}…", kind.label()));
         let _ = thread::Builder::new().name("orkai-launch".into()).spawn(move || {
-            let result = launcher.create(draft, size, isolate).map_err(|e| e.to_string());
+            let result = launcher.create(draft, size, isolate, bypass).map_err(|e| e.to_string());
             let _ = tx.send(AppEvent::Launched { result });
         });
     }
@@ -1179,6 +1185,16 @@ impl App {
             "new agents run directly in the where folder"
         };
         self.set_notice(Tone::Info, text);
+    }
+
+    fn set_bypass(&mut self, on: bool) {
+        self.bypass = on;
+        self.persist_ui();
+        if on {
+            self.set_notice(Tone::Warn, "new ai agents start with every permission check bypassed");
+        } else {
+            self.set_notice(Tone::Info, "new ai agents ask before running tools");
+        }
     }
 
     fn selected_worktree(&mut self) -> Option<(AgentId, Worktree)> {
@@ -1934,6 +1950,12 @@ impl App {
                 "off" => self.set_worktree(false),
                 _ => self.set_notice(Tone::Error, "usage: /worktree [on|off]"),
             },
+            "bypass" => match arg.as_str() {
+                "" => self.set_bypass(!self.bypass),
+                "on" => self.set_bypass(true),
+                "off" => self.set_bypass(false),
+                _ => self.set_notice(Tone::Error, "usage: /bypass [on|off]"),
+            },
             "diff" => self.open_diff(),
             "merge" => self.request_merge(),
             "open" => match arg.parse::<AgentId>() {
@@ -2000,6 +2022,7 @@ impl App {
                         self.sync_suggestions();
                     }
                     Some(Hit::Worktree) => self.set_worktree(!self.worktree),
+                    Some(Hit::Bypass) => self.set_bypass(!self.bypass),
                     Some(Hit::Project(cwd)) => self.apply_where(cwd),
                     Some(Hit::Task { line, skip, x }) => self.place_cursor(mouse.column, x, line, skip),
                     Some(Hit::Recover) => {

@@ -167,6 +167,7 @@ impl Store {
             conversation_id: None,
             launches: 0,
             worktree: None,
+            bypass: false,
         };
         self.save_agent(&record)?;
         Ok(record)
@@ -308,6 +309,7 @@ mod tests {
             tabs: vec![3, 1],
             session_dirs: [("work".to_string(), PathBuf::from("/x/y"))].into(),
             worktree: true,
+            bypass: true,
         };
         store.save_ui(&state).unwrap();
         assert_eq!(store.load_ui(), state);

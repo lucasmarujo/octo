@@ -25,6 +25,7 @@ const WAITING_MARKERS: &[&str] = &[
     "› 1. yes",
 ];
 
+const CLAUDE_WAITING_MARKERS: &[&str] = &["running in bypass permissions mode"];
 const OPENCODE_BUSY_MARKERS: &[&str] = &["esc interrupt", "esc again to interrupt"];
 const OPENCODE_WAITING_MARKERS: &[&str] = &["permission required", "type your own answer"];
 const ANTIGRAVITY_WAITING_MARKERS: &[&str] = &[
@@ -75,6 +76,7 @@ fn busy_markers(kind: AgentKind) -> &'static [&'static str] {
 
 fn waiting_markers(kind: AgentKind) -> &'static [&'static str] {
     match kind {
+        AgentKind::Claude => CLAUDE_WAITING_MARKERS,
         AgentKind::Kilo | AgentKind::Opencode => OPENCODE_WAITING_MARKERS,
         AgentKind::Antigravity => ANTIGRAVITY_WAITING_MARKERS,
         AgentKind::Grok => GROK_WAITING_MARKERS,
@@ -386,6 +388,14 @@ mod tests {
     fn the_folder_trust_check_waits_for_you_instead_of_looking_busy() {
         let trust = " Quick safety check: Is this a project you created or one you trust?\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n";
         assert_eq!(analyze(AgentKind::Claude, "", trust), Signals { busy: false, waiting: true });
+    }
+
+    #[test]
+    fn the_bypass_mode_warning_waits_for_you_until_it_is_accepted() {
+        let warning = " WARNING: Claude Code running in Bypass Permissions mode\n\n In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.\n\n ❯ 1. No, exit\n   2. Yes, I accept\n";
+        assert_eq!(analyze(AgentKind::Claude, "", warning), Signals { busy: false, waiting: true });
+        let accepted = "> \n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n";
+        assert_eq!(analyze(AgentKind::Claude, "", accepted), Signals::default());
     }
 
     #[test]

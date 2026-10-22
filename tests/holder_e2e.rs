@@ -11,7 +11,7 @@ use orkai::holder::detect::DONE_GRACE_MS;
 use orkai::holder::nested::{descendants, program_name};
 use orkai::holder::oplog;
 use orkai::hooks::HOOK_COMMAND;
-use orkai::launch::{HOLDER_COMMAND, Launcher, spawn_holder, wait_for_runtime};
+use orkai::launch::{HOLDER_COMMAND, LaunchMode, Launcher, spawn_holder, wait_for_runtime};
 use orkai::model::{AgentId, AgentKind, AgentState, LaunchSpec, NestedAgent, NewAgent, RuntimeInfo, StatusReport};
 use orkai::paths::{HOME_ENV, Home};
 use orkai::protocol::{ClientMsg, HolderMsg, PROTOCOL_VERSION, TermSize};
@@ -522,6 +522,57 @@ fn git(dir: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
+fn args_echoing_program(dir: &Path) -> PathBuf {
+    if cfg!(windows) {
+        let script = dir.join("claude.cmd");
+        std::fs::write(&script, "@echo off\r\necho orkai-args: %*\r\nset /p orkai_wait=\r\n").unwrap();
+        script
+    } else {
+        let script = dir.join("claude");
+        std::fs::write(&script, "#!/bin/sh\necho \"orkai-args: $*\"\nread orkai_wait\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        script
+    }
+}
+
+#[test]
+fn an_agent_started_in_bypass_mode_gets_the_flag_and_keeps_it_when_recovered() {
+    let fx = fixture("bypass");
+    let program = args_echoing_program(&fx.dir);
+    let config = Config { claude_command: program.to_string_lossy().into_owned(), ..Config::default() };
+    let launcher = Launcher::new(fx.store.clone(), config, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let size = TermSize { rows: 24, cols: 200 };
+    let draft = NewAgent {
+        session: "default".into(),
+        name: "bypass".into(),
+        kind: AgentKind::Claude,
+        cwd: fx.dir.join("work"),
+        task: String::new(),
+    };
+    let mut record = launcher.create(draft, size, false, true).unwrap();
+    assert!(record.bypass);
+    assert!(fx.store.load_agent(record.id).unwrap().bypass, "the mode is saved with the agent");
+    stop_after_seeing(&fx, record.id, size, "--dangerously-skip-permissions");
+
+    launcher.start(&mut record, LaunchMode::Resume, size).unwrap();
+    stop_after_seeing(&fx, record.id, size, "--dangerously-skip-permissions");
+}
+
+fn stop_after_seeing(fx: &Fixture, id: AgentId, size: TermSize, needle: &str) {
+    let runtime = wait_for_runtime(&fx.store, id, TIMEOUT).unwrap();
+    let (conn, rx) = open(&runtime);
+    conn.send(&ClientMsg::Attach(size)).unwrap();
+    let mut screen = vt100::Parser::new(size.rows, size.cols, 500);
+    wait_for_text(&rx, &mut screen, needle);
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
+    wait_until(|| fx.store.read_runtime(id).unwrap().is_none());
+}
+
 #[test]
 fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
     let fx = fixture("worktree");
@@ -544,7 +595,7 @@ fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
         cwd: repo.join("app"),
         task: "git branch --show-current".into(),
     };
-    let record = launcher.create(draft, TermSize { rows: 24, cols: 100 }, true).unwrap();
+    let record = launcher.create(draft, TermSize { rows: 24, cols: 100 }, true, false).unwrap();
     let worktree = record.worktree.clone().expect("the agent must get a worktree");
     assert_eq!(worktree.branch, "orkai/branch-check");
     assert_eq!(record.cwd, worktree.path.join("app"));

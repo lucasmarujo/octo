@@ -144,8 +144,12 @@ pub fn new_agent(
             slug
         }
     });
-    let record =
-        launcher.create(NewAgent { session, name, kind, cwd: strip_verbatim(cwd), task }, DEFAULT_SIZE, isolate)?;
+    let record = launcher.create(
+        NewAgent { session, name, kind, cwd: strip_verbatim(cwd), task },
+        DEFAULT_SIZE,
+        isolate,
+        false,
+    )?;
     println!("started {} {} (#{}) in session {}", record.kind.label(), record.name, record.id, record.session);
     if let Some(worktree) = &record.worktree {
         println!("worktree {} on branch {}", record.cwd.display(), worktree.branch);

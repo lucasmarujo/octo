@@ -167,7 +167,7 @@ Pode sair quando quiser (`ctrl+q`): os agentes continuam rodando e o orkai recon
 | Lateral | máquina, sessões com o número de agentes ativos em cada uma, `+ new session` |
 | Topo | o homenzinho pixelado, os contadores `agents`, `working`, `paused` e `done` da sessão e, à direita, o consumo dos agentes em que você está logado (veja [abaixo](#consumo-dos-planos)) |
 | Lista | agentes agrupados por pasta (com a contagem de cada uma): número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`, `kimi`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
-| Rodapé | `write a task`, `pc`, `who`, `worktree` e `where` para lançar novos agentes |
+| Rodapé | `write a task`, `pc`, `who`, `worktree`, `bypass` e `where` para lançar novos agentes |
 
 ### Estados
 
@@ -268,7 +268,8 @@ continua na tela com `unavailable`.
 | `tab` / `shift+tab` | escolhe quem executa entre os agentes instalados e o terminal; `/who <nome>` escolhe qualquer um |
 | `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja [abaixo](#escolhendo-a-pasta-where)); clicar no nome de um projeto também |
 | `ctrl+t` | liga/desliga a worktree própria para os próximos agentes (veja [abaixo](#uma-worktree-por-agente-ctrlt)) |
-| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/diff`, `/merge`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-dos-agentes-skill)) |
+| `/bypass` | liga/desliga o modo bypass de permissões para os próximos agentes (veja [abaixo](#modo-bypass-bypass)) |
+| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-dos-agentes-skill)) |
 
 **Agentes**
 
@@ -329,6 +330,29 @@ outro, e o seu checkout continua intacto. Terminais (`!comando`) continuam rodan
   orkai diz o comando para resolver na mão. Depois do merge, a contagem recomeça do zero.
 - Apagar o agente (`delete` ou `ctrl+x`) apaga também a worktree e a branch `orkai/…`; o popup avisa antes.
 - Na linha de comando: `orkai new --worktree …`; `orkai rm` também apaga a worktree.
+
+## Modo bypass (`/bypass`)
+
+Com `bypass on` no rodapé (`/bypass`, `/bypass on|off` ou clique), cada novo agente de IA já nasce com o modo
+de bypass total de permissões do próprio agente: ele roda ferramentas, comandos e edições sem pedir
+aprovação. Use só em pastas e máquinas em que você confia nisso. Terminais (`!comando`) não mudam.
+
+| Agente | Flag adicionado |
+| --- | --- |
+| Claude Code | `--dangerously-skip-permissions` |
+| Codex | `--dangerously-bypass-approvals-and-sandbox` (também sem sandbox) |
+| Kilo CLI | `--auto`, com `KILO_NO_DAEMON=1` (com um daemon rodando, o Kilo ignora o `--auto`) |
+| OpenCode | `--auto` |
+| Antigravity | `--dangerously-skip-permissions` |
+| Grok Build | `--always-approve` |
+| Qwen Code | `--yolo` |
+| Kimi Code | `--auto` (o `--yolo` do Kimi ainda pergunta nas ações arriscadas) |
+
+- O modo fica gravado no agente: `ctrl+r`, `/restart` e `orkai recover` retomam a conversa ainda em bypass.
+- Se os args do agente no `config.json` já escolhem um modo de permissão (como `-a on-request` no Codex ou
+  `--approval-mode` no Qwen Code), o orkai não adiciona o flag, porque o agente recusaria os dois juntos.
+- Na primeira vez, o Claude Code pede para você aceitar o modo bypass; a tarefa só é digitada depois. As
+  telas de "confiar nesta pasta" de cada agente continuam aparecendo.
 
 ## Skills dos agentes (`/skill`)
 

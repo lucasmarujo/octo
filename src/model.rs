@@ -139,6 +139,8 @@ pub struct AgentRecord {
     pub launches: u32,
     #[serde(default)]
     pub worktree: Option<Worktree>,
+    #[serde(default)]
+    pub bypass: bool,
 }
 
 impl AgentRecord {
@@ -266,6 +268,8 @@ pub struct UiState {
     pub session_dirs: BTreeMap<String, PathBuf>,
     #[serde(default)]
     pub worktree: bool,
+    #[serde(default)]
+    pub bypass: bool,
 }
 
 impl Default for UiState {
@@ -277,6 +281,7 @@ impl Default for UiState {
             tabs: Vec::new(),
             session_dirs: BTreeMap::new(),
             worktree: false,
+            bypass: false,
         }
     }
 }
@@ -381,6 +386,7 @@ mod tests {
         assert_eq!(record.task, "");
         assert_eq!(record.conversation_id, None);
         assert_eq!(record.launches, 0);
+        assert!(!record.bypass, "agents saved before bypass existed keep asking for permissions");
     }
 
     #[test]
