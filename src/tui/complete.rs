@@ -25,6 +25,7 @@ pub const COMMANDS: &[&str] = &[
     "/bypass [on|off]",
     "/diff",
     "/merge",
+    "/pwa [off|new]",
     "/help",
     "/quit",
 ];

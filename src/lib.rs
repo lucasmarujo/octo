@@ -9,6 +9,7 @@ pub mod model;
 pub mod notify;
 pub mod paths;
 pub mod protocol;
+pub mod pwa;
 pub mod skills;
 pub mod sound;
 pub mod store;

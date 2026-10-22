@@ -86,6 +86,13 @@ pub fn resolve_program(name: &str) -> io::Result<PathBuf> {
     })
 }
 
+pub fn installed_kinds(config: &Config) -> Vec<AgentKind> {
+    AgentKind::ALL
+        .into_iter()
+        .filter(|kind| config.agent(*kind).is_none_or(|(command, _)| resolve_program(command).is_ok()))
+        .collect()
+}
+
 pub fn default_shell(config: &Config) -> (String, Vec<String>) {
     if let Some(shell) = config.shell.as_ref().filter(|s| !s.trim().is_empty()) {
         return (shell.clone(), config.shell_args.clone());
@@ -238,14 +245,14 @@ pub fn grok_session_exists(grok_home: &Path, session_id: &str) -> bool {
 }
 
 #[cfg(windows)]
-fn without_console(command: &mut Command) -> &mut Command {
+pub fn without_console(command: &mut Command) -> &mut Command {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     command.creation_flags(CREATE_NO_WINDOW)
 }
 
 #[cfg(unix)]
-fn without_console(command: &mut Command) -> &mut Command {
+pub fn without_console(command: &mut Command) -> &mut Command {
     command
 }
 
@@ -728,12 +735,14 @@ pub fn holder_executable(home: &Home, source: &Path) -> io::Result<PathBuf> {
 }
 
 fn holder_binaries_in_use(home: &Home) -> HashSet<String> {
+    let bridge = crate::pwa::bridge::read_info(home).and_then(|info| info.exe);
     let Ok(entries) = fs::read_dir(home.agents_dir()) else { return HashSet::new() };
     entries
         .flatten()
         .filter_map(|entry| entry.file_name().to_str().and_then(|name| name.parse::<AgentId>().ok()))
         .filter_map(|id| fsutil::read_json_opt::<RuntimeInfo>(&home.runtime_file(id)).ok().flatten())
         .filter_map(|runtime| runtime.exe)
+        .chain(bridge)
         .map(|exe| normalize_for_compare(&exe))
         .collect()
 }

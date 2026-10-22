@@ -6,7 +6,9 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap};
 
 use crate::model::{AgentId, AgentKind, AgentState};
-use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, Prompt, SHELL_PREFIX, Tone, View};
+use crate::pwa::bridge::Phase;
+use crate::pwa::qr::Qr;
+use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, Prompt, PwaPanel, SHELL_PREFIX, Tone, View};
 use crate::tui::complete::matching_commands;
 use crate::tui::format::{duration_short, pad, pad_left, skip_columns, truncate, truncate_start, width};
 use crate::tui::sprite;
@@ -41,9 +43,9 @@ const USAGE_NAME_GAP: usize = 2;
 const USAGE_ROWS: u16 = 2;
 const USAGE_PER_COLUMN: u16 = 3;
 const USAGE_COLUMN_GAP: u16 = 4;
-const USAGE_SESSION_LABEL: &str = "5h";
-const USAGE_WEEKLY_LABEL: &str = "week";
-const USAGE_MONTHLY_LABEL: &str = "month";
+pub const USAGE_SESSION_LABEL: &str = "5h";
+pub const USAGE_WEEKLY_LABEL: &str = "week";
+pub const USAGE_MONTHLY_LABEL: &str = "month";
 const USAGE_CREDITS_LABEL: &str = "funds";
 const BRANCH_GLYPH: &str = "⎇";
 const DIFF_HINT: &str = "esc close · ↑↓ pgup pgdn scroll · /merge merges it";
@@ -133,6 +135,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                 draw_agent_status(app, id, layout.bottom, buf);
                 cursor
             }
+            View::Pwa => {
+                draw_pwa(app, layout.body, buf);
+                draw_pwa_status(app, layout.bottom, buf);
+                None
+            }
         };
         if app.show_help {
             draw_help(screen, buf);
@@ -179,6 +186,15 @@ fn draw_sidebar(app: &mut App, area: Rect, buf: &mut Buffer) {
     if y < area.bottom() {
         put(buf, x + 2, y, "+ new session", fg(theme::LINK), right);
         app.hits.push((Rect::new(area.x, y, area.width, 1), Hit::NewSession));
+        y += 2;
+    }
+    if y < area.bottom() {
+        let (badge, color) = pwa_badge(&app.pwa);
+        let label = if app.pwa.enabled { theme::TEXT } else { theme::LINK };
+        put(buf, x, y, PWA_LABEL, fg(label), right);
+        let badge_x = right.saturating_sub(u16::try_from(width(&badge)).unwrap_or(0));
+        put(buf, badge_x, y, &badge, fg(color), right + 1);
+        app.hits.push((Rect::new(area.x, y, area.width, 1), Hit::Pwa));
         y += 2;
     }
     let lost = app.lost_in_session().len();
@@ -791,6 +807,15 @@ fn draw_task(app: &mut App, x: u16, y: u16, rows: u16, right: u16, buf: &mut Buf
     Position::new(column.min(right.saturating_sub(1)), row)
 }
 
+fn tone_color(tone: Tone) -> Color {
+    match tone {
+        Tone::Info => theme::TEXT,
+        Tone::Success => theme::GREEN,
+        Tone::Warn => theme::YELLOW,
+        Tone::Error => theme::RED,
+    }
+}
+
 fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position> {
     if area.height == 0 {
         return None;
@@ -870,17 +895,182 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
         let text = format!("enter runs it in a new terminal · who stays {}", app.who.label());
         put(buf, x, y, &text, fg(theme::TERMINAL), right);
     } else if let Some(notice) = app.notice.as_ref() {
-        let color = match notice.tone {
-            Tone::Info => theme::TEXT,
-            Tone::Success => theme::GREEN,
-            Tone::Warn => theme::YELLOW,
-            Tone::Error => theme::RED,
-        };
-        put(buf, x, y, &notice.text, fg(color), right);
+        put(buf, x, y, &notice.text, fg(tone_color(notice.tone)), right);
     } else {
         put(buf, x, y, HINT, fg(theme::FAINT), right);
     }
     cursor
+}
+
+pub const PWA_LABEL: &str = "▣ orkai pwa";
+const PWA_TITLE: &str = "orkai pwa";
+const PWA_TAGLINE: &str = "your orkai on the phone, from anywhere · end-to-end encrypted";
+const PWA_HINT_ON: &str = "esc back · n new code (forgets the phones) · d turn off";
+const PWA_HINT_OFF: &str = "enter turns it on · esc back";
+const PWA_LABEL_WIDTH: usize = 10;
+const PWA_SIDE_MIN: u16 = 44;
+const PWA_STEPS: [&str; 3] = [
+    "point the phone camera at the code",
+    "your orkai opens in the browser, already paired",
+    "share › add to home screen keeps it one tap away",
+];
+const PWA_PRIVACY: [&str; 2] =
+    ["the tunnel only carries encrypted bytes; the key", "lives in this code, never on a server"];
+
+fn pwa_badge(pwa: &PwaPanel) -> (String, Color) {
+    match pwa.info.as_ref() {
+        _ if !pwa.enabled => ("off".to_string(), theme::FAINT),
+        Some(info) if info.phase == Phase::Failed => ("error".to_string(), theme::RED),
+        Some(info) if info.phase == Phase::Ready && info.phones > 0 => (format!("● {}", info.phones), theme::GREEN),
+        Some(info) if info.phase == Phase::Ready => ("on".to_string(), theme::GREEN),
+        _ => ("…".to_string(), theme::YELLOW),
+    }
+}
+
+fn pwa_waiting(pwa: &PwaPanel) -> (String, Color) {
+    match pwa.info.as_ref() {
+        None => ("starting the orkai pwa…".to_string(), theme::YELLOW),
+        Some(info) => match info.phase {
+            Phase::Installing => {
+                ("downloading cloudflared, the official build from github.com/cloudflare…".to_string(), theme::YELLOW)
+            }
+            Phase::Connecting => (format!("opening the {} tunnel…", info.tunnel.label()), theme::YELLOW),
+            Phase::Failed => {
+                (format!("{} · retrying", info.error.as_deref().unwrap_or("the tunnel failed")), theme::RED)
+            }
+            Phase::Ready => ("the pairing code is not ready".to_string(), theme::MUTED),
+        },
+    }
+}
+
+fn draw_qr(qr: &Qr, x: u16, y: u16, buf: &mut Buffer) {
+    let color = |dark: bool| {
+        let (r, g, b) = if dark { crate::pwa::qr::DARK } else { crate::pwa::qr::LIGHT };
+        Color::Rgb(r, g, b)
+    };
+    for row in 0..qr.rows() {
+        for column in 0..qr.size() {
+            let (top, bottom) = qr.cell(column, row);
+            let position = (x + u16::try_from(column).unwrap_or(0), y + u16::try_from(row).unwrap_or(0));
+            if let Some(cell) = buf.cell_mut(position) {
+                cell.set_symbol(crate::pwa::qr::UPPER_HALF)
+                    .set_style(Style::default().fg(color(top)).bg(color(bottom)));
+            }
+        }
+    }
+}
+
+fn pwa_details(app: &App) -> Vec<(String, String, Color)> {
+    let Some(info) = app.pwa.info.as_ref() else { return Vec::new() };
+    let mut rows = vec![("tunnel".to_string(), format!("{} · ready", info.tunnel.label()), theme::MUTED)];
+    if let Some(code) = app.pwa.code.as_ref() {
+        rows.push(("link".to_string(), code.url.clone(), theme::LINK));
+    }
+    let phones = match info.phones {
+        0 => ("no phone connected".to_string(), theme::DIM),
+        1 => ("1 connected".to_string(), theme::GREEN),
+        count => (format!("{count} connected"), theme::GREEN),
+    };
+    rows.push(("phones".to_string(), phones.0, phones.1));
+    for (index, line) in PWA_PRIVACY.iter().enumerate() {
+        let label = if index == 0 { "privacy" } else { "" };
+        rows.push((label.to_string(), (*line).to_string(), theme::DIM));
+    }
+    rows
+}
+
+fn draw_pwa_side(app: &App, x: u16, y: u16, right: u16, bottom: u16, buf: &mut Buffer) {
+    let mut y = y;
+    for (index, step) in PWA_STEPS.iter().enumerate() {
+        if y >= bottom {
+            return;
+        }
+        let after = put(buf, x, y, &format!("{}  ", index + 1), fg(theme::ACCENT).add_modifier(Modifier::BOLD), right);
+        put(buf, after, y, step, fg(theme::TEXT), right);
+        y += 1;
+    }
+    y += 1;
+    for (label, value, color) in pwa_details(app) {
+        if y >= bottom {
+            return;
+        }
+        let after = put(buf, x, y, &pad(&label, PWA_LABEL_WIDTH), fg(theme::DIM), right);
+        put(buf, after, y, &truncate(&value, usize::from(right.saturating_sub(after))), fg(color), right);
+        y += 1;
+    }
+}
+
+fn draw_pwa(app: &App, area: Rect, buf: &mut Buffer) {
+    if area.height == 0 || area.width == 0 {
+        return;
+    }
+    let right = area.right();
+    let bottom = area.bottom();
+    let mut y = area.y;
+    let after = put(buf, area.x, y, PWA_TITLE, fg(theme::TEXT).add_modifier(Modifier::BOLD), right);
+    let (badge, color) = pwa_badge(&app.pwa);
+    put(buf, after + 2, y, &badge, fg(color).add_modifier(Modifier::BOLD), right);
+    y += 1;
+    if y < bottom {
+        put(buf, area.x, y, PWA_TAGLINE, fg(theme::DIM), right);
+    }
+    y += 2;
+    if y >= bottom {
+        return;
+    }
+    if !app.pwa.enabled {
+        put(buf, area.x, y, "the orkai pwa is off", fg(theme::MUTED), right);
+        if y + 1 < bottom {
+            put(buf, area.x, y + 1, "press enter to turn it on and show the pairing code", fg(theme::DIM), right);
+        }
+        return;
+    }
+    let Some(code) = app.pwa.code.as_ref() else {
+        let (text, color) = pwa_waiting(&app.pwa);
+        let spinner = theme::SPINNER[app.tick % theme::SPINNER.len()];
+        let after = put(buf, area.x, y, spinner, fg(color), right);
+        put(buf, after + 1, y, &text, fg(color), right);
+        return;
+    };
+    let available = bottom.saturating_sub(y);
+    let Some(qr) =
+        code.qr.as_ref().filter(|qr| qr.rows() <= usize::from(available) && qr.size() <= usize::from(area.width))
+    else {
+        put(
+            buf,
+            area.x,
+            y,
+            "make the terminal bigger to show the code, or open on the phone:",
+            fg(theme::YELLOW),
+            right,
+        );
+        if y + 1 < bottom {
+            put(buf, area.x, y + 1, &code.link, fg(theme::LINK), right);
+        }
+        return;
+    };
+    draw_qr(qr, area.x, y, buf);
+    let qr_width = u16::try_from(qr.size()).unwrap_or(u16::MAX);
+    let qr_height = u16::try_from(qr.rows()).unwrap_or(u16::MAX);
+    let side_x = area.x + qr_width + 3;
+    if side_x + PWA_SIDE_MIN <= right {
+        draw_pwa_side(app, side_x, y + 1, right, bottom, buf);
+    } else {
+        draw_pwa_side(app, area.x, y + qr_height + 1, right, bottom, buf);
+    }
+}
+
+fn draw_pwa_status(app: &App, area: Rect, buf: &mut Buffer) {
+    if area.height == 0 {
+        return;
+    }
+    let right = area.right();
+    let x = area.x + 1;
+    if let Some(notice) = app.notice.as_ref() {
+        put(buf, x, area.y, &notice.text, fg(tone_color(notice.tone)), right);
+    }
+    let hint = if app.pwa.enabled { PWA_HINT_ON } else { PWA_HINT_OFF };
+    put(buf, x, area.bottom() - 1, hint, fg(theme::FAINT), right);
 }
 
 fn draw_agent(app: &mut App, id: AgentId, area: Rect, buf: &mut Buffer) -> Option<Position> {
@@ -1003,6 +1193,7 @@ const HELP: &[(&str, &str)] = &[
     ("ctrl+t /worktree", "new agents in their own git worktree and branch"),
     ("/bypass", "new agents skip every permission prompt"),
     ("/diff · /merge", "see or merge the selected agent's worktree"),
+    ("ctrl+p · /pwa", "your orkai on the phone, from anywhere (/pwa off turns it off)"),
     ("↑ ↓ / mouse", "select agent · click or enter opens it"),
     ("alt+1..9", "jump to an open tab"),
     ("alt+n", "open the next agent waiting for you (or finished)"),

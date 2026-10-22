@@ -2,6 +2,8 @@ use std::path::{Component, Path};
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use crate::model::AgentKind;
+
 const STOPWORDS: &[&str] = &[
     "a", "an", "the", "to", "of", "and", "or", "for", "in", "on", "at", "with", "by", "from", "into", "is", "it",
     "this", "that", "please", "pls", "can", "you", "de", "da", "do", "das", "dos", "o", "os", "as", "e", "um", "uma",
@@ -33,6 +35,24 @@ fn fold_char(c: char) -> char {
         'ñ' => 'n',
         other => other,
     }
+}
+
+pub const NAME_WORDS: usize = 3;
+pub const NAME_MAX_LEN: usize = 28;
+
+pub fn default_agent_name(kind: AgentKind, task: &str, taken: impl Fn(&str) -> bool) -> String {
+    let slug = slugify(task, NAME_WORDS, NAME_MAX_LEN);
+    if slug.is_empty() {
+        let prefix = if kind == AgentKind::Terminal { "term" } else { kind.label() };
+        return (1..)
+            .map(|n| format!("{prefix}-{n}"))
+            .find(|candidate| !taken(candidate))
+            .unwrap_or_else(|| prefix.to_string());
+    }
+    if !taken(&slug) {
+        return slug;
+    }
+    (2..).map(|n| format!("{slug}-{n}")).find(|candidate| !taken(candidate)).unwrap_or(slug)
 }
 
 pub fn slugify(text: &str, max_words: usize, max_len: usize) -> String {

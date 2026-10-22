@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::fsutil;
 use crate::model::AgentKind;
 use crate::paths::Home;
+use crate::pwa::bridge;
+use crate::pwa::tunnel::TunnelKind;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(default)]
@@ -31,6 +33,8 @@ pub struct Config {
     pub notify_sound: bool,
     pub notify_command: Option<String>,
     pub notify_args: Vec<String>,
+    pub pwa_tunnel: TunnelKind,
+    pub pwa_port: u16,
 }
 
 impl Default for Config {
@@ -58,6 +62,8 @@ impl Default for Config {
             notify_sound: true,
             notify_command: None,
             notify_args: Vec::new(),
+            pwa_tunnel: TunnelKind::default(),
+            pwa_port: bridge::DEFAULT_PORT,
         }
     }
 }
@@ -108,6 +114,15 @@ mod tests {
         assert!(config.notify_sound);
         assert!(config.notify_command.is_none());
         assert!(config.notify_args.is_empty());
+        assert_eq!(config.pwa_tunnel, TunnelKind::Cloudflare);
+        assert_eq!(config.pwa_port, bridge::DEFAULT_PORT);
+    }
+
+    #[test]
+    fn the_pwa_can_use_tailscale_on_another_port() {
+        let config: Config = serde_json::from_str(r#"{"pwa_tunnel":"tailscale","pwa_port":9100}"#).unwrap();
+        assert_eq!(config.pwa_tunnel, TunnelKind::Tailscale);
+        assert_eq!(config.pwa_port, 9100);
     }
 
     #[test]

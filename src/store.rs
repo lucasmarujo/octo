@@ -34,6 +34,14 @@ impl Store {
     }
 
     pub fn load_sessions_with(&self, records: &[AgentRecord]) -> io::Result<Vec<Session>> {
+        let (sessions, changed) = self.peek_sessions_with(records)?;
+        if changed {
+            self.save_sessions(&sessions)?;
+        }
+        Ok(sessions)
+    }
+
+    pub fn peek_sessions_with(&self, records: &[AgentRecord]) -> io::Result<(Vec<Session>, bool)> {
         let mut list = fsutil::read_json_opt::<SessionList>(&self.home.sessions_file())?.unwrap_or_default();
         let mut changed = false;
         if !list.sessions.iter().any(|s| s.name == DEFAULT_SESSION) {
@@ -46,10 +54,7 @@ impl Store {
                 changed = true;
             }
         }
-        if changed {
-            self.save_sessions(&list.sessions)?;
-        }
-        Ok(list.sessions)
+        Ok((list.sessions, changed))
     }
 
     pub fn save_sessions(&self, sessions: &[Session]) -> io::Result<()> {
@@ -299,6 +304,20 @@ mod tests {
     }
 
     #[test]
+    fn peeking_at_the_sessions_never_writes_them() {
+        let (store, dir) = temp_store("peek");
+        let record = store.create_agent(draft("work", "a")).unwrap();
+        assert!(!store.home().sessions_file().exists());
+        let (sessions, changed) = store.peek_sessions_with(std::slice::from_ref(&record)).unwrap();
+        assert!(changed);
+        assert_eq!(sessions.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), [DEFAULT_SESSION, "work"]);
+        assert!(!store.home().sessions_file().exists(), "a peek leaves the file to its writers");
+        store.load_sessions_with(&[record]).unwrap();
+        assert!(store.home().sessions_file().exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn ui_state_round_trips_and_defaults() {
         let (store, dir) = temp_store("ui");
         assert_eq!(store.load_ui(), UiState::default());
@@ -310,6 +329,7 @@ mod tests {
             session_dirs: [("work".to_string(), PathBuf::from("/x/y"))].into(),
             worktree: true,
             bypass: true,
+            pwa: true,
         };
         store.save_ui(&state).unwrap();
         assert_eq!(store.load_ui(), state);

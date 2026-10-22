@@ -3,12 +3,14 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+use orkai::cli::PwaAction;
 use orkai::config::Config;
 use orkai::launch::Launcher;
 use orkai::model::{AgentId, AgentKind, DEFAULT_SESSION};
 use orkai::paths::Home;
+use orkai::pwa::tunnel::TunnelKind;
 use orkai::store::Store;
-use orkai::{cli, holder, hooks, tui, update};
+use orkai::{cli, holder, hooks, pwa, tui, update};
 
 #[derive(Parser)]
 #[command(
@@ -77,12 +79,32 @@ enum Command {
     },
     #[command(about = "Print the data directory")]
     Home,
+    #[command(about = "Open your orkai on the phone, from anywhere: prints the QR code to pair it")]
+    Pwa {
+        #[arg(long, value_parser = tunnel_kind, help = "cloudflare (default, no account) or tailscale (your tailnet)")]
+        tunnel: Option<TunnelKind>,
+        #[arg(long, conflicts_with = "new_code", help = "Turn the orkai PWA off")]
+        stop: bool,
+        #[arg(long, help = "Forget the paired phones and show a new code")]
+        new_code: bool,
+    },
     #[command(about = "Download and install the latest orkai build now")]
     Update,
     #[command(name = "__holder", hide = true)]
     Holder { id: AgentId },
     #[command(name = "__hook", hide = true)]
     Hook { source: String, id: AgentId, payload: Option<String> },
+    #[command(name = "__pwa", hide = true)]
+    PwaBridge {
+        #[arg(long, value_parser = tunnel_kind)]
+        tunnel: TunnelKind,
+        #[arg(long)]
+        port: u16,
+    },
+}
+
+fn tunnel_kind(text: &str) -> Result<TunnelKind, String> {
+    TunnelKind::parse(text).ok_or_else(|| "use cloudflare or tailscale".to_string())
 }
 
 fn launcher(store: Store) -> std::io::Result<Launcher> {
@@ -99,6 +121,9 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
     if let Some(Command::Hook { source, id, payload }) = command {
         let _ = hooks::record(&home, id, &source, payload.as_deref());
         return Ok(());
+    }
+    if let Some(Command::PwaBridge { tunnel, port }) = command {
+        return pwa::bridge::run(&home, tunnel, port);
     }
     let store = Store::open(home)?;
     match command {
@@ -125,7 +150,15 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
             Ok(())
         }
         Some(Command::Update) => update::update_now(),
-        Some(Command::Holder { .. }) | Some(Command::Hook { .. }) => Ok(()),
+        Some(Command::Pwa { tunnel, stop, new_code }) => {
+            let action = match (stop, new_code) {
+                (true, _) => PwaAction::Stop,
+                (false, true) => PwaAction::NewCode,
+                (false, false) => PwaAction::Show,
+            };
+            cli::pwa(&launcher(store)?, tunnel, action)
+        }
+        Some(Command::Holder { .. }) | Some(Command::Hook { .. }) | Some(Command::PwaBridge { .. }) => Ok(()),
     }
 }
 

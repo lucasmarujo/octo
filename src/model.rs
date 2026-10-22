@@ -237,6 +237,8 @@ pub struct StatusReport {
     pub exit: Option<ExitInfo>,
     #[serde(default)]
     pub nested: Option<NestedAgent>,
+    #[serde(default)]
+    pub viewers: Option<u16>,
 }
 
 impl StatusReport {
@@ -270,6 +272,8 @@ pub struct UiState {
     pub worktree: bool,
     #[serde(default)]
     pub bypass: bool,
+    #[serde(default)]
+    pub pwa: bool,
 }
 
 impl Default for UiState {
@@ -282,6 +286,7 @@ impl Default for UiState {
             session_dirs: BTreeMap::new(),
             worktree: false,
             bypass: false,
+            pwa: false,
         }
     }
 }

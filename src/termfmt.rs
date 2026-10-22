@@ -59,7 +59,7 @@ fn push_color(sgr: &mut String, color: vt100::Color, base: u8, bright: u8, exten
     }
 }
 
-fn is_blank(cell: &vt100::Cell) -> bool {
+pub fn is_blank(cell: &vt100::Cell) -> bool {
     (!cell.has_contents() || cell.contents() == " ")
         && cell.bgcolor() == vt100::Color::Default
         && !cell.inverse()

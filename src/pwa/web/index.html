@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#121218" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Orkai" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Orkai</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="preload" href="/fonts/mono-400.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <button id="back" class="back" type="button" aria-label="back to the overview" hidden>‹</button>
+      <svg id="mascot" class="mascot" viewBox="0 0 14 16" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><g class="m-base"><rect x="2" y="0" width="1" height="1" fill="#9c6636"/><rect x="3" y="0" width="1" height="1" fill="#40c8d2"/><rect x="2" y="1" width="1" height="1" fill="#9c6636"/><rect x="3" y="1" width="2" height="1" fill="#40c8d2"/><rect x="7" y="1" width="3" height="1" fill="#2c3c78"/><rect x="2" y="2" width="1" height="1" fill="#9c6636"/><rect x="3" y="2" width="2" height="1" fill="#40c8d2"/><rect x="6" y="2" width="5" height="1" fill="#2c3c78"/><rect x="2" y="3" width="1" height="1" fill="#9c6636"/><rect x="5" y="3" width="7" height="1" fill="#ececf2"/><rect x="2" y="4" width="1" height="1" fill="#9c6636"/><rect x="6" y="4" width="5" height="1" fill="#f2c08e"/><rect x="2" y="5" width="1" height="1" fill="#9c6636"/><rect x="6" y="5" width="1" height="1" fill="#f2c08e"/><rect x="7" y="5" width="1" height="1" fill="#1c1c22"/><rect x="8" y="5" width="1" height="1" fill="#f2c08e"/><rect x="9" y="5" width="1" height="1" fill="#1c1c22"/><rect x="10" y="5" width="1" height="1" fill="#f2c08e"/><rect x="2" y="6" width="1" height="1" fill="#9c6636"/><rect x="6" y="6" width="5" height="1" fill="#f2c08e"/><rect x="2" y="7" width="1" height="1" fill="#9c6636"/><rect x="6" y="7" width="1" height="1" fill="#f2c08e"/><rect x="7" y="7" width="3" height="1" fill="#aa6a34"/><rect x="10" y="7" width="1" height="1" fill="#f2c08e"/><rect x="2" y="8" width="1" height="1" fill="#9c6636"/><rect x="5" y="8" width="8" height="1" fill="#3856a8"/><rect x="1" y="9" width="1" height="1" fill="#f2c08e"/><rect x="2" y="9" width="1" height="1" fill="#9c6636"/><rect x="3" y="9" width="1" height="1" fill="#f2c08e"/><rect x="4" y="9" width="1" height="1" fill="#3856a8"/><rect x="5" y="9" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="9" width="1" height="1" fill="#3856a8"/><rect x="2" y="10" width="1" height="1" fill="#9c6636"/><rect x="5" y="10" width="8" height="1" fill="#3856a8"/><rect x="2" y="11" width="1" height="1" fill="#9c6636"/><rect x="5" y="11" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="11" width="1" height="1" fill="#f2c08e"/><rect x="2" y="12" width="1" height="1" fill="#9c6636"/><rect x="5" y="12" width="7" height="1" fill="#404060"/><rect x="2" y="13" width="1" height="1" fill="#9c6636"/><rect x="5" y="13" width="3" height="1" fill="#404060"/><rect x="9" y="13" width="3" height="1" fill="#404060"/><rect x="2" y="14" width="1" height="1" fill="#9c6636"/><rect x="5" y="14" width="3" height="1" fill="#404060"/><rect x="9" y="14" width="3" height="1" fill="#404060"/><rect x="2" y="15" width="1" height="1" fill="#9c6636"/><rect x="4" y="15" width="3" height="1" fill="#744626"/><rect x="9" y="15" width="3" height="1" fill="#744626"/></g><g class="m-idle"><rect x="5" y="2" width="1" height="1" fill="#40c8d2"/><rect x="3" y="3" width="1" height="1" fill="#40c8d2"/></g><g class="m-busy"><rect x="4" y="0" width="1" height="1" fill="#40c8d2"/><rect x="5" y="1" width="1" height="1" fill="#40c8d2"/></g></svg>
+      <div class="who">
+        <strong id="host">orkai</strong>
+        <span id="where" class="sub"></span>
+      </div>
+      <button id="menu" class="icon" type="button" aria-label="agent actions" hidden>⋯</button>
+      <span id="link" class="dot" data-state="connecting" role="status" aria-label="connecting"></span>
+    </header>
+
+    <main id="overview" class="view" hidden>
+      <nav id="sessions" class="chips" aria-label="sessions"></nav>
+      <section id="stats" class="stats" aria-label="totals"></section>
+      <section id="usage" class="usage" aria-label="plan usage"></section>
+      <button id="lost" class="lost" type="button" hidden></button>
+      <section id="list" class="list" aria-label="agents"></section>
+    </main>
+
+    <main id="agent" class="view term-view" hidden>
+      <div id="screen" class="screen" aria-label="agent terminal">
+        <div id="rows" class="rows"></div>
+        <div id="cursor" class="cursor" hidden></div>
+      </div>
+      <button id="live" class="live" type="button" hidden>↓ live</button>
+      <nav id="keys" class="keys" aria-label="keys"></nav>
+    </main>
+
+    <main id="pair" class="view pair" hidden>
+      <div id="pair-mascot" class="pair-mascot"></div>
+      <h1>orkai pwa</h1>
+      <p id="pair-text"></p>
+      <ol class="steps">
+        <li>open <b>orkai</b> on your computer</li>
+        <li>press <kbd>ctrl+p</kbd> (or click <b>▣ orkai pwa</b>)</li>
+        <li>scan the code with this phone's camera</li>
+      </ol>
+      <button id="retry" class="primary" type="button" hidden>try again</button>
+    </main>
+
+    <footer id="composer" class="composer" hidden>
+      <div id="picks" class="picks"></div>
+      <form id="form" class="form" autocomplete="off">
+        <textarea id="input" rows="1" enterkeyhint="send" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="message"></textarea>
+        <button id="send" class="send" type="submit" aria-label="send">↵</button>
+      </form>
+    </footer>
+
+    <div id="sheet" class="sheet" hidden>
+      <div class="sheet-card" role="dialog" aria-modal="true">
+        <header class="sheet-head"><strong id="sheet-title"></strong><button id="sheet-close" class="icon" type="button" aria-label="close">×</button></header>
+        <div id="sheet-body" class="sheet-body"></div>
+      </div>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <script src="/wire.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

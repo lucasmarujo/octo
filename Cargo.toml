@@ -18,15 +18,20 @@ name = "orkai"
 path = "src/main.rs"
 
 [dependencies]
+base64 = "0.23"
 clap = { version = "4", features = ["derive"] }
 dirs = "6"
 gethostname = "1"
 getrandom = "0.3"
+httparse = "1"
 portable-pty = "0.9"
+qrcode = { version = "0.14", default-features = false }
 ratatui = { version = "0.30", default-features = false, features = ["crossterm_0_29"] }
+ring = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 unicode-width = "0.2"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 vt100 = "0.16"

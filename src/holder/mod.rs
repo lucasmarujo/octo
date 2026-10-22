@@ -81,6 +81,10 @@ impl Clients {
     fn remove(&mut self, id: u64) {
         self.slots.retain(|s| s.id != id);
     }
+
+    fn viewers(&self) -> u16 {
+        u16::try_from(self.slots.iter().filter(|s| s.attached).count()).unwrap_or(u16::MAX)
+    }
 }
 
 struct Shared {
@@ -105,7 +109,8 @@ impl Shared {
 
     fn status(&self) -> StatusReport {
         let exit = lock(&self.exit).clone();
-        lock(&self.term).report(exit)
+        let viewers = lock(&self.clients).viewers();
+        StatusReport { viewers: Some(viewers), ..lock(&self.term).report(exit) }
     }
 
     fn write_pty(&self, bytes: &[u8]) {

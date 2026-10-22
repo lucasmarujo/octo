@@ -13,8 +13,11 @@ use crate::client;
 use crate::holder::oplog;
 use crate::launch::{LaunchMode, Launcher};
 use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, NewAgent, StatusReport};
-use crate::paths::user_home;
+use crate::paths::{Home, user_home};
 use crate::protocol::{ClientMsg, HolderMsg, TermSize};
+use crate::pwa;
+use crate::pwa::bridge::Phase;
+use crate::pwa::tunnel::TunnelKind;
 use crate::store::Store;
 use crate::termfmt;
 use crate::tui::format::{display_path, duration_short, pad, slugify, truncate};
@@ -24,8 +27,10 @@ use crate::worktree;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const KILL_TIMEOUT: Duration = Duration::from_secs(10);
-const DEFAULT_SIZE: TermSize = TermSize { rows: 40, cols: 120 };
-const SUBMIT_DELAY: Duration = Duration::from_millis(600);
+pub const DEFAULT_SIZE: TermSize = TermSize { rows: 40, cols: 120 };
+pub const SUBMIT_DELAY: Duration = Duration::from_millis(600);
+const PWA_READY_WAIT: Duration = Duration::from_secs(360);
+const PWA_STOP_WAIT: Duration = Duration::from_secs(10);
 
 pub enum Probe {
     Live(StatusReport),
@@ -330,5 +335,80 @@ pub fn attach(store: &Store, id: AgentId) -> io::Result<()> {
     let _ = conn.send(&ClientMsg::Detach);
     drop(guard);
     println!("detached from #{} {}", record.id, record.name);
+    Ok(())
+}
+
+pub enum PwaAction {
+    Show,
+    Stop,
+    NewCode,
+}
+
+fn set_pwa_enabled(store: &Store, enabled: bool) -> io::Result<()> {
+    let mut ui = store.load_ui();
+    if ui.pwa != enabled {
+        ui.pwa = enabled;
+        store.save_ui(&ui)?;
+    }
+    Ok(())
+}
+
+fn stop_pwa(home: &Home) -> io::Result<()> {
+    pwa::bridge::stop(home)?;
+    if !pwa::bridge::wait_until(home, PWA_STOP_WAIT, |info| info.is_none()) {
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "the orkai pwa did not stop in time"));
+    }
+    Ok(())
+}
+
+pub fn pwa(launcher: &Launcher, tunnel: Option<TunnelKind>, action: PwaAction) -> io::Result<()> {
+    let store = launcher.store();
+    let home = store.home();
+    match action {
+        PwaAction::Stop => {
+            set_pwa_enabled(store, false)?;
+            stop_pwa(home)?;
+            println!("orkai pwa is off");
+            return Ok(());
+        }
+        PwaAction::NewCode => {
+            stop_pwa(home)?;
+            pwa::bridge::forget_phones(home)?;
+            println!("the paired phones were forgotten; scan the new code");
+        }
+        PwaAction::Show => {}
+    }
+    let config = launcher.config();
+    let tunnel = tunnel.unwrap_or(config.pwa_tunnel);
+    set_pwa_enabled(store, true)?;
+    pwa::bridge::start(home, launcher.holder_exe(), tunnel, config.pwa_port)?;
+    let mut shown = None;
+    let ready = pwa::bridge::wait_until(home, PWA_READY_WAIT, |info| {
+        let Some(info) = info else { return false };
+        if shown != Some(info.phase) {
+            shown = Some(info.phase);
+            match info.phase {
+                Phase::Installing => {
+                    println!("downloading cloudflared (the official build from github.com/cloudflare)…")
+                }
+                Phase::Connecting => println!("opening the {} tunnel…", info.tunnel.label()),
+                Phase::Ready | Phase::Failed => {}
+            }
+        }
+        matches!(info.phase, Phase::Ready | Phase::Failed)
+    });
+    let info = pwa::bridge::status(home).filter(|_| ready);
+    let Some(url) = info.as_ref().and_then(|info| info.ready_url()) else {
+        let error = info.and_then(|info| info.error).unwrap_or_else(|| "the tunnel did not open in time".into());
+        return Err(io::Error::other(format!("orkai pwa: {error}")));
+    };
+    let link = pwa::bridge::pairing_link(url, &pwa::bridge::load_secret(home)?);
+    println!();
+    for line in pwa::qr::Qr::encode(&link).map(|qr| qr.ansi_lines()).unwrap_or_default() {
+        println!("  {line}");
+    }
+    println!();
+    println!("scan it with the phone camera, or open: {link}");
+    println!("end-to-end encrypted over {} · `orkai pwa --stop` turns it off", tunnel.label());
     Ok(())
 }

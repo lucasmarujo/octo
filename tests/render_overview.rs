@@ -18,9 +18,12 @@ use orkai::model::{
 };
 use orkai::paths::Home;
 use orkai::protocol::HolderMsg;
+use orkai::pwa::bridge::{Info, Phase};
+use orkai::pwa::qr::Qr;
+use orkai::pwa::tunnel::TunnelKind;
 use orkai::store::Store;
 use orkai::subagents::Subagent;
-use orkai::tui::app::{App, AppEvent, Confirm, Link, Prompt};
+use orkai::tui::app::{App, AppEvent, Confirm, Link, PairingCode, Prompt, View};
 use orkai::tui::{render, theme};
 use orkai::usage::{self, Limits, Problem, Usage, Window};
 use orkai::util::now_ms;
@@ -129,6 +132,7 @@ fn scenario() -> Scenario {
             cols: 80,
             exit: None,
             nested: None,
+            viewers: None,
         });
     }
     app.where_dir = dir.join("studio/game");
@@ -1344,4 +1348,117 @@ fn a_failed_launch_in_a_new_worktree_leaves_nothing_behind() {
     assert!(left.is_empty(), "{left:?}");
     assert!(git(&repo, &["branch", "--list", "orkai/*"]).is_empty());
     assert!(!git(&repo, &["worktree", "list"]).contains("worktrees"));
+}
+
+fn ready_bridge(phones: usize) -> Info {
+    Info {
+        pid: 4242,
+        port: 7470,
+        tunnel: TunnelKind::Cloudflare,
+        phase: Phase::Ready,
+        url: Some("https://quiet-river-sound-lamp.trycloudflare.com".into()),
+        error: None,
+        phones,
+        started_at_ms: now_ms(),
+        alive_at_ms: now_ms(),
+        exe: None,
+    }
+}
+
+fn show_pwa(app: &mut App, info: Info) {
+    let link =
+        format!("{}/#k=Qm9vdHN0cmFwcGluZyB0aGUgb3JrYWkgcGFpcmluZyBzZWNyZXQ", info.url.clone().unwrap_or_default());
+    app.pwa.enabled = true;
+    app.pwa.code =
+        info.ready_url().map(|url| PairingCode { pid: info.pid, url: url.to_string(), qr: Qr::encode(&link), link });
+    app.pwa.info = Some(info);
+    app.view = View::Pwa;
+}
+
+#[test]
+fn the_orkai_pwa_sits_in_the_sidebar_and_a_click_turns_it_on() {
+    let mut scenario = scenario();
+    let screen = text(&render(&mut scenario.app));
+    let (row, line) = line_with(&screen, "orkai pwa");
+    assert!(line.contains("off"), "{line}");
+    let click = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: column_of(line, "orkai pwa"),
+        row: row as u16,
+        modifiers: KeyModifiers::NONE,
+    };
+    scenario.app.handle(AppEvent::Input(Event::Mouse(click)));
+    assert_eq!(scenario.app.view, View::Pwa);
+    assert!(scenario.app.pwa.enabled);
+    assert!(scenario.app.pwa.starting, "the bridge starts in the background");
+    assert!(scenario.app.launcher.store().load_ui().pwa, "turning it on is remembered");
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.contains("starting the orkai pwa"), "{screen}");
+}
+
+#[test]
+fn a_ready_bridge_shows_the_pairing_code_the_link_and_the_phones() {
+    let mut scenario = scenario();
+    show_pwa(&mut scenario.app, ready_bridge(1));
+    let buffer = render(&mut scenario.app);
+    let screen = text(&buffer);
+    assert!(screen.contains("end-to-end encrypted"), "{screen}");
+    assert!(screen.contains("point the phone camera at the code"), "{screen}");
+    assert!(screen.contains("https://quiet-river-sound-lamp.trycloudflare.com"), "{screen}");
+    assert!(screen.contains("1 connected"), "{screen}");
+    assert!(line_with(&screen, "orkai pwa").1.contains("● 1"), "the sidebar counts the phones");
+    let (dark, light) = (Color::Rgb(18, 18, 24), Color::Rgb(236, 236, 240));
+    let modules: Vec<_> = buffer.content().iter().filter(|cell| cell.symbol() == "▀").collect();
+    assert!(modules.len() > 400, "the code is drawn with half blocks: {}", modules.len());
+    assert!(modules.iter().all(|cell| [dark, light].contains(&cell.fg) && [dark, light].contains(&cell.bg)));
+    assert!(modules.iter().any(|cell| cell.fg == dark) && modules.iter().any(|cell| cell.bg == light));
+}
+
+#[test]
+fn the_pwa_view_tells_what_the_bridge_is_doing() {
+    let mut scenario = scenario();
+    let mut installing = ready_bridge(0);
+    installing.phase = Phase::Installing;
+    show_pwa(&mut scenario.app, installing);
+    assert!(text(&render(&mut scenario.app)).contains("downloading cloudflared"));
+    let mut failed = ready_bridge(0);
+    failed.phase = Phase::Failed;
+    failed.error = Some("cloudflared stopped before the tunnel was up".into());
+    show_pwa(&mut scenario.app, failed);
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.contains("cloudflared stopped before the tunnel was up · retrying"), "{screen}");
+    assert!(line_with(&screen, "orkai pwa").1.contains("error"));
+}
+
+#[test]
+fn a_small_terminal_shows_the_link_instead_of_a_clipped_code() {
+    let mut scenario = scenario();
+    show_pwa(&mut scenario.app, ready_bridge(0));
+    let screen = render_at(&mut scenario.app, 100, 16);
+    assert!(screen.contains("make the terminal bigger"), "{screen}");
+    assert!(screen.contains("#k="), "{screen}");
+}
+
+#[test]
+fn the_pwa_turns_off_from_its_view_or_the_command_and_stays_off() {
+    let mut scenario = scenario();
+    show_pwa(&mut scenario.app, ready_bridge(0));
+    press(&mut scenario.app, KeyCode::Char('d'), KeyModifiers::NONE);
+    assert!(!scenario.app.pwa.enabled);
+    assert!(scenario.app.pwa.info.is_none());
+    assert!(!scenario.app.launcher.store().load_ui().pwa);
+    press(&mut scenario.app, KeyCode::Esc, KeyModifiers::NONE);
+    assert_eq!(scenario.app.view, View::Overview);
+    show_pwa(&mut scenario.app, ready_bridge(0));
+    scenario.app.run_command("/pwa off");
+    assert!(!scenario.app.pwa.enabled);
+    assert!(scenario.app.notice.as_ref().unwrap().text.contains("the orkai pwa is off"));
+}
+
+#[test]
+fn ctrl_p_opens_the_orkai_pwa() {
+    let mut scenario = scenario();
+    press(&mut scenario.app, KeyCode::Char('p'), KeyModifiers::CONTROL);
+    assert_eq!(scenario.app.view, View::Pwa);
+    assert!(scenario.app.pwa.enabled);
 }

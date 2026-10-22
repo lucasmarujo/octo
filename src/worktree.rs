@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use crate::fsutil;
+use crate::launch;
 use crate::model::{AgentId, Worktree};
 use crate::paths::{Home, create_private_dir, normalize_for_compare};
 
@@ -45,7 +46,7 @@ fn invalid(message: impl Into<String>) -> io::Error {
 fn git(dir: &Path, args: &[&str]) -> io::Result<Output> {
     let program =
         which::which("git").map_err(|_| io::Error::new(io::ErrorKind::NotFound, "git was not found in PATH"))?;
-    Command::new(program)
+    launch::without_console(&mut Command::new(program))
         .arg("-C")
         .arg(dir)
         .args(args)

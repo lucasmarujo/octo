@@ -218,6 +218,7 @@ impl TermState {
             cols: size.cols,
             exit,
             nested: self.nested.clone(),
+            viewers: None,
         }
     }
 

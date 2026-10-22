@@ -17,12 +17,15 @@ use crate::model::{
     StatusReport, UiState, Worktree, validate_agent_name,
 };
 use crate::notify::Alert;
-use crate::paths::{expand_tilde, normalize_for_compare, separator_for, user_home};
+use crate::paths::{Home, expand_tilde, normalize_for_compare, separator_for, user_home};
 use crate::protocol::{ClientMsg, HolderMsg, TermSize};
+use crate::pwa::bridge::{self, Info};
+use crate::pwa::qr::Qr;
+use crate::pwa::tunnel::TunnelKind;
 use crate::skills;
 use crate::subagents::{Parent, Subagent, SubagentWatcher};
 use crate::tui::complete::{PathCompleter, SkillCatalog, complete_command, where_argument};
-use crate::tui::format::{display_path, project_label, slugify};
+use crate::tui::format::{default_agent_name, display_path, project_label};
 use crate::tui::history::TaskHistory;
 use crate::tui::keys;
 use crate::tui::line::LineInput;
@@ -37,10 +40,11 @@ const RESCAN_EVERY: Duration = Duration::from_secs(2);
 const START_WAIT: Duration = Duration::from_secs(15);
 const FRESH_RECORD_MS: u64 = 15_000;
 const SCROLL_STEP: isize = 3;
-const NAME_WORDS: usize = 3;
-const NAME_MAX_LEN: usize = 28;
 const ALERT_REPEAT_MS: u64 = 15_000;
 const MERGE_SUBJECT_MAX: usize = 60;
+const PWA_CHECK_EVERY: Duration = Duration::from_secs(1);
+const PWA_REVIVE_AFTER: Duration = Duration::from_secs(20);
+const PWA_STOP_WAIT: Duration = Duration::from_secs(10);
 pub const SHELL_PREFIX: char = '!';
 
 pub enum AppEvent {
@@ -57,6 +61,24 @@ pub enum AppEvent {
     Diff { id: AgentId, result: Result<Vec<u8>, String> },
     Merged { id: AgentId, result: Result<Merged, String> },
     Discarded { name: String, result: Result<(), String> },
+    PwaStarted(Result<(), String>),
+}
+
+#[derive(Default)]
+pub struct PwaPanel {
+    pub enabled: bool,
+    pub info: Option<Info>,
+    pub code: Option<PairingCode>,
+    pub starting: bool,
+    checked: Option<Instant>,
+    started: Option<Instant>,
+}
+
+pub struct PairingCode {
+    pub pid: u32,
+    pub url: String,
+    pub link: String,
+    pub qr: Option<Qr>,
 }
 
 pub enum Link {
@@ -179,6 +201,7 @@ impl AgentEntry {
 pub enum View {
     Overview,
     Agent(AgentId),
+    Pwa,
 }
 
 pub enum Prompt {
@@ -244,6 +267,7 @@ pub enum Hit {
         skip: usize,
         x: u16,
     },
+    Pwa,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -313,6 +337,7 @@ pub struct App {
     change_requests: Option<Sender<Vec<(AgentId, Worktree)>>>,
     alerts: Vec<Alert>,
     installed: Option<Vec<AgentKind>>,
+    pub pwa: PwaPanel,
 }
 
 impl App {
@@ -378,6 +403,7 @@ impl App {
             change_requests: None,
             alerts: Vec::new(),
             installed: None,
+            pwa: PwaPanel { enabled: ui.pwa, ..PwaPanel::default() },
         };
         app.ensure_selection();
         Ok(app)
@@ -393,6 +419,9 @@ impl App {
         self.spawn_change_watcher();
         self.request_changes();
         self.spawn_usage_watchers();
+        if self.pwa.enabled {
+            self.start_pwa();
+        }
         if let Ok(commit) = std::env::var(update::UPDATED_ENV) {
             self.set_notice(Tone::Success, format!("orkai updated to {}", update::short_commit(&commit)));
         }
@@ -535,6 +564,7 @@ impl App {
             session_dirs: self.session_dirs.clone(),
             worktree: self.worktree,
             bypass: self.bypass,
+            pwa: self.pwa.enabled,
         };
         let _ = self.launcher.store().save_ui(&state);
     }
@@ -747,17 +777,154 @@ impl App {
                     self.dirty = true;
                 }
             }
+            AppEvent::PwaStarted(result) => {
+                self.pwa.starting = false;
+                if let Err(err) = result {
+                    self.set_notice(Tone::Error, format!("the orkai pwa did not start: {err}"));
+                }
+                self.refresh_pwa();
+            }
         }
+    }
+
+    pub fn open_pwa(&mut self) {
+        self.show_overview();
+        self.view = View::Pwa;
+        self.prompt = None;
+        if !self.pwa.enabled {
+            self.enable_pwa();
+        }
+        self.refresh_pwa();
+        self.dirty = true;
+    }
+
+    fn enable_pwa(&mut self) {
+        self.pwa.enabled = true;
+        self.persist_ui();
+        self.start_pwa();
+    }
+
+    fn pwa_target(&self) -> (Home, PathBuf, TunnelKind, u16) {
+        let config = self.launcher.config();
+        (
+            self.launcher.store().home().clone(),
+            self.launcher.holder_exe().to_path_buf(),
+            config.pwa_tunnel,
+            config.pwa_port,
+        )
+    }
+
+    fn start_pwa(&mut self) {
+        if self.pwa.starting {
+            return;
+        }
+        self.pwa.starting = true;
+        self.pwa.started = Some(Instant::now());
+        let (home, exe, tunnel, port) = self.pwa_target();
+        let tx = self.tx.clone();
+        let _ = thread::Builder::new().name("orkai-pwa-start".into()).spawn(move || {
+            let result = bridge::start(&home, &exe, tunnel, port).map(|_| ()).map_err(|err| err.to_string());
+            let _ = tx.send(AppEvent::PwaStarted(result));
+        });
+    }
+
+    fn disable_pwa(&mut self) {
+        self.pwa.enabled = false;
+        self.persist_ui();
+        match bridge::stop(self.launcher.store().home()) {
+            Ok(()) => self.set_notice(Tone::Info, "the orkai pwa is off · ctrl+p turns it on again"),
+            Err(err) => self.set_notice(Tone::Error, format!("could not stop the orkai pwa: {err}")),
+        }
+        self.pwa.info = None;
+        self.pwa.code = None;
+        self.dirty = true;
+    }
+
+    fn renew_pwa_code(&mut self) {
+        if self.pwa.starting {
+            return;
+        }
+        self.pwa.starting = true;
+        self.pwa.started = Some(Instant::now());
+        self.pwa.info = None;
+        self.pwa.code = None;
+        self.set_notice(Tone::Info, "forgetting the paired phones…");
+        let (home, exe, tunnel, port) = self.pwa_target();
+        let tx = self.tx.clone();
+        let _ = thread::Builder::new().name("orkai-pwa-renew".into()).spawn(move || {
+            let result = bridge::stop(&home)
+                .and_then(|()| {
+                    if bridge::wait_until(&home, PWA_STOP_WAIT, |info| info.is_none()) {
+                        Ok(())
+                    } else {
+                        Err(io::Error::new(io::ErrorKind::TimedOut, "the old bridge did not stop"))
+                    }
+                })
+                .and_then(|()| bridge::forget_phones(&home))
+                .and_then(|()| bridge::start(&home, &exe, tunnel, port))
+                .map(|_| ())
+                .map_err(|err| err.to_string());
+            let _ = tx.send(AppEvent::PwaStarted(result));
+        });
+    }
+
+    fn refresh_pwa(&mut self) {
+        self.pwa.checked = Some(Instant::now());
+        let home = self.launcher.store().home().clone();
+        let info = bridge::status(&home);
+        if self.pwa.enabled
+            && info.is_none()
+            && !self.pwa.starting
+            && self.pwa.started.is_none_or(|at| at.elapsed() >= PWA_REVIVE_AFTER)
+        {
+            self.start_pwa();
+        }
+        let ready = info.as_ref().and_then(|info| info.ready_url().map(|url| (info.pid, url.to_string())));
+        match ready {
+            None => self.pwa.code = None,
+            Some((pid, url)) => {
+                let stale = self.pwa.code.as_ref().is_none_or(|code| code.pid != pid || code.url != url);
+                if stale && let Ok(secret) = bridge::load_secret(&home) {
+                    let link = bridge::pairing_link(&url, &secret);
+                    self.pwa.code = Some(PairingCode { pid, qr: Qr::encode(&link), url, link });
+                    self.dirty = true;
+                }
+            }
+        }
+        if self.pwa.info != info {
+            self.pwa.info = info;
+            self.dirty = true;
+        }
+    }
+
+    fn on_pwa_key(&mut self, key: KeyEvent) {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Char('c') if ctrl => self.should_quit = true,
+            KeyCode::Esc | KeyCode::Char('q') => self.show_overview(),
+            KeyCode::Char('d') if self.pwa.enabled => self.disable_pwa(),
+            KeyCode::Char('n') if self.pwa.enabled => self.renew_pwa_code(),
+            KeyCode::Enter | KeyCode::Char('e') if !self.pwa.enabled => self.enable_pwa(),
+            _ if keys::is_next_waiting_key(&key) => self.open_next_waiting(),
+            _ => {}
+        }
+        self.dirty = true;
     }
 
     fn on_tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
-        if self.any_working() || self.tick.is_multiple_of(8) {
+        let pwa_waiting = self.view == View::Pwa && self.pwa.enabled && self.pwa.code.is_none();
+        if self.any_working() || pwa_waiting || self.tick.is_multiple_of(8) {
             self.dirty = true;
         }
         if self.last_rescan.elapsed() >= RESCAN_EVERY {
             self.last_rescan = Instant::now();
             self.rescan();
+        }
+        if (self.pwa.enabled || self.view == View::Pwa)
+            && self.pwa.checked.is_none_or(|at| at.elapsed() >= PWA_CHECK_EVERY)
+        {
+            self.refresh_pwa();
         }
         self.sweep_removals();
     }
@@ -877,6 +1044,7 @@ impl App {
 
     fn on_holder(&mut self, id: AgentId, generation: u64, msg: Option<HolderMsg>) {
         let viewing = self.view == View::Agent(id);
+        let desk_size = self.attached_size;
         let store = self.launcher.store().clone();
         let Some(entry) = self.agents.get_mut(&id) else { return };
         if entry.generation() != Some(generation) {
@@ -902,6 +1070,13 @@ impl App {
                     && let Some(conn) = entry.conn()
                 {
                     let _ = conn.send(&ClientMsg::Seen);
+                }
+                if viewing
+                    && entry.attached
+                    && let (Some(size), Some(conn)) = (desk_size, entry.conn())
+                    && (status.rows, status.cols) != (size.rows, size.cols)
+                {
+                    let _ = conn.send(&ClientMsg::Resize(size));
                 }
                 let needs_you = state == AgentState::Paused && previous.is_some_and(|s| s != AgentState::Paused);
                 let name = entry.record.name.clone();
@@ -1060,7 +1235,7 @@ impl App {
     fn open_next_waiting(&mut self) {
         let current = match self.view {
             View::Agent(id) => Some(id),
-            View::Overview => None,
+            View::Overview | View::Pwa => None,
         };
         let Some(id) = self.waiting_for_you().into_iter().find(|id| Some(*id) != current) else {
             self.set_notice(Tone::Info, "no agent is waiting for you");
@@ -1136,20 +1311,7 @@ impl App {
     }
 
     fn default_name(&self, kind: AgentKind, task: &str) -> String {
-        let slug = slugify(task, NAME_WORDS, NAME_MAX_LEN);
-        let base = if slug.is_empty() {
-            let prefix = if kind == AgentKind::Terminal { "term" } else { kind.label() };
-            return (1..)
-                .map(|n| format!("{prefix}-{n}"))
-                .find(|candidate| !self.name_taken(candidate))
-                .unwrap_or_else(|| prefix.to_string());
-        } else {
-            slug
-        };
-        if !self.name_taken(&base) {
-            return base;
-        }
-        (2..).map(|n| format!("{base}-{n}")).find(|candidate| !self.name_taken(candidate)).unwrap_or(base)
+        default_agent_name(kind, task, |name| self.name_taken(name))
     }
 
     fn launch_task(&mut self, kind: AgentKind, task: String) {
@@ -1519,16 +1681,7 @@ impl App {
 
     fn installed_kinds(&mut self) -> Vec<AgentKind> {
         let config = self.launcher.config();
-        self.installed
-            .get_or_insert_with(|| {
-                AgentKind::ALL
-                    .into_iter()
-                    .filter(|kind| {
-                        config.agent(*kind).is_none_or(|(command, _)| launch::resolve_program(command).is_ok())
-                    })
-                    .collect()
-            })
-            .clone()
+        self.installed.get_or_insert_with(|| launch::installed_kinds(config)).clone()
     }
 
     fn cycle_who(&mut self, backwards: bool) {
@@ -1590,6 +1743,7 @@ impl App {
                 match self.view {
                     View::Agent(id) => self.on_agent_key(id, key),
                     View::Overview => self.on_overview_key(key),
+                    View::Pwa => self.on_pwa_key(key),
                 }
             }
             Event::Mouse(mouse) => self.on_mouse(mouse),
@@ -1606,7 +1760,7 @@ impl App {
                             self.queue_input(id, keys::encode_paste(&text, bracketed));
                         }
                     }
-                    View::Overview => {
+                    View::Overview | View::Pwa => {
                         match self.prompt.as_mut() {
                             Some(
                                 Prompt::Where(input)
@@ -1788,6 +1942,7 @@ impl App {
             }
             KeyCode::Char('e') if ctrl && !alt => self.begin_rename(),
             KeyCode::Char('t') if ctrl && !alt => self.set_worktree(!self.worktree),
+            KeyCode::Char('p') if ctrl && !alt => self.open_pwa(),
             KeyCode::Delete if self.task.is_empty() => {
                 if let Some(id) = self.selected {
                     self.request_delete(id);
@@ -1958,6 +2113,15 @@ impl App {
             },
             "diff" => self.open_diff(),
             "merge" => self.request_merge(),
+            "pwa" | "phone" => match arg.as_str() {
+                "off" if self.pwa.enabled => self.disable_pwa(),
+                "off" => self.set_notice(Tone::Info, "the orkai pwa is already off"),
+                "new" => {
+                    self.open_pwa();
+                    self.renew_pwa_code();
+                }
+                _ => self.open_pwa(),
+            },
             "open" => match arg.parse::<AgentId>() {
                 Ok(id) if self.agents.contains_key(&id) => self.open_agent(id),
                 _ => self.set_notice(Tone::Error, "usage: /open <agent number>"),
@@ -2031,6 +2195,7 @@ impl App {
                             self.prompt = Some(Prompt::Confirm(Confirm::Recover(lost)));
                         }
                     }
+                    Some(Hit::Pwa) => self.open_pwa(),
                     Some(Hit::Terminal) | None => {}
                 }
             }
@@ -2047,6 +2212,7 @@ impl App {
                         Some(diff) => diff.view.scroll_by(if up { SCROLL_STEP } else { -SCROLL_STEP }),
                         None => self.move_selection(if up { -1 } else { 1 }),
                     },
+                    View::Pwa => {}
                 }
             }
             _ => {}
@@ -2102,7 +2268,7 @@ fn edit_line(input: &mut LineInput, key: &KeyEvent, ctrl: bool) {
     }
 }
 
-fn merge_message(record: &AgentRecord) -> String {
+pub fn merge_message(record: &AgentRecord) -> String {
     let subject: String = record
         .task
         .lines()

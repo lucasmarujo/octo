@@ -53,6 +53,9 @@ https://github.com/user-attachments/assets/ee120388-6e26-485f-ad0b-b2f8d08cdbc9
   `ctrl+r` retoma cada conversa de onde parou.
 - **Skills no `/`.** As skills de cada agente aparecem no autocomplete e iniciam um agente já invocando a
   skill.
+- **O orkai no celular, de qualquer lugar.** `ctrl+p` mostra um QR code; o celular abre o overview, o
+  terminal de cada agente e cria agentes novos, cifrado de ponta a ponta (veja
+  [O orkai no celular](#o-orkai-no-celular-pwa)).
 - **Binário único que se atualiza sozinho.** Cada build nova é conferida por tamanho e SHA-256 antes de
   substituir o executável.
 
@@ -284,6 +287,7 @@ continua na tela com `unavailable`.
 | `delete` | para e remove o agente selecionado (com o texto vazio), após confirmar no popup |
 | `ctrl+x` | encerra um agente em execução / remove um encerrado (também pede confirmação no popup) |
 | `ctrl+r` | recupera os agentes interrompidos da sessão |
+| `ctrl+p` · `/pwa` | liga o orkai PWA e mostra o QR code para parear o celular (`/pwa off` desliga, `/pwa new` troca o código) |
 
 **Sessões e geral**
 
@@ -387,7 +391,69 @@ orkai kill <id> · orkai rm <id>
 orkai recover [-s sessão]        relança agentes interrompidos retomando a conversa
 orkai sessions · orkai home
 orkai update                     baixa e instala a build mais nova
+orkai pwa [--tunnel cloudflare|tailscale]   liga o orkai PWA e imprime o QR code
+orkai pwa --stop · orkai pwa --new-code     desliga · esquece os celulares pareados
 ```
+
+## O orkai no celular (PWA)
+
+O orkai PWA é o seu orkai no celular, de qualquer lugar: o overview com as sessões, o consumo e os agentes
+ao vivo; o terminal de cada agente com as cores; mensagens, teclas (esc, tab, setas, `1`/`2`/`3` para as
+permissões, `^c`); agentes novos com quem, onde e worktree; parar, remover, renomear, recuperar
+interrompidos, ver o diff e fazer o merge de uma worktree. O desktop e o celular mostram a mesma coisa ao
+mesmo tempo.
+
+### Como usar
+
+1. No orkai, aperte `ctrl+p` (ou clique em **▣ orkai pwa** na lateral, ou digite `/pwa`). Ele fica ligado
+   até você desligar, inclusive depois de fechar e abrir o orkai.
+2. Aponte a câmera do celular para o QR code. O navegador abre o orkai já pareado.
+3. Opcional: *compartilhar › adicionar à tela de início* deixa o orkai a um toque, como um app.
+
+A lateral mostra `off`, `on` ou quantos celulares estão conectados (`● 2`). Na tela do PWA, `d` desliga e `n`
+gera um código novo, o que desconecta e esquece os celulares já pareados.
+
+Pelo terminal:
+
+```sh
+orkai pwa                        # liga e imprime o QR code
+orkai pwa --tunnel tailscale     # usa a sua tailnet em vez da cloudflare
+orkai pwa --new-code             # esquece os celulares pareados
+orkai pwa --stop                 # desliga
+```
+
+### Como o celular chega no computador
+
+O orkai sobe uma ponte leve num processo à parte, que escuta **só em `127.0.0.1`** e serve o próprio app.
+Ela não pesa no orkai: só existe enquanto o PWA está ligado e, sem celular conectado, fica parada. A
+ponte só se conecta aos agentes enquanto há um celular aberto, e manda ao celular só o que mudou: o
+overview quando um estado muda e, no terminal, só as linhas da tela que mudaram.
+
+Para funcionar fora de casa sem abrir portas no roteador, o orkai usa um túnel que só transporta bytes:
+
+- **cloudflare** (padrão, sem conta): um *quick tunnel* da Cloudflare. Na primeira vez, o orkai baixa o
+  `cloudflared` oficial de `github.com/cloudflare/cloudflared` para a pasta `bin/` e confere o SHA-256
+  publicado antes de usar. Se o `cloudflared` já estiver no `PATH`, usa esse. O endereço muda a cada vez
+  que a ponte sobe, e o QR code novo aparece sozinho.
+- **tailscale**: o celular fala com o computador **ponto a ponto** pela sua tailnet (`tailscale serve`),
+  com endereço fixo. O celular precisa estar na mesma tailnet.
+
+Nenhum servidor seu ou do orkai fica no meio.
+
+### Segurança
+
+- O QR code leva um segredo de 256 bits no **fragmento** da URL (`#k=…`). O navegador nunca envia o
+  fragmento pela rede, então o túnel não vê o segredo. O app tira o fragmento da barra de endereço e guarda
+  o segredo só naquele celular.
+- Cada conexão faz uma troca ECDH P-256 nova e deriva, com HKDF-SHA256 salgado pelo segredo e amarrado às
+  duas chaves públicas, uma chave AES-256-GCM para cada sentido. Quem não tem o segredo não deriva as
+  chaves, e a ponte fecha a conexão no primeiro frame que não autentica.
+- O nonce de cada frame é um contador. Um frame repetido, perdido ou fora de ordem não abre, então o túnel
+  não consegue reenviar um comando já digitado.
+- A ponte aceita no máximo 8 conexões, dá 10 s para o pareamento e responde com CSP restrita, sem
+  `unsafe-inline`.
+- Um celular pareado controla os seus agentes (e os terminais) como você no teclado. `n` na tela do PWA ou
+  `orkai pwa --new-code` esquece todos os celulares de uma vez.
 
 ## Atualização automática
 
@@ -474,13 +540,18 @@ A variável `ORKAI_HOME` muda esse local.
   "notify": true,
   "notify_sound": true,
   "notify_command": null,
-  "notify_args": []
+  "notify_args": [],
+  "pwa_tunnel": "cloudflare",
+  "pwa_port": 7470
 }
 ```
 
 `shell` nulo usa `pwsh`/`powershell` no Windows e `$SHELL` no Unix.
 Exemplos: `"claude_args": ["--model", "opus"]`, `"opencode_args": ["-m", "opencode/big-pickle"]`. Campos que
 faltam no arquivo usam o padrão, então um `config.json` antigo continua valendo.
+
+`pwa_tunnel` escolhe o túnel do orkai PWA (`cloudflare` ou `tailscale`) e `pwa_port` a porta local da
+ponte, que só escuta em `127.0.0.1`.
 
 `notify: false` desliga o sininho, o sino e a notificação do terminal; `notify_sound: false` troca o sininho do
 orkai pelo sino padrão do terminal. `notify_command` funciona independente deles;
@@ -531,6 +602,9 @@ e os seus perfis do iTerm2 não são alterados. Builds locais (`dev`) não criam
   agente e só valem para o processo que o orkai lançou; nenhum arquivo de configuração seu é alterado.
 - O perfil com o ícone (veja [Ícone nos terminais](#ícone-nos-terminais)) só aponta para o executável do orkai e
   para a imagem do ícone, gravada na pasta de dados.
+- A ponte do orkai PWA escuta somente em `127.0.0.1` e só aceita o celular que tem o segredo do QR code
+  (veja [O orkai no celular](#o-orkai-no-celular-pwa)). O túnel nunca recebe o segredo, que viaja no
+  fragmento da URL, e só carrega frames AES-256-GCM com nonce por contador.
 
 ## Desenvolvimento
 

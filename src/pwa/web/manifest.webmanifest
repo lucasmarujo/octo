@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Orkai",
+  "short_name": "Orkai",
+  "description": "Your orkai workspace on the phone, from anywhere",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121218",
+  "theme_color": "#121218",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

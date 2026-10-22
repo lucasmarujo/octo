@@ -244,6 +244,7 @@ mod tests {
                 cwd: Some("/work/app".into()),
                 since_ms: 3,
             }),
+            viewers: Some(2),
         }));
         round_trip_holder(HolderMsg::Snapshot(Snapshot {
             size: TermSize { rows: 3, cols: 4 },
