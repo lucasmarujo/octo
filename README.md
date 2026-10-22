@@ -3,113 +3,117 @@
 </p>
 
 <p align="center">
-  <b>Orquestre vários agentes de IA em vários projetos, de um terminal só.</b><br>
-  Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi Code e terminais comuns lado a lado, organizados em sessões.<br>
-  Binário único, nativo e sem runtime, para Windows, Linux e macOS.
+  <b>Orchestrate multiple AI agents across multiple projects from a single terminal.</b><br>
+  Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi Code and plain terminals side by side, organized into sessions.<br>
+  A single native binary with no runtime, for Windows, Linux and macOS.
 </p>
 
 <p align="center">
   <a href="https://github.com/lucasmarujo/orkai-cli/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lucasmarujo/orkai-cli/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="https://github.com/lucasmarujo/orkai-cli/releases/tag/latest"><img alt="Download" src="https://img.shields.io/badge/download-latest-fe5d87?style=flat-square"></a>
   <img alt="Windows · Linux · macOS" src="https://img.shields.io/badge/Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-1f1d29?style=flat-square">
-  <img alt="Claude Code · Codex · +6 agentes" src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20%2B6%20agentes-1f1d29?style=flat-square">
+  <img alt="Claude Code · Codex · +6 agents" src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20%2B6%20agents-1f1d29?style=flat-square">
   <img alt="Rust 1.88+" src="https://img.shields.io/badge/Rust-1.88%2B-1f1d29?style=flat-square&logo=rust">
 </p>
 
 <p align="center">
-  <a href="#instalação">Instalação</a> ·
-  <a href="#primeiros-passos">Primeiros passos</a> ·
-  <a href="#teclas">Teclas</a> ·
-  <a href="#linha-de-comando">Linha de comando</a> ·
-  <a href="#configuração">Configuração</a> ·
-  <a href="#segurança">Segurança</a>
+  <a href="#installation">Installation</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#keys">Keys</a> ·
+  <a href="#command-line">Command line</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#security">Security</a>
 </p>
-
-## O orkai em 50 segundos
-
-https://github.com/user-attachments/assets/ee120388-6e26-485f-ad0b-b2f8d08cdbc9
 
 <p align="center">
-  <img src="docs/overview.png" alt="Visão geral do orkai: sessões na lateral, contadores e consumo no topo, agentes agrupados por projeto">
-  <br>
-  <sub>A visão geral: sessões na lateral, contadores e consumo dos planos no topo, e cada agente ao vivo, agrupado por projeto.</sub>
+  <b>English</b> · <a href="README.pt-BR.md">Português (Brasil)</a>
 </p>
 
-## Destaques
+## orkai in 54 seconds
 
-- **Todos os agentes numa tela.** Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi
-  Code e terminais agrupados por pasta, com estado, tempo, tipo, a frase do que cada um está fazendo e os
-  subagents que o Claude Code e o Codex disparam.
-- **Estado exato, na hora.** Hooks, plugins e os protocolos de cada agente dizem quando ele está
-  trabalhando, esperando você ou terminou, sem depender do texto da tela (veja
-  [Agentes suportados](#agentes-suportados)).
-- **Você sabe quando precisam de você.** Sino, notificação do terminal, título da janela e `alt+n` para abrir
-  direto o agente que está esperando; ou mande o aviso para o celular.
-- **Uma worktree por agente.** Vários agentes no mesmo repositório, cada um na sua branch, com `/diff` e
-  `/merge` sem sair do orkai.
-- **Consumo dos planos à vista.** Janelas de 5 horas, semana e mês (ou o saldo) de cada agente em que você
-  está logado, com contagem regressiva até o reset; quem não tem login não aparece.
-- **Nada se perde.** Fechar, travar ou atualizar a interface não derruba nenhum agente; depois de um reboot,
-  `ctrl+r` retoma cada conversa de onde parou.
-- **Skills no `/`.** As skills de cada agente aparecem no autocomplete e iniciam um agente já invocando a
+https://github.com/user-attachments/assets/285d782a-42e9-4f08-b1c7-c46d4c763a8b
+
+<p align="center">
+  <img src="docs/overview.png" alt="orkai overview: sessions in the sidebar, counters and usage at the top, agents grouped by project">
+  <br>
+  <sub>The overview: sessions in the sidebar, counters and plan usage at the top, and every agent live, grouped by project.</sub>
+</p>
+
+## Highlights
+
+- **Every agent on one screen.** Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi
+  Code and terminals grouped by folder, with status, time, type, a line saying what each one is doing and the
+  subagents that Claude Code and Codex spawn.
+- **Exact status, instantly.** Hooks, plugins and each agent's own protocols tell when it is working,
+  waiting for you or done, without relying on the screen text (see
+  [Supported agents](#supported-agents)).
+- **You know when you're needed.** Bell, terminal notification, window title and `alt+n` to jump straight
+  to the agent that is waiting; or send the alert to your phone.
+- **One worktree per agent.** Several agents in the same repository, each on its own branch, with `/diff` and
+  `/merge` without leaving orkai.
+- **Plan usage in plain sight.** 5-hour, weekly and monthly windows (or the balance) of every agent you're
+  logged into, with a countdown to the reset; agents without a login don't show up.
+- **Nothing gets lost.** Closing, crashing or updating the interface takes down no agent; after a reboot,
+  `ctrl+r` resumes every conversation where it left off.
+- **Skills in `/`.** Each agent's skills show up in the autocomplete and start an agent already invoking the
   skill.
-- **O orkai no celular, de qualquer lugar.** `ctrl+p` mostra um QR code; o celular abre o overview, o
-  terminal de cada agente e cria agentes novos, cifrado de ponta a ponta (veja
-  [O orkai no celular](#o-orkai-no-celular-pwa)).
-- **Binário único que se atualiza sozinho.** Cada build nova é conferida por tamanho e SHA-256 antes de
-  substituir o executável.
+- **orkai on your phone, from anywhere.** `ctrl+p` shows a QR code; the phone opens the overview, each
+  agent's terminal and creates new agents, end-to-end encrypted (see
+  [orkai on your phone](#orkai-on-your-phone-pwa)).
+- **A single binary that updates itself.** Every new build is checked by size and SHA-256 before it
+  replaces the executable.
 
-## Agentes suportados
+## Supported agents
 
-| `who` | Agente | Programa | Estado exato | Consumo no overview | Retomada após reboot |
+| `who` | Agent | Program | Exact status | Usage in overview | Resume after reboot |
 | --- | --- | --- | --- | --- | --- |
-| `claude` | Claude Code | `claude` | hooks (`--settings`) | 5h e semana | `--resume <id>` |
-| `codex` | Codex | `codex` | `notify` | 5h e semana | `codex resume <id>` |
-| `kilo` | Kilo CLI | `kilo` | plugin de eventos | saldo (`funds`) e Kilo Pass | `--session <id>` |
-| `opencode` | OpenCode | `opencode` | plugin de eventos | OpenCode Go (5h e semana) | `--session <id>` |
-| `agy` | Antigravity CLI (sucessor do Gemini CLI) | `agy` | OSC 7501 | 5h e semana | `--conversation=<id>` |
-| `grok` | Grok Build | `grok` | título da janela | semana ou mês | `--resume=<id>` |
-| `qwen` | Qwen Code | `qwen` | hooks (system defaults) | sem API de consumo | `--resume <id>` |
-| `kimi` | Kimi Code | `kimi` | tela | 5h, semana ou mês | `--session <id>` |
-| `terminal` | PowerShell, bash… | `shell` | atividade da saída | — | reexecuta o comando |
+| `claude` | Claude Code | `claude` | hooks (`--settings`) | 5h and weekly | `--resume <id>` |
+| `codex` | Codex | `codex` | `notify` | 5h and weekly | `codex resume <id>` |
+| `kilo` | Kilo CLI | `kilo` | event plugin | balance (`funds`) and Kilo Pass | `--session <id>` |
+| `opencode` | OpenCode | `opencode` | event plugin | OpenCode Go (5h and weekly) | `--session <id>` |
+| `agy` | Antigravity CLI (successor to Gemini CLI) | `agy` | OSC 7501 | 5h and weekly | `--conversation=<id>` |
+| `grok` | Grok Build | `grok` | window title | weekly or monthly | `--resume=<id>` |
+| `qwen` | Qwen Code | `qwen` | hooks (system defaults) | no usage API | `--resume <id>` |
+| `kimi` | Kimi Code | `kimi` | screen | 5h, weekly or monthly | `--session <id>` |
+| `terminal` | PowerShell, bash… | `shell` | output activity | — | reruns the command |
 
-- **Lançamento.** A tarefa entra no agente assim que ele fica pronto. No OpenCode e no Kilo ela vai pelo
-  `--prompt`, que eles mesmos enviam quando terminam de carregar; nos outros, o orkai digita a tarefa e
-  aperta `enter`. O Claude Code, o Grok e o Qwen Code nascem com um id de sessão escolhido pelo orkai. Nos
-  outros, o orkai descobre a sessão na hora de retomar: pelo `session list` do OpenCode/Kilo, pelo
-  `session_index.jsonl` do Kimi Code (`~/.kimi-code`) ou pelo `last_conversations.json` do Antigravity. Em
-  cada caso, é a sessão daquela pasta criada depois do agente e que nenhum outro agente já usa.
-- **Estado exato.** Além da leitura da tela, que vale para todos:
-  - OpenCode e Kilo carregam um plugin do orkai (`OPENCODE_CONFIG_CONTENT`/`KILO_CONFIG_CONTENT`, só
-    naquele processo) que avisa quando a sessão trabalha, pede permissão ou faz uma pergunta, e quando fica
-    ociosa;
-  - o Qwen Code recebe hooks no formato do Claude Code por um arquivo de system defaults próprio do agente
-    (`QWEN_CODE_SYSTEM_DEFAULTS_PATH`), que soma aos seus hooks;
-  - o Antigravity é iniciado com `AGY_CLI_OSC7501=on` e informa trabalhando, bloqueado e terminado pelo
-    protocolo OSC 7501;
-  - o Grok Build mostra o estado no título da janela (spinner e `⚠ Action Required`), e o Qwen Code também
-    (`◐` e `✳`).
+- **Launch.** The task goes into the agent as soon as it is ready. In OpenCode and Kilo it goes through
+  `--prompt`, which they send themselves once they finish loading; in the others, orkai types the task and
+  presses `enter`. Claude Code, Grok and Qwen Code start with a session id chosen by orkai. For the
+  others, orkai finds the session when it is time to resume: through the `session list` of OpenCode/Kilo, the
+  `session_index.jsonl` of Kimi Code (`~/.kimi-code`) or the `last_conversations.json` of Antigravity. In
+  each case, it is the session of that folder created after the agent and not already used by any other agent.
+- **Exact status.** On top of reading the screen, which applies to all of them:
+  - OpenCode and Kilo load an orkai plugin (`OPENCODE_CONFIG_CONTENT`/`KILO_CONFIG_CONTENT`, only in
+    that process) that reports when the session is working, asks for permission or asks a question, and when it
+    goes idle;
+  - Qwen Code gets hooks in the Claude Code format through a system defaults file of the agent's own
+    (`QWEN_CODE_SYSTEM_DEFAULTS_PATH`), which adds to its hooks;
+  - Antigravity is started with `AGY_CLI_OSC7501=on` and reports working, blocked and done through the
+    OSC 7501 protocol;
+  - Grok Build shows its status in the window title (spinner and `⚠ Action Required`), and so does Qwen Code
+    (`◐` and `✳`).
 
-  O orkai não mexe em nenhum arquivo de configuração seu. Se você já define uma dessas variáveis, ele não a
-  substitui. O Grok Build e o Kimi Code só aceitam hooks na configuração global do usuário, então ficam
-  na leitura da tela e do título.
-- **Skills no `/`.** Cada agente sugere as skills e os comandos das pastas que ele mesmo lê (veja
-  [abaixo](#skills-dos-agentes-skill)).
+  orkai doesn't touch any of your config files. If you already set one of these variables, it doesn't
+  replace it. Grok Build and Kimi Code only accept hooks in the user's global config, so they rely on
+  reading the screen and the title.
+- **Skills in `/`.** Each agent suggests the skills and commands from the folders it reads itself (see
+  [below](#agent-skills-skill)).
 
-## Instalação
+## Installation
 
-Baixe o binário da sua plataforma na release
-[`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest), renomeie para
-`orkai` (`orkai.exe` no Windows) e coloque numa pasta do `PATH`:
+Download the binary for your platform from the
+[`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest) release, rename it to
+`orkai` (`orkai.exe` on Windows) and put it in a folder on your `PATH`:
 
-| Plataforma | Arquivo |
+| Platform | File |
 | --- | --- |
 | Windows x64 | `orkai-x86_64-pc-windows-msvc.exe` |
-| Linux x64 (estático, qualquer distro) | `orkai-x86_64-unknown-linux-musl` |
+| Linux x64 (static, any distro) | `orkai-x86_64-unknown-linux-musl` |
 | macOS Apple Silicon | `orkai-aarch64-apple-darwin` |
 | macOS Intel | `orkai-x86_64-apple-darwin` |
 
-**Linux e macOS** (troque `target` pelo arquivo da sua plataforma):
+**Linux and macOS** (replace `target` with the file for your platform):
 
 ```sh
 target=orkai-x86_64-unknown-linux-musl
@@ -118,8 +122,8 @@ curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/orkai-cli/release
 chmod +x ~/.local/bin/orkai
 ```
 
-Se `~/.local/bin` ainda não estiver no `PATH`, adicione `export PATH="$HOME/.local/bin:$PATH"` ao
-`~/.bashrc` ou ao `~/.zshrc`.
+If `~/.local/bin` isn't on your `PATH` yet, add `export PATH="$HOME/.local/bin:$PATH"` to
+`~/.bashrc` or `~/.zshrc`.
 
 **Windows** (PowerShell):
 
@@ -132,17 +136,17 @@ $path = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($path -notlike "*$dir*") { [Environment]::SetEnvironmentVariable("Path", "$path;$dir", "User") }
 ```
 
-Abra um terminal novo e digite `orkai` no PowerShell, Bash ou zsh.
+Open a new terminal and type `orkai` in PowerShell, Bash or zsh.
 
 > [!IMPORTANT]
-> Para usar um agente de IA, o programa dele precisa estar no `PATH`: `claude`, `codex`, `kilo`, `opencode`,
-> `agy`, `grok`, `qwen` ou `kimi` (ou aponte o caminho em [Configuração](#configuração)).
+> To use an AI agent, its program must be on the `PATH`: `claude`, `codex`, `kilo`, `opencode`,
+> `agy`, `grok`, `qwen` or `kimi` (or point to its path in [Configuration](#configuration)).
 
 > [!TIP]
-> Deixe o `orkai` numa pasta em que o seu usuário possa escrever, como as dos exemplos acima: a
-> [atualização automática](#atualização-automática) substitui o próprio executável.
+> Keep `orkai` in a folder your user can write to, like the ones in the examples above: the
+> [auto-update](#auto-update) replaces the executable itself.
 
-**Do código-fonte**, com Rust 1.88+ (vai para `~/.cargo/bin`):
+**From source**, with Rust 1.88+ (goes to `~/.cargo/bin`):
 
 ```sh
 git clone https://github.com/lucasmarujo/orkai-cli.git
@@ -150,336 +154,336 @@ cd orkai-cli
 cargo install --path .
 ```
 
-Builds locais aparecem como `dev` e não se auto-atualizam; `orkai update` converte uma delas em build oficial.
+Local builds show up as `dev` and don't auto-update; `orkai update` turns one of them into an official build.
 
-## Primeiros passos
+## Getting started
 
-1. Abra o orkai em qualquer terminal: `orkai`.
-2. Escolha a pasta do projeto com `ctrl+l` (ou `/where <pasta>`).
-3. Escolha quem executa com `tab`: um dos agentes instalados (claude, codex, opencode…) ou terminal; `/who <nome>`
-   escolhe direto.
-4. Escreva a tarefa no "write a task" e aperte `enter`: o agente nasce já trabalhando nela.
-5. `enter` (ou um clique) abre o agente numa aba; `ctrl+]` volta para a visão geral.
+1. Open orkai in any terminal: `orkai`.
+2. Pick the project folder with `ctrl+l` (or `/where <folder>`).
+3. Pick who runs it with `tab`: one of the installed agents (claude, codex, opencode…) or terminal; `/who <name>`
+   picks one directly.
+4. Type the task in "write a task" and press `enter`: the agent starts already working on it.
+5. `enter` (or a click) opens the agent in a tab; `ctrl+]` goes back to the overview.
 
-Pode sair quando quiser (`ctrl+q`): os agentes continuam rodando e o orkai reconecta em todos ao abrir de novo.
+You can quit whenever you want (`ctrl+q`): the agents keep running and orkai reconnects to all of them when you open it again.
 
-## A interface
+## The interface
 
-| Área | O que mostra |
+| Area | What it shows |
 | --- | --- |
-| Lateral | máquina, sessões com o número de agentes ativos em cada uma, `+ new session` |
-| Topo | o homenzinho pixelado, os contadores `agents`, `working`, `paused` e `done` da sessão e, à direita, o consumo dos agentes em que você está logado (veja [abaixo](#consumo-dos-planos)) |
-| Lista | agentes agrupados por pasta (com a contagem de cada uma): número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`, `kimi`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
-| Rodapé | `write a task`, `pc`, `who`, `worktree`, `bypass` e `where` para lançar novos agentes |
+| Sidebar | machine, sessions with the number of active agents in each one, `+ new session` |
+| Top | the little pixel-art man, the session's `agents`, `working`, `paused` and `done` counters and, on the right, the usage of the agents you're logged into (see [below](#plan-usage)) |
+| List | agents grouped by folder (with the count of each one): number, status, name, time in the current status, lifetime, type (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`, `kimi`, `terminal`) and a line saying what the agent is doing; right below each agent, the subagents it spawned that are still running (`↳`, type, how long ago, description and the tool in use) |
+| Footer | `write a task`, `pc`, `who`, `worktree`, `bypass` and `where` to launch new agents |
 
-### Estados
+### States
 
-| Símbolo | Estado |
+| Symbol | State |
 | :---: | --- |
-| `⠋` | trabalhando |
-| `‖` | em amarelo, esperando você responder (aprovação, pergunta ou escolha dentro do agente) |
-| `✔` | terminou (ainda não visto) |
-| `●` | ocioso |
+| `⠋` | working |
+| `‖` | in yellow, waiting for your answer (approval, question or choice inside the agent) |
+| `✔` | done (not seen yet) |
+| `●` | idle |
 | `$` | terminal |
-| `↻` | interrompido (crash/reboot) |
-| `✗` | encerrado |
+| `↻` | interrupted (crash/reboot) |
+| `✗` | ended |
 
-Um terminal em que você roda um agente (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen` ou
-`kimi`) vira esse agente sozinho: em até 2 segundos o overview passa a mostrar o tipo, o estado
-(trabalhando, esperando você, terminou), os subagents e os contadores como os de um agente lançado pelo
-orkai. Ao sair do agente, volta a ser `terminal`. O Qwen Code roda sobre o Node e é reconhecido pelo registro
-de sessões dele (`~/.qwen/sessions`), como o Claude Code.
+A terminal where you run an agent (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen` or
+`kimi`) becomes that agent on its own: within 2 seconds the overview shows its type, status
+(working, waiting for you, done), subagents and counters just like an agent launched by
+orkai. When you exit the agent, it goes back to being a `terminal`. Qwen Code runs on Node and is recognized by
+its session registry (`~/.qwen/sessions`), like Claude Code.
 
-### Estado exato pelos hooks
+### Exact status from hooks
 
-Ao lançar o Claude Code (2.1.78 ou mais novo), o orkai passa um `--settings` com hooks assíncronos, que não
-atrasam o agente. Eles avisam o orkai quando você envia uma tarefa, quando o agente usa uma ferramenta, pede
-permissão ou faz uma pergunta, e quando o turno termina. Assim o estado muda na hora, sem depender do texto
-da tela; por exemplo, uma resposta final que termina com "Would you like to…?" não vira mais `‖`. No Codex,
-o orkai usa o `notify` para saber quando o turno termina. Os outros agentes estão em
-[Agentes suportados](#agentes-suportados).
+When it launches Claude Code (2.1.78 or newer), orkai passes a `--settings` with async hooks, which don't
+slow the agent down. They tell orkai when you send a task, when the agent uses a tool, asks for
+permission or asks a question, and when the turn ends. So the status changes instantly, without relying on the
+screen text; for example, a final answer that ends with "Would you like to…?" no longer turns into `‖`. In Codex,
+orkai uses `notify` to know when the turn ends. The other agents are in
+[Supported agents](#supported-agents).
 
-- Os hooks somam-se aos seus (do usuário, do projeto e dos plugins), sem substituí-los. Se você já passa
-  `--settings` em `claude_args`, ou já tem um `notify` no `config.toml` do Codex, o orkai não mexe.
-- Cada hook só grava o tipo do evento e a hora num arquivo dentro da pasta do agente; o prompt, os comandos e
-  as respostas nunca são gravados em disco.
-- A leitura da tela continua como reserva: para agentes iniciados antes desta versão, versões antigas do
-  Claude Code, interrupções com `esc`, diálogos sem hook (como o de confiar na pasta) e, no Windows, quando
-  não há Git Bash (os hooks do Claude Code rodam nele).
+- The hooks add to yours (user, project and plugins) without replacing them. If you already pass
+  `--settings` in `claude_args`, or already have a `notify` in the Codex `config.toml`, orkai leaves it alone.
+- Each hook only writes the event type and the time to a file inside the agent's folder; the prompt, the commands and
+  the answers are never written to disk.
+- Reading the screen stays as a fallback: for agents started before this version, older versions of
+  Claude Code, interruptions with `esc`, dialogs without a hook (like the one to trust the folder) and, on Windows,
+  when there is no Git Bash (Claude Code hooks run in it).
 
-### Avisos
+### Alerts
 
-Quando um agente que você não está olhando passa a esperar você (`‖`) ou termina (`✔`):
+When an agent you're not looking at starts waiting for you (`‖`) or finishes (`✔`):
 
-- toca o sininho do orkai, em dois tons: descendo quando um agente espera você, subindo quando termina, com o
-  timbre do sino do vídeo de lançamento, sintetizado pelo próprio orkai (no Windows pelo sistema, no macOS pelo
-  `afplay` e no Linux pelo `paplay`, `pw-play` ou `aplay`). Por SSH, ou sem nenhum desses players, o terminal
-  toca o sino padrão (no Windows Terminal, a barra de tarefas pisca);
-- o terminal recebe uma notificação de área de trabalho (OSC 9, mostrada pelo iTerm2, WezTerm, Ghostty, kitty
-  e outros);
-- o rodapé avisa `<agente> is waiting for you · alt+n opens it`;
-- o título da janela mostra quantos estão esperando e quantos terminaram, em todas as sessões
-  (`‖2 ✔1 · Orkai`), visível na barra de tarefas mesmo com o orkai em segundo plano.
+- the orkai chime plays, in two tones: falling when an agent is waiting for you, rising when it finishes, with
+  the timbre of the bell from the launch video, synthesized by orkai itself (on Windows by the system, on macOS by
+  `afplay` and on Linux by `paplay`, `pw-play` or `aplay`). Over SSH, or without any of these players, the terminal
+  rings the default bell (in Windows Terminal, the taskbar flashes);
+- the terminal gets a desktop notification (OSC 9, shown by iTerm2, WezTerm, Ghostty, kitty
+  and others);
+- the footer shows `<agent> is waiting for you · alt+n opens it`;
+- the window title shows how many are waiting and how many are done, across all sessions
+  (`‖2 ✔1 · Orkai`), visible in the taskbar even with orkai in the background.
 
-`alt+n` (no overview ou dentro de qualquer aba) abre o agente que espera há mais tempo; os que
-terminaram vêm depois. Dentro de uma aba, a barra de baixo mostra quantos outros precisam de você.
-Abrir o agente marca como visto. Um mesmo agente não toca de novo pelo mesmo motivo em menos de 15 s.
+`alt+n` (in the overview or inside any tab) opens the agent that has been waiting the longest; the ones that
+are done come next. Inside a tab, the bottom bar shows how many others need you.
+Opening the agent marks it as seen. The same agent doesn't chime again for the same reason within 15 s.
 
-Para receber o aviso em outro lugar (celular, notificação nativa do sistema), configure
-`notify_command` (veja [Configuração](#configuração)). O comando roda a cada aviso, sem shell, com
-estas variáveis de ambiente: `ORKAI_MESSAGE`, `ORKAI_AGENT_ID`, `ORKAI_AGENT_NAME`, `ORKAI_AGENT_KIND`,
-`ORKAI_AGENT_STATE` (`paused` ou `done`), `ORKAI_SESSION`, `ORKAI_AGENT_CWD` e `ORKAI_AGENT_ACTIVITY`
-(a frase do que o agente está fazendo). Ele é encerrado se passar de 30 s.
+To get the alert somewhere else (phone, native system notification), set
+`notify_command` (see [Configuration](#configuration)). The command runs on every alert, without a shell, with
+these environment variables: `ORKAI_MESSAGE`, `ORKAI_AGENT_ID`, `ORKAI_AGENT_NAME`, `ORKAI_AGENT_KIND`,
+`ORKAI_AGENT_STATE` (`paused` or `done`), `ORKAI_SESSION`, `ORKAI_AGENT_CWD` and `ORKAI_AGENT_ACTIVITY`
+(the line saying what the agent is doing). It is killed if it runs longer than 30 s.
 
-### Consumo dos planos
+### Plan usage
 
-À direita dos contadores, o overview mostra o consumo **só dos agentes em que você está logado**, use você
-o agente agora ou não; quem não tem login não aparece, para a tela não poluir. Para cada um aparecem duas
-linhas: a janela de 5 horas (`5h`) e a semanal (`week`), ou a mensal (`month`) quando o plano não tem semana,
-ou o saldo (`funds`). Cada janela tem uma barra (verde, amarela a partir de 70%, vermelha a partir de 90%) e a
-contagem regressiva até o reset. Até três agentes ficam numa coluna ao lado do homenzinho; com mais, eles
-se dividem em colunas, e só numa tela estreita o topo cresce. Os valores são consultados a cada 2 minutos, em
-segundo plano, com o login que o próprio agente já guarda na máquina:
+To the right of the counters, the overview shows the usage **only of the agents you're logged into**, whether
+you're using the agent right now or not; agents without a login don't show up, to keep the screen clean. Each one
+gets two lines: the 5-hour window (`5h`) and the weekly one (`week`), or the monthly one (`month`) when the plan has
+no week, or the balance (`funds`). Each window has a bar (green, yellow from 70%, red from 90%) and the
+countdown to the reset. Up to three agents fit in a column next to the little man; with more, they
+split into columns, and only on a narrow screen does the top grow. The values are fetched every 2 minutes, in
+the background, with the login the agent itself already keeps on the machine:
 
-- **Claude Code**: `~/.claude/.credentials.json` (ou `CLAUDE_CONFIG_DIR`; no macOS, o Keychain);
-- **Codex**: `~/.codex/auth.json` (ou `CODEX_HOME`), com login do ChatGPT;
-- **Kilo CLI**: a conta Kilo em `~/.local/share/kilo/auth.json`, com o saldo em dólar e o Kilo Pass do mês;
-- **OpenCode**: a chave do OpenCode Go em `~/.local/share/opencode/auth.json` (5h, semana e mês). Só a chave
-  do Zen aparece como `api key · no plan limits`; outros provedores do OpenCode não contam;
-- **Antigravity**: `agy -p /usage --output-format json`, a consulta que o próprio `agy` faz sem gastar
-  quota (o login dele fica no cofre do sistema e o orkai não o lê);
-- **Grok Build**: `~/.grok/auth.json` (ou `GROK_HOME`/`GROK_AUTH_PATH`), com o período semanal ou mensal da
-  assinatura;
-- **Kimi Code**: `~/.kimi-code/credentials` (ou `KIMI_CODE_HOME`), no endpoint do `config.toml` dele.
+- **Claude Code**: `~/.claude/.credentials.json` (or `CLAUDE_CONFIG_DIR`; on macOS, the Keychain);
+- **Codex**: `~/.codex/auth.json` (or `CODEX_HOME`), with a ChatGPT login;
+- **Kilo CLI**: the Kilo account in `~/.local/share/kilo/auth.json`, with the balance in dollars and the Kilo Pass of the month;
+- **OpenCode**: the OpenCode Go key in `~/.local/share/opencode/auth.json` (5h, week and month). Only the Zen key
+  shows up as `api key · no plan limits`; other OpenCode providers don't count;
+- **Antigravity**: `agy -p /usage --output-format json`, the query `agy` itself makes without spending
+  quota (its login lives in the system vault and orkai doesn't read it);
+- **Grok Build**: `~/.grok/auth.json` (or `GROK_HOME`/`GROK_AUTH_PATH`), with the weekly or monthly period of the
+  subscription;
+- **Kimi Code**: `~/.kimi-code/credentials` (or `KIMI_CODE_HOME`), on the endpoint from its `config.toml`.
 
-O Qwen Code não tem API de consumo (o plano gratuito por OAuth acabou em abril de 2026, e o Coding Plan só
-mostra o uso no console da Alibaba Cloud), então ele não aparece no topo.
+Qwen Code has no usage API (the free OAuth plan ended in April 2026, and the Coding Plan only
+shows usage in the Alibaba Cloud console), so it doesn't show up at the top.
 
-Com o login vencido aparece `login expired` (abrir o agente renova); se a consulta falhar, o último valor
-continua na tela com `unavailable`.
+With an expired login it shows `login expired` (opening the agent renews it); if the query fails, the last value
+stays on screen with `unavailable`.
 
-## Teclas
+## Keys
 
-**Tarefas e lançamento**
+**Tasks and launching**
 
-| Tecla | Ação |
+| Key | Action |
 | --- | --- |
-| digitar + `enter` | inicia um agente com a tarefa digitada |
-| `!comando` + `enter` | roda o comando num terminal novo, sem mudar o `who` (ex.: `!npm run dev`) |
-| `shift+enter` (ou `alt+enter`) | quebra de linha na tarefa, sem enviar; colar um texto com várias linhas também mantém as quebras |
-| `ctrl+↑` (e `ctrl+↓`) | recupera as tarefas que você já mandou nesta sessão; o histórico é esquecido quando o orkai fecha |
-| `tab` / `shift+tab` | escolhe quem executa entre os agentes instalados e o terminal; `/who <nome>` escolhe qualquer um |
-| `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja [abaixo](#escolhendo-a-pasta-where)); clicar no nome de um projeto também |
-| `ctrl+t` | liga/desliga a worktree própria para os próximos agentes (veja [abaixo](#uma-worktree-por-agente-ctrlt)) |
-| `/bypass` | liga/desliga o modo bypass de permissões para os próximos agentes (veja [abaixo](#modo-bypass-bypass)) |
-| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-dos-agentes-skill)) |
+| type + `enter` | starts an agent with the typed task |
+| `!command` + `enter` | runs the command in a new terminal, without changing `who` (e.g. `!npm run dev`) |
+| `shift+enter` (or `alt+enter`) | line break in the task, without sending; pasting text with several lines also keeps the line breaks |
+| `ctrl+↑` (and `ctrl+↓`) | recalls the tasks you already sent in this session; the history is forgotten when orkai closes |
+| `tab` / `shift+tab` | picks who runs it among the installed agents and the terminal; `/who <name>` picks any of them |
+| `/where <folder>` or `ctrl+l` | picks the session folder (see [below](#choosing-the-folder-where)); clicking a project name does too |
+| `ctrl+t` | turns its own worktree on/off for the next agents (see [below](#one-worktree-per-agent-ctrlt)) |
+| `/bypass` | turns the permission bypass mode on/off for the next agents (see [below](#bypass-mode-bypass)) |
+| `/` | commands (`tab` completes the name): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/help`, `/quit`, plus the skills of the current `who` (see [below](#agent-skills-skill)) |
 
-**Agentes**
+**Agents**
 
-| Tecla | Ação |
+| Key | Action |
 | --- | --- |
-| `↑` `↓` / mouse | seleciona; `enter` ou clique abre o agente numa aba |
-| `ctrl+]` | sai da aba do agente e volta para a visão geral |
-| `shift+pgup` / roda do mouse | histórico do agente |
-| `alt+1..9` | pula para uma aba aberta |
-| `alt+n` | abre o próximo agente esperando você (ou que terminou), de qualquer tela |
-| `ctrl+e` / `f2` | renomeia o agente |
-| `delete` | para e remove o agente selecionado (com o texto vazio), após confirmar no popup |
-| `ctrl+x` | encerra um agente em execução / remove um encerrado (também pede confirmação no popup) |
-| `ctrl+r` | recupera os agentes interrompidos da sessão |
-| `ctrl+p` · `/pwa` | liga o orkai PWA e mostra o QR code para parear o celular (`/pwa off` desliga, `/pwa new` troca o código) |
+| `↑` `↓` / mouse | selects; `enter` or a click opens the agent in a tab |
+| `ctrl+]` | leaves the agent's tab and goes back to the overview |
+| `shift+pgup` / mouse wheel | agent history |
+| `alt+1..9` | jumps to an open tab |
+| `alt+n` | opens the next agent waiting for you (or that is done), from any screen |
+| `ctrl+e` / `f2` | renames the agent |
+| `delete` | stops and removes the selected agent (with empty text), after confirming in the popup |
+| `ctrl+x` | stops a running agent / removes an ended one (also asks for confirmation in the popup) |
+| `ctrl+r` | recovers the interrupted agents of the session |
+| `ctrl+p` · `/pwa` | turns on the orkai PWA and shows the QR code to pair your phone (`/pwa off` turns it off, `/pwa new` changes the code) |
 
-**Sessões e geral**
+**Sessions and general**
 
-| Tecla | Ação |
+| Key | Action |
 | --- | --- |
-| `ctrl+n` · `alt+↑↓` | nova sessão · troca de sessão |
-| `f1` (ou `?` com o texto vazio) | mostra/esconde a ajuda |
-| `ctrl+c` / `ctrl+q` | sai do orkai; os agentes continuam rodando |
+| `ctrl+n` · `alt+↑↓` | new session · switch session |
+| `f1` (or `?` with empty text) | shows/hides help |
+| `ctrl+c` / `ctrl+q` | quits orkai; the agents keep running |
 
-Dentro da aba de um agente todas as teclas vão para ele (Claude Code, OpenCode, PowerShell, bash…),
-inclusive `esc`, setas, colagem e mouse quando o programa usa mouse.
+Inside an agent's tab every key goes to it (Claude Code, OpenCode, PowerShell, bash…),
+including `esc`, arrows, paste and the mouse when the program uses the mouse.
 
-## Escolhendo a pasta (`/where`)
+## Choosing the folder (`/where`)
 
-Digite `/where ` (ou `/cd `) no "write a task". A linha de baixo mostra, ao vivo, as pastas
-de onde você está (`where` atual) e vai filtrando conforme você digita. Caminhos relativos partem
-do `where` atual; `~` é a sua pasta de usuário.
+Type `/where ` (or `/cd `) in "write a task". The line below shows, live, the folders
+of where you are (current `where`) and filters them as you type. Relative paths start
+from the current `where`; `~` is your user folder.
 
-- `tab` com uma única pasta possível entra nela e já lista as subpastas;
-- `tab` com várias completa o prefixo comum e, apertado de novo, percorre as opções
-  (`shift+tab` volta);
-- `enter` define a pasta. Cada sessão lembra a sua: ao trocar de sessão, o `where` volta para
-  a pasta daquela sessão.
+- `tab` with a single possible folder enters it and lists its subfolders right away;
+- `tab` with several completes the common prefix and, pressed again, cycles through the options
+  (`shift+tab` goes back);
+- `enter` sets the folder. Each session remembers its own: when you switch sessions, `where` goes back to
+  that session's folder.
 
-`ctrl+l` (ou clicar em `where`) abre o mesmo seletor já preenchido com a pasta atual.
+`ctrl+l` (or clicking `where`) opens the same picker already filled in with the current folder.
 
-## Uma worktree por agente (`ctrl+t`)
+## One worktree per agent (`ctrl+t`)
 
-Com `worktree on` no rodapé (`ctrl+t`, `/worktree` ou clique), cada novo agente de IA nasce numa
-[worktree do git](https://git-scm.com/docs/git-worktree) própria, numa branch `orkai/<nome-do-agente>` criada a
-partir do último commit da pasta do `where`. Assim vários agentes mexem no mesmo repositório sem pisar um no
-outro, e o seu checkout continua intacto. Terminais (`!comando`) continuam rodando direto na pasta.
+With `worktree on` in the footer (`ctrl+t`, `/worktree` or a click), each new AI agent starts in its own
+[git worktree](https://git-scm.com/docs/git-worktree), on an `orkai/<agent-name>` branch created from
+the latest commit of the `where` folder. That way several agents work on the same repository without stepping on
+each other, and your checkout stays intact. Terminals (`!command`) keep running straight in the folder.
 
-- A worktree fica em `orkai home`/`worktrees/<número do agente>`, na mesma subpasta do repositório em que você
-  estava. Mudanças não commitadas e arquivos fora do git (como `.env`) não vão para ela. O agente pode
-  perguntar se você confia na pasta nova.
-- Na lista, o agente continua no grupo do projeto e mostra `⎇ 4 files +12 −3`: o que mudou desde que ele
-  começou, contando commits, edições e arquivos novos (atualizado a cada 10 s). Dentro da aba, a barra
-  mostra a branch.
-- `/diff` mostra as mudanças do agente selecionado, incluindo arquivos novos (`esc` fecha, setas e
-  `pgup`/`pgdn` rolam).
-- `/merge` (com o agente parado ou terminado) commita o que estiver pendente na branch dele e faz o merge na
-  branch atual do repositório. Se houver conflito, o merge é desfeito, o repositório fica como estava e o
-  orkai diz o comando para resolver na mão. Depois do merge, a contagem recomeça do zero.
-- Apagar o agente (`delete` ou `ctrl+x`) apaga também a worktree e a branch `orkai/…`; o popup avisa antes.
-- Na linha de comando: `orkai new --worktree …`; `orkai rm` também apaga a worktree.
+- The worktree lives in `orkai home`/`worktrees/<agent number>`, in the same repository subfolder you were
+  in. Uncommitted changes and files outside git (like `.env`) don't go into it. The agent may
+  ask whether you trust the new folder.
+- In the list, the agent stays in the project group and shows `⎇ 4 files +12 −3`: what changed since it
+  started, counting commits, edits and new files (updated every 10 s). Inside the tab, the bar
+  shows the branch.
+- `/diff` shows the changes of the selected agent, including new files (`esc` closes, arrows and
+  `pgup`/`pgdn` scroll).
+- `/merge` (with the agent stopped or done) commits whatever is pending on its branch and merges it into the
+  current branch of the repository. If there is a conflict, the merge is undone, the repository stays as it was and
+  orkai tells you the command to resolve it by hand. After the merge, the count starts over from zero.
+- Deleting the agent (`delete` or `ctrl+x`) also deletes the worktree and the `orkai/…` branch; the popup warns you first.
+- On the command line: `orkai new --worktree …`; `orkai rm` also deletes the worktree.
 
-## Modo bypass (`/bypass`)
+## Bypass mode (`/bypass`)
 
-Com `bypass on` no rodapé (`/bypass`, `/bypass on|off` ou clique), cada novo agente de IA já nasce com o modo
-de bypass total de permissões do próprio agente: ele roda ferramentas, comandos e edições sem pedir
-aprovação. Use só em pastas e máquinas em que você confia nisso. Terminais (`!comando`) não mudam.
+With `bypass on` in the footer (`/bypass`, `/bypass on|off` or a click), each new AI agent starts already in the
+agent's own full permission bypass mode: it runs tools, commands and edits without asking for
+approval. Only use it in folders and on machines where you trust that. Terminals (`!command`) don't change.
 
-| Agente | Flag adicionado |
+| Agent | Flag added |
 | --- | --- |
 | Claude Code | `--dangerously-skip-permissions` |
-| Codex | `--dangerously-bypass-approvals-and-sandbox` (também sem sandbox) |
-| Kilo CLI | `--auto`, com `KILO_NO_DAEMON=1` (com um daemon rodando, o Kilo ignora o `--auto`) |
+| Codex | `--dangerously-bypass-approvals-and-sandbox` (also without a sandbox) |
+| Kilo CLI | `--auto`, with `KILO_NO_DAEMON=1` (with a daemon running, Kilo ignores `--auto`) |
 | OpenCode | `--auto` |
 | Antigravity | `--dangerously-skip-permissions` |
 | Grok Build | `--always-approve` |
 | Qwen Code | `--yolo` |
-| Kimi Code | `--auto` (o `--yolo` do Kimi ainda pergunta nas ações arriscadas) |
+| Kimi Code | `--auto` (Kimi's `--yolo` still asks on risky actions) |
 
-- O modo fica gravado no agente: `ctrl+r`, `/restart` e `orkai recover` retomam a conversa ainda em bypass.
-- Se os args do agente no `config.json` já escolhem um modo de permissão (como `-a on-request` no Codex ou
-  `--approval-mode` no Qwen Code), o orkai não adiciona o flag, porque o agente recusaria os dois juntos.
-- Na primeira vez, o Claude Code pede para você aceitar o modo bypass; a tarefa só é digitada depois. As
-  telas de "confiar nesta pasta" de cada agente continuam aparecendo.
+- The mode is saved with the agent: `ctrl+r`, `/restart` and `orkai recover` resume the conversation still bypassed.
+- If the agent args in `config.json` already pick a permission mode (like `-a on-request` in Codex or
+  `--approval-mode` in Qwen Code), orkai doesn't add the flag, because the agent would refuse both together.
+- The first time, Claude Code asks you to accept bypass mode; the task is only typed after that. Each
+  agent's "trust this folder" screens still show up.
 
-## Skills dos agentes (`/skill`)
+## Agent skills (`/skill`)
 
-Com um agente de IA no `who`, o `/` também sugere as skills e os comandos que esse agente tem, lidos do
-disco e atualizados sozinhos (instale uma skill e ela aparece em segundos). As pastas de projeto vão da
-pasta do `where` até a raiz do repositório:
+With an AI agent in `who`, `/` also suggests the skills and commands that agent has, read from
+disk and updated on their own (install a skill and it shows up within seconds). The project folders go from
+the `where` folder up to the repository root:
 
-- **Claude Code**: `~/.claude/skills`, `~/.claude/commands`, `.claude/skills` e `.claude/commands`, e as
-  skills dos plugins habilitados (`/plugin:skill`);
-- **Codex**: `.agents/skills`, `~/.agents/skills` e `~/.codex/skills` (incluindo as skills de sistema);
-- **OpenCode** e **Kilo CLI**: `skill(s)` e `command(s)` de `~/.config/opencode` (ou `~/.config/kilo`),
-  `~/.opencode` (`~/.kilo`) e `.opencode` (`.kilo`, `.kilocode`), além de `.claude/skills` e
-  `.agents/skills`; comandos em subpastas viram `/pasta/comando`;
-- **Antigravity**: `~/.gemini/antigravity-cli/skills` e `.agents/skills` (ou o antigo `.agent/skills`);
-- **Grok Build**: `skills` e `commands` de `~/.grok`, `.grok`, `.agents`, `.claude` e `.cursor`;
-- **Qwen Code**: `~/.qwen/skills`, `~/.qwen/commands`, `.qwen/skills`, `.qwen/commands` e `.agents/skills`;
-- **Kimi Code**: `~/.kimi-code/skills`, `.kimi-code/skills` e `.agents/skills`.
+- **Claude Code**: `~/.claude/skills`, `~/.claude/commands`, `.claude/skills` and `.claude/commands`, and the
+  skills of enabled plugins (`/plugin:skill`);
+- **Codex**: `.agents/skills`, `~/.agents/skills` and `~/.codex/skills` (including the system skills);
+- **OpenCode** and **Kilo CLI**: `skill(s)` and `command(s)` from `~/.config/opencode` (or `~/.config/kilo`),
+  `~/.opencode` (`~/.kilo`) and `.opencode` (`.kilo`, `.kilocode`), plus `.claude/skills` and
+  `.agents/skills`; commands in subfolders become `/folder/command`;
+- **Antigravity**: `~/.gemini/antigravity-cli/skills` and `.agents/skills` (or the older `.agent/skills`);
+- **Grok Build**: `skills` and `commands` from `~/.grok`, `.grok`, `.agents`, `.claude` and `.cursor`;
+- **Qwen Code**: `~/.qwen/skills`, `~/.qwen/commands`, `.qwen/skills`, `.qwen/commands` and `.agents/skills`;
+- **Kimi Code**: `~/.kimi-code/skills`, `.kimi-code/skills` and `.agents/skills`.
 
-`tab` completa (ou estende o prefixo comum), e `/skill argumentos` + `enter` inicia um agente já
-invocando a skill. No Codex o orkai envia no formato dele (`$skill argumentos`) e no Kimi Code como
-`/skill:skill argumentos`. Os comandos do próprio orkai têm prioridade quando o nome coincide.
+`tab` completes (or extends the common prefix), and `/skill arguments` + `enter` starts an agent already
+invoking the skill. In Codex orkai sends it in its format (`$skill arguments`) and in Kimi Code as
+`/skill:skill arguments`. orkai's own commands take precedence when the name is the same.
 
-## Linha de comando
+## Command line
 
 ```text
-orkai ls [-s sessão]             lista agentes com o estado ao vivo
-orkai new -k <agente> -C <pasta> [--worktree] <tarefa...>   (claude, codex, kilo, opencode, agy, grok, qwen, kimi, terminal)
-orkai send <id> <texto...>       digita no agente e aperta enter
-orkai attach <id>                usa o terminal atual direto no agente (ctrl+] solta)
-orkai logs <id> [-n linhas]      transcrição gravada do agente
+orkai ls [-s session]            lists agents with their live status
+orkai new -k <agent> -C <folder> [--worktree] <task...>   (claude, codex, kilo, opencode, agy, grok, qwen, kimi, terminal)
+orkai send <id> <text...>        types into the agent and presses enter
+orkai attach <id>                uses the current terminal straight in the agent (ctrl+] detaches)
+orkai logs <id> [-n lines]       recorded transcript of the agent
 orkai kill <id> · orkai rm <id>
-orkai recover [-s sessão]        relança agentes interrompidos retomando a conversa
+orkai recover [-s session]       relaunches interrupted agents, resuming the conversation
 orkai sessions · orkai home
-orkai update                     baixa e instala a build mais nova
-orkai pwa [--tunnel cloudflare|tailscale]   liga o orkai PWA e imprime o QR code
-orkai pwa --stop · orkai pwa --new-code     desliga · esquece os celulares pareados
+orkai update                     downloads and installs the newest build
+orkai pwa [--tunnel cloudflare|tailscale]   turns on the orkai PWA and prints the QR code
+orkai pwa --stop · orkai pwa --new-code     turns it off · forgets the paired phones
 ```
 
-## O orkai no celular (PWA)
+## orkai on your phone (PWA)
 
-O orkai PWA é o seu orkai no celular, de qualquer lugar: o overview com as sessões, o consumo e os agentes
-ao vivo; o terminal de cada agente com as cores; mensagens, teclas (esc, tab, setas, `1`/`2`/`3` para as
-permissões, `^c`); agentes novos com quem, onde e worktree; parar, remover, renomear, recuperar
-interrompidos, ver o diff e fazer o merge de uma worktree. O desktop e o celular mostram a mesma coisa ao
-mesmo tempo.
+The orkai PWA is your orkai on your phone, from anywhere: the overview with the sessions, the usage and the
+live agents; each agent's terminal with its colors; messages, keys (esc, tab, arrows, `1`/`2`/`3` for
+permissions, `^c`); new agents with who, where and worktree; stopping, removing, renaming, recovering
+interrupted ones, seeing the diff and merging a worktree. The desktop and the phone show the same thing at
+the same time.
 
-### Como usar
+### How to use
 
-1. No orkai, aperte `ctrl+p` (ou clique em **▣ orkai pwa** na lateral, ou digite `/pwa`). Ele fica ligado
-   até você desligar, inclusive depois de fechar e abrir o orkai.
-2. Aponte a câmera do celular para o QR code. O navegador abre o orkai já pareado.
-3. Opcional: *compartilhar › adicionar à tela de início* deixa o orkai a um toque, como um app.
+1. In orkai, press `ctrl+p` (or click **▣ orkai pwa** in the sidebar, or type `/pwa`). It stays on until
+   you turn it off, even after closing and reopening orkai.
+2. Point your phone's camera at the QR code. The browser opens orkai already paired.
+3. Optional: *share › add to home screen* puts orkai one tap away, like an app.
 
-A lateral mostra `off`, `on` ou quantos celulares estão conectados (`● 2`). Na tela do PWA, `d` desliga e `n`
-gera um código novo, o que desconecta e esquece os celulares já pareados.
+The sidebar shows `off`, `on` or how many phones are connected (`● 2`). On the PWA screen, `d` turns it off
+and `n` generates a new code, which disconnects and forgets the phones already paired.
 
-Pelo terminal:
+From the terminal:
 
 ```sh
-orkai pwa                        # liga e imprime o QR code
-orkai pwa --tunnel tailscale     # usa a sua tailnet em vez da cloudflare
-orkai pwa --new-code             # esquece os celulares pareados
-orkai pwa --stop                 # desliga
+orkai pwa                        # turns it on and prints the QR code
+orkai pwa --tunnel tailscale     # uses your tailnet instead of cloudflare
+orkai pwa --new-code             # forgets the paired phones
+orkai pwa --stop                 # turns it off
 ```
 
-### Como o celular chega no computador
+### How the phone reaches the computer
 
-O orkai sobe uma ponte leve num processo à parte, que escuta **só em `127.0.0.1`** e serve o próprio app.
-Ela não pesa no orkai: só existe enquanto o PWA está ligado e, sem celular conectado, fica parada. A
-ponte só se conecta aos agentes enquanto há um celular aberto, e manda ao celular só o que mudou: o
-overview quando um estado muda e, no terminal, só as linhas da tela que mudaram.
+orkai starts a light bridge in a separate process, which listens **only on `127.0.0.1`** and serves the app
+itself. It doesn't weigh on orkai: it only exists while the PWA is on and, with no phone connected, it sits
+idle. The bridge only connects to the agents while a phone is open, and only sends the phone what changed:
+the overview when a state changes and, in the terminal, only the screen rows that changed.
 
-Para funcionar fora de casa sem abrir portas no roteador, o orkai usa um túnel que só transporta bytes:
+To work away from home without opening ports on your router, orkai uses a tunnel that only carries bytes:
 
-- **cloudflare** (padrão, sem conta): um *quick tunnel* da Cloudflare. Na primeira vez, o orkai baixa o
-  `cloudflared` oficial de `github.com/cloudflare/cloudflared` para a pasta `bin/` e confere o SHA-256
-  publicado antes de usar. Se o `cloudflared` já estiver no `PATH`, usa esse. O endereço muda a cada vez
-  que a ponte sobe, e o QR code novo aparece sozinho.
-- **tailscale**: o celular fala com o computador **ponto a ponto** pela sua tailnet (`tailscale serve`),
-  com endereço fixo. O celular precisa estar na mesma tailnet.
+- **cloudflare** (default, no account): a Cloudflare *quick tunnel*. The first time, orkai downloads the
+  official `cloudflared` from `github.com/cloudflare/cloudflared` into the `bin/` folder and checks the
+  published SHA-256 before using it. If `cloudflared` is already on the `PATH`, it uses that one. The address
+  changes every time the bridge starts, and the new QR code shows up on its own.
+- **tailscale**: the phone talks to the computer **peer to peer** over your tailnet (`tailscale serve`),
+  with a fixed address. The phone needs to be on the same tailnet.
 
-Nenhum servidor seu ou do orkai fica no meio.
+No server of yours or of orkai sits in the middle.
 
-### Segurança
+### Security
 
-- O QR code leva um segredo de 256 bits no **fragmento** da URL (`#k=…`). O navegador nunca envia o
-  fragmento pela rede, então o túnel não vê o segredo. O app tira o fragmento da barra de endereço e guarda
-  o segredo só naquele celular.
-- Cada conexão faz uma troca ECDH P-256 nova e deriva, com HKDF-SHA256 salgado pelo segredo e amarrado às
-  duas chaves públicas, uma chave AES-256-GCM para cada sentido. Quem não tem o segredo não deriva as
-  chaves, e a ponte fecha a conexão no primeiro frame que não autentica.
-- O nonce de cada frame é um contador. Um frame repetido, perdido ou fora de ordem não abre, então o túnel
-  não consegue reenviar um comando já digitado.
-- A ponte aceita no máximo 8 conexões, dá 10 s para o pareamento e responde com CSP restrita, sem
+- The QR code carries a 256-bit secret in the URL **fragment** (`#k=…`). The browser never sends the
+  fragment over the network, so the tunnel doesn't see the secret. The app removes the fragment from the
+  address bar and keeps the secret only on that phone.
+- Each connection does a fresh ECDH P-256 exchange and derives, with HKDF-SHA256 salted by the secret and
+  bound to both public keys, one AES-256-GCM key for each direction. Whoever doesn't have the secret can't
+  derive the keys, and the bridge closes the connection on the first frame that doesn't authenticate.
+- The nonce of each frame is a counter. A repeated, lost or out-of-order frame doesn't open, so the tunnel
+  can't resend a command already typed.
+- The bridge accepts at most 8 connections, gives pairing 10 s and responds with a strict CSP, without
   `unsafe-inline`.
-- Um celular pareado controla os seus agentes (e os terminais) como você no teclado. `n` na tela do PWA ou
-  `orkai pwa --new-code` esquece todos os celulares de uma vez.
+- A paired phone controls your agents (and the terminals) just like you at the keyboard. `n` on the PWA
+  screen or `orkai pwa --new-code` forgets every phone at once.
 
-## Atualização automática
+## Auto-update
 
-Cada push no `main` passa pelos testes nos três sistemas e vira uma nova build na release
-`latest`, com um `manifest.json` contendo o commit e o SHA-256 de cada binário.
+Every push to `main` goes through the tests on the three systems and becomes a new build in the
+`latest` release, with a `manifest.json` holding the commit and the SHA-256 of each binary.
 
-Toda vez que você abre `orkai`, ele consulta esse manifesto (timeout curto; sem internet,
-abre direto). Se houver uma build mais nova, ele baixa o binário da sua plataforma, confere
-tamanho e SHA-256, substitui o próprio executável e abre já atualizado. Os agentes em
-execução não são afetados, porque rodam de cópias próprias do binário.
+Every time you open `orkai`, it checks that manifest (short timeout; without internet,
+it opens right away). If there is a newer build, it downloads the binary for your platform, checks
+size and SHA-256, replaces its own executable and opens already updated. Running
+agents aren't affected, because they run from their own copies of the binary.
 
-- `orkai update` atualiza na hora (também converte uma build local em build oficial);
-- `orkai --version` mostra a versão e o commit (`dev` para builds locais, que não se
-  auto-atualizam);
-- `ORKAI_NO_UPDATE=1` desliga a verificação; `ORKAI_UPDATE_URL` aponta para outro
-  servidor de builds.
+- `orkai update` updates right away (it also turns a local build into an official build);
+- `orkai --version` shows the version and the commit (`dev` for local builds, which don't
+  auto-update);
+- `ORKAI_NO_UPDATE=1` turns the check off; `ORKAI_UPDATE_URL` points to another
+  build server.
 
-## Persistência e recuperação
+## Persistence and recovery
 
-Cada agente roda dentro de um processo `holder` próprio e destacado, dono do pseudo-terminal
-(ConPTY no Windows, PTY no Unix). A interface só se conecta a eles.
+Each agent runs inside its own detached `holder` process, which owns the pseudo-terminal
+(ConPTY on Windows, PTY on Unix). The interface only connects to them.
 
 ```mermaid
 flowchart LR
     ui["orkai · interface"]
-    subgraph holders["um holder por agente, destacado da interface"]
+    subgraph holders["one holder per agent, detached from the interface"]
         h1["holder"] -- "ConPTY / PTY" --> a1["claude"]
         h2["holder"] -- "ConPTY / PTY" --> a2["codex"]
         h3["holder"] -- "ConPTY / PTY" --> a3["pwsh / bash"]
@@ -489,33 +493,33 @@ flowchart LR
     ui --> h3
 ```
 
-Por isso:
+That's why:
 
-- **Fechar, reiniciar ou atualizar o orkai não derruba nenhum agente.** Ao abrir de novo, ele
-  reconecta em todos. O holder roda a partir de uma cópia do binário em `bin/`, então dá para
-  recompilar e reinstalar o `orkai` com agentes rodando.
-- **Se a interface travar**, os agentes seguem intactos.
-- **Se um holder morrer ou a máquina reiniciar**, o agente aparece como `↻ interrupted`.
-  `ctrl+r` (ou `orkai recover`) relança todos os agentes interrompidos da sessão, cada um na
-  sua pasta: o Claude Code volta com `--resume <id da conversa>` (o orkai inicia cada Claude
-  com um `--session-id` conhecido), o Codex com `codex resume <id>`, os outros agentes como em
-  [Agentes suportados](#agentes-suportados), e os terminais reexecutam o comando original.
-- Toda a saída de cada agente é gravada (com rotação) em `agents/<id>/output.log`. Abrir um
-  agente encerrado ou interrompido mostra a última tela, e `orkai logs <id>` imprime a transcrição.
+- **Closing, restarting or updating orkai takes down no agent.** When you open it again, it
+  reconnects to all of them. The holder runs from a copy of the binary in `bin/`, so you can
+  rebuild and reinstall `orkai` with agents running.
+- **If the interface freezes**, the agents keep going untouched.
+- **If a holder dies or the machine reboots**, the agent shows up as `↻ interrupted`.
+  `ctrl+r` (or `orkai recover`) relaunches all the interrupted agents of the session, each one in
+  its folder: Claude Code comes back with `--resume <conversation id>` (orkai starts every Claude
+  with a known `--session-id`), Codex with `codex resume <id>`, the other agents as in
+  [Supported agents](#supported-agents), and the terminals rerun the original command.
+- All the output of each agent is recorded (with rotation) in `agents/<id>/output.log`. Opening an
+  ended or interrupted agent shows the last screen, and `orkai logs <id>` prints the transcript.
 
-Os dados ficam em `orkai home`:
+The data lives in `orkai home`:
 
-| Sistema | Pasta |
+| System | Folder |
 | --- | --- |
 | Windows | `%LOCALAPPDATA%\orkai` |
 | Linux | `~/.local/share/orkai` |
 | macOS | `~/Library/Application Support/orkai` |
 
-A variável `ORKAI_HOME` muda esse local.
+The `ORKAI_HOME` variable changes this location.
 
-## Configuração
+## Configuration
 
-`config.json` dentro da pasta de dados (criado na primeira execução):
+`config.json` inside the data folder (created on the first run):
 
 ```json
 {
@@ -546,80 +550,80 @@ A variável `ORKAI_HOME` muda esse local.
 }
 ```
 
-`shell` nulo usa `pwsh`/`powershell` no Windows e `$SHELL` no Unix.
-Exemplos: `"claude_args": ["--model", "opus"]`, `"opencode_args": ["-m", "opencode/big-pickle"]`. Campos que
-faltam no arquivo usam o padrão, então um `config.json` antigo continua valendo.
+A null `shell` uses `pwsh`/`powershell` on Windows and `$SHELL` on Unix.
+Examples: `"claude_args": ["--model", "opus"]`, `"opencode_args": ["-m", "opencode/big-pickle"]`. Fields
+missing from the file use the default, so an old `config.json` still works.
 
-`pwa_tunnel` escolhe o túnel do orkai PWA (`cloudflare` ou `tailscale`) e `pwa_port` a porta local da
-ponte, que só escuta em `127.0.0.1`.
+`pwa_tunnel` picks the orkai PWA tunnel (`cloudflare` or `tailscale`) and `pwa_port` the bridge's local
+port, which only listens on `127.0.0.1`.
 
-`notify: false` desliga o sininho, o sino e a notificação do terminal; `notify_sound: false` troca o sininho do
-orkai pelo sino padrão do terminal. `notify_command` funciona independente deles;
-por exemplo, para mandar ao celular pelo [ntfy](https://ntfy.sh):
+`notify: false` turns off the chime, the bell and the terminal notification; `notify_sound: false` swaps the orkai
+chime for the terminal's default bell. `notify_command` works independently of them;
+for example, to send it to your phone through [ntfy](https://ntfy.sh):
 
 ```json
 "notify_command": "sh",
-"notify_args": ["-c", "curl -s -d \"$ORKAI_MESSAGE\" ntfy.sh/meu-topico"]
+"notify_args": ["-c", "curl -s -d \"$ORKAI_MESSAGE\" ntfy.sh/my-topic"]
 ```
 
-Todo Claude Code iniciado ou retomado pelo orkai abre com Remote Control ligado
-(`--remote-control`), então qualquer sessão pode ser continuada no app do Claude ou em
-claude.ai/code. O Codex não tem um equivalente para a sessão interativa no terminal.
+Every Claude Code started or resumed by orkai opens with Remote Control on
+(`--remote-control`), so any session can be continued in the Claude app or at
+claude.ai/code. Codex has no equivalent for the interactive session in the terminal.
 
-## Ícone nos terminais
+## Terminal icons
 
-Nenhum terminal deixa um programa trocar o ícone de uma aba já aberta, então o orkai usa o que cada terminal
-oferece. Ao abrir o orkai:
+No terminal lets a program change the icon of a tab that is already open, so orkai uses what each terminal
+offers. When orkai opens:
 
-- **Windows Terminal**: o perfil `orkai`, com o ícone do marinheiro, aparece no menu `+` (um
-  [fragment](https://learn.microsoft.com/windows/terminal/json-fragment-extensions) em
-  `%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\orkai`). Abra o orkai por ele, ou deixe-o como perfil
-  padrão, e a aba mostra o ícone. O `orkai.exe` também traz o ícone (Explorer, barra de tarefas, Alt+Tab).
-- **iTerm2**: um perfil dinâmico `orkai · <seu perfil>` herda tudo do perfil da aba e só troca o ícone; a aba
-  usa esse perfil enquanto o orkai está aberto e volta ao seu ao sair. Na primeira vez, o ícone aparece depois
-  que o iTerm2 carrega o perfil novo (cerca de um segundo).
-- **Linux**: o atalho `orkai` entra no menu de aplicativos (`~/.local/share/applications/orkai.desktop`); os
-  terminais do Linux não mostram ícone por aba.
+- **Windows Terminal**: the `orkai` profile, with the sailor icon, shows up in the `+` menu (a
+  [fragment](https://learn.microsoft.com/windows/terminal/json-fragment-extensions) in
+  `%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\orkai`). Open orkai through it, or make it your default
+  profile, and the tab shows the icon. `orkai.exe` carries the icon too (Explorer, taskbar, Alt+Tab).
+- **iTerm2**: a dynamic profile `orkai · <your profile>` inherits everything from the tab's profile and only swaps the
+  icon; the tab uses that profile while orkai is open and goes back to yours when you quit. The first time, the icon
+  shows up after iTerm2 loads the new profile (about a second).
+- **Linux**: the `orkai` shortcut goes into the applications menu (`~/.local/share/applications/orkai.desktop`);
+  Linux terminals don't show an icon per tab.
 
-São arquivos novos nas pastas que cada terminal reserva para extensões; o `settings.json` do Windows Terminal
-e os seus perfis do iTerm2 não são alterados. Builds locais (`dev`) não criam nada, e
-`ORKAI_NO_TERMINAL_PROFILE=1` desliga.
+These are new files in the folders each terminal sets aside for extensions; the Windows Terminal `settings.json`
+and your iTerm2 profiles aren't changed. Local builds (`dev`) don't create anything, and
+`ORKAI_NO_TERMINAL_PROFILE=1` turns it off.
 
-## Segurança
+## Security
 
-- Os holders escutam somente em `127.0.0.1`, numa porta aleatória, e exigem um token de 256
-  bits por agente, que fica apenas na pasta de dados do usuário (permissões `0700`/`0600` no Unix).
-- Para mostrar o consumo, o orkai lê o token de login de cada agente só na memória e o envia apenas, por
-  HTTPS, ao serviço que o emitiu (`api.anthropic.com`, `chatgpt.com`, `api.kilo.ai`, `opencode.ai`,
-  `cli-chat-proxy.grok.com` e o `base_url` HTTPS do Kimi Code); ele nunca é gravado, registrado em log ou
-  renovado pelo orkai. O login do Antigravity não é lido: o próprio `agy` faz a consulta.
-- Comandos `.cmd`/`.bat` no Windows só recebem argumentos sem os caracteres especiais do cmd; uma tarefa com
-  algum deles é digitada no terminal do agente. Shims do npm que apenas repassam para um `.exe` (como o do
-  OpenCode) rodam o `.exe` direto, sem cmd.exe.
-- Os hooks do Claude Code e do Qwen Code, o `notify` do Codex e o plugin do OpenCode e do Kilo chamam a cópia
-  do orkai em `bin/` e só gravam o tipo do evento (trabalhando, esperando você, terminou) na pasta do agente;
-  o conteúdo recebido do agente é descartado na memória. Os arquivos de hook e o plugin ficam na pasta do
-  agente e só valem para o processo que o orkai lançou; nenhum arquivo de configuração seu é alterado.
-- O perfil com o ícone (veja [Ícone nos terminais](#ícone-nos-terminais)) só aponta para o executável do orkai e
-  para a imagem do ícone, gravada na pasta de dados.
-- A ponte do orkai PWA escuta somente em `127.0.0.1` e só aceita o celular que tem o segredo do QR code
-  (veja [O orkai no celular](#o-orkai-no-celular-pwa)). O túnel nunca recebe o segredo, que viaja no
-  fragmento da URL, e só carrega frames AES-256-GCM com nonce por contador.
+- Holders listen only on `127.0.0.1`, on a random port, and require a 256-bit
+  token per agent, which lives only in the user's data folder (`0700`/`0600` permissions on Unix).
+- To show usage, orkai reads each agent's login token in memory only and sends it only, over
+  HTTPS, to the service that issued it (`api.anthropic.com`, `chatgpt.com`, `api.kilo.ai`, `opencode.ai`,
+  `cli-chat-proxy.grok.com` and the HTTPS `base_url` of Kimi Code); it is never written, logged or
+  renewed by orkai. The Antigravity login isn't read: `agy` itself makes the query.
+- `.cmd`/`.bat` commands on Windows only get arguments without cmd special characters; a task with
+  any of them is typed into the agent's terminal. npm shims that only forward to an `.exe` (like the
+  OpenCode one) run the `.exe` directly, without cmd.exe.
+- The Claude Code and Qwen Code hooks, the Codex `notify` and the OpenCode and Kilo plugin call the orkai copy
+  in `bin/` and only write the event type (working, waiting for you, done) to the agent's folder;
+  the content received from the agent is discarded in memory. The hook files and the plugin live in the
+  agent's folder and only apply to the process orkai launched; none of your config files is changed.
+- The profile with the icon (see [Terminal icons](#terminal-icons)) only points to the orkai executable and
+  to the icon image, saved in the data folder.
+- The orkai PWA bridge listens only on `127.0.0.1` and only accepts the phone that has the QR code's
+  secret (see [orkai on your phone](#orkai-on-your-phone-pwa)). The tunnel never gets the secret, which
+  travels in the URL fragment, and only carries AES-256-GCM frames with a counter nonce.
 
-## Desenvolvimento
+## Development
 
 ```sh
-cargo test        # unitários + e2e com PTY real (holder e a própria TUI)
+cargo test        # unit + e2e with a real PTY (holder and the TUI itself)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-O CI roda os três em Windows, Linux e macOS a cada push no `main` e em cada pull request; cada push no
-`main` que passa vira a release [`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest).
+CI runs all three on Windows, Linux and macOS on every push to `main` and on every pull request; every push to
+`main` that passes becomes the [`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest) release.
 
 ---
 
 <p align="center">
   <img src="docs/banner.png" alt="orkai" width="120"><br>
-  <sub><a href="https://github.com/lucasmarujo/orkai-cli/issues">Reportar um problema</a> · <a href="https://github.com/lucasmarujo/orkai-cli/releases/tag/latest">Baixar a última build</a></sub>
+  <sub><a href="https://github.com/lucasmarujo/orkai-cli/issues">Report an issue</a> · <a href="https://github.com/lucasmarujo/orkai-cli/releases/tag/latest">Download the latest build</a></sub>
 </p>

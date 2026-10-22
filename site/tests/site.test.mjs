@@ -13,26 +13,15 @@ const html = read('index.html');
 const css = read('assets/site.css');
 const app = read('assets/app.js');
 const readme = readFileSync(join(REPO, 'README.md'), 'utf8');
+const readmePtBr = readFileSync(join(REPO, 'README.pt-BR.md'), 'utf8');
 const head = html.slice(0, html.indexOf('</head>'));
 const body = html.slice(html.indexOf('<body>'));
 const size = (file) => statSync(join(ROOT, file)).size;
 const localPath = (url) => join(ROOT, new URL(url, SITE).pathname);
 const decode = (text) => text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
 const stripTags = (text) => decode(text.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
-const README_AGENTS_EN = {
-  'plugin de eventos': 'event plugin',
-  '5h e semana': '5h and weekly',
-  'saldo (funds) e Kilo Pass': 'balance (funds) and Kilo Pass',
-  'OpenCode Go (5h e semana)': 'OpenCode Go (5h and weekly)',
-  'Antigravity CLI (sucessor do Gemini CLI)': 'Antigravity CLI (successor to Gemini CLI)',
-  'título da janela': 'window title',
-  'semana ou mês': 'weekly or monthly',
-  'sem API de consumo': 'no usage API',
-  tela: 'screen',
-  '5h, semana ou mês': '5h, weekly or monthly',
-  'atividade da saída': 'output activity',
-  'reexecuta o comando': 'reruns the command',
-};
+const withoutCode = (markdown) => markdown.replace(/```[\s\S]*?```/g, '');
+const headings = (markdown) => [...withoutCode(markdown).matchAll(/^(#{1,6}) (.+)$/gm)].map(([, hashes, text]) => ({ level: hashes.length, text }));
 
 function meta(attr, key) {
   const match = head.match(new RegExp(`<meta ${attr}="${key}" content="([^"]*)">`));
@@ -172,7 +161,7 @@ test('JSON-LD descreve o software e o vídeo com arquivos que existem', () => {
   assert.ok(existsSync(localPath(software.screenshot)), software.screenshot);
   assert.ok(existsSync(localPath(video.contentUrl)), video.contentUrl);
   assert.ok(existsSync(localPath(video.thumbnailUrl)), video.thumbnailUrl);
-  assert.equal(video.duration, 'PT50S');
+  assert.equal(video.duration, 'PT54S');
   const ids = new Set(graph.map((node) => node['@id']));
   [page.isPartOf, page.about, page.video].forEach((ref) => assert.ok(ids.has(ref['@id']), ref['@id']));
   assert.match(page.dateModified, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
@@ -268,8 +257,8 @@ test('a paleta do CSS é a mesma do src/tui/theme.rs', () => {
   project.forEach((color, i) => assert.match(css, new RegExp(`--p${i}: ${color};`), `--p${i}`));
 });
 
-test('a tabela de agentes é a do README, traduzida para o inglês', () => {
-  const expected = readmeTable('## Agentes suportados').map((row) => row.map((cell) => README_AGENTS_EN[cell] ?? cell));
+test('a tabela de agentes é a do README', () => {
+  const expected = readmeTable('## Supported agents');
   const tbody = html.match(/<table class="agents-table"[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)[1];
   const actual = [...tbody.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(([, row]) => [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(([, cell]) => stripTags(cell)));
   assert.deepEqual(actual, expected);
@@ -277,21 +266,58 @@ test('a tabela de agentes é a do README, traduzida para o inglês', () => {
 
 test('o marquee lista todos os agentes de IA do README', () => {
   const marquee = html.match(/<section class="marquee"[\s\S]*?<\/section>/)[0];
-  readmeTable('## Agentes suportados').map(([who]) => who).filter((who) => who !== 'terminal').forEach((who) => assert.match(marquee, new RegExp(`class="k-${who}"`), who));
+  readmeTable('## Supported agents').map(([who]) => who).filter((who) => who !== 'terminal').forEach((who) => assert.match(marquee, new RegExp(`class="k-${who}"`), who));
 });
 
 test('os comandos de instalação são os mesmos do README', () => {
-  const unix = readmeBlock('**Linux e macOS**');
+  const unix = readmeBlock('**Linux and macOS**');
   assert.equal(installBlock('linux'), unix);
   assert.equal(installBlock('macos'), unix.replace('orkai-x86_64-unknown-linux-musl', 'orkai-aarch64-apple-darwin'));
   assert.equal(installBlock('windows'), readmeBlock('**Windows** (PowerShell)'));
-  assert.equal(installBlock('source'), readmeBlock('**Do código-fonte**'));
+  assert.equal(installBlock('source'), readmeBlock('**From source**'));
 });
 
 test('os downloads diretos são os binários da tabela de plataformas do README', () => {
-  const files = readmeTable('| Plataforma | Arquivo |').map(([, file]) => file);
+  const files = readmeTable('| Platform | File |').map(([, file]) => file);
   const links = [...html.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/download\/latest\/([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual([...links].sort(), [...files].sort());
+});
+
+test('o README é em inglês e aponta para o README.pt-BR.md, que aponta de volta', () => {
+  assert.match(readme, /<b>English<\/b> · <a href="README\.pt-BR\.md">Português \(Brasil\)<\/a>/);
+  assert.match(readmePtBr, /<a href="README\.md">English<\/a> · <b>Português \(Brasil\)<\/b>/);
+  const text = stripTags(withoutCode(readme).replace(/<a href="README\.pt-BR\.md">[^<]*<\/a>/, ''));
+  assert.doesNotMatch(text, /[áàâãéêíóôõúç]/i);
+  assert.doesNotMatch(text, /\b(?:para|uma|seus|seu|sua|agentes|quem|sem|todos|voce|projetos|tarefa|pasta|veja|abaixo)\b/i);
+});
+
+test('os dois READMEs têm o mesmo vídeo, a mesma estrutura e os mesmos links externos', () => {
+  const videos = (markdown) => markdown.match(/^https:\/\/github\.com\/user-attachments\/assets\/[0-9a-f-]+$/gm);
+  assert.equal(videos(readme).length, 1);
+  assert.deepEqual(videos(readmePtBr), videos(readme));
+  const shape = (markdown) => ({
+    headings: headings(markdown).map(({ level }) => level),
+    tableRows: (withoutCode(markdown).match(/^\|.*\|$/gm) || []).length,
+    codeBlocks: (markdown.match(/^```\w*$/gm) || []).length,
+    urls: [...markdown.matchAll(/(?:href|src)="(https?:[^"]+)"|\]\((https?:[^)]+)\)/g)].map((m) => (m[1] || m[2]).replace(/^https:\/\/img\.shields\.io\/badge\/.*/, 'badge')).sort(),
+  });
+  assert.deepEqual(shape(readmePtBr), shape(readme));
+});
+
+test('toda âncora dos READMEs aponta para um título do mesmo arquivo', () => {
+  const slug = (text) => text.trim().toLowerCase().replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '').replace(/\s/g, '-');
+  for (const [name, markdown] of [['README.md', readme], ['README.pt-BR.md', readmePtBr]]) {
+    const ids = new Set();
+    for (const { text } of headings(markdown)) {
+      const base = slug(text);
+      let id = base;
+      for (let n = 1; ids.has(id); n += 1) id = `${base}-${n}`;
+      ids.add(id);
+    }
+    const anchors = [...withoutCode(markdown).matchAll(/(?:href="|\]\()#([^")]+)/g)].map((m) => m[1]);
+    assert.ok(anchors.length > 0, name);
+    anchors.forEach((anchor) => assert.ok(ids.has(anchor), `${name}: #${anchor}`));
+  }
 });
 
 test('nenhum recurso de terceiros e nada inline que a CSP bloqueie', () => {
@@ -338,13 +364,30 @@ test('o vídeo só baixa quando o usuário pede e tem poster', () => {
   assert.ok(existsSync(join(ROOT, poster)));
 });
 
+test('o player, o JSON-LD e o arquivo do vídeo têm a mesma duração', () => {
+  const seconds = Number(jsonLd().find((node) => node['@type'] === 'VideoObject').duration.match(/^PT(\d+)S$/)[1]);
+  const label = `0:${String(seconds).padStart(2, '0')}`;
+  assert.match(html, new RegExp(`<span class="kicker">in ${seconds} seconds</span>`));
+  assert.match(html, new RegExp(`<video [^>]*aria-label="${seconds}-second video`));
+  assert.match(html, new RegExp(`aria-label="Watch the ${seconds}-second video"`));
+  assert.match(html, new RegExp(`<span class="player-label">watch · ${label}</span>`));
+  const src = html.match(/<video src="([^"]+)"/)[1];
+  const mp4 = readFileSync(join(ROOT, src));
+  const mvhd = mp4.indexOf('mvhd');
+  const version = mp4[mvhd + 4];
+  const timescale = mp4.readUInt32BE(mvhd + (version === 1 ? 24 : 16));
+  const duration = version === 1 ? Number(mp4.readBigUInt64BE(mvhd + 28)) : mp4.readUInt32BE(mvhd + 20);
+  assert.equal(Math.round(duration / timescale), seconds, src);
+  assert.ok(mp4.indexOf('moov') < mp4.indexOf('mdat'), 'moov antes do mdat (faststart)');
+});
+
 test('orçamento de peso para carregar rápido', () => {
   assert.ok(size('index.html') < 120 * 1024, `index.html ${size('index.html')}`);
   assert.ok(size('assets/site.css') + size('assets/app.js') + size('assets/tui.js') < 120 * 1024, 'css + js');
   const fonts = readdirSync(join(ROOT, 'assets/fonts')).reduce((sum, file) => sum + size(`assets/fonts/${file}`), 0);
   assert.ok(fonts < 220 * 1024, `fontes ${fonts}`);
-  assert.ok(size('assets/orkai-demo.mp4') < 5 * 1024 * 1024, 'vídeo');
-  assert.ok(size('assets/orkai-demo-poster.webp') < 50 * 1024, 'poster');
+  assert.ok(size('assets/orkai-demo-v2.mp4') < 5 * 1024 * 1024, 'vídeo');
+  assert.ok(size('assets/orkai-demo-v2-poster.webp') < 50 * 1024, 'poster');
   assert.ok(size('assets/overview.webp') < 120 * 1024, 'overview');
 });
 
