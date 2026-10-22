@@ -294,6 +294,53 @@ fn type_text(app: &mut App, text: &str) {
 }
 
 #[test]
+fn ctrl_arrows_move_the_cursor_by_word_in_the_task() {
+    let mut scenario = scenario();
+    let app = &mut scenario.app;
+    type_text(app, "fix the login bug");
+    assert_eq!(app.task.text(), "fix the login bug");
+
+    press(app, KeyCode::Left, KeyModifiers::CONTROL);
+    assert_eq!(app.task.before_cursor(), "fix the login ");
+    press(app, KeyCode::Left, KeyModifiers::CONTROL);
+    assert_eq!(app.task.before_cursor(), "fix the ");
+    press(app, KeyCode::Right, KeyModifiers::CONTROL);
+    assert_eq!(app.task.before_cursor(), "fix the login");
+    press(app, KeyCode::Right, KeyModifiers::CONTROL);
+    assert_eq!(app.task.before_cursor(), "fix the login bug");
+
+    press(app, KeyCode::Left, KeyModifiers::NONE);
+    assert_eq!(app.task.before_cursor(), "fix the login bu");
+}
+
+#[test]
+fn clicking_in_the_task_puts_the_cursor_where_the_user_clicked() {
+    let mut scenario = scenario();
+    let app = &mut scenario.app;
+    type_text(app, "fix the login bug");
+    render(app);
+
+    fn click(app: &mut App, column: u16) {
+        let event = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row: HEIGHT - 3,
+            modifiers: KeyModifiers::NONE,
+        };
+        app.handle(AppEvent::Input(Event::Mouse(event)));
+    }
+
+    click(app, 1);
+    assert_eq!(app.task.before_cursor(), "");
+    click(app, 1 + 4);
+    assert_eq!(app.task.before_cursor(), "fix ");
+    click(app, 1 + 10);
+    assert_eq!(app.task.before_cursor(), "fix the lo");
+    click(app, 1 + 40);
+    assert_eq!(app.task.before_cursor(), "fix the login bug");
+}
+
+#[test]
 fn where_command_suggests_completes_and_cycles_folders() {
     let mut scenario = scenario();
     let root = scenario.dir.clone();

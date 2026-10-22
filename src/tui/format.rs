@@ -106,6 +106,20 @@ pub fn width(text: &str) -> usize {
     UnicodeWidthStr::width(text)
 }
 
+/// The text that shows after the first `cells` display columns are hidden.
+pub fn skip_columns(text: &str, cells: usize) -> String {
+    let mut used = 0usize;
+    let mut out = String::new();
+    for c in text.chars() {
+        let w = UnicodeWidthChar::width(c).unwrap_or(0);
+        if used + w > cells {
+            out.push(c);
+        }
+        used += w;
+    }
+    out
+}
+
 pub fn truncate(text: &str, max_width: usize) -> String {
     if width(text) <= max_width {
         return text.to_string();

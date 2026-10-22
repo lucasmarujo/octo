@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wra
 use crate::model::{AgentId, AgentKind, AgentState};
 use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, Prompt, SHELL_PREFIX, Tone, View};
 use crate::tui::complete::matching_commands;
-use crate::tui::format::{duration_short, pad, pad_left, truncate, truncate_start, width};
+use crate::tui::format::{duration_short, pad, pad_left, skip_columns, truncate, truncate_start, width};
 use crate::tui::sprite;
 use crate::tui::theme;
 use crate::usage::{self, Limits, Problem, Usage, Window};
@@ -763,7 +763,7 @@ fn composer_rows(app: &App) -> u16 {
     u16::try_from(app.task.line_count()).unwrap_or(MAX_COMPOSER_ROWS).clamp(1, MAX_COMPOSER_ROWS)
 }
 
-fn draw_task(app: &App, x: u16, y: u16, rows: u16, right: u16, buf: &mut Buffer) -> Position {
+fn draw_task(app: &mut App, x: u16, y: u16, rows: u16, right: u16, buf: &mut Buffer) -> Position {
     let text = app.task.text();
     let before = app.task.before_cursor();
     let cursor_row = before.matches('\n').count();
@@ -781,8 +781,10 @@ fn draw_task(app: &App, x: u16, y: u16, rows: u16, right: u16, buf: &mut Buffer)
     };
     for (index, line) in text.split('\n').enumerate().skip(first).take(rows) {
         let row = y + u16::try_from(index - first).unwrap_or(0);
-        let shown: String = line.chars().skip(if index == cursor_row { skip } else { 0 }).collect();
+        let hidden = if index == cursor_row { skip } else { 0 };
+        let shown = skip_columns(line, hidden);
         put(buf, x, row, &shown, fg(color), right);
+        app.hits.push((Rect::new(x, row, right.saturating_sub(x), 1), Hit::Task { line: index, skip: hidden, x }));
     }
     let column = x + u16::try_from(cursor_width - skip).unwrap_or(0);
     let row = y + u16::try_from(cursor_row - first).unwrap_or(0);
@@ -985,6 +987,8 @@ fn draw_confirm(app: &App, confirm: &Confirm, screen: Rect, buf: &mut Buffer) {
 const HELP: &[(&str, &str)] = &[
     ("type + enter", "start an agent with that task"),
     ("shift+enter", "new line in the task (alt+enter also works)"),
+    ("ctrl+← · ctrl+→", "move the cursor by word in the task"),
+    ("click on the task", "put the cursor where you clicked"),
     ("ctrl+↑ · ctrl+↓", "recall the tasks you sent in this session"),
     ("tab / shift+tab", "who runs it: an installed agent or terminal"),
     ("!command", "run a shell command in a new terminal"),

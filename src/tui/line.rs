@@ -1,3 +1,5 @@
+use unicode_width::UnicodeWidthChar;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LineInput {
     chars: Vec<char>,
@@ -96,6 +98,64 @@ impl LineInput {
         self.cursor = (self.cursor + 1).min(self.chars.len());
     }
 
+    /// Moves the cursor to the start of the word on its left.
+    pub fn left_word(&mut self) {
+        while self.cursor > 0 && self.chars[self.cursor - 1].is_whitespace() {
+            self.cursor -= 1;
+        }
+        while self.cursor > 0 && !self.chars[self.cursor - 1].is_whitespace() {
+            self.cursor -= 1;
+        }
+    }
+
+    /// Moves the cursor to the end of the word on its right.
+    pub fn right_word(&mut self) {
+        if self.cursor < self.chars.len() && self.chars[self.cursor].is_whitespace() {
+            while self.cursor < self.chars.len() && self.chars[self.cursor].is_whitespace() {
+                self.cursor += 1;
+            }
+        }
+        while self.cursor < self.chars.len() && !self.chars[self.cursor].is_whitespace() {
+            self.cursor += 1;
+        }
+    }
+
+    /// Puts the cursor at the given index, clamped to the end of the text.
+    pub fn set_cursor(&mut self, index: usize) {
+        self.cursor = index.min(self.chars.len());
+    }
+
+    /// The index of the character shown at the given display column of a line.
+    ///
+    /// The column is counted in terminal cells and is clamped to the end of the line.
+    pub fn index_at(&self, line: usize, column: usize) -> Option<usize> {
+        let mut current = 0usize;
+        let mut start = 0usize;
+        for (index, c) in self.chars.iter().enumerate() {
+            if current == line {
+                start = index;
+                break;
+            }
+            if *c == '\n' {
+                current += 1;
+                start = index + 1;
+            }
+        }
+        if current < line {
+            return None;
+        }
+        let end = self.chars[start..].iter().position(|c| *c == '\n').map_or(self.chars.len(), |at| start + at);
+        let mut used = 0usize;
+        for index in start..end {
+            let w = UnicodeWidthChar::width(self.chars[index]).unwrap_or(0);
+            if used + w > column {
+                return Some(if w == 2 && column == used + 1 { index + 1 } else { index });
+            }
+            used += w;
+        }
+        Some(end)
+    }
+
     pub fn home(&mut self) {
         self.cursor = 0;
     }
@@ -173,5 +233,64 @@ mod tests {
         input.left();
         input.backspace();
         assert_eq!(input.text(), "ab");
+    }
+
+    #[test]
+    fn words_are_skipped_one_at_a_time() {
+        let mut input = LineInput::with_text("fix the login bug");
+        input.left_word();
+        assert_eq!(input.before_cursor(), "fix the login ");
+        input.left_word();
+        assert_eq!(input.before_cursor(), "fix the ");
+        input.left_word();
+        assert_eq!(input.before_cursor(), "fix ");
+        input.left_word();
+        assert_eq!(input.before_cursor(), "");
+        input.left_word();
+        assert_eq!(input.before_cursor(), "");
+    }
+
+    #[test]
+    fn the_word_on_the_right_stops_at_its_end() {
+        let mut input = LineInput::with_text("fix the login bug");
+        input.set_cursor(0);
+        input.right_word();
+        assert_eq!(input.before_cursor(), "fix");
+        input.right_word();
+        assert_eq!(input.before_cursor(), "fix the");
+        input.right_word();
+        assert_eq!(input.before_cursor(), "fix the login");
+        input.right_word();
+        assert_eq!(input.before_cursor(), "fix the login bug");
+        input.right_word();
+        assert_eq!(input.before_cursor(), "fix the login bug");
+    }
+
+    #[test]
+    fn a_click_finds_the_character_under_the_column() {
+        let input = LineInput::with_text("fix the login bug");
+        assert_eq!(input.index_at(0, 0), Some(0));
+        assert_eq!(input.index_at(0, 3), Some(3));
+        assert_eq!(input.index_at(0, 4), Some(4));
+        assert_eq!(input.index_at(0, 99), Some(17));
+    }
+
+    #[test]
+    fn a_click_on_a_later_line_finds_that_line() {
+        let mut input = LineInput::default();
+        input.insert_multiline("first\nsecond\nthird");
+        assert_eq!(input.index_at(1, 2), Some(8));
+        assert_eq!(input.index_at(2, 0), Some(13));
+        assert_eq!(input.index_at(9, 0), None);
+    }
+
+    #[test]
+    fn a_click_counts_wide_characters_as_two_columns() {
+        let input = LineInput::with_text("漢字abc");
+        assert_eq!(input.index_at(0, 0), Some(0));
+        assert_eq!(input.index_at(0, 1), Some(1));
+        assert_eq!(input.index_at(0, 2), Some(1));
+        assert_eq!(input.index_at(0, 3), Some(2));
+        assert_eq!(input.index_at(0, 4), Some(2));
     }
 }

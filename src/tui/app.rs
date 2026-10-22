@@ -237,6 +237,12 @@ pub enum Hit {
     Recover,
     Project(PathBuf),
     Terminal,
+    /// A line of the task being written: its number, the columns hidden on its left and the column it starts at.
+    Task {
+        line: usize,
+        skip: usize,
+        x: u16,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1995,6 +2001,7 @@ impl App {
                     }
                     Some(Hit::Worktree) => self.set_worktree(!self.worktree),
                     Some(Hit::Project(cwd)) => self.apply_where(cwd),
+                    Some(Hit::Task { line, skip, x }) => self.place_cursor(mouse.column, x, line, skip),
                     Some(Hit::Recover) => {
                         let lost = self.lost_in_session();
                         if !lost.is_empty() {
@@ -2023,6 +2030,14 @@ impl App {
         }
     }
 
+    /// Puts the cursor where the user clicked inside the task being written.
+    fn place_cursor(&mut self, column: u16, x: u16, line: usize, skip: usize) {
+        let offset = usize::from(column.saturating_sub(x));
+        let Some(index) = self.task.index_at(line, skip + offset) else { return };
+        self.task.set_cursor(index);
+        self.dirty = true;
+    }
+
     fn forward_mouse(&mut self, id: AgentId, mouse: &MouseEvent) -> bool {
         let body = render::areas(self.screen, true, true, 1).body;
         let Some(entry) = self.agents.get(&id) else { return false };
@@ -2049,6 +2064,8 @@ fn edit_line(input: &mut LineInput, key: &KeyEvent, ctrl: bool) {
         KeyCode::Backspace if ctrl || alt => input.delete_word(),
         KeyCode::Backspace => input.backspace(),
         KeyCode::Delete => input.delete(),
+        KeyCode::Left if ctrl && !alt => input.left_word(),
+        KeyCode::Right if ctrl && !alt => input.right_word(),
         KeyCode::Left => input.left(),
         KeyCode::Right => input.right(),
         KeyCode::Home => input.home(),

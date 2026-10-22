@@ -317,6 +317,36 @@ fn ctrl_up_recalls_the_tasks_sent_in_this_session() {
     again.wait_for_exit();
 }
 
+#[test]
+fn ctrl_arrows_and_clicks_move_the_cursor_in_the_task() {
+    let fx = fixture();
+    let mut tui = start_tui(&fx);
+    tui.wait_for("who claude");
+
+    tui.type_text("fix the login bug");
+    tui.wait_for("fix the login bug");
+    for _ in 0..2 {
+        tui.send(b"\x1b[1;5D");
+    }
+    tui.type_text("X");
+    tui.wait_for("fix the Xlogin bug");
+    tui.dump("ctrl-arrow-left");
+
+    tui.send(b"\x1b[1;5C");
+    tui.type_text("Y");
+    tui.wait_for("fix the XloginY bug");
+    tui.dump("ctrl-arrow-right");
+
+    tui.send(b"\x1b[<0;6;38M");
+    tui.type_text("Z");
+    tui.wait_for("fix Zthe XloginY bug");
+    tui.dump("click-in-the-task");
+
+    tui.send(b"\x15");
+    tui.send(b"\x03");
+    tui.wait_for_exit();
+}
+
 fn fake_agent(dir: &Path) -> PathBuf {
     if cfg!(windows) {
         let script = dir.join("fake-claude.cmd");
