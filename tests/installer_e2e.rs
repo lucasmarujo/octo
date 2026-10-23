@@ -23,6 +23,7 @@ const ENVIRONMENT_KEY: &str = "Environment";
 const ADD_TO_PATH: &str = "/MERGETASKS=addtopath";
 const KEEP_OFF_PATH: &str = "/MERGETASKS=!addtopath";
 const OLD_SETUP_PREFIX: &str = "orkai.exe.old-setup-";
+const LOG_CLOSED: &str = "Log closed.";
 const HKEY_CURRENT_USER: isize = 0x8000_0001_u32 as i32 as isize;
 const RRF_RT_REG_SZ: u32 = 0x2;
 const RRF_RT_REG_EXPAND_SZ: u32 = 0x4;
@@ -200,6 +201,10 @@ impl Install {
         self.dir.join("unins000.exe")
     }
 
+    fn uninstall_log(&self) -> PathBuf {
+        self.dir.with_extension("uninstall.log")
+    }
+
     fn install(&self, task: &str) {
         let log = self.dir.with_extension("log");
         let (dir, log_arg) = (format!("/DIR={}", self.dir.display()), format!("/LOG={}", log.display()));
@@ -209,10 +214,14 @@ impl Install {
     }
 
     fn uninstall(&self) {
-        let status = run(&self.uninstaller(), &["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]);
+        let log = self.uninstall_log();
+        let log_arg = format!("/LOG={}", log.display());
+        let status = run(&self.uninstaller(), &["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", &log_arg]);
         assert!(status.success(), "uninstaller exited with {status}");
         wait_until("the uninstaller", || {
-            registry_string(UNINSTALL_KEY, "DisplayName").is_none() && !self.uninstaller().exists()
+            std::fs::read_to_string(&log).is_ok_and(|log| log.contains(LOG_CLOSED))
+                && registry_string(UNINSTALL_KEY, "DisplayName").is_none()
+                && !self.uninstaller().exists()
         });
     }
 }
@@ -225,6 +234,7 @@ impl Drop for Install {
         }
         let _ = std::fs::remove_dir_all(&self.dir);
         let _ = std::fs::remove_file(self.dir.with_extension("log"));
+        let _ = std::fs::remove_file(self.uninstall_log());
     }
 }
 
