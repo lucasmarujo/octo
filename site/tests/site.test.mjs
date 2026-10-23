@@ -161,7 +161,7 @@ test('JSON-LD descreve o software e o vídeo com arquivos que existem', () => {
   assert.ok(existsSync(localPath(software.screenshot)), software.screenshot);
   assert.ok(existsSync(localPath(video.contentUrl)), video.contentUrl);
   assert.ok(existsSync(localPath(video.thumbnailUrl)), video.thumbnailUrl);
-  assert.equal(video.duration, 'PT54S');
+  assert.equal(video.duration, 'PT56S');
   const ids = new Set(graph.map((node) => node['@id']));
   [page.isPartOf, page.about, page.video].forEach((ref) => assert.ok(ids.has(ref['@id']), ref['@id']));
   assert.match(page.dateModified, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
@@ -395,8 +395,8 @@ test('orçamento de peso para carregar rápido', () => {
   assert.ok(size('assets/site.css') + size('assets/app.js') + size('assets/tui.js') < 120 * 1024, 'css + js');
   const fonts = readdirSync(join(ROOT, 'assets/fonts')).reduce((sum, file) => sum + size(`assets/fonts/${file}`), 0);
   assert.ok(fonts < 220 * 1024, `fontes ${fonts}`);
-  assert.ok(size('assets/orkai-demo-v2.mp4') < 5 * 1024 * 1024, 'vídeo');
-  assert.ok(size('assets/orkai-demo-v2-poster.webp') < 50 * 1024, 'poster');
+  assert.ok(size('assets/orkai-demo-v3.mp4') < 5 * 1024 * 1024, 'vídeo');
+  assert.ok(size('assets/orkai-demo-v3-poster.webp') < 50 * 1024, 'poster');
   assert.ok(size('assets/overview.webp') < 120 * 1024, 'overview');
 });
 
