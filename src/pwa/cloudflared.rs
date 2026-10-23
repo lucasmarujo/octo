@@ -88,14 +88,17 @@ pub fn verify(bytes: &[u8], release: &Release) -> io::Result<()> {
     Ok(())
 }
 
-fn fetch(url: &str, timeout: Duration, limit: u64) -> io::Result<Vec<u8>> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+pub fn agent(timeout: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .https_only(true)
         .user_agent(format!("orkai/{}", env!("CARGO_PKG_VERSION")))
         .build()
-        .into();
-    let mut response = agent.get(url).call().map_err(|e| io::Error::other(format!("{url}: {e}")))?;
+        .into()
+}
+
+fn fetch(url: &str, timeout: Duration, limit: u64) -> io::Result<Vec<u8>> {
+    let mut response = agent(timeout).get(url).call().map_err(|e| io::Error::other(format!("{url}: {e}")))?;
     response.body_mut().with_config().limit(limit).read_to_vec().map_err(|e| io::Error::other(format!("{url}: {e}")))
 }
 

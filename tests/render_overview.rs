@@ -14,7 +14,7 @@ use ratatui::style::{Color, Modifier};
 use orkai::config::Config;
 use orkai::launch::Launcher;
 use orkai::model::{
-    AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, NestedAgent, NewAgent, StatusReport, Worktree,
+    AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, NestedAgent, NewAgent, StatusReport, UiState, Worktree,
 };
 use orkai::paths::Home;
 use orkai::protocol::HolderMsg;
@@ -1362,6 +1362,7 @@ fn ready_bridge(phones: usize) -> Info {
         started_at_ms: now_ms(),
         alive_at_ms: now_ms(),
         exe: None,
+        version: orkai::pwa::bridge::VERSION,
     }
 }
 
@@ -1453,6 +1454,27 @@ fn the_pwa_turns_off_from_its_view_or_the_command_and_stays_off() {
     scenario.app.run_command("/pwa off");
     assert!(!scenario.app.pwa.enabled);
     assert!(scenario.app.notice.as_ref().unwrap().text.contains("the orkai pwa is off"));
+}
+
+#[test]
+fn turning_the_pwa_off_in_another_orkai_is_followed_and_never_undone() {
+    let mut scenario = scenario();
+    let store = scenario.app.launcher.store().clone();
+    store.save_ui(&UiState { pwa: true, ..store.load_ui() }).unwrap();
+    show_pwa(&mut scenario.app, ready_bridge(0));
+    scenario.app.view = View::Overview;
+    store.save_ui(&UiState { pwa: false, ..store.load_ui() }).unwrap();
+    press(&mut scenario.app, KeyCode::Char('t'), KeyModifiers::CONTROL);
+    let saved = store.load_ui();
+    assert!(saved.worktree, "this orkai still saves its own switches");
+    assert!(!saved.pwa, "an orkai that has not noticed yet never turns the pwa back on");
+    scenario.app.handle(AppEvent::Tick);
+    assert!(!scenario.app.pwa.enabled, "the next tick follows the other orkai");
+    assert!(!scenario.app.pwa.starting, "and does not start the bridge again");
+    let screen = text(&render(&mut scenario.app));
+    assert!(line_with(&screen, "orkai pwa").1.contains("off"), "{screen}");
+    scenario.app.shutdown();
+    assert!(!store.load_ui().pwa, "quitting keeps it off");
 }
 
 #[test]

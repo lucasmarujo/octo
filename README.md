@@ -420,7 +420,9 @@ the same time.
 3. Optional: *share › add to home screen* puts orkai one tap away, like an app.
 
 The sidebar shows `off`, `on` or how many phones are connected (`● 2`). On the PWA screen, `d` turns it off
-and `n` generates a new code, which disconnects and forgets the phones already paired.
+and `n` generates a new code and a new address, which disconnects and forgets the phones already paired.
+Turning it off in one orkai window turns it off in all of them, and it stays off until you turn it on.
+The bridge writes what happens to the tunnel and the phones in `pwa.log`, in the data folder.
 
 From the terminal:
 
@@ -442,8 +444,11 @@ To work away from home without opening ports on your router, orkai uses a tunnel
 
 - **cloudflare** (default, no account): a Cloudflare *quick tunnel*. The first time, orkai downloads the
   official `cloudflared` from `github.com/cloudflare/cloudflared` into the `bin/` folder and checks the
-  published SHA-256 before using it. If `cloudflared` is already on the `PATH`, it uses that one. The address
-  changes every time the bridge starts, and the new QR code shows up on its own.
+  published SHA-256 before using it. If `cloudflared` is already on the `PATH`, it uses that one. The
+  tunnel is saved in `pwa-tunnel.json`, so the address stays the same when the internet drops and comes
+  back, when the computer sleeps or restarts and when the PWA is turned off and on: the phone reconnects
+  by itself, even away from home. It only changes if Cloudflare forgets the tunnel (the computer stayed
+  offline for a long time) or with `n`/`--new-code`; then the new QR code shows up on its own.
 - **tailscale**: the phone talks to the computer **peer to peer** over your tailnet (`tailscale serve`),
   with a fixed address. The phone needs to be on the same tailnet.
 
@@ -634,7 +639,8 @@ for:
   [Auto-update](#auto-update));
 - plan usage: each agent's login token goes only to the service that issued it (see Security, above);
 - the orkai PWA, only after you turn it on: the Cloudflare quick tunnel, with `cloudflared` downloaded from
-  Cloudflare's GitHub release, or `tailscale serve`;
+  Cloudflare's GitHub release, and a query to `cloudflare-dns.com` that waits for the tunnel's address to
+  exist before showing the QR code; or `tailscale serve`;
 - the Windows Terminal profile, whose icon Windows Terminal loads from `https://orkai.marujo.dev/orkai.ico`.
 
 ## Development

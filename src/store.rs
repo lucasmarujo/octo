@@ -207,6 +207,10 @@ impl Store {
         fsutil::read_json_opt::<UiState>(&self.home.ui_file()).ok().flatten().unwrap_or_default()
     }
 
+    pub fn pwa_enabled(&self) -> Option<bool> {
+        fsutil::read_json_opt::<UiState>(&self.home.ui_file()).ok().flatten().map(|ui| ui.pwa)
+    }
+
     pub fn save_ui(&self, state: &UiState) -> io::Result<()> {
         fsutil::write_json_atomic(&self.home.ui_file(), state)
     }
@@ -333,6 +337,20 @@ mod tests {
         };
         store.save_ui(&state).unwrap();
         assert_eq!(store.load_ui(), state);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_pwa_switch_is_only_read_from_a_ui_state_that_parses() {
+        let (store, dir) = temp_store("pwa-switch");
+        assert_eq!(store.pwa_enabled(), None, "no ui state yet");
+        store.save_ui(&UiState { pwa: true, ..UiState::default() }).unwrap();
+        assert_eq!(store.pwa_enabled(), Some(true));
+        store.save_ui(&UiState::default()).unwrap();
+        assert_eq!(store.pwa_enabled(), Some(false));
+        fs::write(store.home().ui_file(), b"{\"pwa\": tr").unwrap();
+        assert_eq!(store.pwa_enabled(), None, "a half written file says nothing");
+        assert!(!store.load_ui().pwa);
         fs::remove_dir_all(dir).unwrap();
     }
 }

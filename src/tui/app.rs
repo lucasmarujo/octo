@@ -556,6 +556,11 @@ impl App {
     }
 
     fn persist_ui(&self) {
+        let pwa = self.launcher.store().pwa_enabled().unwrap_or(self.pwa.enabled);
+        let _ = self.save_ui(pwa);
+    }
+
+    fn save_ui(&self, pwa: bool) -> io::Result<()> {
         let state = UiState {
             session: self.session.clone(),
             who: self.who,
@@ -564,9 +569,9 @@ impl App {
             session_dirs: self.session_dirs.clone(),
             worktree: self.worktree,
             bypass: self.bypass,
-            pwa: self.pwa.enabled,
+            pwa,
         };
-        let _ = self.launcher.store().save_ui(&state);
+        self.launcher.store().save_ui(&state)
     }
 
     fn next_gen(&mut self) -> u64 {
@@ -800,7 +805,9 @@ impl App {
 
     fn enable_pwa(&mut self) {
         self.pwa.enabled = true;
-        self.persist_ui();
+        if let Err(err) = self.save_ui(true) {
+            self.set_notice(Tone::Error, format!("could not remember that the orkai pwa is on: {err}"));
+        }
         self.start_pwa();
     }
 
@@ -830,8 +837,7 @@ impl App {
 
     fn disable_pwa(&mut self) {
         self.pwa.enabled = false;
-        self.persist_ui();
-        match bridge::stop(self.launcher.store().home()) {
+        match self.save_ui(false).and_then(|()| bridge::stop(self.launcher.store().home())) {
             Ok(()) => self.set_notice(Tone::Info, "the orkai pwa is off · ctrl+p turns it on again"),
             Err(err) => self.set_notice(Tone::Error, format!("could not stop the orkai pwa: {err}")),
         }
@@ -870,6 +876,12 @@ impl App {
 
     fn refresh_pwa(&mut self) {
         self.pwa.checked = Some(Instant::now());
+        if let Some(enabled) = self.launcher.store().pwa_enabled()
+            && enabled != self.pwa.enabled
+        {
+            self.pwa.enabled = enabled;
+            self.dirty = true;
+        }
         let home = self.launcher.store().home().clone();
         let info = bridge::status(&home);
         if self.pwa.enabled
@@ -921,9 +933,7 @@ impl App {
             self.last_rescan = Instant::now();
             self.rescan();
         }
-        if (self.pwa.enabled || self.view == View::Pwa)
-            && self.pwa.checked.is_none_or(|at| at.elapsed() >= PWA_CHECK_EVERY)
-        {
+        if self.pwa.checked.is_none_or(|at| at.elapsed() >= PWA_CHECK_EVERY) {
             self.refresh_pwa();
         }
         self.sweep_removals();
