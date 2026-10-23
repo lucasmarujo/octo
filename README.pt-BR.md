@@ -29,9 +29,9 @@
   <a href="README.md">English</a> · <b>Português (Brasil)</b>
 </p>
 
-## O orkai em 54 segundos
+## O orkai em 56 segundos
 
-https://github.com/user-attachments/assets/285d782a-42e9-4f08-b1c7-c46d4c763a8b
+https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
 
 <p align="center">
   <img src="docs/overview.png" alt="Visão geral do orkai: sessões na lateral, contadores e consumo no topo, agentes agrupados por projeto">

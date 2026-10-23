@@ -29,9 +29,9 @@
   <b>English</b> · <a href="README.pt-BR.md">Português (Brasil)</a>
 </p>
 
-## orkai in 54 seconds
+## orkai in 56 seconds
 
-https://github.com/user-attachments/assets/285d782a-42e9-4f08-b1c7-c46d4c763a8b
+https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
 
 <p align="center">
   <img src="docs/overview.png" alt="orkai overview: sessions in the sidebar, counters and usage at the top, agents grouped by project">
