@@ -446,9 +446,11 @@ To work away from home without opening ports on your router, orkai uses a tunnel
   official `cloudflared` from `github.com/cloudflare/cloudflared` into the `bin/` folder and checks the
   published SHA-256 before using it. If `cloudflared` is already on the `PATH`, it uses that one. The
   tunnel is saved in `pwa-tunnel.json`, so the address stays the same when the internet drops and comes
-  back, when the computer sleeps or restarts and when the PWA is turned off and on: the phone reconnects
-  by itself, even away from home. It only changes if Cloudflare forgets the tunnel (the computer stayed
-  offline for a long time) or with `n`/`--new-code`; then the new QR code shows up on its own.
+  back, when `cloudflared` or the bridge restarts and when the PWA is turned off and on again within a few
+  minutes: the phone reconnects by itself, even away from home. Cloudflare deletes a quick tunnel that has
+  been offline for longer (somewhere between 5 and 20 minutes), for example while the computer is off or
+  asleep; orkai then opens a new one and the new QR code shows up on its own, as it does after
+  `n`/`--new-code`. For an address that never changes, use tailscale.
 - **tailscale**: the phone talks to the computer **peer to peer** over your tailnet (`tailscale serve`),
   with a fixed address. The phone needs to be on the same tailnet.
 

@@ -120,7 +120,7 @@ fn saved_tunnel(home: &Home) -> io::Result<QuickTunnel> {
     }
     let created = tunnel::create_quick_tunnel()?;
     fsutil::write_json_atomic(&tunnel_path(home), &created)?;
-    diag(home, &format!("created the quick tunnel {}; its link stays the same from now on", created.url()));
+    diag(home, &format!("created and saved the quick tunnel {}", created.url()));
     Ok(created)
 }
 
