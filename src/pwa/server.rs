@@ -6,6 +6,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use ratatui::crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
 use tungstenite::protocol::frame::coding::CloseCode;
 use tungstenite::protocol::{CloseFrame, Message, Role, WebSocket, WebSocketConfig};
 
@@ -21,6 +22,7 @@ use crate::pwa::http;
 use crate::pwa::hub::{Event, Hub, encode};
 use crate::pwa::protocol::{BridgeMsg, Greeting, PhoneMsg, Tone, VERSION};
 use crate::pwa::screen::Mirror;
+use crate::tui::keys;
 use crate::tui::view::TermView;
 
 pub const MAX_CONNECTIONS: usize = 8;
@@ -37,6 +39,8 @@ const MAX_INBOUND_BYTES: usize = 256 * 1024;
 const MIN_SIZE: TermSize = TermSize { rows: 8, cols: 20 };
 const MAX_SIZE: TermSize = TermSize { rows: 200, cols: 400 };
 const SUBMIT: &[u8] = b"\r";
+const WHEEL_LINES: i32 = 3;
+const MAX_WHEEL_LINES: i32 = 200;
 
 pub fn loopback(port: u16) -> SocketAddr {
     SocketAddr::from((Ipv4Addr::LOCALHOST, port))
@@ -159,6 +163,7 @@ struct View {
     dirty: bool,
     flushed: Instant,
     submit_at: Option<Instant>,
+    wheel: i32,
 }
 
 impl View {
@@ -169,6 +174,40 @@ impl View {
     fn target(&self) -> Option<TermSize> {
         let pty = self.pty?;
         Some(if self.alone() { self.want } else { pty })
+    }
+
+    fn scroll(&mut self, lines: i32) {
+        if lines != 0
+            && let Some(conn) = self.conn.clone()
+            && let Some(ticks) = self.wheel(lines)
+        {
+            if !ticks.is_empty() {
+                let _ = conn.send(&ClientMsg::Input(ticks));
+            }
+            return;
+        }
+        let Some(term) = self.term.as_mut() else { return };
+        match lines {
+            0 => term.scroll_to_bottom(),
+            lines => term.scroll_by(isize::try_from(lines).unwrap_or(0)),
+        }
+        self.dirty = true;
+    }
+
+    fn wheel(&mut self, lines: i32) -> Option<Vec<u8>> {
+        let screen = self.term.as_ref().filter(|term| !term.is_scrolled())?.screen();
+        let (mode, encoding) = (screen.mouse_protocol_mode(), screen.mouse_protocol_encoding());
+        if mode == vt100::MouseProtocolMode::None {
+            return None;
+        }
+        let pending = self.wheel.saturating_add(lines).clamp(-MAX_WHEEL_LINES, MAX_WHEEL_LINES);
+        self.wheel = pending % WHEEL_LINES;
+        let ticks = pending / WHEEL_LINES;
+        let kind = if ticks > 0 { MouseEventKind::ScrollUp } else { MouseEventKind::ScrollDown };
+        let event = MouseEvent { kind, column: 0, row: 0, modifiers: KeyModifiers::NONE };
+        let (rows, cols) = screen.size();
+        let tick = keys::encode_mouse(&event, cols / 2, rows / 2, mode, encoding)?;
+        Some(tick.repeat(usize::try_from(ticks.unsigned_abs()).unwrap_or(0)))
     }
 }
 
@@ -375,6 +414,7 @@ impl Phone {
             dirty: false,
             flushed: Instant::now(),
             submit_at: None,
+            wheel: 0,
         };
         let store = self.hub.store().clone();
         let connected = store.read_runtime(agent).ok().flatten().and_then(|runtime| client::connect(&runtime).ok());
@@ -429,14 +469,8 @@ impl Phone {
             }
             PhoneMsg::Send { text } => self.type_text(&text)?,
             PhoneMsg::Scroll { lines } => {
-                if let Some(view) = self.view.as_mut()
-                    && let Some(term) = view.term.as_mut()
-                {
-                    match lines {
-                        0 => term.scroll_to_bottom(),
-                        lines => term.scroll_by(isize::try_from(lines).unwrap_or(0)),
-                    }
-                    view.dirty = true;
+                if let Some(view) = self.view.as_mut() {
+                    view.scroll(lines);
                 }
             }
             other => actions::handle(&self.hub, other, &self.tx),
@@ -463,7 +497,78 @@ mod tests {
             dirty: false,
             flushed: Instant::now(),
             submit_at: None,
+            wheel: 0,
         }
+    }
+
+    fn showing(output: &[u8]) -> View {
+        let mut view = view(Some(0), None);
+        let mut term = TermView::new(TermSize { rows: 30, cols: 50 });
+        term.process(output);
+        view.term = Some(term);
+        view
+    }
+
+    fn history() -> Vec<u8> {
+        (0..40).flat_map(|line| format!("line {line}\r\n").into_bytes()).collect()
+    }
+
+    const FULL_SCREEN_APP: &[u8] = b"\x1b[?1049h\x1b[?1002h\x1b[?1006h";
+    const TRACKS_MOUSE: &[u8] = b"\x1b[?1002h\x1b[?1006h";
+    const UP: &[u8] = b"\x1b[<64;26;16M";
+    const DOWN: &[u8] = b"\x1b[<65;26;16M";
+
+    #[test]
+    fn a_scroll_on_an_app_that_tracks_the_mouse_becomes_wheel_ticks_in_the_middle_of_its_screen() {
+        let mut view = showing(FULL_SCREEN_APP);
+        assert_eq!(view.wheel(6), Some([UP, UP].concat()));
+        assert_eq!(view.wheel(-3), Some(DOWN.to_vec()));
+    }
+
+    #[test]
+    fn a_slow_drag_adds_up_to_whole_wheel_ticks() {
+        let mut view = showing(FULL_SCREEN_APP);
+        assert_eq!(view.wheel(1), Some(Vec::new()));
+        assert_eq!(view.wheel(1), Some(Vec::new()));
+        assert_eq!(view.wheel(1), Some(UP.to_vec()));
+        assert_eq!(view.wheel(-2), Some(Vec::new()));
+        assert_eq!(view.wheel(-1), Some(DOWN.to_vec()));
+    }
+
+    #[test]
+    fn a_huge_scroll_sends_a_bounded_number_of_wheel_ticks() {
+        let mut view = showing(FULL_SCREEN_APP);
+        let ticks = view.wheel(i32::MAX).unwrap();
+        assert_eq!(ticks, UP.repeat(usize::try_from(MAX_WHEEL_LINES / WHEEL_LINES).unwrap()));
+        let ticks = view.wheel(i32::MIN).unwrap();
+        assert_eq!(ticks, DOWN.repeat(usize::try_from(MAX_WHEEL_LINES / WHEEL_LINES).unwrap()));
+    }
+
+    #[test]
+    fn an_app_that_ignores_the_mouse_scrolls_the_history_of_the_phone() {
+        let mut view = showing(b"one\r\ntwo\r\nthree");
+        assert_eq!(view.wheel(3), None);
+        let mut view = showing(&history());
+        view.scroll(5);
+        assert!(view.dirty);
+        assert_eq!(view.term.as_ref().unwrap().screen().scrollback(), 5);
+        view.scroll(0);
+        assert!(!view.term.as_ref().unwrap().is_scrolled());
+    }
+
+    #[test]
+    fn a_history_already_scrolled_on_the_phone_keeps_scrolling_there() {
+        let mut view = showing(&history());
+        view.term.as_mut().unwrap().scroll_by(4);
+        view.term.as_mut().unwrap().process(TRACKS_MOUSE);
+        assert_eq!(view.wheel(3), None, "the phone must first come back down its own history");
+    }
+
+    #[test]
+    fn an_agent_that_is_not_running_scrolls_what_it_recorded() {
+        let mut view = showing(&[history().as_slice(), TRACKS_MOUSE].concat());
+        view.scroll(3);
+        assert_eq!(view.term.as_ref().unwrap().screen().scrollback(), 3);
     }
 
     #[test]

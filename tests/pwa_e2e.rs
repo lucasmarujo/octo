@@ -178,14 +178,18 @@ fn add_agent(store: &Store, name: &str, cwd: PathBuf) -> AgentId {
 }
 
 fn start_terminal(fx: &Fixture, name: &str) -> AgentId {
-    let cwd = fx.dir.join(name);
-    std::fs::create_dir_all(&cwd).unwrap();
-    let id = add_agent(&fx.store, name, cwd.clone());
     let (program, args) = if cfg!(windows) {
         (PathBuf::from("cmd.exe"), vec!["/q".to_string()])
     } else {
         (PathBuf::from("/bin/sh"), Vec::new())
     };
+    start_program(fx, name, program, args)
+}
+
+fn start_program(fx: &Fixture, name: &str, program: PathBuf, args: Vec<String>) -> AgentId {
+    let cwd = fx.dir.join(name);
+    std::fs::create_dir_all(&cwd).unwrap();
+    let id = add_agent(&fx.store, name, cwd.clone());
     let spec = LaunchSpec {
         kind: AgentKind::Terminal,
         program,
@@ -293,6 +297,54 @@ fn the_phone_watches_an_agent_and_types_into_it() {
     phone.send(&PhoneMsg::Send { text: "echo orkai-pwa-$((40+2))".into() });
     let marker = if cfg!(windows) { "orkai-pwa-$((40+2))" } else { "orkai-pwa-42" };
     phone.screen_where(|_, text| text.lines().any(|line| line.trim() == marker));
+}
+
+const FULL_SCREEN_PS1: &str = r#"
+Add-Type -Namespace Orkai -Name Console -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int handle);
+[DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr handle, int mode);
+'@
+[void][Orkai.Console]::SetConsoleMode([Orkai.Console]::GetStdHandle(-10), 0x200)
+[void][Orkai.Console]::SetConsoleMode([Orkai.Console]::GetStdHandle(-11), 0x7)
+$e = [char]27
+[Console]::Write("$e[?1049h$e[?1002h$e[?1006hwheel-ready`r`n")
+while ($true) { [Console]::Write(([string][char][Console]::In.Read()).Replace("$e", "`r`nESC")) }
+"#;
+
+const FULL_SCREEN_SH: &str = r#"
+stty raw -echo
+printf '\033[?1049h\033[?1002h\033[?1006hwheel-ready\r\n'
+esc=$(printf '\033')
+while :; do
+  c=$(dd bs=1 count=1 2>/dev/null)
+  if [ "$c" = "$esc" ]; then printf '\r\nESC'; else printf '%s' "$c"; fi
+done
+"#;
+
+fn full_screen_echo(dir: &Path) -> (PathBuf, Vec<String>) {
+    if cfg!(windows) {
+        let script = dir.join("full-screen.ps1");
+        std::fs::write(&script, FULL_SCREEN_PS1).unwrap();
+        let args = ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"].map(String::from);
+        (PathBuf::from("powershell.exe"), [args.to_vec(), vec![script.to_string_lossy().into_owned()]].concat())
+    } else {
+        (PathBuf::from("/bin/sh"), vec!["-c".to_string(), FULL_SCREEN_SH.to_string()])
+    }
+}
+
+#[test]
+fn the_phone_scrolls_a_full_screen_agent_with_the_mouse_wheel() {
+    let fx = fixture();
+    let (program, args) = full_screen_echo(&fx.dir);
+    let id = start_program(&fx, "full-screen", program, args);
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.send(&PhoneMsg::Open { agent: id, rows: 30, cols: 50 });
+    phone.screen_where(|screen, text| (screen.rows, screen.cols) == (30, 50) && text.contains("wheel-ready"));
+    phone.send(&PhoneMsg::Scroll { lines: 6 });
+    let up = phone.screen_where(|_, text| text.matches("ESC[<64;26;16M").count() == 2);
+    assert_eq!(up.scroll, 0, "the agent scrolls itself; the phone keeps showing it live");
+    phone.send(&PhoneMsg::Scroll { lines: -3 });
+    phone.screen_where(|_, text| text.contains("ESC[<65;26;16M"));
 }
 
 #[test]

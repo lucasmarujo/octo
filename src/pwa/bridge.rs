@@ -22,7 +22,7 @@ use crate::store::Store;
 use crate::util::{lock, now_ms};
 
 pub const COMMAND: &str = "__pwa";
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 pub const DEFAULT_PORT: u16 = 7470;
 pub const STALE_AFTER_MS: u64 = 15_000;
 pub const LINK_KEY: &str = "k";
@@ -521,7 +521,7 @@ mod tests {
         assert!(!start(&home, &missing, TunnelKind::Cloudflare, DEFAULT_PORT).unwrap());
         assert!(!stop_path(&home).exists(), "a current bridge is left alone");
 
-        write_info(&home, &Info { version: 0, ..info(now_ms()) }).unwrap();
+        write_info(&home, &Info { version: VERSION - 1, ..info(now_ms()) }).unwrap();
         let old = home.clone();
         let old_bridge = thread::spawn(move || {
             let deadline = Instant::now() + Duration::from_secs(5);
