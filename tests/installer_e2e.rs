@@ -22,6 +22,7 @@ const UNINSTALL_KEY: &str =
 const ENVIRONMENT_KEY: &str = "Environment";
 const ADD_TO_PATH: &str = "/MERGETASKS=addtopath";
 const KEEP_OFF_PATH: &str = "/MERGETASKS=!addtopath";
+const WINGET_DEFAULTS: &str = "/SP-";
 const OLD_SETUP_PREFIX: &str = "orkai.exe.old-setup-";
 const LOG_CLOSED: &str = "Log closed.";
 const HKEY_CURRENT_USER: isize = 0x8000_0001_u32 as i32 as isize;
@@ -205,10 +206,10 @@ impl Install {
         self.dir.with_extension("uninstall.log")
     }
 
-    fn install(&self, task: &str) {
+    fn install(&self, switch: &str) {
         let log = self.dir.with_extension("log");
         let (dir, log_arg) = (format!("/DIR={}", self.dir.display()), format!("/LOG={}", log.display()));
-        let status = run(setup(), &["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", &dir, task, &log_arg]);
+        let status = run(setup(), &["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", &dir, switch, &log_arg]);
         let log = std::fs::read_to_string(&log).unwrap_or_default();
         assert!(status.success(), "setup exited with {status}:\n{log}");
     }
@@ -327,6 +328,24 @@ fn installs_for_the_user_with_orkai_on_the_path_and_uninstalls_without_a_trace()
     install.uninstall();
     assert_eq!(user_path(), before);
     assert!(!install.dir.exists(), "{:?}", file_names(&install.dir));
+}
+
+#[test]
+#[ignore = "installs orkai for the current user (registry and PATH); CI runs it with --ignored"]
+fn installs_like_winget_on_the_path_under_the_entry_its_manifest_matches() {
+    let before = user_path();
+    let install = Install::new("winget");
+    install.install(WINGET_DEFAULTS);
+
+    assert_eq!(registry_string(UNINSTALL_KEY, "DisplayName").as_deref(), Some("orkai"));
+    assert_eq!(registry_string(UNINSTALL_KEY, "Publisher").as_deref(), Some("Lucas Marujo"));
+    assert_eq!(registry_string(UNINSTALL_KEY, "DisplayVersion").as_deref(), Some(env!("CARGO_PKG_VERSION")));
+    let after = user_path();
+    assert_eq!(after.len(), before.len() + 1, "orkai goes on the PATH by default: {after:?}");
+    assert!(same_dir(&after[before.len()], &install.dir), "{after:?}");
+
+    install.uninstall();
+    assert_eq!(user_path(), before);
 }
 
 #[test]

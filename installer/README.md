@@ -31,6 +31,29 @@ Windows e `PATH`), por isso ficam fora do `cargo test`; o CI roda no runner Wind
 `ORKAI_ISCC` aponta para outro `ISCC.exe`. Sem `--ignored`, o `cargo test` só confere a versão gravada no
 `orkai.exe`.
 
+## winget
+
+O pacote `LucasMarujo.orkai` do [winget-pkgs](https://github.com/microsoft/winget-pkgs) aponta para o
+`orkai-setup.exe` de uma release versionada (`v0.1.0`, …) e não da `latest`: o winget confere o SHA-256 do
+instalador, e a `latest` muda a cada push. O job `publish` cria a release `v<versão do Cargo.toml>` na primeira
+build de cada versão e nunca mais mexe nela. Instalado pelo winget, o SmartScreen não pergunta nada, porque o
+winget marca como confiável o instalador da fonte oficial cujo hash bate com o manifesto; dali em diante o
+próprio orkai se atualiza pela `latest`.
+
+O winget roda o instalador com `/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`, sem escolher tasks, e reconhece
+o orkai instalado pelo nome, publisher e versão da entrada de desinstalação.
+`installs_like_winget_on_the_path_under_the_entry_its_manifest_matches` instala assim e confere esses três
+campos e o `PATH`; se `AppName` ou `AppPublisher` mudarem, o manifesto do winget muda junto.
+
+Para publicar uma versão nova no winget: subir `version` no `Cargo.toml`, esperar o CI criar a release
+`v<versão>` e rodar o [wingetcreate](https://github.com/microsoft/winget-create)
+(`winget install Microsoft.WingetCreate`):
+
+```powershell
+wingetcreate update LucasMarujo.orkai --version <versão> --submit `
+  --urls https://github.com/lucasmarujo/orkai-cli/releases/download/v<versão>/orkai-setup.exe
+```
+
 ## Assinatura (SignPath Foundation)
 
 Com a variável `SIGNPATH_ORGANIZATION_ID` definida no repositório, o job `build` do Windows manda dois pedidos

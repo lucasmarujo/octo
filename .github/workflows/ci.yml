@@ -227,3 +227,19 @@ jobs:
 
           On Windows, run orkai-setup.exe. Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy" \
             --latest
+      - name: Publish the version
+        if: steps.head.outputs.publish == 'true'
+        run: |
+          tag="v$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "$tag is already published; its files never change"
+            exit 0
+          fi
+          gh release create "$tag" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "orkai $tag" \
+            --notes "orkai $tag, built from $GITHUB_SHA. Its files never change, so winget can check them by SHA-256; the continuous build is the latest release.
+
+          On Windows, run orkai-setup.exe. Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy" \
+            --latest=false
