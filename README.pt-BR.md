@@ -417,7 +417,8 @@ mesmo tempo.
 
 1. No orkai, aperte `ctrl+p` (ou clique em **▣ orkai pwa** na lateral, ou digite `/pwa`). Ele fica ligado
    até você desligar, inclusive depois de fechar e abrir o orkai.
-2. Aponte a câmera do celular para o QR code. O navegador abre o orkai já pareado.
+2. Aponte a câmera do celular para o QR code. O navegador abre o orkai já pareado. Sem a câmera, abra no
+   celular o `link` que aparece ao lado do código, ou cole-o na página que o endereço abre.
 3. Opcional: *compartilhar › adicionar à tela de início* deixa o orkai a um toque, como um app.
 
 A lateral mostra `off`, `on` ou quantos celulares estão conectados (`● 2`). Na tela do PWA, `d` desliga e `n`

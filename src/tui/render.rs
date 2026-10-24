@@ -10,7 +10,7 @@ use crate::pwa::bridge::Phase;
 use crate::pwa::qr::Qr;
 use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, Prompt, PwaPanel, SHELL_PREFIX, Tone, View};
 use crate::tui::complete::matching_commands;
-use crate::tui::format::{duration_short, pad, pad_left, skip_columns, truncate, truncate_start, width};
+use crate::tui::format::{duration_short, pad, pad_left, skip_columns, split_columns, truncate, truncate_start, width};
 use crate::tui::sprite;
 use crate::tui::theme;
 use crate::usage::{self, Limits, Problem, Usage, Window};
@@ -960,11 +960,14 @@ fn draw_qr(qr: &Qr, x: u16, y: u16, buf: &mut Buffer) {
     }
 }
 
-fn pwa_details(app: &App) -> Vec<(String, String, Color)> {
+fn pwa_details(app: &App, room: usize) -> Vec<(String, String, Color)> {
     let Some(info) = app.pwa.info.as_ref() else { return Vec::new() };
     let mut rows = vec![("tunnel".to_string(), format!("{} · ready", info.tunnel.label()), theme::MUTED)];
     if let Some(code) = app.pwa.code.as_ref() {
-        rows.push(("link".to_string(), code.url.clone(), theme::LINK));
+        for (index, line) in split_columns(&code.link, room).into_iter().enumerate() {
+            let label = if index == 0 { "link" } else { "" };
+            rows.push((label.to_string(), line, theme::LINK));
+        }
     }
     let phones = match info.phones {
         0 => ("no phone connected".to_string(), theme::DIM),
@@ -990,7 +993,8 @@ fn draw_pwa_side(app: &App, x: u16, y: u16, right: u16, bottom: u16, buf: &mut B
         y += 1;
     }
     y += 1;
-    for (label, value, color) in pwa_details(app) {
+    let room = usize::from(right.saturating_sub(x)).saturating_sub(PWA_LABEL_WIDTH);
+    for (label, value, color) in pwa_details(app, room) {
         if y >= bottom {
             return;
         }
@@ -1044,8 +1048,8 @@ fn draw_pwa(app: &App, area: Rect, buf: &mut Buffer) {
             fg(theme::YELLOW),
             right,
         );
-        if y + 1 < bottom {
-            put(buf, area.x, y + 1, &code.link, fg(theme::LINK), right);
+        for (row, line) in (y + 1..bottom).zip(split_columns(&code.link, usize::from(area.width))) {
+            put(buf, area.x, row, &line, fg(theme::LINK), right);
         }
         return;
     };

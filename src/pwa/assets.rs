@@ -119,6 +119,16 @@ mod tests {
     }
 
     #[test]
+    fn every_element_the_app_looks_up_is_in_the_page() {
+        let (page, app) = (text("/"), text("/app.js"));
+        let ids: Vec<&str> = app.split("$('").skip(1).map(|piece| piece.split('\'').next().unwrap()).collect();
+        assert!(ids.contains(&"pair-form") && ids.contains(&"pair-link"), "{ids:?}");
+        for id in ids {
+            assert!(page.contains(&format!("id=\"{id}\"")), "app.js looks up #{id}, which the page lacks");
+        }
+    }
+
+    #[test]
     fn unknown_and_escaping_paths_are_not_served() {
         assert!(lookup("/secret").is_none());
         assert!(lookup("/../Cargo.toml").is_none());

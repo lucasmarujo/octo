@@ -1376,6 +1376,17 @@ fn show_pwa(app: &mut App, info: Info) {
     app.view = View::Pwa;
 }
 
+fn shown_from(screen: &str, start: &str, rows: usize) -> String {
+    let (row, line) = line_with(screen, start);
+    let column = usize::from(column_of(line, start));
+    screen
+        .lines()
+        .skip(row)
+        .take(rows)
+        .map(|line| line.chars().skip(column).collect::<String>().trim_end().to_string())
+        .collect()
+}
+
 #[test]
 fn the_orkai_pwa_sits_in_the_sidebar_and_a_click_turns_it_on() {
     let mut scenario = scenario();
@@ -1405,7 +1416,9 @@ fn a_ready_bridge_shows_the_pairing_code_the_link_and_the_phones() {
     let screen = text(&buffer);
     assert!(screen.contains("end-to-end encrypted"), "{screen}");
     assert!(screen.contains("point the phone camera at the code"), "{screen}");
-    assert!(screen.contains("https://quiet-river-sound-lamp.trycloudflare.com"), "{screen}");
+    let link = scenario.app.pwa.code.as_ref().unwrap().link.clone();
+    let shown = shown_from(&screen, "https://quiet-river-sound-lamp.trycloudflare.com", 3);
+    assert!(shown.starts_with(&link), "the link pairs only with the whole key after #k=: {shown}\n{screen}");
     assert!(screen.contains("1 connected"), "{screen}");
     assert!(line_with(&screen, "orkai pwa").1.contains("● 1"), "the sidebar counts the phones");
     let (dark, light) = (Color::Rgb(18, 18, 24), Color::Rgb(236, 236, 240));
@@ -1437,7 +1450,20 @@ fn a_small_terminal_shows_the_link_instead_of_a_clipped_code() {
     show_pwa(&mut scenario.app, ready_bridge(0));
     let screen = render_at(&mut scenario.app, 100, 16);
     assert!(screen.contains("make the terminal bigger"), "{screen}");
-    assert!(screen.contains("#k="), "{screen}");
+    let link = scenario.app.pwa.code.as_ref().unwrap().link.clone();
+    assert_eq!(shown_from(&screen, "https://quiet-river", 3), link, "{screen}");
+}
+
+#[test]
+fn the_link_beside_the_code_wraps_instead_of_losing_the_key() {
+    let mut scenario = scenario();
+    show_pwa(&mut scenario.app, ready_bridge(0));
+    let screen = render_at(&mut scenario.app, 120, 30);
+    let link = scenario.app.pwa.code.as_ref().unwrap().link.clone();
+    let (_, line) = line_with(&screen, "https://quiet-river");
+    assert!(line.contains("link") && !line.contains('…'), "{line}");
+    assert!(column_of(line, "https://") > column_of(line, "▀"), "the link sits beside the code: {line}");
+    assert!(shown_from(&screen, "https://quiet-river", 4).starts_with(&link), "{screen}");
 }
 
 #[test]

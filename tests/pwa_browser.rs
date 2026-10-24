@@ -9,6 +9,7 @@ use orkai::launch::Launcher;
 use orkai::model::{AgentId, AgentKind, LaunchSpec, NewAgent};
 use orkai::paths::Home;
 use orkai::protocol::ClientMsg;
+use orkai::pwa::bridge::pairing_link;
 use orkai::pwa::crypto::{self, Secret};
 use orkai::pwa::hub::Hub;
 use orkai::pwa::server::{Server, UNPAIRED};
@@ -49,6 +50,29 @@ const session = new wire.Session(`ws://127.0.0.1:${port}/ws`, secret, {
   },
   error(err) {
     console.log(`ERROR ${err}`);
+  },
+});
+setTimeout(() => {
+  console.log('TIMEOUT');
+  process.exit(4);
+}, 20000);
+"#;
+
+const PASTE_HARNESS: &str = r#"
+const wire = require(process.argv[2]);
+const secret = wire.secretFrom(wire.linkKey(process.argv[4]));
+if (!secret) {
+  console.log('REJECTED');
+  process.exit(5);
+}
+new wire.Session(`ws://127.0.0.1:${process.argv[3]}/ws`, secret, {
+  message(message) {
+    console.log(`MESSAGE ${message.type}`);
+    if (message.type === 'welcome') process.exit(0);
+  },
+  close(code) {
+    console.log(`CLOSE ${code}`);
+    process.exit(3);
   },
 });
 setTimeout(() => {
@@ -143,6 +167,54 @@ fn run_app_wire(fx: &Fixture, secret: &Secret, agent: AgentId) -> Option<Output>
         .output()
         .unwrap();
     Some(output)
+}
+
+fn paste_link(fx: &Fixture, pasted: &str) -> Option<Output> {
+    let node = which::which("node").ok()?;
+    let harness = fx.dir.join("paste.js");
+    std::fs::write(&harness, PASTE_HARNESS).unwrap();
+    let wire = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/pwa/web/wire.js");
+    Some(Command::new(node).arg(&harness).arg(&wire).arg(fx.port.to_string()).arg(pasted).output().unwrap())
+}
+
+#[test]
+fn a_pasted_pairing_link_pairs_without_the_camera() {
+    let fx = fixture();
+    let link = pairing_link("https://quiet-river-sound-lamp.trycloudflare.com/", &fx.secret);
+    let (head, tail) = link.split_at(link.len() / 2);
+    let copied_from_a_wrapped_terminal = format!("  {head}\r\n          {tail}  \n");
+    for pasted in [link.clone(), copied_from_a_wrapped_terminal, crypto::encode(&fx.secret)] {
+        let Some(output) = paste_link(&fx, &pasted) else {
+            eprintln!("node is not installed; the pasted link is not exercised");
+            return;
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("MESSAGE welcome"), "{pasted:?}: {stdout}");
+        assert_eq!(output.status.code(), Some(0), "{pasted:?}: {stdout}");
+    }
+}
+
+#[test]
+fn a_cut_or_bare_link_is_refused_before_it_reaches_the_bridge() {
+    let fx = fixture();
+    let link = pairing_link("https://quiet-river-sound-lamp.trycloudflare.com", &fx.secret);
+    let cut = link[..link.len() - 6].to_string();
+    for pasted in [cut, "https://quiet-river-sound-lamp.trycloudflare.com/".to_string(), String::new()] {
+        let Some(output) = paste_link(&fx, &pasted) else { return };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("REJECTED"), "{pasted:?}: {stdout}");
+        assert_eq!(output.status.code(), Some(5), "{pasted:?}: {stdout}");
+    }
+}
+
+#[test]
+fn a_pasted_link_of_another_orkai_is_told_it_is_not_paired() {
+    let fx = fixture();
+    let other = pairing_link("https://quiet-river-sound-lamp.trycloudflare.com", &crypto::secret().unwrap());
+    let Some(output) = paste_link(&fx, &other) else { return };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(&format!("CLOSE {UNPAIRED}")), "{stdout}");
+    assert!(!stdout.contains("MESSAGE"), "{stdout}");
 }
 
 #[test]

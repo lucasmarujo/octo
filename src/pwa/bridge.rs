@@ -22,7 +22,7 @@ use crate::store::Store;
 use crate::util::{lock, now_ms};
 
 pub const COMMAND: &str = "__pwa";
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 pub const DEFAULT_PORT: u16 = 7470;
 pub const STALE_AFTER_MS: u64 = 15_000;
 pub const LINK_KEY: &str = "k";

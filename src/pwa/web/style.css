@@ -331,6 +331,7 @@ textarea::placeholder { color: var(--dim); }
 .steps { margin: 8px 0; padding: 0; list-style: none; counter-reset: step; text-align: left; }
 .steps li { counter-increment: step; margin: 6px 0; color: var(--text); }
 .steps li::before { content: counter(step); margin-right: 10px; color: var(--pink); font-weight: 700; }
+.pair-form { width: 100%; max-width: 420px; padding: 6px 0; }
 kbd { border: 1px solid var(--rule); border-radius: 4px; padding: 0 5px; background: var(--ink-2); }
 
 .t-text { color: var(--text); }

@@ -53,8 +53,12 @@
       <ol class="steps">
         <li>open <b>orkai</b> on your computer</li>
         <li>press <kbd>ctrl+p</kbd> (or click <b>▣ orkai pwa</b>)</li>
-        <li>scan the code with this phone's camera</li>
+        <li>scan the code with this phone's camera, or paste the link shown next to it</li>
       </ol>
+      <form id="pair-form" class="sheet-row pair-form" autocomplete="off">
+        <input id="pair-link" type="text" inputmode="url" placeholder="paste the link from orkai" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-label="pairing link" />
+        <button class="primary" type="submit">pair</button>
+      </form>
       <button id="retry" class="primary" type="button" hidden>try again</button>
     </main>
 

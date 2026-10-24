@@ -5,6 +5,7 @@
   const UP = 'orkai-pwa/2 phone->bridge';
   const DOWN = 'orkai-pwa/2 bridge->phone';
   const SECRET_LEN = 32;
+  const LINK_KEY = 'k';
   const UNPAIRED = 4001;
   const OUTDATED = 4002;
   const subtle = root.crypto && root.crypto.subtle;
@@ -50,6 +51,12 @@
     } catch (err) {
       return null;
     }
+  }
+
+  function linkKey(link) {
+    const value = String(link || '').replace(/\s+/g, '');
+    const fragment = value.slice(value.indexOf('#') + 1);
+    return new URLSearchParams(fragment).get(LINK_KEY) || fragment;
   }
 
   async function deriveKeys(secret, privateKey, phone, bridge) {
@@ -152,7 +159,7 @@
     }
   }
 
-  const api = { VERSION, UNPAIRED, OUTDATED, Session, encode, decode, nonce, secretFrom, supported: Boolean(subtle) };
+  const api = { VERSION, UNPAIRED, OUTDATED, Session, encode, decode, nonce, secretFrom, linkKey, supported: Boolean(subtle) };
   root.OrkaiWire = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

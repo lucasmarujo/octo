@@ -43,6 +43,7 @@
     overview: $('overview'), sessions: $('sessions'), stats: $('stats'), usage: $('usage'), lost: $('lost'),
     list: $('list'), agent: $('agent'), screen: $('screen'), rows: $('rows'), cursor: $('cursor'), live: $('live'),
     keys: $('keys'), pair: $('pair'), pairMascot: $('pair-mascot'), pairText: $('pair-text'), retry: $('retry'),
+    pairForm: $('pair-form'), pairLink: $('pair-link'),
     composer: $('composer'), picks: $('picks'), form: $('form'), input: $('input'), send: $('send'),
     sheet: $('sheet'), sheetTitle: $('sheet-title'), sheetBody: $('sheet-body'), sheetClose: $('sheet-close'),
     toast: $('toast'),
@@ -830,7 +831,7 @@
   function onClose(code) {
     if (code === Wire.UNPAIRED) {
       setLink('unpaired');
-      showPair('this phone is not paired with this orkai anymore. scan the new code to pair it again.', true);
+      showPair('this phone is not paired with this orkai anymore. scan the new code or paste its link to pair it again.', true);
       return;
     }
     if (code === Wire.OUTDATED) {
@@ -871,13 +872,29 @@
   }
 
   function readLink() {
-    const params = new URLSearchParams(window.location.hash.slice(1));
-    const value = params.get('k');
+    const value = Wire.linkKey(window.location.hash);
     if (!value) return null;
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
     const secret = Wire.secretFrom(value);
     if (secret) storage.set(SECRET_KEY, value);
     return secret;
+  }
+
+  function pairWithLink(event) {
+    event.preventDefault();
+    const value = Wire.linkKey(el.pairLink.value);
+    const secret = Wire.secretFrom(value);
+    if (!secret) {
+      toast('this is not the whole pairing link. copy it again from orkai, with the part after #k=', 'error');
+      return;
+    }
+    storage.set(SECRET_KEY, value);
+    state.secret = secret;
+    el.pairLink.value = '';
+    el.pairLink.blur();
+    show('overview');
+    state.attempt = 0;
+    connect();
   }
 
   function onResize() {
@@ -901,6 +918,7 @@
       state.attempt = 0;
       connect();
     });
+    el.pairForm.addEventListener('submit', pairWithLink);
     el.form.addEventListener('submit', submit);
     el.input.addEventListener('input', grow);
     el.input.addEventListener('keydown', (event) => {
@@ -967,6 +985,7 @@
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
     if (!Wire.supported) {
       setLink('offline');
+      el.pairForm.hidden = true;
       showPair('this browser cannot run the orkai encryption. open the link in safari or chrome.', false);
       return;
     }

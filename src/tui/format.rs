@@ -140,6 +140,26 @@ pub fn skip_columns(text: &str, cells: usize) -> String {
     out
 }
 
+pub fn split_columns(text: &str, cells: usize) -> Vec<String> {
+    let cells = cells.max(1);
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut used = 0;
+    for c in text.chars() {
+        let w = UnicodeWidthChar::width(c).unwrap_or(0);
+        if used + w > cells && used > 0 {
+            lines.push(std::mem::take(&mut line));
+            used = 0;
+        }
+        line.push(c);
+        used += w;
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
 pub fn truncate(text: &str, max_width: usize) -> String {
     if width(text) <= max_width {
         return text.to_string();
@@ -253,5 +273,14 @@ mod tests {
         assert_eq!(truncate_start("short", 10), "short");
         assert_eq!(truncate_start("漢字漢字", 5), "…漢字");
         assert_eq!(truncate_start("abc", 0), "");
+    }
+
+    #[test]
+    fn splitting_keeps_every_character_within_the_columns() {
+        assert_eq!(split_columns("https://a.example/#k=abc", 10), ["https://a.", "example/#k", "=abc"]);
+        assert_eq!(split_columns("short", 10), ["short"]);
+        assert_eq!(split_columns("漢字漢字", 5), ["漢字", "漢字"]);
+        assert_eq!(split_columns("abc", 0), ["a", "b", "c"]);
+        assert!(split_columns("", 10).is_empty());
     }
 }

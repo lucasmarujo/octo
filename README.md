@@ -416,7 +416,8 @@ the same time.
 
 1. In orkai, press `ctrl+p` (or click **▣ orkai pwa** in the sidebar, or type `/pwa`). It stays on until
    you turn it off, even after closing and reopening orkai.
-2. Point your phone's camera at the QR code. The browser opens orkai already paired.
+2. Point your phone's camera at the QR code. The browser opens orkai already paired. Without the camera,
+   open the `link` shown next to the code on the phone, or paste it into the page the address opens.
 3. Optional: *share › add to home screen* puts orkai one tap away, like an app.
 
 The sidebar shows `off`, `on` or how many phones are connected (`● 2`). On the PWA screen, `d` turns it off
