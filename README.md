@@ -102,8 +102,8 @@ https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
 
 ## Installation
 
-On Windows, run the installer. On Linux and macOS, download the binary for your platform from the
-[`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest) release, rename it to
+On Windows, run the installer from PowerShell. On Linux and macOS, download the binary for your platform
+from the [`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest) release, rename it to
 `orkai` and put it in a folder on your `PATH`:
 
 | Platform | File |
@@ -125,17 +125,24 @@ chmod +x ~/.local/bin/orkai
 If `~/.local/bin` isn't on your `PATH` yet, add `export PATH="$HOME/.local/bin:$PATH"` to
 `~/.bashrc` or `~/.zshrc`.
 
-**Windows**: download and run
-[`orkai-setup.exe`](https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-setup.exe). It
-installs orkai for your user in `%LOCALAPPDATA%\Programs\orkai`, without admin rights, and offers to add it to
-your `PATH` so `orkai` works in any terminal. Running it again upgrades orkai in place, even while it's open,
-and Settings › Apps uninstalls it. Or, in PowerShell:
+**Windows**, in PowerShell:
 
 ```powershell
 $setup = "$env:TEMP\orkai-setup.exe"
-Invoke-WebRequest "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-setup.exe" -OutFile $setup
+Invoke-WebRequest "https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe" -OutFile $setup
 Start-Process $setup -Wait
 ```
+
+It installs orkai for your user in `%LOCALAPPDATA%\Programs\orkai`, without admin rights, and offers to add it to
+your `PATH` so `orkai` works in any terminal. Running it again upgrades orkai in place, even while it's open,
+and Settings › Apps uninstalls it.
+
+The installer isn't code signed yet (see [Code signing policy](#code-signing-policy)). Downloaded from
+PowerShell, it runs without a SmartScreen prompt. If you download
+[`orkai-setup.exe`](https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe) with a
+browser instead, SmartScreen may show "Windows protected your PC": click **More info** › **Run anyway**. Both
+links get the installer of the newest version, whose file never changes; orkai then updates itself to the
+latest build ([auto-update](#auto-update)).
 
 For an unattended install, pass `/VERYSILENT` to the installer (`/MERGETASKS=!addtopath` leaves the `PATH`
 alone). The release also carries `orkai-x86_64-pc-windows-msvc`, the bare binary that
@@ -626,11 +633,13 @@ and your iTerm2 profiles aren't changed. Local builds (`dev`) don't create anyth
 
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org).
+`orkai.exe` and `orkai-setup.exe` are not code signed yet. Until they are, Windows SmartScreen may warn about
+an `orkai-setup.exe` downloaded with a browser; the PowerShell command in [Installation](#installation) doesn't
+get the prompt.
 
-`orkai.exe` and `orkai-setup.exe` are signed only when the [CI](.github/workflows/ci.yml) builds them from
-this repository, and every signing request is approved by hand.
+The [CI](.github/workflows/ci.yml) is ready to sign both files through [SignPath](https://about.signpath.io)
+once the [SignPath Foundation](https://signpath.org) accepts orkai: only builds of this repository are signed,
+and every signing request is approved by hand.
 
 - Committers and reviewers: [Lucas Marujo](https://github.com/lucasmarujo)
 - Approvers: [Lucas Marujo](https://github.com/lucasmarujo)

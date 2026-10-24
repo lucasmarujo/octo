@@ -36,7 +36,12 @@ Windows e `PATH`), por isso ficam fora do `cargo test`; o CI roda no runner Wind
 O pacote `LucasMarujo.orkai` do [winget-pkgs](https://github.com/microsoft/winget-pkgs) aponta para o
 `orkai-setup.exe` de uma release versionada (`v0.1.0`, …) e não da `latest`: o winget confere o SHA-256 do
 instalador, e a `latest` muda a cada push. O job `publish` cria a release `v<versão do Cargo.toml>` na primeira
-build de cada versão e nunca mais mexe nela. Instalado pelo winget, o SmartScreen não pergunta nada, porque o
+build de cada versão e nunca mais mexe nos arquivos dela. Ela é a release marcada como Latest no GitHub, e a
+build contínua (tag `latest`) não: por isso os links do `orkai-setup.exe` no README, no site e no `llms.txt`
+usam `releases/latest/download/orkai-setup.exe`, que o GitHub redireciona para a Latest. O instalador só muda
+quando a versão sobe, e a reputação dele no SmartScreen se acumula num hash só. A atualização automática e os
+binários de Linux e macOS continuam em `releases/download/latest/`, a tag da build contínua; não troque um pelo
+outro. Instalado pelo winget, o SmartScreen não pergunta nada, porque o
 winget marca como confiável o instalador da fonte oficial cujo hash bate com o manifesto; dali em diante o
 próprio orkai se atualiza pela `latest`.
 
@@ -66,7 +71,10 @@ release sai sem assinatura e o CI deixa um aviso.
 Para ligar:
 
 1. Candidatar o projeto em <https://signpath.org/apply>. A SignPath Foundation pede licença OSI (o repositório
-   é MIT) e a seção "Code signing policy" no README e no site, que já estão no repositório.
+   é MIT) e a seção "Code signing policy" no README e no site, que já estão no repositório. A primeira
+   candidatura, em outubro de 2026, foi recusada por falta de sinais públicos (estrelas, forks, contribuidores,
+   menções fora do GitHub); a SignPath aceita uma nova quando o projeto tiver mais visibilidade. Aprovada, a
+   seção "Code signing policy" dos dois READMEs volta a ter a atribuição que a SignPath pede.
 2. Na SignPath: ligar o trusted build system **GitHub.com** ao projeto `orkai-cli`, instalar o SignPath GitHub
    App no repositório e criar as duas artifact configurations abaixo, com os slugs `orkai-exe` e
    `orkai-setup`. A signing policy usada é `release-signing`.

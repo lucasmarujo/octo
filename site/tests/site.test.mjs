@@ -279,14 +279,24 @@ test('os comandos de instalação são os mesmos do README', () => {
 
 test('os downloads diretos são os binários da tabela de plataformas do README', () => {
   const files = readmeTable('| Platform | File |').map(([, file]) => file);
-  const links = [...html.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/download\/latest\/([^"]+)"/g)].map((m) => m[1]);
+  const links = [...html.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/(?:download\/latest|latest\/download)\/([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual([...links].sort(), [...files].sort());
 });
 
-test('a página e os dois READMEs mostram a code signing policy da SignPath', () => {
-  const attribution = 'Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by\n[SignPath Foundation](https://signpath.org).';
-  for (const source of [readme, readmePtBr]) {
-    assert.ok(source.includes(`## Code signing policy\n\n${attribution}`), 'seção Code signing policy com a atribuição da SignPath');
+test('o instalador do Windows sai da versão mais nova, que nunca muda, e não da build contínua', () => {
+  const versioned = 'https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe';
+  for (const [name, source] of [['README.md', readme], ['README.pt-BR.md', readmePtBr], ['index.html', html], ['llms.txt', read('llms.txt')]]) {
+    const links = [...source.matchAll(/https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/[^\s"()]*orkai-setup\.exe/g)].map((m) => m[0]);
+    assert.ok(links.length > 0, `${name} sem link do instalador`);
+    assert.deepEqual([...new Set(links)], [versioned], name);
+  }
+});
+
+test('a página e os dois READMEs mostram a code signing policy, que diz que o Windows ainda sai sem assinatura', () => {
+  const unsigned = { 'README.md': '`orkai.exe` and `orkai-setup.exe` are not code signed yet.', 'README.pt-BR.md': 'O `orkai.exe` e o `orkai-setup.exe` ainda não são assinados.' };
+  for (const [name, source] of [['README.md', readme], ['README.pt-BR.md', readmePtBr]]) {
+    assert.ok(source.includes(`## Code signing policy\n\n${unsigned[name]}`), `${name}: a seção diz que ainda não há assinatura`);
+    assert.doesNotMatch(source, /Free code signing provided by/, `${name}: atribuição da SignPath sem assinatura`);
   }
   const footer = html.match(/<footer[\s\S]*?<\/footer>/)[0];
   assert.match(footer, /<a href="https:\/\/github\.com\/lucasmarujo\/orkai-cli#code-signing-policy">code signing policy<\/a>/);
