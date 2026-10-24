@@ -23,7 +23,7 @@ use orkai::pwa::qr::Qr;
 use orkai::pwa::tunnel::TunnelKind;
 use orkai::store::Store;
 use orkai::subagents::Subagent;
-use orkai::tui::app::{App, AppEvent, Confirm, Link, PairingCode, Prompt, View};
+use orkai::tui::app::{App, AppEvent, Confirm, Hit, Link, PairingCode, Prompt, View};
 use orkai::tui::{render, theme};
 use orkai::usage::{self, Limits, Problem, Usage, Window};
 use orkai::util::now_ms;
@@ -1451,7 +1451,7 @@ fn a_small_terminal_shows_the_link_instead_of_a_clipped_code() {
     let screen = render_at(&mut scenario.app, 100, 16);
     assert!(screen.contains("make the terminal bigger"), "{screen}");
     let link = scenario.app.pwa.code.as_ref().unwrap().link.clone();
-    assert_eq!(shown_from(&screen, "https://quiet-river", 3), link, "{screen}");
+    assert!(shown_from(&screen, "https://quiet-river", 3).starts_with(&link), "{screen}");
 }
 
 #[test]
@@ -1464,6 +1464,66 @@ fn the_link_beside_the_code_wraps_instead_of_losing_the_key() {
     assert!(line.contains("link") && !line.contains('…'), "{line}");
     assert!(column_of(line, "https://") > column_of(line, "▀"), "the link sits beside the code: {line}");
     assert!(shown_from(&screen, "https://quiet-river", 4).starts_with(&link), "{screen}");
+}
+
+fn click_on(app: &mut App, screen: &str, needle: &str) {
+    let (row, line) = line_with(screen, needle);
+    let click = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: column_of(line, needle) + 1,
+        row: u16::try_from(row).unwrap(),
+        modifiers: KeyModifiers::NONE,
+    };
+    app.handle(AppEvent::Input(Event::Mouse(click)));
+}
+
+#[test]
+fn the_copy_button_under_the_link_copies_the_whole_pairing_link() {
+    for (width, height) in [(120, 30), (WIDTH, HEIGHT), (100, 16)] {
+        let mut scenario = scenario();
+        show_pwa(&mut scenario.app, ready_bridge(0));
+        let link = scenario.app.pwa.code.as_ref().unwrap().link.clone();
+        let screen = render_at(&mut scenario.app, width, height);
+        let lines: Vec<&str> = screen.lines().collect();
+        let (button_row, button_line) = line_with(&screen, " copy ");
+        let link_end = lines[..button_row]
+            .iter()
+            .rposition(|line| line.contains("https://") || line.contains(&link[link.len() - 6..]));
+        assert_eq!(
+            link_end,
+            Some(button_row - 1),
+            "the button sits right under the link at {width}x{height}:\n{screen}"
+        );
+        let link_column = lines[..button_row]
+            .iter()
+            .find_map(|line| line.find("https://").map(|at| line[..at].chars().count()))
+            .unwrap();
+        assert_eq!(usize::from(column_of(button_line, " copy ")), link_column, "{screen}");
+        assert_eq!(scenario.app.take_clipboard(), None, "drawing copies nothing");
+        click_on(&mut scenario.app, &screen, " copy ");
+        assert_eq!(scenario.app.take_clipboard().as_deref(), Some(link.as_str()), "{width}x{height}");
+        let notice = scenario.app.notice.as_ref().unwrap().text.clone();
+        assert!(notice.contains("copied the pairing link"), "{notice}");
+        assert_eq!(scenario.app.take_clipboard(), None, "the link goes out once per click");
+    }
+}
+
+#[test]
+fn c_copies_the_pairing_link_and_does_nothing_before_the_code_is_ready() {
+    let mut scenario = scenario();
+    scenario.app.pwa.enabled = true;
+    scenario.app.view = View::Pwa;
+    press(&mut scenario.app, KeyCode::Char('c'), KeyModifiers::NONE);
+    assert_eq!(scenario.app.take_clipboard(), None);
+    render(&mut scenario.app);
+    assert!(!scenario.app.hits.iter().any(|(_, hit)| *hit == Hit::CopyPwaLink), "no button without a link");
+    show_pwa(&mut scenario.app, ready_bridge(0));
+    let screen = text(&render(&mut scenario.app));
+    assert!(line_with(&screen, "esc back").1.contains("c copy link"), "{screen}");
+    press(&mut scenario.app, KeyCode::Char('c'), KeyModifiers::NONE);
+    let link = scenario.app.pwa.code.as_ref().unwrap().link.clone();
+    assert_eq!(scenario.app.take_clipboard(), Some(link));
+    assert_eq!(scenario.app.view, View::Pwa);
 }
 
 #[test]

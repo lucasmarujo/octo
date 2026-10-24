@@ -268,6 +268,7 @@ pub enum Hit {
         x: u16,
     },
     Pwa,
+    CopyPwaLink,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -336,6 +337,7 @@ pub struct App {
     subagent_requests: Option<Sender<Vec<Parent>>>,
     change_requests: Option<Sender<Vec<(AgentId, Worktree)>>>,
     alerts: Vec<Alert>,
+    clipboard: Option<String>,
     installed: Option<Vec<AgentKind>>,
     pub pwa: PwaPanel,
 }
@@ -402,6 +404,7 @@ impl App {
             subagent_requests: None,
             change_requests: None,
             alerts: Vec::new(),
+            clipboard: None,
             installed: None,
             pwa: PwaPanel { enabled: ui.pwa, ..PwaPanel::default() },
         };
@@ -664,6 +667,10 @@ impl App {
         std::mem::take(&mut self.alerts)
     }
 
+    pub fn take_clipboard(&mut self) -> Option<String> {
+        self.clipboard.take()
+    }
+
     pub fn session_count(&self, name: &str) -> usize {
         self.agents.values().filter(|e| e.record.session == name && e.state() != AgentState::Exited).count()
     }
@@ -846,6 +853,13 @@ impl App {
         self.dirty = true;
     }
 
+    fn copy_pwa_link(&mut self) {
+        let Some(code) = self.pwa.code.as_ref() else { return };
+        self.clipboard = Some(code.link.clone());
+        self.set_notice(Tone::Success, "copied the pairing link · paste it in the phone's browser");
+        self.dirty = true;
+    }
+
     fn renew_pwa_code(&mut self) {
         if self.pwa.starting {
             return;
@@ -916,6 +930,7 @@ impl App {
             KeyCode::Esc | KeyCode::Char('q') => self.show_overview(),
             KeyCode::Char('d') if self.pwa.enabled => self.disable_pwa(),
             KeyCode::Char('n') if self.pwa.enabled => self.renew_pwa_code(),
+            KeyCode::Char('c') => self.copy_pwa_link(),
             KeyCode::Enter | KeyCode::Char('e') if !self.pwa.enabled => self.enable_pwa(),
             _ if keys::is_next_waiting_key(&key) => self.open_next_waiting(),
             _ => {}
@@ -2206,6 +2221,7 @@ impl App {
                         }
                     }
                     Some(Hit::Pwa) => self.open_pwa(),
+                    Some(Hit::CopyPwaLink) => self.copy_pwa_link(),
                     Some(Hit::Terminal) | None => {}
                 }
             }

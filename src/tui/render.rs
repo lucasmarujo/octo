@@ -905,7 +905,8 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
 pub const PWA_LABEL: &str = "▣ orkai pwa";
 const PWA_TITLE: &str = "orkai pwa";
 const PWA_TAGLINE: &str = "your orkai on the phone, from anywhere · end-to-end encrypted";
-const PWA_HINT_ON: &str = "esc back · n new code (forgets the phones) · d turn off";
+const PWA_HINT_ON: &str = "esc back · c copy link · n new code (forgets the phones) · d turn off";
+const PWA_COPY: &str = " copy ";
 const PWA_HINT_OFF: &str = "enter turns it on · esc back";
 const PWA_LABEL_WIDTH: usize = 10;
 const PWA_SIDE_MIN: u16 = 44;
@@ -960,29 +961,34 @@ fn draw_qr(qr: &Qr, x: u16, y: u16, buf: &mut Buffer) {
     }
 }
 
-fn pwa_details(app: &App, room: usize) -> Vec<(String, String, Color)> {
+fn copy_button() -> Style {
+    Style::default().fg(theme::INK).bg(theme::ACCENT).add_modifier(Modifier::BOLD)
+}
+
+fn pwa_details(app: &App, room: usize) -> Vec<(String, String, Style, Option<Hit>)> {
     let Some(info) = app.pwa.info.as_ref() else { return Vec::new() };
-    let mut rows = vec![("tunnel".to_string(), format!("{} · ready", info.tunnel.label()), theme::MUTED)];
+    let mut rows = vec![("tunnel".to_string(), format!("{} · ready", info.tunnel.label()), fg(theme::MUTED), None)];
     if let Some(code) = app.pwa.code.as_ref() {
         for (index, line) in split_columns(&code.link, room).into_iter().enumerate() {
             let label = if index == 0 { "link" } else { "" };
-            rows.push((label.to_string(), line, theme::LINK));
+            rows.push((label.to_string(), line, fg(theme::LINK), None));
         }
+        rows.push((String::new(), PWA_COPY.to_string(), copy_button(), Some(Hit::CopyPwaLink)));
     }
     let phones = match info.phones {
         0 => ("no phone connected".to_string(), theme::DIM),
         1 => ("1 connected".to_string(), theme::GREEN),
         count => (format!("{count} connected"), theme::GREEN),
     };
-    rows.push(("phones".to_string(), phones.0, phones.1));
+    rows.push(("phones".to_string(), phones.0, fg(phones.1), None));
     for (index, line) in PWA_PRIVACY.iter().enumerate() {
         let label = if index == 0 { "privacy" } else { "" };
-        rows.push((label.to_string(), (*line).to_string(), theme::DIM));
+        rows.push((label.to_string(), (*line).to_string(), fg(theme::DIM), None));
     }
     rows
 }
 
-fn draw_pwa_side(app: &App, x: u16, y: u16, right: u16, bottom: u16, buf: &mut Buffer) {
+fn draw_pwa_side(app: &mut App, x: u16, y: u16, right: u16, bottom: u16, buf: &mut Buffer) {
     let mut y = y;
     for (index, step) in PWA_STEPS.iter().enumerate() {
         if y >= bottom {
@@ -994,17 +1000,20 @@ fn draw_pwa_side(app: &App, x: u16, y: u16, right: u16, bottom: u16, buf: &mut B
     }
     y += 1;
     let room = usize::from(right.saturating_sub(x)).saturating_sub(PWA_LABEL_WIDTH);
-    for (label, value, color) in pwa_details(app, room) {
+    for (label, value, style, hit) in pwa_details(app, room) {
         if y >= bottom {
             return;
         }
         let after = put(buf, x, y, &pad(&label, PWA_LABEL_WIDTH), fg(theme::DIM), right);
-        put(buf, after, y, &truncate(&value, usize::from(right.saturating_sub(after))), fg(color), right);
+        let end = put(buf, after, y, &truncate(&value, usize::from(right.saturating_sub(after))), style, right);
+        if let Some(hit) = hit {
+            app.hits.push((Rect::new(after, y, end.saturating_sub(after), 1), hit));
+        }
         y += 1;
     }
 }
 
-fn draw_pwa(app: &App, area: Rect, buf: &mut Buffer) {
+fn draw_pwa(app: &mut App, area: Rect, buf: &mut Buffer) {
     if area.height == 0 || area.width == 0 {
         return;
     }
@@ -1048,8 +1057,14 @@ fn draw_pwa(app: &App, area: Rect, buf: &mut Buffer) {
             fg(theme::YELLOW),
             right,
         );
-        for (row, line) in (y + 1..bottom).zip(split_columns(&code.link, usize::from(area.width))) {
+        let lines = split_columns(&code.link, usize::from(area.width));
+        let button = (y + 1).saturating_add(u16::try_from(lines.len()).unwrap_or(u16::MAX));
+        for (row, line) in (y + 1..bottom).zip(lines) {
             put(buf, area.x, row, &line, fg(theme::LINK), right);
+        }
+        if button < bottom {
+            let end = put(buf, area.x, button, PWA_COPY, copy_button(), right);
+            app.hits.push((Rect::new(area.x, button, end.saturating_sub(area.x), 1), Hit::CopyPwaLink));
         }
         return;
     };

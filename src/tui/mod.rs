@@ -26,6 +26,7 @@ use ratatui::crossterm::terminal::{
 };
 use ratatui::layout::Rect;
 
+use crate::clipboard;
 use crate::launch::Launcher;
 use crate::notify::{self, Notifier};
 use crate::sound::{Chime, Player};
@@ -175,6 +176,13 @@ fn deliver_alerts(app: &mut App, notifier: &Notifier, ring: bool, player: Option
     }
 }
 
+fn deliver_clipboard(app: &mut App) {
+    let Some(text) = app.take_clipboard() else { return };
+    let mut stdout = io::stdout();
+    let _ = stdout.write_all(clipboard::terminal_sequence(&text).as_bytes()).and_then(|()| stdout.flush());
+    clipboard::copy(text);
+}
+
 fn sync_window_title(app: &App, shown: &mut String) {
     let title = app.window_title();
     if *shown != title && execute!(io::stdout(), SetTitle(&title)).is_ok() {
@@ -217,6 +225,7 @@ pub fn run(launcher: Launcher) -> io::Result<()> {
         app.flush_input();
         app.sync_attached_size();
         deliver_alerts(&mut app, &notifier, ring, player.as_ref());
+        deliver_clipboard(&mut app);
         switch_profile(&mut profile, started);
         if !app.take_dirty() {
             continue;
