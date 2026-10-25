@@ -432,9 +432,10 @@ invoking the skill. In Codex orkai sends it in its format (`$skill arguments`) a
 ## Command line
 
 ```text
-orkai ls [-s session]            lists agents with their live status
+orkai ls [-s session] [--json]   lists agents with their live status
 orkai new -k <agent> -C <folder> [--worktree] <task...>   (claude, codex, kilo, opencode, agy, grok, qwen, kimi, terminal)
 orkai send <id> <text...>        types into the agent and presses enter
+orkai wait <id> [--timeout s]    waits until the agent finishes its turn, needs you or ends
 orkai attach <id>                uses the current terminal straight in the agent (ctrl+] detaches)
 orkai logs <id> [-n lines]       recorded transcript of the agent
 orkai kill <id> · orkai rm <id>
@@ -442,9 +443,47 @@ orkai recover [-s session]       relaunches interrupted agents, resuming the con
 orkai sessions · orkai home
 orkai trust [-C folder]          lets agents in the repository's worktrees run its .orkai.json test
 orkai update                     downloads and installs the newest build
+orkai mcp                        serves orkai to an agent over MCP (see below)
 orkai pwa [--tunnel cloudflare|tailscale]   turns on the orkai PWA and prints the QR code
 orkai pwa --stop · orkai pwa --new-code     turns it off · forgets the paired phones
 ```
+
+## Agents that start agents (`orkai mcp`)
+
+`orkai mcp` serves orkai to an agent over [MCP](https://modelcontextprotocol.io), so one agent can lead:
+hand parts of the work to other agents, of any kind, and follow them.
+
+| Tool | What it does |
+| --- | --- |
+| `start_agent` | starts another agent on a task (`claude`, `codex`, `opencode`… or a `terminal`), in the lead's folder or another one, optionally in its own worktree |
+| `wait_for_agent` | waits until that agent finishes its turn, needs an answer or ends, and returns the last lines of its screen |
+| `read_agent` | reads the last lines of its terminal |
+| `send_to_agent` | types a message into it and presses `enter`, optionally waiting for the turn it starts |
+| `stop_agent` | stops it |
+| `list_agents` | lists the agents of the session with their state, folder, branch and tests |
+
+Add it once to the agents that should be able to lead:
+
+```sh
+claude mcp add --scope user orkai -- orkai mcp
+```
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.orkai]
+command = "orkai"
+args = ["mcp"]
+```
+
+The agents a lead starts go into its session and show up right under it in the overview (`↳`), where you can
+open, answer or stop them like any other. A lead only messages or stops the agents it started; they only get
+the bypass mode when the lead has it, and only a lead in bypass mode can start a `terminal`, which runs its task
+without asking; a lead runs at most 8 of them at a time; and agents started by agents go at most 3 levels deep.
+Outside an orkai agent, new agents go into the `default` session and the tools can message or stop any agent.
+
+For scripts, `orkai ls --json` lists the agents and `orkai wait <id>` blocks until the agent finishes its turn,
+needs you or ends (`--timeout` gives up with an error). An `orkai new` run inside an orkai agent records that
+agent as the parent of the new one.
 
 ## orkai on your phone (PWA)
 

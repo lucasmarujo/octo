@@ -21,6 +21,7 @@ use crate::worktree;
 
 pub const HOLDER_COMMAND: &str = "__holder";
 pub const HOLDER_PREFIX: &str = "orkai-holder-";
+pub const AGENT_ID_ENV: &str = "ORKAI_AGENT_ID";
 const RUNTIME_POLL: Duration = Duration::from_millis(25);
 const DAY_MS: u64 = 86_400_000;
 const SESSION_CLOCK_SKEW_MS: u64 = 60_000;
@@ -676,7 +677,7 @@ pub fn build_spec(
         Err(err) => return Err(err),
     };
     let mut env = vec![
-        ("ORKAI_AGENT_ID".to_string(), record.id.to_string()),
+        (AGENT_ID_ENV.to_string(), record.id.to_string()),
         ("ORKAI_SESSION".to_string(), record.session.clone()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
     ];
@@ -920,8 +921,20 @@ impl Launcher {
     }
 
     pub fn create(&self, draft: NewAgent, size: TermSize, isolate: bool, bypass: bool) -> io::Result<AgentRecord> {
+        self.create_with_parent(draft, size, isolate, bypass, None)
+    }
+
+    pub fn create_with_parent(
+        &self,
+        draft: NewAgent,
+        size: TermSize,
+        isolate: bool,
+        bypass: bool,
+        parent: Option<AgentId>,
+    ) -> io::Result<AgentRecord> {
         let mut record = self.store.create_agent(draft)?;
         record.bypass = bypass;
+        record.parent = parent;
         if !isolate {
             record.project =
                 self.store.list_agents().ok().and_then(|records| worktree::project_of(&record.cwd, &records));
@@ -1038,6 +1051,7 @@ mod tests {
             worktree: None,
             bypass: false,
             project: None,
+            parent: None,
         }
     }
 

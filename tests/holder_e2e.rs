@@ -524,6 +524,57 @@ fn a_trusted_test_command_runs_each_time_an_agent_in_a_worktree_finishes_a_turn(
     wait_for_exit(&rx);
 }
 
+fn orkai(fx: &Fixture, args: &[&str]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_orkai"))
+        .args(args)
+        .env(HOME_ENV, fx.store.home().root())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn orkai_wait_returns_when_the_turn_ends_and_ls_json_describes_the_agent() {
+    let fx = fixture("wait");
+    let (program, args) = shell();
+    let (id, runtime) = start_ai(&fx, AgentKind::Claude, program, args);
+    let (conn, rx) = open(&runtime);
+    let agent = id.to_string();
+    let prompt = br#"{"session_id":"s","hook_event_name":"UserPromptSubmit","prompt":"x"}"#;
+    assert!(run_hook(&fx, &["claude", &agent], prompt).success());
+    wait_for_state(&rx, AgentState::Working);
+
+    let impatient = orkai(&fx, &["wait", &agent, "--timeout", "1"]);
+    assert!(!impatient.status.success());
+    let said = String::from_utf8_lossy(&impatient.stderr);
+    assert!(said.contains(&format!("agent {id} is still working after 1s")), "{said}");
+
+    let waiter = std::process::Command::new(env!("CARGO_BIN_EXE_orkai"))
+        .args(["wait", &agent, "--timeout", "30"])
+        .env(HOME_ENV, fx.store.home().root())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    let stop = br#"{"session_id":"s","hook_event_name":"Stop","stop_hook_active":false}"#;
+    assert!(run_hook(&fx, &["claude", &agent], stop).success());
+    let waited = waiter.wait_with_output().unwrap();
+    assert!(waited.status.success());
+    let said = String::from_utf8_lossy(&waited.stdout);
+    assert!(said.starts_with(&format!("agent {id} done")), "{said}");
+
+    let listed = orkai(&fx, &["ls", "--json"]);
+    assert!(listed.status.success());
+    let agents: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let entry = agents.as_array().unwrap().iter().find(|a| a["id"] == id).unwrap();
+    assert_eq!((entry["state"].as_str(), entry["kind"].as_str()), (Some("done"), Some("claude")));
+    assert!(entry["parent"].is_null() && entry["branch"].is_null() && entry["cwd"].is_string(), "{entry}");
+
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
+    let ended = orkai(&fx, &["wait", &agent]);
+    assert!(String::from_utf8_lossy(&ended.stdout).starts_with(&format!("agent {id} exited")));
+}
+
 fn start_ai(fx: &Fixture, kind: AgentKind, program: PathBuf, args: Vec<String>) -> (AgentId, RuntimeInfo) {
     let cwd = fx.dir.join("work");
     let record = fx

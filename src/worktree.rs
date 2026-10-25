@@ -596,6 +596,7 @@ mod tests {
             worktree,
             bypass: false,
             project: None,
+            parent: None,
         };
         let web = Worktree { source: PathBuf::from("/src/web/app"), ..tree("/src/web") };
         let records = [record(1, None), record(2, Some(web))];

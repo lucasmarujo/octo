@@ -10,7 +10,7 @@ use orkai::model::{AgentId, AgentKind, DEFAULT_SESSION};
 use orkai::paths::Home;
 use orkai::pwa::tunnel::TunnelKind;
 use orkai::store::Store;
-use orkai::{cli, holder, hooks, pwa, tui, update};
+use orkai::{cli, holder, hooks, mcp, pwa, tui, update};
 
 #[derive(Parser)]
 #[command(
@@ -29,6 +29,8 @@ enum Command {
     Ls {
         #[arg(short, long, help = "Only agents of this session")]
         session: Option<String>,
+        #[arg(long, help = "Print the agents as JSON")]
+        json: bool,
     },
     #[command(about = "List sessions")]
     Sessions,
@@ -61,6 +63,12 @@ enum Command {
         no_enter: bool,
         #[arg(trailing_var_arg = true)]
         text: Vec<String>,
+    },
+    #[command(about = "Wait until an agent finishes its turn, needs you or ends")]
+    Wait {
+        id: AgentId,
+        #[arg(long, help = "Give up after this many seconds")]
+        timeout: Option<u64>,
     },
     #[command(about = "Stop a running agent")]
     Kill { id: AgentId },
@@ -95,6 +103,8 @@ enum Command {
     },
     #[command(about = "Download and install the latest orkai build now")]
     Update,
+    #[command(about = "Serve orkai to an agent over MCP (stdio), so it can start and follow other agents")]
+    Mcp,
     #[command(name = "__holder", hide = true)]
     Holder { id: AgentId },
     #[command(name = "__hook", hide = true)]
@@ -133,7 +143,8 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
     let store = Store::open(home)?;
     match command {
         None => tui::run(launcher(store)?),
-        Some(Command::Ls { session }) => cli::list(&store, session.as_deref()),
+        Some(Command::Ls { session, json: false }) => cli::list(&store, session.as_deref()),
+        Some(Command::Ls { session, json: true }) => cli::list_json(&store, session.as_deref()),
         Some(Command::Sessions) => cli::sessions(&store),
         Some(Command::New { kind, session, cwd, name, worktree, task }) => {
             let kind = AgentKind::parse(&kind).ok_or_else(|| {
@@ -146,6 +157,7 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
         }
         Some(Command::Attach { id }) => cli::attach(&store, id),
         Some(Command::Send { id, no_enter, text }) => cli::send(&store, id, &text.join(" "), !no_enter),
+        Some(Command::Wait { id, timeout }) => cli::wait(&store, id, timeout),
         Some(Command::Kill { id }) => cli::kill(&store, id),
         Some(Command::Rm { id }) => cli::remove(&store, id),
         Some(Command::Recover { session }) => cli::recover(&launcher(store)?, session.as_deref()),
@@ -156,6 +168,7 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
         }
         Some(Command::Trust { cwd }) => cli::trust(&store, cwd),
         Some(Command::Update) => update::update_now(),
+        Some(Command::Mcp) => mcp::run(launcher(store)?),
         Some(Command::Pwa { tunnel, stop, new_code }) => {
             let action = match (stop, new_code) {
                 (true, _) => PwaAction::Stop,

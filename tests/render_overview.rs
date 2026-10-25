@@ -1390,6 +1390,27 @@ fn cross_review_starts_another_agent_inside_the_selected_worktree() {
     assert!(help.contains("another agent reviews the selected one's worktree"), "{help}");
 }
 
+#[test]
+fn agents_started_by_another_agent_show_right_under_it() {
+    let mut scenario = scenario();
+    let child = agent_named(&scenario.app, "term-3");
+    let parent = agent_named(&scenario.app, "sidebar-sessions");
+    scenario.app.agents.get_mut(&child).unwrap().record.parent = Some(parent);
+    let screen = text(&render(&mut scenario.app));
+    let (parent_row, _) = line_with(&screen, "sidebar-sessions");
+    let (child_row, child_line) = line_with(&screen, "↳ term-3");
+    assert_eq!(child_row, parent_row + 1, "{screen}");
+    assert!(child_line.contains("terminal") && child_line.contains("node server.js"), "{child_line}");
+    let ids = scenario.app.ordered_ids();
+    let position = |id| ids.iter().position(|other| *other == id).unwrap();
+    assert_eq!(position(child), position(parent) + 1, "keyboard order follows the screen");
+
+    let elsewhere = agent_named(&scenario.app, "physics-merge");
+    scenario.app.agents.get_mut(&child).unwrap().record.parent = Some(elsewhere);
+    let screen = text(&render(&mut scenario.app));
+    assert!(!screen.contains("↳ term-3") && screen.contains("term-3"), "a parent in another group is not pointed at");
+}
+
 fn test_run(state: TestState, code: Option<i32>) -> TestReport {
     TestReport { state, command: "cargo test".into(), started_at_ms: now_ms(), finished_at_ms: None, code }
 }

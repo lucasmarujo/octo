@@ -174,6 +174,7 @@ impl Store {
             worktree: None,
             bypass: false,
             project: None,
+            parent: None,
         };
         self.save_agent(&record)?;
         Ok(record)

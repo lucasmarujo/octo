@@ -6,6 +6,7 @@ pub mod fsutil;
 pub mod holder;
 pub mod hooks;
 pub mod launch;
+pub mod mcp;
 pub mod model;
 pub mod notify;
 pub mod paths;

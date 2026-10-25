@@ -143,6 +143,8 @@ pub struct AgentRecord {
     pub bypass: bool,
     #[serde(default)]
     pub project: Option<PathBuf>,
+    #[serde(default)]
+    pub parent: Option<AgentId>,
 }
 
 impl AgentRecord {

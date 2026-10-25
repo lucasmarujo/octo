@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Position, Rect};
@@ -49,6 +51,7 @@ pub const USAGE_MONTHLY_LABEL: &str = "month";
 const USAGE_CREDITS_LABEL: &str = "funds";
 const BRANCH_GLYPH: &str = "⎇";
 const OVERLAP_GLYPH: &str = "⚠";
+const CHILD_PREFIX: &str = "↳ ";
 const OVERLAP_IDS_SHOWN: usize = 3;
 const DIFF_HINT: &str = "esc close · ↑↓ pgup pgdn scroll · /merge merges it";
 const BASE_SHORT: usize = 8;
@@ -616,9 +619,13 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
         return;
     }
     let mut lines = Vec::new();
+    let mut nested = HashSet::new();
     for group in &groups {
         lines.push(ListLine::Header(group.label.clone(), group.cwd.clone(), group.ids.len()));
         for id in &group.ids {
+            if app.agents.get(id).and_then(|e| e.record.parent).is_some_and(|parent| group.ids.contains(&parent)) {
+                nested.insert(*id);
+            }
             lines.push(ListLine::Agent(*id));
             let count = app.agents.get(id).map_or(0, |e| e.subagents.len());
             lines.extend((0..count).map(|index| ListLine::Subagent(*id, index)));
@@ -640,7 +647,7 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
         .agents
         .values()
         .filter(|e| e.record.session == app.session)
-        .map(|e| width(&e.record.name))
+        .map(|e| width(&e.record.name) + if e.record.parent.is_some() { width(CHILD_PREFIX) } else { 0 })
         .max()
         .unwrap_or(NAME_MIN)
         .clamp(NAME_MIN, NAME_MAX);
@@ -675,7 +682,12 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
                 if selected {
                     name_style = name_style.add_modifier(Modifier::BOLD);
                 }
-                x = put(buf, x, y, &pad(&entry.record.name, name_width), name_style, right);
+                let name = if nested.contains(id) {
+                    format!("{CHILD_PREFIX}{}", entry.record.name)
+                } else {
+                    entry.record.name.clone()
+                };
+                x = put(buf, x, y, &pad(&name, name_width), name_style, right);
                 x = put(buf, x, y, "  ", Style::default(), right);
                 let (first, uptime) = time_columns(entry, now);
                 let (first_text, first_color) = first.unwrap_or_default();

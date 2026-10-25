@@ -433,9 +433,10 @@ invocando a skill. No Codex o orkai envia no formato dele (`$skill argumentos`) 
 ## Linha de comando
 
 ```text
-orkai ls [-s sessão]             lista agentes com o estado ao vivo
+orkai ls [-s sessão] [--json]    lista agentes com o estado ao vivo
 orkai new -k <agente> -C <pasta> [--worktree] <tarefa...>   (claude, codex, kilo, opencode, agy, grok, qwen, kimi, terminal)
 orkai send <id> <texto...>       digita no agente e aperta enter
+orkai wait <id> [--timeout s]    espera o agente terminar o turno, precisar de você ou encerrar
 orkai attach <id>                usa o terminal atual direto no agente (ctrl+] solta)
 orkai logs <id> [-n linhas]      transcrição gravada do agente
 orkai kill <id> · orkai rm <id>
@@ -443,9 +444,48 @@ orkai recover [-s sessão]        relança agentes interrompidos retomando a con
 orkai sessions · orkai home
 orkai trust [-C pasta]           deixa os agentes nas worktrees do repositório rodarem o test do .orkai.json
 orkai update                     baixa e instala a build mais nova
+orkai mcp                        serve o orkai a um agente por MCP (veja abaixo)
 orkai pwa [--tunnel cloudflare|tailscale]   liga o orkai PWA e imprime o QR code
 orkai pwa --stop · orkai pwa --new-code     desliga · esquece os celulares pareados
 ```
+
+## Agentes que iniciam agentes (`orkai mcp`)
+
+`orkai mcp` serve o orkai a um agente por [MCP](https://modelcontextprotocol.io), para que um agente possa
+liderar: entregar partes do trabalho a outros agentes, de qualquer tipo, e acompanhá-los.
+
+| Ferramenta | O que faz |
+| --- | --- |
+| `start_agent` | inicia outro agente numa tarefa (`claude`, `codex`, `opencode`… ou um `terminal`), na pasta do líder ou em outra, opcionalmente numa worktree própria |
+| `wait_for_agent` | espera até esse agente terminar o turno, precisar de uma resposta ou encerrar, e devolve as últimas linhas da tela dele |
+| `read_agent` | lê as últimas linhas do terminal dele |
+| `send_to_agent` | digita uma mensagem nele e aperta `enter`, opcionalmente esperando o turno que ela inicia |
+| `stop_agent` | para o agente |
+| `list_agents` | lista os agentes da sessão com estado, pasta, branch e testes |
+
+Adicione uma vez aos agentes que devem poder liderar:
+
+```sh
+claude mcp add --scope user orkai -- orkai mcp
+```
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.orkai]
+command = "orkai"
+args = ["mcp"]
+```
+
+Os agentes que um líder inicia entram na sessão dele e aparecem logo abaixo dele na visão geral (`↳`), onde você
+pode abrir, responder ou parar como qualquer outro. Um líder só manda mensagens ou para os agentes que ele
+iniciou; eles só ganham o modo bypass quando o líder tem, e só um líder em modo bypass pode iniciar um
+`terminal`, que roda a tarefa sem perguntar; um líder roda no máximo 8 deles ao mesmo tempo; e agentes iniciados
+por agentes vão no máximo 3 níveis abaixo. Fora de um agente do orkai, agentes novos entram na sessão `default`
+e as ferramentas podem mandar mensagens ou parar qualquer agente.
+
+Para scripts, `orkai ls --json` lista os agentes e `orkai wait <id>` bloqueia até o agente terminar o turno,
+precisar de você ou encerrar (`--timeout` desiste com erro). Um `orkai new` rodado dentro de um agente do orkai
+registra esse agente como pai do novo.
 
 ## O orkai no celular (PWA)
 

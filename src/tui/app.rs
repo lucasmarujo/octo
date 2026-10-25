@@ -645,6 +645,9 @@ impl App {
                 }),
             }
         }
+        for group in &mut groups {
+            group.ids = children_after_parents(&group.ids, |id| self.agents.get(&id).and_then(|e| e.record.parent));
+        }
         groups
     }
 
@@ -2431,6 +2434,25 @@ fn edit_line(input: &mut LineInput, key: &KeyEvent, ctrl: bool) {
     }
 }
 
+pub fn children_after_parents(ids: &[AgentId], parent_of: impl Fn(AgentId) -> Option<AgentId>) -> Vec<AgentId> {
+    let present: HashSet<AgentId> = ids.iter().copied().collect();
+    let parent_here = |id: AgentId| parent_of(id).filter(|parent| *parent != id && present.contains(parent));
+    let mut ordered = Vec::with_capacity(ids.len());
+    let mut placed = HashSet::new();
+    for &root in ids.iter().filter(|id| parent_here(**id).is_none()) {
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            if !placed.insert(id) {
+                continue;
+            }
+            ordered.push(id);
+            stack.extend(ids.iter().rev().copied().filter(|child| parent_here(*child) == Some(id)));
+        }
+    }
+    ordered.extend(ids.iter().copied().filter(|id| !placed.contains(id)));
+    ordered
+}
+
 fn read_tail(path: &Path, max: usize) -> Vec<u8> {
     let Ok(mut file) = std::fs::File::open(path) else { return Vec::new() };
     let max = u64::try_from(max).unwrap_or(u64::MAX);
@@ -2507,6 +2529,15 @@ mod tests {
         assert_eq!(merge_message(&record), "fix-login: Fix the login redirect loop");
         record.task = "x".repeat(200);
         assert_eq!(merge_message(&record).chars().count(), "fix-login: ".len() + MERGE_SUBJECT_MAX);
+    }
+
+    #[test]
+    fn agents_started_by_an_agent_follow_it_in_its_group() {
+        let parents = BTreeMap::from([(4, 1), (5, 4), (6, 1), (8, 7), (9, 9)]);
+        let parent_of = |id: AgentId| parents.get(&id).copied();
+        assert_eq!(children_after_parents(&[1, 2, 4, 5, 6, 9], parent_of), [1, 4, 5, 6, 2, 9]);
+        assert_eq!(children_after_parents(&[2, 8], parent_of), [2, 8], "a parent in another group is ignored");
+        assert_eq!(children_after_parents(&[], parent_of), Vec::<AgentId>::new());
     }
 
     #[test]

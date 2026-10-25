@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{self, Event};
@@ -11,8 +12,10 @@ use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScr
 
 use crate::client;
 use crate::holder::oplog;
-use crate::launch::{LaunchMode, Launcher};
-use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, NewAgent, StatusReport};
+use serde::Serialize;
+
+use crate::launch::{AGENT_ID_ENV, LaunchMode, Launcher};
+use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, NewAgent, StatusReport, TestState};
 use crate::paths::{Home, user_home};
 use crate::project;
 use crate::protocol::{ClientMsg, HolderMsg, TermSize};
@@ -32,6 +35,7 @@ pub const DEFAULT_SIZE: TermSize = TermSize { rows: 40, cols: 120 };
 pub const SUBMIT_DELAY: Duration = Duration::from_millis(600);
 const PWA_READY_WAIT: Duration = Duration::from_secs(360);
 const PWA_STOP_WAIT: Duration = Duration::from_secs(10);
+const RECONNECT_DELAY: Duration = Duration::from_millis(200);
 
 pub enum Probe {
     Live(StatusReport),
@@ -73,6 +77,62 @@ pub fn probe(store: &Store, id: AgentId) -> Probe {
         }
     }
     Probe::Lost
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentListing {
+    pub id: AgentId,
+    pub session: String,
+    pub name: String,
+    pub kind: AgentKind,
+    pub state: AgentState,
+    pub cwd: PathBuf,
+    pub project: PathBuf,
+    pub branch: Option<String>,
+    pub parent: Option<AgentId>,
+    pub task: String,
+    pub activity: String,
+    pub test: Option<TestState>,
+    pub created_at_ms: u64,
+}
+
+pub fn listing(store: &Store, session: Option<&str>) -> io::Result<Vec<AgentListing>> {
+    let records = store.list_agents()?.into_iter().filter(|r| session.is_none_or(|s| r.session == s));
+    Ok(records
+        .map(|record| {
+            let probe = probe(store, record.id);
+            let (kind, activity, test) = match &probe {
+                Probe::Live(status) => (
+                    status.running_kind(record.kind),
+                    status.activity.clone(),
+                    status.test.as_ref().map(|test| test.state),
+                ),
+                Probe::Exited(exit) => (record.kind, exit.describe(), None),
+                Probe::Lost => (record.kind, String::new(), None),
+            };
+            AgentListing {
+                id: record.id,
+                state: probe.state(),
+                kind,
+                project: record.project_dir().to_path_buf(),
+                branch: record.worktree.as_ref().map(|worktree| worktree.branch.clone()),
+                parent: record.parent,
+                activity,
+                test,
+                created_at_ms: record.created_at_ms,
+                session: record.session,
+                name: record.name,
+                cwd: record.cwd,
+                task: record.task,
+            }
+        })
+        .collect())
+}
+
+pub fn list_json(store: &Store, session: Option<&str>) -> io::Result<()> {
+    let agents = listing(store, session)?;
+    println!("{}", serde_json::to_string_pretty(&agents).map_err(io::Error::other)?);
+    Ok(())
 }
 
 pub fn list(store: &Store, session: Option<&str>) -> io::Result<()> {
@@ -150,11 +210,16 @@ pub fn new_agent(
             slug
         }
     });
-    let record = launcher.create(
+    let parent = std::env::var(AGENT_ID_ENV)
+        .ok()
+        .and_then(|id| id.parse::<AgentId>().ok())
+        .filter(|id| launcher.store().load_agent(*id).is_ok());
+    let record = launcher.create_with_parent(
         NewAgent { session, name, kind, cwd: strip_verbatim(cwd), task },
         DEFAULT_SIZE,
         isolate,
         false,
+        parent,
     )?;
     println!("started {} {} (#{}) in session {}", record.kind.label(), record.name, record.id, record.session);
     if let Some(worktree) = &record.worktree {
@@ -163,7 +228,7 @@ pub fn new_agent(
     Ok(())
 }
 
-fn strip_verbatim(path: PathBuf) -> PathBuf {
+pub fn strip_verbatim(path: PathBuf) -> PathBuf {
     let text = path.to_string_lossy();
     match text.strip_prefix(r"\\?\") {
         Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
@@ -171,7 +236,7 @@ fn strip_verbatim(path: PathBuf) -> PathBuf {
     }
 }
 
-pub fn kill(store: &Store, id: AgentId) -> io::Result<()> {
+pub fn stop(store: &Store, id: AgentId) -> io::Result<()> {
     store.load_agent(id).map_err(|_| not_found(id))?;
     let runtime = store.read_runtime(id)?.ok_or_else(|| io::Error::other(format!("agent {id} is not running")))?;
     let (conn, _reader, _) = client::connect(&runtime)?;
@@ -179,12 +244,98 @@ pub fn kill(store: &Store, id: AgentId) -> io::Result<()> {
     let deadline = Instant::now() + KILL_TIMEOUT;
     while Instant::now() < deadline {
         if store.read_exit(id)?.is_some() {
-            println!("agent {id} stopped");
             return Ok(());
         }
         std::thread::sleep(Duration::from_millis(50));
     }
     Err(io::Error::new(io::ErrorKind::TimedOut, "agent did not stop in time"))
+}
+
+pub fn kill(store: &Store, id: AgentId) -> io::Result<()> {
+    stop(store, id)?;
+    println!("agent {id} stopped");
+    Ok(())
+}
+
+pub enum Waited {
+    Settled(StatusReport),
+    Exited(ExitInfo),
+    Lost,
+    TimedOut(Option<StatusReport>),
+}
+
+pub fn settled(status: &StatusReport, since: u64, saw_working: bool) -> bool {
+    match status.state {
+        AgentState::Working => false,
+        AgentState::Paused | AgentState::Done => status.state_since_ms >= since,
+        AgentState::Idle => (status.last_turn_ms.is_some() || saw_working) && status.state_since_ms >= since,
+        AgentState::Exited | AgentState::Lost => true,
+    }
+}
+
+pub fn wait_turn(store: &Store, id: AgentId, since: u64, timeout: Option<Duration>) -> io::Result<Waited> {
+    store.load_agent(id).map_err(|_| not_found(id))?;
+    let deadline = timeout.map(|limit| Instant::now() + limit);
+    let mut last = None;
+    let mut saw_working = false;
+    loop {
+        if let Some(exit) = store.read_exit(id)? {
+            return Ok(Waited::Exited(exit));
+        }
+        let Some(runtime) = store.read_runtime(id)? else { return Ok(Waited::Lost) };
+        if let Ok((conn, reader, _)) = client::connect(&runtime) {
+            let (tx, rx) = mpsc::channel();
+            client::spawn_reader(reader, move |msg| tx.send(msg).is_ok())?;
+            loop {
+                let received = match deadline.map(|d| d.saturating_duration_since(Instant::now())) {
+                    Some(remaining) if remaining.is_zero() => {
+                        conn.close();
+                        return Ok(Waited::TimedOut(last));
+                    }
+                    Some(remaining) => match rx.recv_timeout(remaining) {
+                        Ok(msg) => msg,
+                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => None,
+                    },
+                    None => rx.recv().ok().flatten(),
+                };
+                match received {
+                    Some(HolderMsg::Status(status)) => {
+                        saw_working |= status.state == AgentState::Working;
+                        if settled(&status, since, saw_working) {
+                            return Ok(Waited::Settled(status));
+                        }
+                        last = Some(status);
+                    }
+                    Some(HolderMsg::Exited(exit)) => return Ok(Waited::Exited(exit)),
+                    Some(_) => {}
+                    None => break,
+                }
+            }
+        }
+        if deadline.is_some_and(|d| Instant::now() >= d) {
+            return Ok(Waited::TimedOut(last));
+        }
+        thread::sleep(RECONNECT_DELAY);
+    }
+}
+
+pub fn wait(store: &Store, id: AgentId, timeout: Option<u64>) -> io::Result<()> {
+    match wait_turn(store, id, 0, timeout.map(Duration::from_secs))? {
+        Waited::Settled(status) => {
+            println!("agent {id} {}: {}", status.state.label(), status.activity);
+            Ok(())
+        }
+        Waited::Exited(exit) => {
+            println!("agent {id} {}", exit.describe());
+            Ok(())
+        }
+        Waited::Lost => Err(io::Error::other(format!("agent {id} is interrupted, run orkai recover"))),
+        Waited::TimedOut(_) => Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!("agent {id} is still working after {}s", timeout.unwrap_or_default()),
+        )),
+    }
 }
 
 pub fn send(store: &Store, id: AgentId, text: &str, submit: bool) -> io::Result<()> {
@@ -264,13 +415,16 @@ pub fn trust(store: &Store, cwd: Option<PathBuf>) -> io::Result<()> {
     Ok(())
 }
 
-pub fn logs(store: &Store, id: AgentId, lines: Option<usize>) -> io::Result<()> {
+pub fn transcript(store: &Store, id: AgentId) -> io::Result<Option<Vec<String>>> {
     store.load_agent(id).map_err(|_| not_found(id))?;
-    let Some(mut parser) = oplog::replay(&store.home().output_log(id))? else {
+    Ok(oplog::replay(&store.home().output_log(id))?.map(|mut parser| termfmt::transcript(parser.screen_mut())))
+}
+
+pub fn logs(store: &Store, id: AgentId, lines: Option<usize>) -> io::Result<()> {
+    let Some(transcript) = transcript(store, id)? else {
         println!("(no output recorded)");
         return Ok(());
     };
-    let transcript = termfmt::transcript(parser.screen_mut());
     let start = lines.map_or(0, |n| transcript.len().saturating_sub(n));
     let mut out = io::stdout().lock();
     for line in &transcript[start..] {
@@ -429,4 +583,41 @@ pub fn pwa(launcher: &Launcher, tunnel: Option<TunnelKind>, action: PwaAction) -
     println!("scan it with the phone camera, or open: {link}");
     println!("end-to-end encrypted over {} · `orkai pwa --stop` turns it off", tunnel.label());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn status(state: AgentState, since: u64, last_turn: Option<u64>) -> StatusReport {
+        StatusReport {
+            state,
+            state_since_ms: since,
+            turn_started_ms: None,
+            last_turn_ms: last_turn,
+            started_at_ms: 1,
+            title: String::new(),
+            activity: String::new(),
+            rows: 24,
+            cols: 80,
+            exit: None,
+            nested: None,
+            viewers: None,
+            test: None,
+        }
+    }
+
+    #[test]
+    fn a_turn_counts_as_settled_once_it_ends_after_the_wait_began() {
+        assert!(!settled(&status(AgentState::Working, 500, None), 0, true));
+        assert!(settled(&status(AgentState::Done, 500, Some(10)), 0, false));
+        assert!(settled(&status(AgentState::Paused, 500, None), 0, false), "waiting for an answer ends the wait");
+        assert!(settled(&status(AgentState::Idle, 500, Some(10)), 0, false), "a finished turn already seen");
+        assert!(!settled(&status(AgentState::Idle, 500, None), 0, false), "a fresh agent has not worked yet");
+        assert!(settled(&status(AgentState::Idle, 500, None), 0, true), "it worked while we waited");
+
+        assert!(!settled(&status(AgentState::Done, 500, Some(10)), 900, false), "an older turn than the message");
+        assert!(!settled(&status(AgentState::Paused, 500, None), 900, false));
+        assert!(settled(&status(AgentState::Done, 950, Some(10)), 900, true));
+    }
 }
