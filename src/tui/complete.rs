@@ -26,6 +26,8 @@ pub const COMMANDS: &[&str] = &[
     "/diff",
     "/merge",
     "/cross-review [agent]",
+    "/tests",
+    "/trust",
     "/pwa [off|new]",
     "/help",
     "/quit",

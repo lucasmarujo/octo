@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::config::Config;
 use crate::fsutil;
 use crate::hooks;
-use crate::model::{AgentId, AgentKind, AgentRecord, LaunchSpec, NewAgent, RuntimeInfo};
+use crate::model::{AgentId, AgentKind, AgentRecord, LaunchSpec, NewAgent, RuntimeInfo, TestTarget};
 use crate::paths::{HOME_ENV, Home, normalize_for_compare, user_home};
 use crate::protocol::TermSize;
 use crate::store::Store;
@@ -697,6 +697,11 @@ pub fn build_spec(
         initial_input,
         rows: size.rows,
         cols: size.cols,
+        test: record
+            .worktree
+            .as_ref()
+            .filter(|_| record.kind.is_ai())
+            .map(|worktree| TestTarget { repo: worktree.repo.clone(), dir: worktree.path.clone() }),
     })
 }
 

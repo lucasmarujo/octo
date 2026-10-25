@@ -288,7 +288,7 @@ stays on screen with `unavailable`.
 | `/where <folder>` or `ctrl+l` | picks the session folder (see [below](#choosing-the-folder-where)); clicking a project name does too |
 | `ctrl+t` | turns its own worktree on/off for the next agents (see [below](#one-worktree-per-agent-ctrlt)) |
 | `/bypass` | turns the permission bypass mode on/off for the next agents (see [below](#bypass-mode-bypass)) |
-| `/` | commands (`tab` completes the name): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/help`, `/quit`, plus the skills of the current `who` (see [below](#agent-skills-skill)) |
+| `/` | commands (`tab` completes the name): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/tests`, `/trust`, `/help`, `/quit`, plus the skills of the current `who` (see [below](#agent-skills-skill)) |
 
 **Agents**
 
@@ -358,6 +358,33 @@ each other, and your checkout stays intact. Terminals (`!command`) keep running 
 - Deleting the agent (`delete` or `ctrl+x`) also deletes the worktree and the `orkai/…` branch; the popup warns you first.
 - On the command line: `orkai new --worktree …`; `orkai rm` also deletes the worktree.
 
+## Project settings (`.orkai.json`)
+
+A `.orkai.json` at the root of a repository tells orkai two things about the agents that work on it in
+worktrees:
+
+```json
+{
+  "copy": [".env", "config/local.toml"],
+  "test": "cargo test"
+}
+```
+
+- **`copy`**: files copied from your checkout into each new worktree, like a `.env` that git doesn't bring
+  along. Only files that git ignores are copied, so they never show up in the changes or in a `/merge`; paths
+  outside the repository are refused.
+- **`test`**: a command orkai runs in the agent's worktree each time the agent finishes a turn (with `cmd` on
+  Windows and `sh` elsewhere, for up to 30 minutes; a new turn replaces a run still going). The list shows
+  `⠋ test` while it runs, then `✓ test` or `✗ test`; a failure shows up in the footer, `/tests` shows the
+  output of the last run and `/merge` warns when it failed. The command has to finish on its own, without a
+  watch mode.
+
+Because `test` runs a command that came with the repository, orkai only runs it after you trust that exact
+file: `/trust` (for the repository of the selected agent or of `where`) shows the command and asks first, and
+`orkai trust` does the same from the command line. Any change to `.orkai.json` needs a new `/trust`; until
+then the list shows `? test`. The trust is saved in `trusted.json`, in the data folder. The agent's holder runs
+the tests, so they run even with orkai closed, and only once with several orkai windows open.
+
 ## Bypass mode (`/bypass`)
 
 With `bypass on` in the footer (`/bypass`, `/bypass on|off` or a click), each new AI agent starts already in the
@@ -413,6 +440,7 @@ orkai logs <id> [-n lines]       recorded transcript of the agent
 orkai kill <id> · orkai rm <id>
 orkai recover [-s session]       relaunches interrupted agents, resuming the conversation
 orkai sessions · orkai home
+orkai trust [-C folder]          lets agents in the repository's worktrees run its .orkai.json test
 orkai update                     downloads and installs the newest build
 orkai pwa [--tunnel cloudflare|tailscale]   turns on the orkai PWA and prints the QR code
 orkai pwa --stop · orkai pwa --new-code     turns it off · forgets the paired phones
@@ -632,6 +660,9 @@ and your iTerm2 profiles aren't changed. Local builds (`dev`) don't create anyth
   in `bin/` and only write the event type (working, waiting for you, done) to the agent's folder;
   the content received from the agent is discarded in memory. The hook files and the plugin live in the
   agent's folder and only apply to the process orkai launched; none of your config files is changed.
+- The `test` of a repository's `.orkai.json` only runs after you trust that exact content (`/trust` or
+  `orkai trust`); an edited file runs nothing until it is trusted again (see
+  [Project settings](#project-settings-orkaijson)).
 - The profile with the icon (see [Terminal icons](#terminal-icons)) only points to the orkai executable and
   to the icon image, saved in the data folder.
 - The orkai PWA bridge listens only on `127.0.0.1` and only accepts the phone that has the QR code's

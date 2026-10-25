@@ -5,7 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap};
 
-use crate::model::{AgentId, AgentKind, AgentState};
+use crate::model::{AgentId, AgentKind, AgentState, TestReport, TestState};
 use crate::pwa::bridge::Phase;
 use crate::pwa::qr::Qr;
 use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, Prompt, PwaPanel, SHELL_PREFIX, Tone, View};
@@ -535,6 +535,25 @@ fn overlap_detail(overlaps: &[Overlap]) -> String {
     format!("{OVERLAP_GLYPH} also changed by {}", shared.join(" · "))
 }
 
+fn test_marker(test: &TestReport, tick: usize) -> (String, Color) {
+    match test.state {
+        TestState::Running => (format!("{} test", theme::SPINNER[tick % theme::SPINNER.len()]), theme::YELLOW),
+        TestState::Passed => ("✓ test".to_string(), theme::GREEN),
+        TestState::Failed => ("✗ test".to_string(), theme::RED),
+        TestState::Untrusted => ("? test".to_string(), theme::FAINT),
+    }
+}
+
+fn test_outcome(test: &TestReport) -> (String, Color) {
+    match (test.state, test.code) {
+        (TestState::Running, _) => ("running…".to_string(), theme::YELLOW),
+        (TestState::Passed, _) => ("passed".to_string(), theme::GREEN),
+        (TestState::Failed, Some(code)) => (format!("failed (exit {code})"), theme::RED),
+        (TestState::Failed, None) => ("failed".to_string(), theme::RED),
+        (TestState::Untrusted, _) => ("waits for /trust".to_string(), theme::FAINT),
+    }
+}
+
 fn draw_diff(app: &mut App, area: Rect, buf: &mut Buffer) {
     if area.height == 0 {
         return;
@@ -543,6 +562,20 @@ fn draw_diff(app: &mut App, area: Rect, buf: &mut Buffer) {
     let right = area.right();
     let entry = app.agents.get(&diff.id);
     let name = entry.map(|e| e.record.name.clone()).unwrap_or_default();
+    if let Some(test) = diff.tests.as_ref() {
+        let mut x = put(buf, area.x, area.y, "tests ", fg(theme::MUTED), right);
+        x = put(buf, x, area.y, &name, fg(theme::TEXT).add_modifier(Modifier::BOLD), right);
+        x = put(buf, x + 2, area.y, &test.command, fg(theme::LINK), right);
+        let (outcome, color) = test_outcome(test);
+        put(buf, x + 2, area.y, &outcome, fg(color), right);
+        let body = Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(1));
+        if diff.empty {
+            put(buf, body.x, body.y, &format!("{name} has no test output yet"), fg(theme::DIM), right);
+            return;
+        }
+        diff.view.render(body, buf);
+        return;
+    }
     let worktree = entry.and_then(|e| e.record.worktree.as_ref());
     let mut x = put(buf, area.x, area.y, "diff ", fg(theme::MUTED), right);
     x = put(buf, x, area.y, &name, fg(theme::TEXT).add_modifier(Modifier::BOLD), right);
@@ -661,6 +694,10 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
                     if !entry.overlaps.is_empty() {
                         x = put(buf, x, y, &format!(" {}", overlap_marker(&entry.overlaps)), fg(theme::YELLOW), right);
                     }
+                    if let Some(test) = entry.status.as_ref().and_then(|s| s.test.as_ref()) {
+                        let (text, color) = test_marker(test, app.tick);
+                        x = put(buf, x, y, &format!(" {text}"), fg(color), right);
+                    }
                     x = put(buf, x, y, "  ", Style::default(), right);
                 }
                 let (text, color) = activity(entry);
@@ -728,10 +765,20 @@ fn confirm_text(app: &App, confirm: &Confirm) -> String {
             let entry = app.agents.get(id);
             let branch = entry.and_then(|e| e.record.worktree.as_ref()).map(|w| w.branch.clone()).unwrap_or_default();
             let summary = changes_summary(entry.and_then(|e| e.changes.as_ref()));
+            let tests = match entry.and_then(|e| e.status.as_ref()).and_then(|s| s.test.as_ref()).map(|t| t.state) {
+                Some(TestState::Failed) => " — its last test run failed",
+                Some(TestState::Running) => " — its tests are still running",
+                _ => "",
+            };
             format!(
-                "merge {branch}{summary} into the repository's current branch? pending changes are committed on {branch} first"
+                "merge {branch}{summary} into the repository's current branch? pending changes are committed on {branch} first{tests}"
             )
         }
+        Confirm::Trust(loaded) => format!(
+            "trust {}? agents in worktrees of this repository will run {} each time they finish a turn",
+            app.display(&loaded.path),
+            loaded.config.test_command().unwrap_or_default()
+        ),
     };
     let worktree = match confirm {
         Confirm::Remove(id) | Confirm::Delete(id) => app.agents.get(id).and_then(|e| e.record.worktree.as_ref()),
@@ -1194,6 +1241,7 @@ fn draw_confirm(app: &App, confirm: &Confirm, screen: Rect, buf: &mut Buffer) {
         Confirm::Delete(_) => (" delete agent ", theme::RED),
         Confirm::Remove(_) => (" remove agent ", theme::RED),
         Confirm::Merge(_) => (" merge worktree ", theme::GREEN),
+        Confirm::Trust(_) => (" trust project ", theme::YELLOW),
         _ => (" stop agent ", theme::YELLOW),
     };
     let width = CONFIRM_WIDTH.min(screen.width.saturating_sub(4));
@@ -1238,6 +1286,7 @@ const HELP: &[(&str, &str)] = &[
     ("/bypass", "new agents skip every permission prompt"),
     ("/diff · /merge", "see or merge the selected agent's worktree"),
     ("/cross-review", "another agent reviews the selected one's worktree"),
+    ("/trust · /tests", "run .orkai.json's test after each turn · see the output"),
     ("ctrl+p · /pwa", "your orkai on the phone, from anywhere (/pwa off turns it off)"),
     ("↑ ↓ / mouse", "select agent · click or enter opens it"),
     ("alt+1..9", "jump to an open tab"),

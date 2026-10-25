@@ -1,4 +1,5 @@
 pub mod detect;
+pub mod gate;
 pub mod input;
 pub mod nested;
 pub mod oplog;
@@ -23,6 +24,7 @@ use crate::paths::Home;
 use crate::protocol::{ClientMsg, HolderMsg, PROTOCOL_VERSION, Snapshot, TermSize, Welcome};
 use crate::util::{constant_time_eq, lock, now_ms, random_token};
 
+use gate::Gate;
 use oplog::OutputLog;
 use term::TermState;
 
@@ -100,6 +102,7 @@ struct Shared {
     exit: Mutex<Option<ExitInfo>>,
     next_client: AtomicU64,
     finished: AtomicBool,
+    gate: Option<Arc<Gate>>,
 }
 
 impl Shared {
@@ -110,7 +113,8 @@ impl Shared {
     fn status(&self) -> StatusReport {
         let exit = lock(&self.exit).clone();
         let viewers = lock(&self.clients).viewers();
-        StatusReport { viewers: Some(viewers), ..lock(&self.term).report(exit) }
+        let test = self.gate.as_ref().and_then(|gate| gate.report()).map(Box::new);
+        StatusReport { viewers: Some(viewers), test, ..lock(&self.term).report(exit) }
     }
 
     fn write_pty(&self, bytes: &[u8]) {
@@ -279,6 +283,7 @@ pub fn run(home: &Home, id: AgentId) -> io::Result<()> {
         exit: Mutex::new(None),
         next_client: AtomicU64::new(1),
         finished: AtomicBool::new(false),
+        gate: spec.test.clone().map(|target| Arc::new(Gate::new(home.clone(), id, target))),
     });
 
     fsutil::write_json_atomic(
@@ -334,6 +339,9 @@ fn task_of(spec: &LaunchSpec) -> String {
 
 fn finish(shared: &Arc<Shared>, info: ExitInfo) {
     shared.finished.store(true, Ordering::SeqCst);
+    if let Some(gate) = &shared.gate {
+        gate.stop();
+    }
     *lock(&shared.exit) = Some(info.clone());
     if let Some(log) = lock(&shared.log).as_mut() {
         let _ = log.flush();
@@ -397,6 +405,11 @@ fn tick(shared: &Arc<Shared>, watch: Option<&Watch>, mut inbox: Option<HookInbox
             shared.write_pty(b"\r");
         }
         let report = shared.status();
+        if let Some(gate) = &shared.gate
+            && gate::turn_ended(last.as_ref().map(|last| last.state), report.state)
+        {
+            gate.start();
+        }
         if last.as_ref() != Some(&report) {
             let frame = Arc::new(HolderMsg::Status(report.clone()).to_frame());
             lock(&shared.clients).broadcast(&frame, false);

@@ -219,6 +219,7 @@ impl TermState {
             exit,
             nested: self.nested.clone(),
             viewers: None,
+            test: None,
         }
     }
 

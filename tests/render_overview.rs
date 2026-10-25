@@ -14,7 +14,8 @@ use ratatui::style::{Color, Modifier};
 use orkai::config::Config;
 use orkai::launch::Launcher;
 use orkai::model::{
-    AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, NestedAgent, NewAgent, StatusReport, UiState, Worktree,
+    AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, NestedAgent, NewAgent, StatusReport, TestReport, TestState,
+    UiState, Worktree,
 };
 use orkai::paths::Home;
 use orkai::protocol::HolderMsg;
@@ -133,6 +134,7 @@ fn scenario() -> Scenario {
             exit: None,
             nested: None,
             viewers: None,
+            test: None,
         });
     }
     app.where_dir = dir.join("studio/game");
@@ -1277,12 +1279,7 @@ fn agents_that_change_the_same_files_point_at_each_other_and_warn_once() {
     );
 
     scenario.app.selected = Some(physics);
-    scenario.app.handle(AppEvent::Diff {
-        id: physics,
-        result: Ok(b"diff --git a/engine.rs b/engine.rs
-"
-        .to_vec()),
-    });
+    scenario.app.handle(AppEvent::Diff { id: physics, result: Ok(b"diff --git a/engine.rs b/engine.rs\n".to_vec()) });
     let screen = text(&render(&mut scenario.app));
     let expected = format!("⚠ also changed by #{icons}: readme.txt · #{docker}: engine.rs");
     assert!(screen.lines().any(|l| l.contains("diff physics-merge") && l.contains(&expected)), "{screen}");
@@ -1391,6 +1388,121 @@ fn cross_review_starts_another_agent_inside_the_selected_worktree() {
     scenario.app.show_help = true;
     let help = text(&render(&mut scenario.app));
     assert!(help.contains("another agent reviews the selected one's worktree"), "{help}");
+}
+
+fn test_run(state: TestState, code: Option<i32>) -> TestReport {
+    TestReport { state, command: "cargo test".into(), started_at_ms: now_ms(), finished_at_ms: None, code }
+}
+
+fn push_test(app: &mut App, id: AgentId, test: TestReport) {
+    let mut status = app.agents[&id].status.clone().unwrap();
+    status.test = Some(Box::new(test));
+    app.handle(AppEvent::Holder { id, generation: 0, msg: Some(HolderMsg::Status(status)) });
+}
+
+#[test]
+fn test_runs_show_next_to_the_changes_warn_once_when_they_fail_and_before_a_merge() {
+    let mut scenario = scenario();
+    let (id, _) = put_in_worktree(&mut scenario, "physics-merge");
+    scenario.app.handle(AppEvent::Changes(BTreeMap::from([(id, Changes::default())])));
+    let row = |scenario: &mut Scenario| {
+        let buffer = render(&mut scenario.app);
+        let screen = text(&buffer);
+        let (row, line) = line_with(&screen, "physics-merge");
+        (buffer, u16::try_from(row).unwrap(), line.to_string())
+    };
+
+    push_test(&mut scenario.app, id, test_run(TestState::Running, None));
+    let (_, _, line) = row(&mut scenario);
+    assert!(line.contains("⎇ clean ") && line.contains(" test  Merging"), "{line}");
+
+    push_test(&mut scenario.app, id, test_run(TestState::Passed, Some(0)));
+    let (buffer, y, line) = row(&mut scenario);
+    assert!(line.contains("⎇ clean ✓ test  Merging"), "{line}");
+    assert_eq!(buffer[(column_of(&line, "✓"), y)].fg, theme::GREEN);
+    assert!(scenario.app.notice.is_none(), "a passing run stays quiet");
+
+    let failed = test_run(TestState::Failed, Some(101));
+    push_test(&mut scenario.app, id, failed.clone());
+    assert_eq!(
+        scenario.app.notice.as_ref().unwrap().text,
+        "physics-merge: cargo test failed (exit 101) · /tests shows why"
+    );
+    let (buffer, y, line) = row(&mut scenario);
+    assert!(line.contains("⎇ clean ✗ test  Merging"), "{line}");
+    assert_eq!(buffer[(column_of(&line, "✗"), y)].fg, theme::RED);
+    scenario.app.notice = None;
+    push_test(&mut scenario.app, id, failed);
+    assert!(scenario.app.notice.is_none(), "the same failed run warns once");
+
+    push_state(&mut scenario.app, id, AgentState::Done);
+    scenario.app.selected = Some(id);
+    scenario.app.run_command("/merge");
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.contains("its last test run failed"), "{screen}");
+    press(&mut scenario.app, KeyCode::Char('n'), KeyModifiers::NONE);
+
+    push_test(&mut scenario.app, id, test_run(TestState::Untrusted, None));
+    assert!(row(&mut scenario).2.contains("⎇ clean ? test  Merging"));
+}
+
+#[test]
+fn tests_shows_the_output_of_the_last_run() {
+    let mut scenario = scenario();
+    let (id, _) = put_in_worktree(&mut scenario, "physics-merge");
+    scenario.app.selected = Some(id);
+    scenario.app.run_command("/tests");
+    assert_eq!(scenario.app.notice.as_ref().unwrap().text, "physics-merge has not run tests yet (see /trust)");
+
+    let log = scenario.app.launcher.store().home().test_log(id);
+    std::fs::write(&log, "running 3 tests\nassertion failed: left == right\n").unwrap();
+    push_test(&mut scenario.app, id, test_run(TestState::Failed, Some(101)));
+    scenario.app.run_command("/tests");
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.contains("tests physics-merge  cargo test  failed (exit 101)"), "{screen}");
+    assert!(screen.contains("assertion failed: left == right"), "{screen}");
+    press(&mut scenario.app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(scenario.app.diff.is_none());
+
+    std::fs::remove_file(&log).unwrap();
+    scenario.app.run_command("/tests");
+    assert!(text(&render(&mut scenario.app)).contains("physics-merge has no test output yet"));
+}
+
+#[test]
+fn trust_shows_the_test_command_and_asks_before_orkai_runs_it() {
+    let mut scenario = scenario();
+    let repo = orkai::worktree::toplevel(&git_repo(&scenario.dir)).unwrap();
+    scenario.app.where_dir = repo.clone();
+    let shown = scenario.app.display(&repo);
+    let notice = |scenario: &Scenario| scenario.app.notice.as_ref().unwrap().text.clone();
+    let home = scenario.app.launcher.store().home().clone();
+    let trusted = || orkai::project::is_trusted(&home, &orkai::project::load(&repo).unwrap().unwrap());
+
+    scenario.app.run_command("/trust");
+    assert_eq!(notice(&scenario), format!("{shown} has no .orkai.json"));
+    std::fs::write(repo.join(".orkai.json"), r#"{"copy":[".env"]}"#).unwrap();
+    scenario.app.run_command("/trust");
+    assert_eq!(notice(&scenario), format!("the .orkai.json of {shown} has no test command"));
+
+    std::fs::write(repo.join(".orkai.json"), r#"{"test":"cargo test"}"#).unwrap();
+    scenario.app.run_command("/trust");
+    assert!(matches!(scenario.app.prompt, Some(Prompt::Confirm(Confirm::Trust(_)))));
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.contains("trust project") && screen.contains("cargo test each time"), "{screen}");
+    press(&mut scenario.app, KeyCode::Char('n'), KeyModifiers::NONE);
+    assert!(!trusted());
+
+    scenario.app.run_command("/trust");
+    press(&mut scenario.app, KeyCode::Char('y'), KeyModifiers::NONE);
+    assert_eq!(notice(&scenario), "agents in worktrees now run cargo test after each turn");
+    assert!(trusted());
+    scenario.app.run_command("/trust");
+    assert_eq!(notice(&scenario), format!("orkai already runs cargo test for {shown}"));
+
+    std::fs::write(repo.join(".orkai.json"), "{ broken").unwrap();
+    scenario.app.run_command("/trust");
+    assert!(notice(&scenario).contains("is not valid"), "{}", notice(&scenario));
 }
 
 #[test]

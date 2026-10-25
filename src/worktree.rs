@@ -8,6 +8,7 @@ use crate::fsutil;
 use crate::launch;
 use crate::model::{AgentId, AgentRecord, Worktree};
 use crate::paths::{Home, create_private_dir, normalize_for_compare};
+use crate::project;
 
 pub const BRANCH_PREFIX: &str = "orkai/";
 pub const MAX_UNTRACKED_FILES: usize = 200;
@@ -117,11 +118,15 @@ fn free_branch(repo: &Path, name: &str) -> io::Result<String> {
     Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("every branch name like {base} is taken")))
 }
 
+pub fn toplevel(dir: &Path) -> io::Result<PathBuf> {
+    run(dir, &["rev-parse", "--show-toplevel"])
+        .map(|toplevel| native(&toplevel))
+        .map_err(|_| invalid(format!("{} is not inside a git repository", dir.display())))
+}
+
 pub fn create(home: &Home, id: AgentId, name: &str, source: &Path) -> io::Result<(Worktree, PathBuf)> {
-    let toplevel = run(source, &["rev-parse", "--show-toplevel"])
-        .map_err(|_| invalid(format!("{} is not inside a git repository", source.display())))?;
+    let repo = toplevel(source)?;
     let prefix = run(source, &["rev-parse", "--show-prefix"])?;
-    let repo = native(&toplevel);
     let base = run(&repo, &["rev-parse", "--verify", "HEAD^{commit}"])
         .map_err(|_| invalid("the repository has no commits yet; commit once before starting agents in worktrees"))?;
     let branch = free_branch(&repo, name)?;
@@ -131,9 +136,20 @@ pub fn create(home: &Home, id: AgentId, name: &str, source: &Path) -> io::Result
         return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("{} already exists", path.display())));
     }
     run(&repo, &["worktree", "add", "-b", &branch, &path.to_string_lossy(), &base])?;
+    if let Ok(Some(loaded)) = project::load(&repo) {
+        project::copy_files(&ignored(&repo, &loaded.config.copy), &repo, &path);
+    }
     let relative: PathBuf = prefix.split('/').filter(|part| !part.is_empty()).collect();
     let cwd = Some(path.join(relative)).filter(|dir| dir.is_dir()).unwrap_or_else(|| path.clone());
     Ok((Worktree { repo, path, branch, base, source: source.to_path_buf() }, cwd))
+}
+
+fn ignored(repo: &Path, paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .filter(|path| git(repo, &["check-ignore", "-q", "--", path]).is_ok_and(|output| output.status.success()))
+        .cloned()
+        .collect()
 }
 
 fn untracked(path: &Path) -> io::Result<Vec<String>> {
@@ -524,6 +540,21 @@ mod tests {
         );
         assert!(watcher.scan(&[], 50_000).is_empty());
         assert!(watcher.scanned.is_empty());
+    }
+
+    #[test]
+    fn new_worktrees_get_the_ignored_files_the_project_lists_to_copy() {
+        let r = repo();
+        fs::write(r.repo.join(".gitignore"), "target/\n.env\n").unwrap();
+        git_in(&r.repo, &["commit", "-q", "-am", "ignore env"]);
+        fs::write(r.repo.join(".env"), "KEY=1\n").unwrap();
+        fs::write(r.repo.join("notes.txt"), "not ignored\n").unwrap();
+        fs::write(r.repo.join(project::FILE), r#"{"copy":[".env","notes.txt","app/lib.txt"]}"#).unwrap();
+        let (worktree, _) = create(&r.home, 1, "copy", &r.repo).unwrap();
+        assert_eq!(fs::read_to_string(worktree.path.join(".env")).unwrap(), "KEY=1\n");
+        assert!(!worktree.path.join("notes.txt").exists(), "a file git would commit is never copied");
+        assert_eq!(fs::read_to_string(worktree.path.join("app").join("lib.txt")).unwrap(), "one\ntwo\nthree\n");
+        assert!(changes(&worktree).unwrap().is_empty(), "copied files never show up as changes");
     }
 
     #[test]

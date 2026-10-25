@@ -12,7 +12,10 @@ use orkai::holder::nested::{descendants, program_name};
 use orkai::holder::oplog;
 use orkai::hooks::HOOK_COMMAND;
 use orkai::launch::{HOLDER_COMMAND, LaunchMode, Launcher, spawn_holder, wait_for_runtime};
-use orkai::model::{AgentId, AgentKind, AgentState, LaunchSpec, NestedAgent, NewAgent, RuntimeInfo, StatusReport};
+use orkai::model::{
+    AgentId, AgentKind, AgentState, LaunchSpec, NestedAgent, NewAgent, RuntimeInfo, StatusReport, TestReport,
+    TestState, TestTarget,
+};
 use orkai::paths::{HOME_ENV, Home};
 use orkai::protocol::{ClientMsg, HolderMsg, PROTOCOL_VERSION, TermSize};
 use orkai::store::Store;
@@ -72,6 +75,7 @@ fn start_terminal(fx: &Fixture, initial_input: Option<&str>) -> (AgentId, Runtim
         initial_input: initial_input.map(str::to_string),
         rows: 24,
         cols: 100,
+        test: None,
     };
     fx.store.write_launch(record.id, &spec).unwrap();
     spawn_holder(fx.store.home(), record.id, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
@@ -236,6 +240,7 @@ fn failing_program_records_error() {
         initial_input: None,
         rows: 24,
         cols: 80,
+        test: None,
     };
     fx.store.write_launch(record.id, &spec).unwrap();
     spawn_holder(fx.store.home(), record.id, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
@@ -292,6 +297,7 @@ fn a_terminal_reports_the_claude_session_started_inside_it() {
         initial_input: Some(command.into()),
         rows: 24,
         cols: 100,
+        test: None,
     };
     fx.store.write_launch(record.id, &spec).unwrap();
     let mut holder = std::process::Command::new(env!("CARGO_BIN_EXE_orkai"))
@@ -390,6 +396,7 @@ fn hook_events_from_the_agent_drive_its_state() {
         initial_input: None,
         rows: 24,
         cols: 100,
+        test: None,
     };
     fx.store.write_launch(record.id, &spec).unwrap();
     spawn_holder(fx.store.home(), record.id, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
@@ -428,6 +435,95 @@ fn hook_events_from_the_agent_drive_its_state() {
     wait_for_exit(&rx);
 }
 
+fn wait_for_test(rx: &Receiver<Option<HolderMsg>>, expected: TestState) -> TestReport {
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        assert!(!remaining.is_zero(), "the holder never reported a {expected:?} test run");
+        match rx.recv_timeout(remaining) {
+            Ok(Some(HolderMsg::Status(StatusReport { test: Some(test), .. }))) if test.state == expected => {
+                return *test;
+            }
+            Ok(None) => panic!("holder disconnected while waiting for a {expected:?} test run"),
+            _ => {}
+        }
+    }
+}
+
+fn trust_with_cli(fx: &Fixture, repo: &Path) -> String {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_orkai"))
+        .args(["trust", "-C"])
+        .arg(repo)
+        .env(HOME_ENV, fx.store.home().root())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[test]
+fn a_trusted_test_command_runs_each_time_an_agent_in_a_worktree_finishes_a_turn() {
+    let fx = fixture("gate");
+    let repo = fx.dir.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q"]);
+    let repo = orkai::worktree::toplevel(&repo).unwrap();
+    std::fs::write(repo.join(orkai::project::FILE), r#"{"test":"echo checking && exit 3"}"#).unwrap();
+    let said = trust_with_cli(&fx, &repo);
+    assert!(said.contains("trusted") && said.contains("echo checking && exit 3"), "{said}");
+
+    let cwd = fx.dir.join("work");
+    let record = fx
+        .store
+        .create_agent(NewAgent {
+            session: "default".into(),
+            name: "gated".into(),
+            kind: AgentKind::Claude,
+            cwd: cwd.clone(),
+            task: String::new(),
+        })
+        .unwrap();
+    let (program, args) = shell();
+    let spec = LaunchSpec {
+        kind: AgentKind::Claude,
+        program,
+        args,
+        cwd: cwd.clone(),
+        env: Vec::new(),
+        env_remove: Vec::new(),
+        initial_input: None,
+        rows: 24,
+        cols: 100,
+        test: Some(TestTarget { repo: repo.clone(), dir: cwd }),
+    };
+    fx.store.write_launch(record.id, &spec).unwrap();
+    spawn_holder(fx.store.home(), record.id, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let runtime = wait_for_runtime(&fx.store, record.id, TIMEOUT).unwrap();
+    let (conn, rx) = open(&runtime);
+    let id = record.id.to_string();
+    let prompt = br#"{"session_id":"s","hook_event_name":"UserPromptSubmit","prompt":"x"}"#;
+    let stop = br#"{"session_id":"s","hook_event_name":"Stop","stop_hook_active":false}"#;
+    let turn = |expected: TestState| {
+        assert!(run_hook(&fx, &["claude", &id], prompt).success());
+        wait_for_state(&rx, AgentState::Working);
+        assert!(run_hook(&fx, &["claude", &id], stop).success());
+        wait_for_test(&rx, expected)
+    };
+
+    let failed = turn(TestState::Failed);
+    assert_eq!((failed.code, failed.command.as_str()), (Some(3), "echo checking && exit 3"));
+    let log = std::fs::read_to_string(fx.store.home().test_log(record.id)).unwrap();
+    assert!(log.contains("checking"), "{log}");
+
+    std::fs::write(repo.join(orkai::project::FILE), r#"{"test":"exit 0"}"#).unwrap();
+    assert_eq!(turn(TestState::Untrusted).command, "exit 0", "an edited file must be trusted again");
+    trust_with_cli(&fx, &repo);
+    assert_eq!(turn(TestState::Passed).code, Some(0));
+
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
+}
+
 fn start_ai(fx: &Fixture, kind: AgentKind, program: PathBuf, args: Vec<String>) -> (AgentId, RuntimeInfo) {
     let cwd = fx.dir.join("work");
     let record = fx
@@ -450,6 +546,7 @@ fn start_ai(fx: &Fixture, kind: AgentKind, program: PathBuf, args: Vec<String>) 
         initial_input: None,
         rows: 24,
         cols: 100,
+        test: None,
     };
     fx.store.write_launch(record.id, &spec).unwrap();
     spawn_holder(fx.store.home(), record.id, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();

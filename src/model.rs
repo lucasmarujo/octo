@@ -178,6 +178,34 @@ pub struct LaunchSpec {
     pub initial_input: Option<String>,
     pub rows: u16,
     pub cols: u16,
+    #[serde(default)]
+    pub test: Option<TestTarget>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct TestTarget {
+    pub repo: PathBuf,
+    pub dir: PathBuf,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TestState {
+    Running,
+    Passed,
+    Failed,
+    Untrusted,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct TestReport {
+    pub state: TestState,
+    pub command: String,
+    pub started_at_ms: u64,
+    #[serde(default)]
+    pub finished_at_ms: Option<u64>,
+    #[serde(default)]
+    pub code: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -245,6 +273,8 @@ pub struct StatusReport {
     pub nested: Option<NestedAgent>,
     #[serde(default)]
     pub viewers: Option<u16>,
+    #[serde(default)]
+    pub test: Option<Box<TestReport>>,
 }
 
 impl StatusReport {

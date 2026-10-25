@@ -79,6 +79,11 @@ enum Command {
     },
     #[command(about = "Print the data directory")]
     Home,
+    #[command(about = "Let agents in this repository's worktrees run the test command of its .orkai.json")]
+    Trust {
+        #[arg(short = 'C', long, help = "A folder inside the repository (defaults to the current one)")]
+        cwd: Option<PathBuf>,
+    },
     #[command(about = "Open your orkai on the phone, from anywhere: prints the QR code to pair it")]
     Pwa {
         #[arg(long, value_parser = tunnel_kind, help = "cloudflare (default, no account) or tailscale (your tailnet)")]
@@ -149,6 +154,7 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
             println!("{}", store.home().root().display());
             Ok(())
         }
+        Some(Command::Trust { cwd }) => cli::trust(&store, cwd),
         Some(Command::Update) => update::update_now(),
         Some(Command::Pwa { tunnel, stop, new_code }) => {
             let action = match (stop, new_code) {

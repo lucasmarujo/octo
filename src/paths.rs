@@ -79,6 +79,10 @@ impl Home {
         self.agent_dir(id).join("holder.log")
     }
 
+    pub fn test_log(&self, id: AgentId) -> PathBuf {
+        self.agent_dir(id).join("test.log")
+    }
+
     pub fn hooks_dir(&self, id: AgentId) -> PathBuf {
         self.agent_dir(id).join("hooks")
     }
@@ -105,6 +109,10 @@ impl Home {
 
     pub fn config_file(&self) -> PathBuf {
         self.root.join("config.json")
+    }
+
+    pub fn trusted_file(&self) -> PathBuf {
+        self.root.join("trusted.json")
     }
 
     pub fn icon_file(&self) -> PathBuf {

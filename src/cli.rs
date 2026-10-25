@@ -14,6 +14,7 @@ use crate::holder::oplog;
 use crate::launch::{LaunchMode, Launcher};
 use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, NewAgent, StatusReport};
 use crate::paths::{Home, user_home};
+use crate::project;
 use crate::protocol::{ClientMsg, HolderMsg, TermSize};
 use crate::pwa;
 use crate::pwa::bridge::Phase;
@@ -243,6 +244,23 @@ pub fn recover(launcher: &Launcher, session: Option<&str>) -> io::Result<()> {
     if recovered == 0 {
         println!("nothing to recover");
     }
+    Ok(())
+}
+
+pub fn trust(store: &Store, cwd: Option<PathBuf>) -> io::Result<()> {
+    let dir = match cwd {
+        Some(dir) => dir,
+        None => std::env::current_dir()?,
+    };
+    let repo = worktree::toplevel(&dir)?;
+    let loaded = project::load(&repo)?.ok_or_else(|| {
+        io::Error::new(io::ErrorKind::NotFound, format!("{} has no {}", repo.display(), project::FILE))
+    })?;
+    let command = loaded.config.test_command().map(str::to_string).ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, format!("{} has no test command", loaded.path.display()))
+    })?;
+    project::trust(store.home(), &loaded)?;
+    println!("trusted {}: agents in worktrees of this repository run {command} after each turn", loaded.path.display());
     Ok(())
 }
 

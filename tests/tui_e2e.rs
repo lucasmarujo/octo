@@ -86,6 +86,7 @@ fn start_tui(fx: &Fixture) -> Session {
         initial_input: None,
         rows: ROWS,
         cols: COLS,
+        test: None,
     };
     fx.outer.write_launch(record.id, &spec).unwrap();
     spawn_holder(fx.outer.home(), record.id, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();

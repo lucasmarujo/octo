@@ -200,6 +200,7 @@ fn start_program(fx: &Fixture, name: &str, program: PathBuf, args: Vec<String>) 
         initial_input: None,
         rows: 24,
         cols: 80,
+        test: None,
     };
     fx.store.write_launch(id, &spec).unwrap();
     orkai::launch::spawn_holder(fx.store.home(), id, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();

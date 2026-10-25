@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
-use std::io;
-use std::path::PathBuf;
+use std::io::{self, Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Sender};
 use std::thread;
@@ -14,10 +14,11 @@ use crate::holder::oplog;
 use crate::launch::{self, LaunchMode, Launcher};
 use crate::model::{
     AgentId, AgentKind, AgentRecord, AgentState, DEFAULT_SESSION, ExitInfo, NestedAgent, NewAgent, Session,
-    StatusReport, UiState, Worktree, validate_agent_name,
+    StatusReport, TestReport, TestState, UiState, Worktree, validate_agent_name,
 };
 use crate::notify::Alert;
 use crate::paths::{Home, expand_tilde, normalize_for_compare, separator_for, user_home};
+use crate::project::{self, Loaded};
 use crate::protocol::{ClientMsg, HolderMsg, TermSize};
 use crate::pwa::bridge::{self, Info};
 use crate::pwa::qr::Qr;
@@ -221,11 +222,15 @@ pub enum Confirm {
     DeleteSession(String),
     Recover(Vec<AgentId>),
     Merge(AgentId),
+    Trust(Loaded),
 }
 
 impl Confirm {
     pub fn is_popup(&self) -> bool {
-        matches!(self, Confirm::Kill(_) | Confirm::Remove(_) | Confirm::Delete(_) | Confirm::Merge(_))
+        matches!(
+            self,
+            Confirm::Kill(_) | Confirm::Remove(_) | Confirm::Delete(_) | Confirm::Merge(_) | Confirm::Trust(_)
+        )
     }
 }
 
@@ -233,6 +238,7 @@ pub struct DiffPane {
     pub id: AgentId,
     pub view: TermView,
     pub empty: bool,
+    pub tests: Option<TestReport>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1145,6 +1151,15 @@ impl App {
                 }
                 let needs_you = state == AgentState::Paused && previous.is_some_and(|s| s != AgentState::Paused);
                 let name = entry.record.name.clone();
+                let before = entry.status.as_ref().and_then(|s| s.test.as_deref());
+                let failed_test = status
+                    .test
+                    .as_deref()
+                    .filter(|test| previous.is_some() && test.state == TestState::Failed && before != Some(*test))
+                    .map(|test| match test.code {
+                        Some(code) => format!("{name}: {} failed (exit {code}) · /tests shows why", test.command),
+                        None => format!("{name}: {} failed · /tests shows why", test.command),
+                    });
                 entry.status = Some(status);
                 self.dirty = true;
                 let alert = if !viewing && previous.is_some() && (finished || needs_you) {
@@ -1157,6 +1172,9 @@ impl App {
                     self.set_notice(Tone::Success, format!("{name} finished · alt+n opens it"));
                 } else if needs_you && !viewing {
                     self.set_notice(Tone::Warn, format!("{name} is waiting for you · alt+n opens it"));
+                }
+                if let Some(text) = failed_test {
+                    self.set_notice(Tone::Error, text);
                 }
             }
             Some(HolderMsg::Snapshot(snapshot)) => {
@@ -1463,6 +1481,54 @@ impl App {
         self.start_agent(kind, reviewer, review_task(&worktree), cwd, false);
     }
 
+    fn open_tests(&mut self) {
+        let Some((id, _)) = self.selected_worktree() else { return };
+        let Some(entry) = self.agents.get(&id) else { return };
+        let Some(test) = entry.status.as_ref().and_then(|s| s.test.as_deref().cloned()) else {
+            let name = entry.record.name.clone();
+            return self.set_notice(Tone::Info, format!("{name} has not run tests yet (see /trust)"));
+        };
+        let text = read_tail(&self.launcher.store().home().test_log(id), worktree::MAX_DIFF_BYTES);
+        let body = render::areas(self.screen, false, !self.tabs.is_empty(), 1).body;
+        let size = TermSize::new(body.height.saturating_sub(1).max(1), body.width.max(1));
+        let view = TermView::document(size, &text);
+        self.diff = Some(DiffPane { id, empty: text.is_empty(), view, tests: Some(test) });
+        self.notice = None;
+        self.dirty = true;
+    }
+
+    fn request_trust(&mut self) {
+        let worktree = self.selected.and_then(|id| self.agents.get(&id)).and_then(|e| e.record.worktree.clone());
+        let repo = match worktree {
+            Some(worktree) => worktree.repo,
+            None => match worktree::toplevel(&self.where_dir) {
+                Ok(repo) => repo,
+                Err(err) => return self.set_notice(Tone::Error, err.to_string()),
+            },
+        };
+        let shown = self.display(&repo);
+        let loaded = match project::load(&repo) {
+            Ok(Some(loaded)) => loaded,
+            Ok(None) => return self.set_notice(Tone::Info, format!("{shown} has no {}", project::FILE)),
+            Err(err) => return self.set_notice(Tone::Error, err.to_string()),
+        };
+        let Some(command) = loaded.config.test_command() else {
+            return self.set_notice(Tone::Info, format!("the {} of {shown} has no test command", project::FILE));
+        };
+        if project::is_trusted(self.launcher.store().home(), &loaded) {
+            return self.set_notice(Tone::Info, format!("orkai already runs {command} for {shown}"));
+        }
+        self.prompt = Some(Prompt::Confirm(Confirm::Trust(loaded)));
+    }
+
+    fn trust(&mut self, loaded: &Loaded) {
+        let command = loaded.config.test_command().unwrap_or_default().to_string();
+        match project::trust(self.launcher.store().home(), loaded) {
+            Ok(()) => self.set_notice(Tone::Success, format!("agents in worktrees now run {command} after each turn")),
+            Err(err) => self.set_notice(Tone::Error, format!("could not trust {}: {err}", loaded.path.display())),
+        }
+    }
+
     fn open_diff(&mut self) {
         let Some((id, worktree)) = self.selected_worktree() else { return };
         let tx = self.tx.clone();
@@ -1481,7 +1547,8 @@ impl App {
             Ok(text) => {
                 let body = render::areas(self.screen, false, !self.tabs.is_empty(), 1).body;
                 let size = TermSize::new(body.height.saturating_sub(1).max(1), body.width.max(1));
-                self.diff = Some(DiffPane { id, empty: text.is_empty(), view: TermView::document(size, &text) });
+                self.diff =
+                    Some(DiffPane { id, empty: text.is_empty(), view: TermView::document(size, &text), tests: None });
                 self.notice = None;
                 self.dirty = true;
             }
@@ -1936,6 +2003,7 @@ impl App {
                     Confirm::DeleteSession(name) => self.delete_session(&name),
                     Confirm::Recover(ids) => self.restart_agents(ids),
                     Confirm::Merge(id) => self.merge_agent(id),
+                    Confirm::Trust(loaded) => self.trust(&loaded),
                 },
                 _ => self.set_notice(Tone::Info, "cancelled"),
             }
@@ -2204,6 +2272,8 @@ impl App {
             },
             "diff" => self.open_diff(),
             "cross-review" => self.cross_review(&arg),
+            "tests" => self.open_tests(),
+            "trust" => self.request_trust(),
             "merge" => self.request_merge(),
             "pwa" | "phone" => match arg.as_str() {
                 "off" if self.pwa.enabled => self.disable_pwa(),
@@ -2359,6 +2429,17 @@ fn edit_line(input: &mut LineInput, key: &KeyEvent, ctrl: bool) {
         KeyCode::Char(c) if !ctrl || alt => input.insert(c),
         _ => {}
     }
+}
+
+fn read_tail(path: &Path, max: usize) -> Vec<u8> {
+    let Ok(mut file) = std::fs::File::open(path) else { return Vec::new() };
+    let max = u64::try_from(max).unwrap_or(u64::MAX);
+    let skip = file.metadata().map_or(0, |meta| meta.len().saturating_sub(max));
+    let mut data = Vec::new();
+    if file.seek(SeekFrom::Start(skip)).is_ok() {
+        let _ = file.take(max).read_to_end(&mut data);
+    }
+    data
 }
 
 pub fn reviewer_for(reviewed: AgentKind, installed: &[AgentKind]) -> Option<AgentKind> {

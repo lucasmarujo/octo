@@ -245,6 +245,7 @@ mod tests {
                 since_ms: 3,
             }),
             viewers: Some(2),
+            test: None,
         }));
         round_trip_holder(HolderMsg::Snapshot(Snapshot {
             size: TermSize { rows: 3, cols: 4 },
