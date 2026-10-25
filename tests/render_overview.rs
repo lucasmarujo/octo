@@ -1510,7 +1510,8 @@ fn trust_shows_the_test_command_and_asks_before_orkai_runs_it() {
     scenario.app.run_command("/trust");
     assert!(matches!(scenario.app.prompt, Some(Prompt::Confirm(Confirm::Trust(_)))));
     let screen = text(&render(&mut scenario.app));
-    assert!(screen.contains("trust project") && screen.contains("cargo test each time"), "{screen}");
+    let popup = screen.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(popup.contains("trust project") && popup.contains("will run cargo test"), "{screen}");
     press(&mut scenario.app, KeyCode::Char('n'), KeyModifiers::NONE);
     assert!(!trusted());
 
