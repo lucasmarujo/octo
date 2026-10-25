@@ -1490,6 +1490,24 @@ fn tests_shows_the_output_of_the_last_run() {
     assert!(text(&render(&mut scenario.app)).contains("physics-merge has no test output yet"));
 }
 
+fn popup_words(screen: &str, title: &str) -> String {
+    let lines: Vec<Vec<char>> = screen.lines().map(|line| line.chars().collect()).collect();
+    let Some((top, left)) = screen
+        .lines()
+        .enumerate()
+        .find_map(|(row, line)| line.find(title).map(|byte| (row, line[..byte].chars().count())))
+    else {
+        return String::new();
+    };
+    let right = lines[top].iter().skip(left + 1).position(|c| *c == '╮').map_or(0, |offset| left + 1 + offset);
+    let mut words = Vec::new();
+    for line in lines.iter().skip(top + 1).take_while(|line| line.get(left) != Some(&'╰')) {
+        let inside: String = line.iter().skip(left + 1).take(right.saturating_sub(left + 1)).collect();
+        words.extend(inside.split_whitespace().map(str::to_string));
+    }
+    words.join(" ")
+}
+
 #[test]
 fn trust_shows_the_test_command_and_asks_before_orkai_runs_it() {
     let mut scenario = scenario();
@@ -1510,8 +1528,8 @@ fn trust_shows_the_test_command_and_asks_before_orkai_runs_it() {
     scenario.app.run_command("/trust");
     assert!(matches!(scenario.app.prompt, Some(Prompt::Confirm(Confirm::Trust(_)))));
     let screen = text(&render(&mut scenario.app));
-    let popup = screen.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(popup.contains("trust project") && popup.contains("will run cargo test"), "{screen}");
+    let popup = popup_words(&screen, "╭ trust project");
+    assert!(popup.contains("will run cargo test each time they finish a turn"), "{popup}\n{screen}");
     press(&mut scenario.app, KeyCode::Char('n'), KeyModifiers::NONE);
     assert!(!trusted());
 
