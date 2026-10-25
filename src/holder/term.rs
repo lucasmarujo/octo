@@ -113,7 +113,7 @@ impl TermState {
             self.apply_hook(signal, now);
         }
         self.last_output_at = now;
-        if self.echoed_at.is_none() && self.submit_after.is_some_and(|typed_at| now > typed_at) {
+        if self.echoed_at.is_none() && self.submit_after.is_some_and(|typed_at| now >= typed_at) {
             self.echoed_at = Some(now);
         }
         self.dirty = true;
@@ -435,6 +435,19 @@ mod tests {
         assert!(!t.take_submit(echoed_at + SUBMIT_QUIET_MS - 1));
         assert!(t.take_submit(echoed_at + SUBMIT_QUIET_MS));
         assert!(!t.take_submit(echoed_at + SUBMIT_NO_ECHO_TIMEOUT_MS));
+    }
+
+    #[test]
+    fn an_echo_in_the_same_millisecond_as_the_typing_still_counts() {
+        let size = TermSize { rows: 6, cols: 40 };
+        let mut t = TermState::new(AgentKind::Terminal, size, 0, String::new(), Some("echo hi".into()));
+        t.process(b"C:\\work>", 1_000);
+        t.evaluate(1_000);
+        let typed_at = 1_000 + INPUT_QUIET_MS;
+        assert_eq!(t.take_ready_input(typed_at).unwrap(), b"echo hi");
+        t.process(b"echo hi", typed_at);
+        assert!(!t.take_submit(typed_at + SUBMIT_QUIET_MS - 1));
+        assert!(t.take_submit(typed_at + SUBMIT_MIN_MS), "enter goes in right after the echo, not after the fallback");
     }
 
     #[test]
