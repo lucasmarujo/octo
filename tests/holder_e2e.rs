@@ -722,6 +722,49 @@ fn stop_after_seeing(fx: &Fixture, id: AgentId, size: TermSize, needle: &str) {
 }
 
 #[test]
+fn agents_of_a_race_each_get_their_own_worktree_and_share_the_race() {
+    let fx = fixture("race");
+    let repo = fx.dir.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "orkai@example.com"]);
+    git(&repo, &["config", "user.name", "orkai"]);
+    std::fs::write(repo.join("readme.txt"), "hello\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "init"]);
+
+    let (program, args) = shell();
+    let config = Config { shell: Some(program.to_string_lossy().into_owned()), shell_args: args, ..Config::default() };
+    let launcher = Launcher::new(fx.store.clone(), config, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let racer = |name: &str| NewAgent {
+        session: "default".into(),
+        name: name.into(),
+        kind: AgentKind::Terminal,
+        cwd: repo.clone(),
+        task: String::new(),
+    };
+    let size = TermSize { rows: 24, cols: 100 };
+    let first = launcher.create_in_race(racer("first"), size, false, 42).unwrap();
+    let second = launcher.create_in_race(racer("second"), size, false, 42).unwrap();
+    for record in [&first, &second] {
+        let saved = fx.store.load_agent(record.id).unwrap();
+        assert_eq!(saved.race, Some(42));
+        assert!(saved.worktree.is_some(), "every racer works in its own worktree");
+    }
+    assert_ne!(first.worktree.as_ref().unwrap().path, second.worktree.as_ref().unwrap().path);
+
+    for record in [first, second] {
+        let runtime = wait_for_runtime(&fx.store, record.id, TIMEOUT).unwrap();
+        let (conn, rx) = open(&runtime);
+        conn.send(&ClientMsg::Kill).unwrap();
+        wait_for_exit(&rx);
+        wait_until(|| fx.store.read_runtime(record.id).unwrap().is_none());
+        orkai::cli::remove(&fx.store, record.id).unwrap();
+    }
+    assert!(git(&repo, &["branch", "--list", "orkai/*"]).is_empty());
+}
+
+#[test]
 fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
     let fx = fixture("worktree");
     let repo = fx.dir.join("work");

@@ -288,7 +288,7 @@ stays on screen with `unavailable`.
 | `/where <folder>` or `ctrl+l` | picks the session folder (see [below](#choosing-the-folder-where)); clicking a project name does too |
 | `ctrl+t` | turns its own worktree on/off for the next agents (see [below](#one-worktree-per-agent-ctrlt)) |
 | `/bypass` | turns the permission bypass mode on/off for the next agents (see [below](#bypass-mode-bypass)) |
-| `/` | commands (`tab` completes the name): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/tests`, `/trust`, `/help`, `/quit`, plus the skills of the current `who` (see [below](#agent-skills-skill)) |
+| `/` | commands (`tab` completes the name): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/tests`, `/trust`, `/race`, `/compare`, `/pick`, `/help`, `/quit`, plus the skills of the current `who` (see [below](#agent-skills-skill)) |
 
 **Agents**
 
@@ -357,6 +357,20 @@ each other, and your checkout stays intact. Terminals (`!command`) keep running 
   codex); `/cross-review <agent>` picks one. It shows up in the same project group, as `review-<name>`.
 - Deleting the agent (`delete` or `ctrl+x`) also deletes the worktree and the `orkai/…` branch; the popup warns you first.
 - On the command line: `orkai new --worktree …`; `orkai rm` also deletes the worktree.
+
+## Race agents on one task (`/race`)
+
+`/race claude,codex,opencode fix the login redirect` hands the same task to 2 to 4 agents (a kind can repeat),
+each in its own worktree and branch of the `where` repository, so you keep the best result:
+
+- `/compare`, with one of them selected, shows each agent of the race with its state, its tests (see
+  [Project settings](#project-settings-orkaijson)) and the files it changed, with their `+`/`−`;
+- `/pick` merges the selected agent like `/merge` and then deletes the other agents of the race with their
+  worktrees and branches; the popup says how many go, and if the merge conflicts nothing is deleted.
+
+The agents are named after their kind and the task (`claude-fix-login`, `codex-fix-login`…), sit in the
+project's group like any other worktree agent, and the conflict radar (`⚠`) shows where they touch the same
+files.
 
 ## Project settings (`.orkai.json`)
 

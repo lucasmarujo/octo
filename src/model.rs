@@ -145,6 +145,8 @@ pub struct AgentRecord {
     pub project: Option<PathBuf>,
     #[serde(default)]
     pub parent: Option<AgentId>,
+    #[serde(default)]
+    pub race: Option<u64>,
 }
 
 impl AgentRecord {

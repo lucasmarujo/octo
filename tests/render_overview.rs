@@ -1411,6 +1411,111 @@ fn agents_started_by_another_agent_show_right_under_it() {
     assert!(!screen.contains("↳ term-3") && screen.contains("term-3"), "a parent in another group is not pointed at");
 }
 
+#[test]
+fn a_race_starts_each_agent_in_its_own_worktree() {
+    let mut scenario = scenario();
+    without_agent_programs(&mut scenario.app);
+    let notice = |scenario: &Scenario| scenario.app.notice.as_ref().unwrap().text.clone();
+    scenario.app.run_command("/race claude fix the engine");
+    assert!(notice(&scenario).starts_with("usage: /race <agent,agent…> <task>, 2 to 4 of claude|codex"));
+    scenario.app.run_command("/race claude,codex fix the engine");
+    assert!(
+        notice(&scenario).contains("is not inside a git repository; each agent of a race works in its own worktree")
+    );
+    assert_eq!(scenario.app.launching, 0);
+
+    scenario.app.where_dir = git_repo(&scenario.dir);
+    scenario.app.run_command("/race claude,codex,claude fix the engine");
+    assert_eq!(
+        notice(&scenario),
+        "racing claude-fix-engine, codex-fix-engine, claude-fix-engine-2 in their own worktrees…"
+    );
+    assert_eq!(scenario.app.launching, 3);
+    let mut errors: Vec<String> = (0..3).map(|_| launched(&scenario).unwrap_err()).collect();
+    errors.sort();
+    assert!(errors[0].contains("orkai-missing-claude") && errors[2].contains("orkai-missing-codex"), "{errors:?}");
+}
+
+fn racing(scenario: &mut Scenario, names: &[&str]) -> Vec<(AgentId, Worktree)> {
+    names
+        .iter()
+        .map(|name| {
+            let (id, worktree) = put_in_worktree(scenario, name);
+            let entry = scenario.app.agents.get_mut(&id).unwrap();
+            entry.record.race = Some(7);
+            entry.record.task = "fix the engine\nand add tests".into();
+            scenario.app.launcher.store().save_agent(&entry.record).unwrap();
+            (id, worktree)
+        })
+        .collect()
+}
+
+#[test]
+fn compare_shows_what_each_agent_of_the_race_changed() {
+    let mut scenario = scenario();
+    scenario.app.selected = Some(agent_named(&scenario.app, "term-3"));
+    scenario.app.run_command("/compare");
+    assert_eq!(scenario.app.notice.as_ref().unwrap().text, "the selected agent does not run in its own worktree");
+    let solo = put_in_worktree(&mut scenario, "folder-icon-update").0;
+    scenario.app.selected = Some(solo);
+    scenario.app.run_command("/compare");
+    assert_eq!(
+        scenario.app.notice.as_ref().unwrap().text,
+        "the selected agent is not racing others (start a race with /race)"
+    );
+
+    let racers = racing(&mut scenario, &["physics-merge", "docker-install"]);
+    std::fs::write(racers[0].1.path.join("engine.rs"), "fn step() {}\n").unwrap();
+    std::fs::write(racers[1].1.path.join("readme.txt"), "hello\nworld\n").unwrap();
+    push_test(&mut scenario.app, racers[1].0, test_run(TestState::Failed, Some(2)));
+    scenario.app.selected = Some(racers[0].0);
+    scenario.app.run_command("/compare");
+    let event = next_event(&scenario, |e| matches!(e, AppEvent::Compared { .. }));
+    scenario.app.handle(event);
+    let screen = text(&render(&mut scenario.app));
+    assert!(screen.contains("compare fix the engine"), "{screen}");
+    let (first, _) = line_with(&screen, &format!("#{} physics-merge  claude  working", racers[0].0));
+    let (second, line) = line_with(&screen, &format!("#{} docker-install  claude  working", racers[1].0));
+    assert!(line.contains("tests failed (exit 2)"), "{line}");
+    assert!(first < second, "{screen}");
+    assert!(screen.contains("engine.rs (new, 1 lines)") && screen.contains("readme.txt"), "{screen}");
+    press(&mut scenario.app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(scenario.app.diff.is_none());
+}
+
+#[test]
+fn pick_merges_the_winner_and_deletes_the_rest_of_the_race() {
+    let mut scenario = scenario();
+    let racers = racing(&mut scenario, &["physics-merge", "docker-install"]);
+    let (winner, winner_tree) = racers[0].clone();
+    let (loser, loser_tree) = racers[1].clone();
+    std::fs::write(winner_tree.path.join("engine.rs"), "fn step() {}\n").unwrap();
+    scenario.app.selected = Some(winner);
+    scenario.app.run_command("/pick");
+    assert!(scenario.app.notice.as_ref().unwrap().text.contains("wait for physics-merge to finish"));
+
+    push_state(&mut scenario.app, winner, AgentState::Done);
+    scenario.app.run_command("/pick");
+    assert!(matches!(scenario.app.prompt, Some(Prompt::Confirm(Confirm::Pick(id))) if id == winner));
+    let screen = text(&render(&mut scenario.app));
+    let popup = popup_words(&screen, "╭ pick the winner");
+    assert!(popup.contains("delete the other 1 agents of the race with their worktrees and branches?"), "{popup}");
+    press(&mut scenario.app, KeyCode::Char('y'), KeyModifiers::NONE);
+    let event = next_event(&scenario, |e| matches!(e, AppEvent::Merged { .. }));
+    scenario.app.handle(event);
+    assert_eq!(
+        scenario.app.notice.as_ref().unwrap().text,
+        format!("{} merged into main · deleting docker-install", winner_tree.branch)
+    );
+    assert_eq!(std::fs::read_to_string(winner_tree.repo.join("engine.rs")).unwrap(), "fn step() {}\n");
+    assert!(!scenario.app.agents.contains_key(&loser));
+    assert!(scenario.app.agents.contains_key(&winner));
+    let event = next_event(&scenario, |e| matches!(e, AppEvent::Discarded { .. }));
+    scenario.app.handle(event);
+    assert!(!loser_tree.path.exists());
+    assert!(git(&winner_tree.repo, &["branch", "--list", &loser_tree.branch]).is_empty());
+}
+
 fn test_run(state: TestState, code: Option<i32>) -> TestReport {
     TestReport { state, command: "cargo test".into(), started_at_ms: now_ms(), finished_at_ms: None, code }
 }

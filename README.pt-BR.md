@@ -289,7 +289,7 @@ continua na tela com `unavailable`.
 | `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja [abaixo](#escolhendo-a-pasta-where)); clicar no nome de um projeto também |
 | `ctrl+t` | liga/desliga a worktree própria para os próximos agentes (veja [abaixo](#uma-worktree-por-agente-ctrlt)) |
 | `/bypass` | liga/desliga o modo bypass de permissões para os próximos agentes (veja [abaixo](#modo-bypass-bypass)) |
-| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/tests`, `/trust`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-dos-agentes-skill)) |
+| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/tests`, `/trust`, `/race`, `/compare`, `/pick`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-dos-agentes-skill)) |
 
 **Agentes**
 
@@ -358,6 +358,20 @@ outro, e o seu checkout continua intacto. Terminais (`!comando`) continuam rodan
   codex); `/cross-review <agente>` escolhe um. Ele aparece no mesmo grupo do projeto, como `review-<nome>`.
 - Apagar o agente (`delete` ou `ctrl+x`) apaga também a worktree e a branch `orkai/…`; o popup avisa antes.
 - Na linha de comando: `orkai new --worktree …`; `orkai rm` também apaga a worktree.
+
+## Corrida de agentes numa tarefa (`/race`)
+
+`/race claude,codex,opencode corrija o redirect do login` entrega a mesma tarefa a 2 a 4 agentes (um tipo pode
+se repetir), cada um na sua worktree e branch do repositório do `where`, para você ficar com o melhor resultado:
+
+- `/compare`, com um deles selecionado, mostra cada agente da corrida com o estado, os testes (veja
+  [Configurações do projeto](#configurações-do-projeto-orkaijson)) e os arquivos que ele mudou, com os `+`/`−`;
+- `/pick` faz o merge do agente selecionado como o `/merge` e depois apaga os outros agentes da corrida com as
+  worktrees e branches deles; o popup diz quantos vão, e se o merge der conflito nada é apagado.
+
+Os agentes recebem o nome do tipo e da tarefa (`claude-corrija-redirect`, `codex-corrija-redirect`…), ficam no
+grupo do projeto como qualquer agente em worktree, e o radar de conflito (`⚠`) mostra onde eles mexem nos
+mesmos arquivos.
 
 ## Configurações do projeto (`.orkai.json`)
 

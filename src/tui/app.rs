@@ -60,6 +60,7 @@ pub enum AppEvent {
     Usage { kind: AgentKind, result: Result<Limits, Problem> },
     Changes(BTreeMap<AgentId, Changes>),
     Diff { id: AgentId, result: Result<Vec<u8>, String> },
+    Compared { id: AgentId, title: String, result: Result<Vec<u8>, String> },
     Merged { id: AgentId, result: Result<Merged, String> },
     Discarded { name: String, result: Result<(), String> },
     PwaStarted(Result<(), String>),
@@ -222,6 +223,7 @@ pub enum Confirm {
     DeleteSession(String),
     Recover(Vec<AgentId>),
     Merge(AgentId),
+    Pick(AgentId),
     Trust(Loaded),
 }
 
@@ -229,16 +231,27 @@ impl Confirm {
     pub fn is_popup(&self) -> bool {
         matches!(
             self,
-            Confirm::Kill(_) | Confirm::Remove(_) | Confirm::Delete(_) | Confirm::Merge(_) | Confirm::Trust(_)
+            Confirm::Kill(_)
+                | Confirm::Remove(_)
+                | Confirm::Delete(_)
+                | Confirm::Merge(_)
+                | Confirm::Pick(_)
+                | Confirm::Trust(_)
         )
     }
+}
+
+pub enum PaneMode {
+    Diff,
+    Tests(TestReport),
+    Compare(String),
 }
 
 pub struct DiffPane {
     pub id: AgentId,
     pub view: TermView,
     pub empty: bool,
-    pub tests: Option<TestReport>,
+    pub mode: PaneMode,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -342,6 +355,7 @@ pub struct App {
     attached_size: Option<TermSize>,
     session_dirs: BTreeMap<String, PathBuf>,
     removing: HashSet<AgentId>,
+    picking: Option<AgentId>,
     subagent_requests: Option<Sender<Vec<Parent>>>,
     change_requests: Option<Sender<Vec<(AgentId, Worktree)>>>,
     alerts: Vec<Alert>,
@@ -409,6 +423,7 @@ impl App {
             attached_size: None,
             session_dirs: ui.session_dirs,
             removing: HashSet::new(),
+            picking: None,
             subagent_requests: None,
             change_requests: None,
             alerts: Vec::new(),
@@ -820,6 +835,7 @@ impl App {
             AppEvent::Usage { kind, result } => self.on_usage(kind, result),
             AppEvent::Changes(found) => self.on_changes(found),
             AppEvent::Diff { id, result } => self.on_diff(id, result),
+            AppEvent::Compared { id, title, result } => self.on_compared(id, title, result),
             AppEvent::Merged { id, result } => self.on_merged(id, result),
             AppEvent::Discarded { name, result } => match result {
                 Ok(()) => self.set_notice(Tone::Info, format!("{name} removed with its worktree and branch")),
@@ -1407,10 +1423,18 @@ impl App {
         }
         let name = self.default_name(kind, &task);
         self.task.clear();
-        self.start_agent(kind, name, task, self.where_dir.clone(), self.worktree && kind.is_ai());
+        self.start_agent(kind, name, task, self.where_dir.clone(), self.worktree && kind.is_ai(), None);
     }
 
-    fn start_agent(&mut self, kind: AgentKind, name: String, task: String, cwd: PathBuf, isolate: bool) {
+    fn start_agent(
+        &mut self,
+        kind: AgentKind,
+        name: String,
+        task: String,
+        cwd: PathBuf,
+        isolate: bool,
+        race: Option<u64>,
+    ) {
         let draft = NewAgent { session: self.session.clone(), name: name.clone(), kind, cwd, task };
         let size = self.agent_term_size();
         let launcher = self.launcher.clone();
@@ -1421,7 +1445,11 @@ impl App {
         let mode = if bypass { " with permissions bypassed" } else { "" };
         self.set_notice(Tone::Info, format!("starting {} {name}{place}{mode}…", kind.label()));
         let _ = thread::Builder::new().name("orkai-launch".into()).spawn(move || {
-            let result = launcher.create(draft, size, isolate, bypass).map_err(|e| e.to_string());
+            let created = match race {
+                Some(race) => launcher.create_in_race(draft, size, bypass, race),
+                None => launcher.create(draft, size, isolate, bypass),
+            };
+            let result = created.map_err(|e| e.to_string());
             let _ = tx.send(AppEvent::Launched { result });
         });
     }
@@ -1481,7 +1509,7 @@ impl App {
             return self.set_notice(Tone::Error, format!("{} is not a directory", self.display(&cwd)));
         }
         let reviewer = self.default_name(kind, &format!("review {name}"));
-        self.start_agent(kind, reviewer, review_task(&worktree), cwd, false);
+        self.start_agent(kind, reviewer, review_task(&worktree), cwd, false, None);
     }
 
     fn open_tests(&mut self) {
@@ -1495,7 +1523,7 @@ impl App {
         let body = render::areas(self.screen, false, !self.tabs.is_empty(), 1).body;
         let size = TermSize::new(body.height.saturating_sub(1).max(1), body.width.max(1));
         let view = TermView::document(size, &text);
-        self.diff = Some(DiffPane { id, empty: text.is_empty(), view, tests: Some(test) });
+        self.diff = Some(DiffPane { id, empty: text.is_empty(), view, mode: PaneMode::Tests(test) });
         self.notice = None;
         self.dirty = true;
     }
@@ -1550,8 +1578,8 @@ impl App {
             Ok(text) => {
                 let body = render::areas(self.screen, false, !self.tabs.is_empty(), 1).body;
                 let size = TermSize::new(body.height.saturating_sub(1).max(1), body.width.max(1));
-                self.diff =
-                    Some(DiffPane { id, empty: text.is_empty(), view: TermView::document(size, &text), tests: None });
+                let view = TermView::document(size, &text);
+                self.diff = Some(DiffPane { id, empty: text.is_empty(), view, mode: PaneMode::Diff });
                 self.notice = None;
                 self.dirty = true;
             }
@@ -1605,6 +1633,7 @@ impl App {
     }
 
     fn on_merged(&mut self, id: AgentId, result: Result<Merged, String>) {
+        let picked = self.picking.take_if(|picking| *picking == id).is_some();
         let merged = match result {
             Ok(merged) => merged,
             Err(err) => return self.set_notice(Tone::Error, format!("merge failed: {err}")),
@@ -1624,7 +1653,111 @@ impl App {
         } else {
             format!("{branch} merged into {}", merged.target)
         };
-        self.set_notice(Tone::Success, text);
+        if !picked {
+            return self.set_notice(Tone::Success, text);
+        }
+        let losers: Vec<AgentId> = self.race_members(id).into_iter().filter(|other| *other != id).collect();
+        let names: Vec<String> =
+            losers.iter().filter_map(|other| self.agents.get(other)).map(|e| e.record.name.clone()).collect();
+        for loser in losers {
+            self.delete_agent(loser);
+        }
+        self.set_notice(Tone::Success, format!("{text} · deleting {}", names.join(", ")));
+    }
+
+    pub fn race_members(&self, id: AgentId) -> Vec<AgentId> {
+        let Some(race) = self.agents.get(&id).and_then(|e| e.record.race) else { return Vec::new() };
+        self.agents
+            .values()
+            .filter(|e| e.record.race == Some(race) && e.record.session == self.session && e.record.worktree.is_some())
+            .map(|e| e.record.id)
+            .collect()
+    }
+
+    fn race(&mut self, arg: &str) {
+        let Some((kinds, task)) = parse_race(arg) else {
+            let usage = format!("usage: /race <agent,agent…> <task>, 2 to {MAX_RACERS} of {}", ai_names());
+            return self.set_notice(Tone::Error, usage);
+        };
+        if let Err(err) = worktree::toplevel(&self.where_dir) {
+            return self.set_notice(Tone::Error, format!("{err}; each agent of a race works in its own worktree"));
+        }
+        let race = now_ms();
+        let mut chosen: Vec<String> = Vec::new();
+        for kind in kinds {
+            let text = format!("{} {task}", kind.label());
+            let name = default_agent_name(kind, &text, |n| self.name_taken(n) || chosen.iter().any(|c| c == n));
+            chosen.push(name.clone());
+            self.start_agent(kind, name, task.clone(), self.where_dir.clone(), true, Some(race));
+        }
+        self.set_notice(Tone::Info, format!("racing {} in their own worktrees…", chosen.join(", ")));
+    }
+
+    fn race_target(&mut self) -> Option<(AgentId, Vec<AgentId>)> {
+        let (id, _) = self.selected_worktree()?;
+        let members = self.race_members(id);
+        if members.len() < 2 {
+            self.set_notice(Tone::Error, "the selected agent is not racing others (start a race with /race)");
+            return None;
+        }
+        Some((id, members))
+    }
+
+    fn compare(&mut self) {
+        let Some((id, members)) = self.race_target() else { return };
+        let title = self.agents.get(&id).map(|e| first_line(&e.record.task)).unwrap_or_default();
+        let entries: Vec<(String, Worktree)> = members
+            .iter()
+            .filter_map(|member| self.agents.get(member))
+            .filter_map(|entry| Some((compare_header(entry), entry.record.worktree.clone()?)))
+            .collect();
+        let tx = self.tx.clone();
+        self.set_notice(Tone::Info, format!("comparing {} agents…", entries.len()));
+        let _ = thread::Builder::new().name("orkai-compare".into()).spawn(move || {
+            let mut out = Vec::new();
+            for (header, worktree) in entries {
+                out.extend_from_slice(header.as_bytes());
+                match worktree::summary(&worktree) {
+                    Ok(summary) if summary.is_empty() => out.extend_from_slice(b" no changes yet\n"),
+                    Ok(summary) => out.extend_from_slice(&summary),
+                    Err(err) => out.extend_from_slice(format!(" could not read the changes: {err}\n").as_bytes()),
+                }
+                out.extend_from_slice(b"\n");
+            }
+            let _ = tx.send(AppEvent::Compared { id, title, result: Ok(out) });
+        });
+    }
+
+    fn on_compared(&mut self, id: AgentId, title: String, result: Result<Vec<u8>, String>) {
+        if !self.agents.contains_key(&id) {
+            return;
+        }
+        match result {
+            Ok(text) => {
+                let body = render::areas(self.screen, false, !self.tabs.is_empty(), 1).body;
+                let size = TermSize::new(body.height.saturating_sub(1).max(1), body.width.max(1));
+                let view = TermView::document(size, &text);
+                self.diff = Some(DiffPane { id, empty: text.is_empty(), view, mode: PaneMode::Compare(title) });
+                self.notice = None;
+                self.dirty = true;
+            }
+            Err(err) => self.set_notice(Tone::Error, format!("could not compare the race: {err}")),
+        }
+    }
+
+    fn request_pick(&mut self) {
+        let Some((id, _)) = self.race_target() else { return };
+        let Some(entry) = self.agents.get(&id) else { return };
+        if matches!(entry.state(), AgentState::Working | AgentState::Paused) {
+            let name = entry.record.name.clone();
+            return self.set_notice(Tone::Error, format!("wait for {name} to finish (or stop it) before picking it"));
+        }
+        self.prompt = Some(Prompt::Confirm(Confirm::Pick(id)));
+    }
+
+    fn pick(&mut self, id: AgentId) {
+        self.picking = Some(id);
+        self.merge_agent(id);
     }
 
     fn restart_agents(&mut self, ids: Vec<AgentId>) {
@@ -2006,6 +2139,7 @@ impl App {
                     Confirm::DeleteSession(name) => self.delete_session(&name),
                     Confirm::Recover(ids) => self.restart_agents(ids),
                     Confirm::Merge(id) => self.merge_agent(id),
+                    Confirm::Pick(id) => self.pick(id),
                     Confirm::Trust(loaded) => self.trust(&loaded),
                 },
                 _ => self.set_notice(Tone::Info, "cancelled"),
@@ -2276,6 +2410,9 @@ impl App {
             "diff" => self.open_diff(),
             "cross-review" => self.cross_review(&arg),
             "tests" => self.open_tests(),
+            "race" => self.race(&arg),
+            "compare" => self.compare(),
+            "pick" => self.request_pick(),
             "trust" => self.request_trust(),
             "merge" => self.request_merge(),
             "pwa" | "phone" => match arg.as_str() {
@@ -2453,6 +2590,38 @@ pub fn children_after_parents(ids: &[AgentId], parent_of: impl Fn(AgentId) -> Op
     ordered
 }
 
+pub const MAX_RACERS: usize = 4;
+
+pub fn parse_race(arg: &str) -> Option<(Vec<AgentKind>, String)> {
+    let (list, task) = arg.trim().split_once(char::is_whitespace)?;
+    let kinds: Vec<AgentKind> =
+        list.split(',').map(|name| AgentKind::parse(name).filter(|kind| kind.is_ai())).collect::<Option<_>>()?;
+    let task = task.trim();
+    (kinds.len() >= 2 && kinds.len() <= MAX_RACERS && !task.is_empty()).then(|| (kinds, task.to_string()))
+}
+
+fn first_line(text: &str) -> String {
+    text.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or_default().to_string()
+}
+
+fn compare_header(entry: &AgentEntry) -> String {
+    let tests = match entry.status.as_ref().and_then(|s| s.test.as_deref()) {
+        Some(TestReport { state: TestState::Passed, .. }) => "  tests passed".to_string(),
+        Some(TestReport { state: TestState::Failed, code: Some(code), .. }) => format!("  tests failed (exit {code})"),
+        Some(TestReport { state: TestState::Failed, .. }) => "  tests failed".to_string(),
+        Some(TestReport { state: TestState::Running, .. }) => "  tests running".to_string(),
+        Some(TestReport { state: TestState::Untrusted, .. }) => "  tests wait for /trust".to_string(),
+        None => String::new(),
+    };
+    format!(
+        "\x1b[1m#{} {}\x1b[0m  {}  {}{tests}\n",
+        entry.record.id,
+        entry.record.name,
+        entry.kind().label(),
+        entry.state().label()
+    )
+}
+
 fn read_tail(path: &Path, max: usize) -> Vec<u8> {
     let Ok(mut file) = std::fs::File::open(path) else { return Vec::new() };
     let max = u64::try_from(max).unwrap_or(u64::MAX);
@@ -2538,6 +2707,25 @@ mod tests {
         assert_eq!(children_after_parents(&[1, 2, 4, 5, 6, 9], parent_of), [1, 4, 5, 6, 2, 9]);
         assert_eq!(children_after_parents(&[2, 8], parent_of), [2, 8], "a parent in another group is ignored");
         assert_eq!(children_after_parents(&[], parent_of), Vec::<AgentId>::new());
+    }
+
+    #[test]
+    fn a_race_names_two_to_four_ai_agents_and_a_task() {
+        use AgentKind::{Claude, Codex, Opencode};
+        assert_eq!(
+            parse_race("claude,codex fix the login bug"),
+            Some((vec![Claude, Codex], "fix the login bug".into()))
+        );
+        assert_eq!(
+            parse_race("  cc,oc,cc   refactor\n  it "),
+            Some((vec![Claude, Opencode, Claude], "refactor\n  it".into()))
+        );
+        assert_eq!(parse_race("claude fix it"), None, "one agent is not a race");
+        assert_eq!(parse_race("claude,codex,kimi,grok,qwen fix it"), None, "five is too many");
+        assert_eq!(parse_race("claude,terminal fix it"), None, "terminals do not race");
+        assert_eq!(parse_race("claude,gpt fix it"), None);
+        assert_eq!(parse_race("claude,codex"), None, "a race needs a task");
+        assert_eq!(parse_race(""), None);
     }
 
     #[test]

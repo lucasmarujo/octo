@@ -175,6 +175,7 @@ impl Store {
             bypass: false,
             project: None,
             parent: None,
+            race: None,
         };
         self.save_agent(&record)?;
         Ok(record)

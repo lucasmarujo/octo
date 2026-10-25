@@ -935,6 +935,17 @@ impl Launcher {
         let mut record = self.store.create_agent(draft)?;
         record.bypass = bypass;
         record.parent = parent;
+        self.launch_new(record, size, isolate)
+    }
+
+    pub fn create_in_race(&self, draft: NewAgent, size: TermSize, bypass: bool, race: u64) -> io::Result<AgentRecord> {
+        let mut record = self.store.create_agent(draft)?;
+        record.bypass = bypass;
+        record.race = Some(race);
+        self.launch_new(record, size, true)
+    }
+
+    fn launch_new(&self, mut record: AgentRecord, size: TermSize, isolate: bool) -> io::Result<AgentRecord> {
         if !isolate {
             record.project =
                 self.store.list_agents().ok().and_then(|records| worktree::project_of(&record.cwd, &records));
@@ -1052,6 +1063,7 @@ mod tests {
             bypass: false,
             project: None,
             parent: None,
+            race: None,
         }
     }
 

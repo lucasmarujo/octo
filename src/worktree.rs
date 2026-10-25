@@ -218,6 +218,23 @@ pub fn diff(worktree: &Worktree) -> io::Result<Vec<u8>> {
     Ok(out)
 }
 
+pub fn summary(worktree: &Worktree) -> io::Result<Vec<u8>> {
+    let output = git(&worktree.path, &["diff", "--color=always", "--stat", &worktree.base])?;
+    if !output.status.success() {
+        return Err(io::Error::other(error_line(&output.stderr)));
+    }
+    let mut out = output.stdout;
+    let new_files = untracked(&worktree.path)?;
+    for file in new_files.iter().take(MAX_UNTRACKED_FILES) {
+        let lines = count_lines(&worktree.path.join(file));
+        out.extend_from_slice(format!(" {file} (new, {lines} lines)\n").as_bytes());
+    }
+    if new_files.len() > MAX_UNTRACKED_FILES {
+        out.extend_from_slice(format!(" {} more new files\n", new_files.len() - MAX_UNTRACKED_FILES).as_bytes());
+    }
+    Ok(out)
+}
+
 pub fn merge(worktree: &Worktree, message: &str) -> io::Result<Merged> {
     if !run(&worktree.path, &["status", "--porcelain"])?.is_empty() {
         run(&worktree.path, &["add", "-A"])?;
@@ -558,6 +575,19 @@ mod tests {
     }
 
     #[test]
+    fn the_summary_lists_changed_and_new_files_without_their_content() {
+        let r = repo();
+        let (worktree, cwd) = create(&r.home, 1, "summary", &r.repo).unwrap();
+        assert!(summary(&worktree).unwrap().is_empty());
+        fs::write(cwd.join("app").join("lib.txt"), "one\nTWO\nthree\n").unwrap();
+        fs::write(cwd.join("plan.md"), "a\nb\n").unwrap();
+        let text = String::from_utf8_lossy(&summary(&worktree).unwrap()).into_owned();
+        assert!(text.contains("app/lib.txt") && text.contains("1 file changed"), "{text}");
+        assert!(text.contains(" plan.md (new, 2 lines)"), "{text}");
+        assert!(!text.contains("TWO"), "{text}");
+    }
+
+    #[test]
     fn a_renamed_file_counts_under_its_old_and_new_names() {
         let r = repo();
         let (worktree, cwd) = create(&r.home, 1, "rename", &r.repo).unwrap();
@@ -597,6 +627,7 @@ mod tests {
             bypass: false,
             project: None,
             parent: None,
+            race: None,
         };
         let web = Worktree { source: PathBuf::from("/src/web/app"), ..tree("/src/web") };
         let records = [record(1, None), record(2, Some(web))];

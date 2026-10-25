@@ -10,7 +10,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wra
 use crate::model::{AgentId, AgentKind, AgentState, TestReport, TestState};
 use crate::pwa::bridge::Phase;
 use crate::pwa::qr::Qr;
-use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, Prompt, PwaPanel, SHELL_PREFIX, Tone, View};
+use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, PaneMode, Prompt, PwaPanel, SHELL_PREFIX, Tone, View};
 use crate::tui::complete::matching_commands;
 use crate::tui::format::{duration_short, pad, pad_left, skip_columns, split_columns, truncate, truncate_start, width};
 use crate::tui::sprite;
@@ -565,7 +565,14 @@ fn draw_diff(app: &mut App, area: Rect, buf: &mut Buffer) {
     let right = area.right();
     let entry = app.agents.get(&diff.id);
     let name = entry.map(|e| e.record.name.clone()).unwrap_or_default();
-    if let Some(test) = diff.tests.as_ref() {
+    if let PaneMode::Compare(title) = &diff.mode {
+        let x = put(buf, area.x, area.y, "compare ", fg(theme::MUTED), right);
+        put(buf, x, area.y, title, fg(theme::TEXT).add_modifier(Modifier::BOLD), right);
+        let body = Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(1));
+        diff.view.render(body, buf);
+        return;
+    }
+    if let PaneMode::Tests(test) = &diff.mode {
         let mut x = put(buf, area.x, area.y, "tests ", fg(theme::MUTED), right);
         x = put(buf, x, area.y, &name, fg(theme::TEXT).add_modifier(Modifier::BOLD), right);
         x = put(buf, x + 2, area.y, &test.command, fg(theme::LINK), right);
@@ -763,6 +770,14 @@ fn prompt_prefix(app: &App) -> Option<(String, Color, String, usize)> {
     }
 }
 
+fn test_warning(entry: Option<&AgentEntry>) -> &'static str {
+    match entry.and_then(|e| e.status.as_ref()).and_then(|s| s.test.as_ref()).map(|t| t.state) {
+        Some(TestState::Failed) => " — its last test run failed",
+        Some(TestState::Running) => " — its tests are still running",
+        _ => "",
+    }
+}
+
 fn confirm_text(app: &App, confirm: &Confirm) -> String {
     let name = |id: &AgentId| app.agents.get(id).map(|e| e.record.name.clone()).unwrap_or_default();
     let text = match confirm {
@@ -777,13 +792,19 @@ fn confirm_text(app: &App, confirm: &Confirm) -> String {
             let entry = app.agents.get(id);
             let branch = entry.and_then(|e| e.record.worktree.as_ref()).map(|w| w.branch.clone()).unwrap_or_default();
             let summary = changes_summary(entry.and_then(|e| e.changes.as_ref()));
-            let tests = match entry.and_then(|e| e.status.as_ref()).and_then(|s| s.test.as_ref()).map(|t| t.state) {
-                Some(TestState::Failed) => " — its last test run failed",
-                Some(TestState::Running) => " — its tests are still running",
-                _ => "",
-            };
+            let tests = test_warning(entry);
             format!(
                 "merge {branch}{summary} into the repository's current branch? pending changes are committed on {branch} first{tests}"
+            )
+        }
+        Confirm::Pick(id) => {
+            let entry = app.agents.get(id);
+            let branch = entry.and_then(|e| e.record.worktree.as_ref()).map(|w| w.branch.clone()).unwrap_or_default();
+            let summary = changes_summary(entry.and_then(|e| e.changes.as_ref()));
+            let others = app.race_members(*id).len().saturating_sub(1);
+            let tests = test_warning(entry);
+            format!(
+                "merge {branch}{summary} into the repository's current branch and delete the other {others} agents of the race with their worktrees and branches?{tests}"
             )
         }
         Confirm::Trust(loaded) => format!(
@@ -1253,6 +1274,7 @@ fn draw_confirm(app: &App, confirm: &Confirm, screen: Rect, buf: &mut Buffer) {
         Confirm::Delete(_) => (" delete agent ", theme::RED),
         Confirm::Remove(_) => (" remove agent ", theme::RED),
         Confirm::Merge(_) => (" merge worktree ", theme::GREEN),
+        Confirm::Pick(_) => (" pick the winner ", theme::GREEN),
         Confirm::Trust(_) => (" trust project ", theme::YELLOW),
         _ => (" stop agent ", theme::YELLOW),
     };
@@ -1299,6 +1321,7 @@ const HELP: &[(&str, &str)] = &[
     ("/diff · /merge", "see or merge the selected agent's worktree"),
     ("/cross-review", "another agent reviews the selected one's worktree"),
     ("/trust · /tests", "run .orkai.json's test after each turn · see the output"),
+    ("/race · /compare · /pick", "agents race on one task · compare them · keep the best"),
     ("ctrl+p · /pwa", "your orkai on the phone, from anywhere (/pwa off turns it off)"),
     ("↑ ↓ / mouse", "select agent · click or enter opens it"),
     ("alt+1..9", "jump to an open tab"),
