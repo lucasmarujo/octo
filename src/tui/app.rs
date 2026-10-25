@@ -34,7 +34,7 @@ use crate::tui::view::TermView;
 use crate::update;
 use crate::usage::{self, Limits, Problem, Usage};
 use crate::util::now_ms;
-use crate::worktree::{self, ChangeWatcher, Changes, Merged};
+use crate::worktree::{self, ChangeWatcher, Changes, Merged, Overlap};
 
 const RESCAN_EVERY: Duration = Duration::from_secs(2);
 const START_WAIT: Duration = Duration::from_secs(15);
@@ -96,6 +96,7 @@ pub struct AgentEntry {
     pub attached: bool,
     pub subagents: Vec<Subagent>,
     pub changes: Option<Changes>,
+    pub overlaps: Vec<Overlap>,
     failed_runtime: Option<u64>,
     last_alert: Option<(AgentState, u64)>,
 }
@@ -110,6 +111,7 @@ impl AgentEntry {
             attached: false,
             subagents: Vec::new(),
             changes: None,
+            overlaps: Vec::new(),
             failed_runtime: None,
             last_alert: None,
         }
@@ -492,11 +494,48 @@ impl App {
     fn on_changes(&mut self, found: BTreeMap<AgentId, Changes>) {
         for (id, changes) in found {
             if let Some(entry) = self.agents.get_mut(&id)
-                && entry.changes != Some(changes)
+                && entry.changes.as_ref() != Some(&changes)
             {
                 entry.changes = Some(changes);
                 self.dirty = true;
             }
+        }
+        self.refresh_overlaps();
+    }
+
+    fn refresh_overlaps(&mut self) {
+        let changed: Vec<(AgentId, &Worktree, &Changes)> = self
+            .agents
+            .values()
+            .filter(|e| e.record.session == self.session)
+            .filter_map(|e| Some((e.record.id, e.record.worktree.as_ref()?, e.changes.as_ref()?)))
+            .collect();
+        let mut found = worktree::overlaps(&changed);
+        let mut fresh = None;
+        for entry in self.agents.values_mut().filter(|e| e.record.session == self.session) {
+            let overlaps = found.remove(&entry.record.id).unwrap_or_default();
+            if entry.overlaps == overlaps {
+                continue;
+            }
+            let id = entry.record.id;
+            if fresh.is_none() {
+                fresh = overlaps
+                    .iter()
+                    .find(|o| o.agent > id && !entry.overlaps.iter().any(|old| old.agent == o.agent))
+                    .map(|o| (id, o.clone()));
+            }
+            entry.overlaps = overlaps;
+            self.dirty = true;
+        }
+        if let Some((id, overlap)) = fresh {
+            let name = |id: AgentId| self.agents.get(&id).map(|e| e.record.name.clone()).unwrap_or_default();
+            let first = overlap.paths.first().cloned().unwrap_or_default();
+            let files = match overlap.paths.len() {
+                0 | 1 => first,
+                count => format!("{first} and {} more", count - 1),
+            };
+            let text = format!("{} and {} both change {files}", name(id), name(overlap.agent));
+            self.set_notice(Tone::Warn, text);
         }
     }
 
@@ -1034,6 +1073,7 @@ impl App {
         self.tabs.retain(|t| *t != id);
         self.agents.remove(&id);
         self.removing.remove(&id);
+        self.refresh_overlaps();
         self.ensure_selection();
         self.dirty = true;
     }
@@ -1483,6 +1523,7 @@ impl App {
         if let Err(err) = store.save_agent(&entry.record) {
             return self.set_notice(Tone::Error, format!("{branch} was merged, but orkai could not record it: {err}"));
         }
+        self.refresh_overlaps();
         let text = if merged.up_to_date {
             format!("{branch} had nothing new for {}", merged.target)
         } else {

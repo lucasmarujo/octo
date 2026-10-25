@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -19,17 +19,24 @@ const MAX_BRANCH_ATTEMPTS: usize = 100;
 const DEFAULT_SLUG: &str = "agent";
 const NULL_FILE: &str = "/dev/null";
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Changes {
     pub files: usize,
     pub insertions: usize,
     pub deletions: usize,
+    pub paths: BTreeSet<String>,
 }
 
 impl Changes {
     pub fn is_empty(&self) -> bool {
         self.files == 0
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Overlap {
+    pub agent: AgentId,
+    pub paths: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,19 +151,28 @@ fn count_lines(path: &Path) -> usize {
 }
 
 pub fn changes(worktree: &Worktree) -> io::Result<Changes> {
-    let numstat = run(&worktree.path, &["diff", "--numstat", &worktree.base])?;
+    let numstat = run(&worktree.path, &["diff", "--numstat", "-z", &worktree.base])?;
     let mut changes = Changes::default();
-    for line in numstat.lines() {
-        let mut parts = line.splitn(3, '\t');
-        let (Some(added), Some(removed)) = (parts.next(), parts.next()) else { continue };
+    let mut fields = numstat.split('\0');
+    while let Some(field) = fields.next() {
+        let mut parts = field.splitn(3, '\t');
+        let (Some(added), Some(removed), Some(path)) = (parts.next(), parts.next(), parts.next()) else { continue };
         changes.files += 1;
         changes.insertions += added.parse::<usize>().unwrap_or(0);
         changes.deletions += removed.parse::<usize>().unwrap_or(0);
+        if path.is_empty() {
+            for renamed in [fields.next(), fields.next()].into_iter().flatten().filter(|p| !p.is_empty()) {
+                changes.paths.insert(renamed.to_string());
+            }
+        } else {
+            changes.paths.insert(path.to_string());
+        }
     }
     let new_files = untracked(&worktree.path)?;
     changes.files += new_files.len();
     changes.insertions +=
         new_files.iter().take(MAX_UNTRACKED_FILES).map(|file| count_lines(&worktree.path.join(file))).sum::<usize>();
+    changes.paths.extend(new_files);
     Ok(changes)
 }
 
@@ -254,6 +270,30 @@ impl ChangeWatcher {
     }
 }
 
+pub fn overlaps(changed: &[(AgentId, &Worktree, &Changes)]) -> BTreeMap<AgentId, Vec<Overlap>> {
+    let mut by_repo: BTreeMap<String, Vec<(AgentId, &Changes)>> = BTreeMap::new();
+    for (id, worktree, changes) in changed {
+        by_repo.entry(normalize_for_compare(&worktree.repo)).or_default().push((*id, *changes));
+    }
+    let mut found: BTreeMap<AgentId, Vec<Overlap>> = BTreeMap::new();
+    for agents in by_repo.values() {
+        for (index, (first, first_changes)) in agents.iter().enumerate() {
+            for (second, second_changes) in &agents[index + 1..] {
+                let paths: Vec<String> = first_changes.paths.intersection(&second_changes.paths).cloned().collect();
+                if paths.is_empty() {
+                    continue;
+                }
+                found.entry(*first).or_default().push(Overlap { agent: *second, paths: paths.clone() });
+                found.entry(*second).or_default().push(Overlap { agent: *first, paths });
+            }
+        }
+    }
+    for list in found.values_mut() {
+        list.sort_by_key(|overlap| overlap.agent);
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +312,10 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.dir);
         }
+    }
+
+    fn paths(list: &[&str]) -> BTreeSet<String> {
+        list.iter().map(|path| path.to_string()).collect()
     }
 
     fn git_in(dir: &Path, args: &[&str]) -> String {
@@ -361,11 +405,12 @@ mod tests {
         fs::write(cwd.join("new.txt"), "a\nb\nc").unwrap();
         fs::create_dir_all(worktree.path.join("target")).unwrap();
         fs::write(worktree.path.join("target").join("build.log"), "ignored\n").unwrap();
-        assert_eq!(changes(&worktree).unwrap(), Changes { files: 2, insertions: 5, deletions: 1 });
+        let expected = Changes { files: 2, insertions: 5, deletions: 1, paths: paths(&["app/lib.txt", "app/new.txt"]) };
+        assert_eq!(changes(&worktree).unwrap(), expected);
 
         git_in(&cwd, &["add", "new.txt"]);
         git_in(&cwd, &["commit", "-q", "-m", "add"]);
-        assert_eq!(changes(&worktree).unwrap(), Changes { files: 2, insertions: 5, deletions: 1 });
+        assert_eq!(changes(&worktree).unwrap(), expected);
 
         let text = String::from_utf8_lossy(&diff(&worktree).unwrap()).into_owned();
         assert!(text.contains("lib.txt") && text.contains("new.txt") && text.contains("TWO"), "{text}");
@@ -461,8 +506,63 @@ mod tests {
         fs::write(cwd.join("more.txt"), "1\n2\n").unwrap();
         assert!(watcher.scan(&targets, 1_000 + CHANGES_EVERY_MS - 1).is_empty());
         let later = watcher.scan(&targets, 1_000 + CHANGES_EVERY_MS);
-        assert_eq!(later.get(&1), Some(&Changes { files: 1, insertions: 2, deletions: 0 }));
+        assert_eq!(
+            later.get(&1),
+            Some(&Changes { files: 1, insertions: 2, deletions: 0, paths: paths(&["more.txt"]) })
+        );
         assert!(watcher.scan(&[], 50_000).is_empty());
         assert!(watcher.scanned.is_empty());
+    }
+
+    #[test]
+    fn a_renamed_file_counts_under_its_old_and_new_names() {
+        let r = repo();
+        let (worktree, cwd) = create(&r.home, 1, "rename", &r.repo).unwrap();
+        git_in(&cwd, &["mv", "app/lib.txt", "app/core.txt"]);
+        fs::write(cwd.join("app").join("draft file.md"), "x\n").unwrap();
+        let found = changes(&worktree).unwrap();
+        assert_eq!(found.paths, paths(&["app/core.txt", "app/draft file.md", "app/lib.txt"]));
+    }
+
+    fn tree(repo: &str) -> Worktree {
+        Worktree {
+            repo: PathBuf::from(repo),
+            path: PathBuf::from(format!("{repo}-wt")),
+            branch: "orkai/x".into(),
+            base: "abc".into(),
+            source: PathBuf::from(repo),
+        }
+    }
+
+    fn touched(list: &[&str]) -> Changes {
+        Changes { files: list.len(), paths: paths(list), ..Changes::default() }
+    }
+
+    #[test]
+    fn agents_of_the_same_repository_that_change_the_same_files_overlap() {
+        let (web, api) = (tree("/src/web"), tree("/src/api"));
+        let (a, b, c, d, e) = (
+            touched(&["src/app.rs", "src/lib.rs", "README.md"]),
+            touched(&["src/lib.rs", "src/app.rs"]),
+            touched(&["docs/guide.md"]),
+            touched(&["src/app.rs"]),
+            touched(&["src/app.rs"]),
+        );
+        let changed = [(1, &web, &a), (2, &web, &b), (3, &web, &c), (4, &api, &d), (5, &web, &e)];
+        let found = overlaps(&changed);
+        let shared = vec!["src/app.rs".to_string(), "src/lib.rs".to_string()];
+        assert_eq!(
+            found[&1],
+            vec![Overlap { agent: 2, paths: shared.clone() }, Overlap { agent: 5, paths: vec!["src/app.rs".into()] }]
+        );
+        assert_eq!(
+            found[&2],
+            vec![Overlap { agent: 1, paths: shared }, Overlap { agent: 5, paths: vec!["src/app.rs".into()] }]
+        );
+        assert_eq!(found[&5].iter().map(|o| o.agent).collect::<Vec<_>>(), [1, 2]);
+        assert!(!found.contains_key(&3), "no shared file");
+        assert!(!found.contains_key(&4), "another repository");
+        assert!(overlaps(&[(1, &web, &a)]).is_empty());
+        assert!(overlaps(&[]).is_empty());
     }
 }

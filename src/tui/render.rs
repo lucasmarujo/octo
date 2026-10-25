@@ -15,7 +15,7 @@ use crate::tui::sprite;
 use crate::tui::theme;
 use crate::usage::{self, Limits, Problem, Usage, Window};
 use crate::util::now_ms;
-use crate::worktree::Changes;
+use crate::worktree::{Changes, Overlap};
 
 pub const SIDEBAR_WIDTH: u16 = 24;
 pub const SIDEBAR_MIN_SCREEN: u16 = 72;
@@ -48,6 +48,8 @@ pub const USAGE_WEEKLY_LABEL: &str = "week";
 pub const USAGE_MONTHLY_LABEL: &str = "month";
 const USAGE_CREDITS_LABEL: &str = "funds";
 const BRANCH_GLYPH: &str = "⎇";
+const OVERLAP_GLYPH: &str = "⚠";
+const OVERLAP_IDS_SHOWN: usize = 3;
 const DIFF_HINT: &str = "esc close · ↑↓ pgup pgdn scroll · /merge merges it";
 const BASE_SHORT: usize = 8;
 
@@ -498,7 +500,7 @@ fn activity(entry: &AgentEntry) -> (String, Color) {
     }
 }
 
-fn changes_text(changes: Option<Changes>) -> Vec<(String, Color)> {
+fn changes_text(changes: Option<&Changes>) -> Vec<(String, Color)> {
     match changes {
         None => vec![("…".to_string(), theme::FAINT)],
         Some(changes) if changes.is_empty() => vec![("clean".to_string(), theme::DIM)],
@@ -510,10 +512,27 @@ fn changes_text(changes: Option<Changes>) -> Vec<(String, Color)> {
     }
 }
 
-fn changes_summary(changes: Option<Changes>) -> String {
+fn changes_summary(changes: Option<&Changes>) -> String {
     changes
         .filter(|c| !c.is_empty())
         .map_or_else(String::new, |c| format!(" ({} files +{} −{})", c.files, c.insertions, c.deletions))
+}
+
+fn overlap_marker(overlaps: &[Overlap]) -> String {
+    let mut text = OVERLAP_GLYPH.to_string();
+    for overlap in overlaps.iter().take(OVERLAP_IDS_SHOWN) {
+        text.push_str(&format!(" #{}", overlap.agent));
+    }
+    if overlaps.len() > OVERLAP_IDS_SHOWN {
+        text.push_str(&format!(" +{}", overlaps.len() - OVERLAP_IDS_SHOWN));
+    }
+    text
+}
+
+fn overlap_detail(overlaps: &[Overlap]) -> String {
+    let shared: Vec<String> =
+        overlaps.iter().map(|overlap| format!("#{}: {}", overlap.agent, overlap.paths.join(", "))).collect();
+    format!("{OVERLAP_GLYPH} also changed by {}", shared.join(" · "))
 }
 
 fn draw_diff(app: &mut App, area: Rect, buf: &mut Buffer) {
@@ -533,8 +552,11 @@ fn draw_diff(app: &mut App, area: Rect, buf: &mut Buffer) {
         x = put(buf, x, area.y, &format!(" since {base}"), fg(theme::FAINT), right);
     }
     x = put(buf, x, area.y, "  ", Style::default(), right);
-    for (text, color) in changes_text(entry.and_then(|e| e.changes)) {
+    for (text, color) in changes_text(entry.and_then(|e| e.changes.as_ref())) {
         x = put(buf, x, area.y, &text, fg(color), right);
+    }
+    if let Some(entry) = entry.filter(|e| !e.overlaps.is_empty()) {
+        put(buf, x + 2, area.y, &overlap_detail(&entry.overlaps), fg(theme::YELLOW), right);
     }
     let body = Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(1));
     if diff.empty {
@@ -633,8 +655,11 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
                 x = put(buf, x, y, &pad(entry.kind().label(), KIND_WIDTH), fg(theme::kind_color(entry.kind())), right);
                 if entry.record.worktree.is_some() {
                     x = put(buf, x, y, &format!("{BRANCH_GLYPH} "), fg(theme::LINK), right);
-                    for (text, color) in changes_text(entry.changes) {
+                    for (text, color) in changes_text(entry.changes.as_ref()) {
                         x = put(buf, x, y, &text, fg(color), right);
+                    }
+                    if !entry.overlaps.is_empty() {
+                        x = put(buf, x, y, &format!(" {}", overlap_marker(&entry.overlaps)), fg(theme::YELLOW), right);
                     }
                     x = put(buf, x, y, "  ", Style::default(), right);
                 }
@@ -702,7 +727,7 @@ fn confirm_text(app: &App, confirm: &Confirm) -> String {
         Confirm::Merge(id) => {
             let entry = app.agents.get(id);
             let branch = entry.and_then(|e| e.record.worktree.as_ref()).map(|w| w.branch.clone()).unwrap_or_default();
-            let summary = changes_summary(entry.and_then(|e| e.changes));
+            let summary = changes_summary(entry.and_then(|e| e.changes.as_ref()));
             format!(
                 "merge {branch}{summary} into the repository's current branch? pending changes are committed on {branch} first"
             )
@@ -1285,6 +1310,16 @@ mod tests {
         assert_eq!(areas(screen, false, false, 40).bottom.height, 2 + MAX_COMPOSER_ROWS);
         assert_eq!(areas(screen, false, false, 0).bottom.height, 3);
         assert_eq!(areas(screen, true, true, 5).bottom.height, 1);
+    }
+
+    #[test]
+    fn overlaps_name_the_other_agents_and_the_files_they_share() {
+        let overlap = |agent, paths: &[&str]| Overlap { agent, paths: paths.iter().map(|p| p.to_string()).collect() };
+        let two = [overlap(3, &["src/app.rs"]), overlap(7, &["src/lib.rs", "Cargo.toml"])];
+        assert_eq!(overlap_marker(&two), "⚠ #3 #7");
+        assert_eq!(overlap_detail(&two), "⚠ also changed by #3: src/app.rs · #7: src/lib.rs, Cargo.toml");
+        let five: Vec<Overlap> = (1..=5).map(|agent| overlap(agent, &["a.rs"])).collect();
+        assert_eq!(overlap_marker(&five), "⚠ #1 #2 #3 +2");
     }
 
     #[test]

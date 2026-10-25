@@ -343,6 +343,9 @@ each other, and your checkout stays intact. Terminals (`!command`) keep running 
 - In the list, the agent stays in the project group and shows `⎇ 4 files +12 −3`: what changed since it
   started, counting commits, edits and new files (updated every 10 s). Inside the tab, the bar
   shows the branch.
+- When two agents of the session change the same file of a repository, each one shows `⚠ #<other agent>`
+  next to its changes and orkai warns you once (`docker-install and physics-merge both change src/app.rs`),
+  before the second merge turns into a conflict. `/diff` lists the files they share.
 - `/diff` shows the changes of the selected agent, including new files (`esc` closes, arrows and
   `pgup`/`pgdn` scroll).
 - `/merge` (with the agent stopped or done) commits whatever is pending on its branch and merges it into the

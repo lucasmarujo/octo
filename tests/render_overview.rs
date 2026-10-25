@@ -1070,6 +1070,9 @@ fn git(dir: &std::path::Path, args: &[&str]) -> String {
 
 fn git_repo(dir: &std::path::Path) -> PathBuf {
     let repo = dir.join("repo");
+    if repo.join(".git").exists() {
+        return repo;
+    }
     std::fs::create_dir_all(&repo).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["config", "user.email", "orkai@example.com"]);
@@ -1216,7 +1219,7 @@ fn agents_in_a_worktree_show_their_branch_and_changes_under_their_project() {
     let screen = text(&render(&mut scenario.app));
     assert!(line_with(&screen, "physics-merge").1.contains("claude   ⎇ …  Merging"), "{screen}");
 
-    let changes = Changes { files: 4, insertions: 12, deletions: 3 };
+    let changes = Changes { files: 4, insertions: 12, deletions: 3, ..Changes::default() };
     scenario.app.handle(AppEvent::Changes(BTreeMap::from([(id, changes)])));
     let buffer = render(&mut scenario.app);
     let screen = text(&buffer);
@@ -1232,6 +1235,63 @@ fn agents_in_a_worktree_show_their_branch_and_changes_under_their_project() {
     scenario.app.view = orkai::tui::app::View::Agent(id);
     let status = text(&render(&mut scenario.app)).lines().last().unwrap().to_string();
     assert!(status.contains(&format!("⎇ {}", worktree.branch)), "{status}");
+}
+
+fn touched(paths: &[&str]) -> Changes {
+    Changes {
+        files: paths.len(),
+        insertions: 1,
+        paths: paths.iter().map(|p| p.to_string()).collect(),
+        ..Changes::default()
+    }
+}
+
+#[test]
+fn agents_that_change_the_same_files_point_at_each_other_and_warn_once() {
+    let mut scenario = scenario();
+    let (physics, _) = put_in_worktree(&mut scenario, "physics-merge");
+    let (docker, _) = put_in_worktree(&mut scenario, "docker-install");
+    let (icons, _) = put_in_worktree(&mut scenario, "folder-icon-update");
+    scenario.app.handle(AppEvent::Changes(BTreeMap::from([
+        (physics, touched(&["engine.rs", "readme.txt"])),
+        (docker, touched(&["engine.rs"])),
+        (icons, touched(&["icon.png"])),
+    ])));
+    assert_eq!(scenario.app.notice.as_ref().unwrap().text, "physics-merge and docker-install both change engine.rs");
+    let buffer = render(&mut scenario.app);
+    let screen = text(&buffer);
+    let (row, line) = line_with(&screen, "physics-merge");
+    assert!(line.contains(&format!("⎇ 2 files +1 −0 ⚠ #{docker}  Merging")), "{line}");
+    assert_eq!(buffer[(column_of(line, "⚠"), u16::try_from(row).unwrap())].fg, theme::YELLOW);
+    assert!(line_with(&screen, "docker-install").1.contains(&format!("⚠ #{physics}  Installing")), "{screen}");
+    assert!(!line_with(&screen, "folder-icon-update").1.contains('⚠'), "{screen}");
+
+    scenario.app.notice = None;
+    scenario.app.handle(AppEvent::Changes(BTreeMap::from([(docker, touched(&["engine.rs", "readme.txt"]))])));
+    assert!(scenario.app.notice.is_none(), "the same pair warns only once");
+    assert_eq!(scenario.app.agents[&physics].overlaps[0].paths, ["engine.rs", "readme.txt"]);
+    scenario.app.handle(AppEvent::Changes(BTreeMap::from([(icons, touched(&["readme.txt", "icon.png"]))])));
+    assert_eq!(
+        scenario.app.notice.as_ref().unwrap().text,
+        "physics-merge and folder-icon-update both change readme.txt"
+    );
+
+    scenario.app.selected = Some(physics);
+    scenario.app.handle(AppEvent::Diff {
+        id: physics,
+        result: Ok(b"diff --git a/engine.rs b/engine.rs
+"
+        .to_vec()),
+    });
+    let screen = text(&render(&mut scenario.app));
+    let expected = format!("⚠ also changed by #{icons}: readme.txt · #{docker}: engine.rs");
+    assert!(screen.lines().any(|l| l.contains("diff physics-merge") && l.contains(&expected)), "{screen}");
+    scenario.app.diff = None;
+
+    scenario.app.handle(AppEvent::Changes(BTreeMap::from([(docker, Changes::default()), (icons, Changes::default())])));
+    let screen = text(&render(&mut scenario.app));
+    assert!(!screen.contains('⚠'), "{screen}");
+    assert!(scenario.app.agents.values().all(|e| e.overlaps.is_empty()));
 }
 
 #[test]
@@ -1280,7 +1340,7 @@ fn merge_asks_first_waits_for_the_agent_and_brings_the_work_home() {
 
     push_state(&mut scenario.app, id, AgentState::Done);
     std::fs::write(worktree.path.join("engine.rs"), "fn step() {}\n").unwrap();
-    let pending = Changes { files: 1, insertions: 1, deletions: 0 };
+    let pending = Changes { files: 1, insertions: 1, deletions: 0, ..Changes::default() };
     scenario.app.handle(AppEvent::Changes(BTreeMap::from([(id, pending)])));
     scenario.app.run_command("/merge");
     assert!(matches!(scenario.app.prompt, Some(Prompt::Confirm(Confirm::Merge(target))) if target == id));

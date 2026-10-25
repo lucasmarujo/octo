@@ -344,6 +344,9 @@ outro, e o seu checkout continua intacto. Terminais (`!comando`) continuam rodan
 - Na lista, o agente continua no grupo do projeto e mostra `⎇ 4 files +12 −3`: o que mudou desde que ele
   começou, contando commits, edições e arquivos novos (atualizado a cada 10 s). Dentro da aba, a barra
   mostra a branch.
+- Quando dois agentes da sessão mudam o mesmo arquivo de um repositório, cada um mostra `⚠ #<outro agente>`
+  ao lado das mudanças e o orkai avisa uma vez (`docker-install and physics-merge both change src/app.rs`),
+  antes que o segundo merge vire um conflito. `/diff` lista os arquivos que eles compartilham.
 - `/diff` mostra as mudanças do agente selecionado, incluindo arquivos novos (`esc` fecha, setas e
   `pgup`/`pgdn` rolam).
 - `/merge` (com o agente parado ou terminado) commita o que estiver pendente na branch dele e faz o merge na
