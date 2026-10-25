@@ -289,7 +289,7 @@ continua na tela com `unavailable`.
 | `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja [abaixo](#escolhendo-a-pasta-where)); clicar no nome de um projeto também |
 | `ctrl+t` | liga/desliga a worktree própria para os próximos agentes (veja [abaixo](#uma-worktree-por-agente-ctrlt)) |
 | `/bypass` | liga/desliga o modo bypass de permissões para os próximos agentes (veja [abaixo](#modo-bypass-bypass)) |
-| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-dos-agentes-skill)) |
+| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-dos-agentes-skill)) |
 
 **Agentes**
 
@@ -352,6 +352,10 @@ outro, e o seu checkout continua intacto. Terminais (`!comando`) continuam rodan
 - `/merge` (com o agente parado ou terminado) commita o que estiver pendente na branch dele e faz o merge na
   branch atual do repositório. Se houver conflito, o merge é desfeito, o repositório fica como estava e o
   orkai diz o comando para resolver na mão. Depois do merge, a contagem recomeça do zero.
+- `/cross-review` abre outro agente na worktree do agente selecionado para revisar o trabalho dele: ele recebe a
+  branch e o commit de comparação, lista bugs, riscos e testes faltando, e é instruído a não mudar nenhum arquivo.
+  Por padrão é um agente instalado diferente do que fez o trabalho (o codex revisa o claude, o claude revisa o
+  codex); `/cross-review <agente>` escolhe um. Ele aparece no mesmo grupo do projeto, como `review-<nome>`.
 - Apagar o agente (`delete` ou `ctrl+x`) apaga também a worktree e a branch `orkai/…`; o popup avisa antes.
 - Na linha de comando: `orkai new --worktree …`; `orkai rm` também apaga a worktree.
 

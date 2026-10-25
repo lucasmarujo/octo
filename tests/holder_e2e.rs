@@ -609,6 +609,24 @@ fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
     wait_for_text(&rx, &mut screen, "orkai/branch-check");
     assert_eq!(git(&repo, &["branch", "--show-current"]), "main");
 
+    let inside = NewAgent {
+        session: "default".into(),
+        name: "Inside".into(),
+        kind: AgentKind::Terminal,
+        cwd: record.cwd.clone(),
+        task: String::new(),
+    };
+    let guest = launcher.create(inside, TermSize { rows: 24, cols: 100 }, false, false).unwrap();
+    assert_eq!(guest.worktree, None);
+    assert_eq!(guest.project, Some(repo.join("app")), "an agent inside the worktree belongs to its project");
+    assert_eq!(fx.store.load_agent(guest.id).unwrap().project_dir(), repo.join("app"));
+    let guest_runtime = wait_for_runtime(&fx.store, guest.id, TIMEOUT).unwrap();
+    let (guest_conn, guest_rx) = open(&guest_runtime);
+    guest_conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&guest_rx);
+    wait_until(|| fx.store.read_runtime(guest.id).unwrap().is_none());
+    orkai::cli::remove(&fx.store, guest.id).unwrap();
+
     conn.send(&ClientMsg::Kill).unwrap();
     wait_for_exit(&rx);
     wait_until(|| fx.store.read_runtime(record.id).unwrap().is_none());

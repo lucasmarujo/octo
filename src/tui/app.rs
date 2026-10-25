@@ -1385,15 +1385,17 @@ impl App {
             return;
         }
         let name = self.default_name(kind, &task);
-        let draft =
-            NewAgent { session: self.session.clone(), name: name.clone(), kind, cwd: self.where_dir.clone(), task };
+        self.task.clear();
+        self.start_agent(kind, name, task, self.where_dir.clone(), self.worktree && kind.is_ai());
+    }
+
+    fn start_agent(&mut self, kind: AgentKind, name: String, task: String, cwd: PathBuf, isolate: bool) {
+        let draft = NewAgent { session: self.session.clone(), name: name.clone(), kind, cwd, task };
         let size = self.agent_term_size();
         let launcher = self.launcher.clone();
         let tx = self.tx.clone();
-        let isolate = self.worktree && kind.is_ai();
         let bypass = self.bypass && kind.is_ai();
         self.launching += 1;
-        self.task.clear();
         let place = if isolate { " in a new worktree" } else { "" };
         let mode = if bypass { " with permissions bypassed" } else { "" };
         self.set_notice(Tone::Info, format!("starting {} {name}{place}{mode}…", kind.label()));
@@ -1436,6 +1438,29 @@ impl App {
                 None
             }
         }
+    }
+
+    fn cross_review(&mut self, who: &str) {
+        let Some((id, worktree)) = self.selected_worktree() else { return };
+        let Some(entry) = self.agents.get(&id) else { return };
+        let (reviewed, name, cwd) = (entry.kind(), entry.record.name.clone(), entry.record.cwd.clone());
+        let kind = if who.is_empty() {
+            let installed = self.installed_kinds();
+            match reviewer_for(reviewed, &installed) {
+                Some(kind) => kind,
+                None => return self.set_notice(Tone::Error, "install an AI agent to review the work"),
+            }
+        } else {
+            match AgentKind::parse(who).filter(|kind| kind.is_ai()) {
+                Some(kind) => kind,
+                None => return self.set_notice(Tone::Error, format!("usage: /cross-review [{}]", ai_names())),
+            }
+        };
+        if !cwd.is_dir() {
+            return self.set_notice(Tone::Error, format!("{} is not a directory", self.display(&cwd)));
+        }
+        let reviewer = self.default_name(kind, &format!("review {name}"));
+        self.start_agent(kind, reviewer, review_task(&worktree), cwd, false);
     }
 
     fn open_diff(&mut self) {
@@ -2178,6 +2203,7 @@ impl App {
                 _ => self.set_notice(Tone::Error, "usage: /bypass [on|off]"),
             },
             "diff" => self.open_diff(),
+            "cross-review" => self.cross_review(&arg),
             "merge" => self.request_merge(),
             "pwa" | "phone" => match arg.as_str() {
                 "off" if self.pwa.enabled => self.disable_pwa(),
@@ -2335,6 +2361,25 @@ fn edit_line(input: &mut LineInput, key: &KeyEvent, ctrl: bool) {
     }
 }
 
+pub fn reviewer_for(reviewed: AgentKind, installed: &[AgentKind]) -> Option<AgentKind> {
+    let ai = || installed.iter().copied().filter(|kind| kind.is_ai());
+    ai().find(|kind| *kind != reviewed).or_else(|| ai().find(|kind| *kind == reviewed))
+}
+
+pub fn review_task(worktree: &Worktree) -> String {
+    format!(
+        "Review the work on branch {branch} since commit {base}: `git diff {base}` and `git status` show every \
+         change, including files that are not committed yet. List bugs, risks and missing tests, most severe \
+         first, each with its file and line. Do not change any file.",
+        branch = worktree.branch,
+        base = worktree.base
+    )
+}
+
+fn ai_names() -> String {
+    AgentKind::ALL.iter().filter(|kind| kind.is_ai()).map(|kind| kind.label()).collect::<Vec<_>>().join("|")
+}
+
 pub fn merge_message(record: &AgentRecord) -> String {
     let subject: String = record
         .task
@@ -2381,6 +2426,33 @@ mod tests {
         assert_eq!(merge_message(&record), "fix-login: Fix the login redirect loop");
         record.task = "x".repeat(200);
         assert_eq!(merge_message(&record).chars().count(), "fix-login: ".len() + MERGE_SUBJECT_MAX);
+    }
+
+    #[test]
+    fn another_vendor_reviews_the_work_when_one_is_installed() {
+        use AgentKind::{Claude, Codex, Kimi, Opencode, Terminal};
+        assert_eq!(reviewer_for(Claude, &[Claude, Codex, Opencode, Terminal]), Some(Codex));
+        assert_eq!(reviewer_for(Codex, &[Claude, Codex, Terminal]), Some(Claude));
+        assert_eq!(reviewer_for(Kimi, &[Kimi, Opencode]), Some(Opencode));
+        assert_eq!(reviewer_for(Claude, &[Claude, Terminal]), Some(Claude), "the same agent beats no review");
+        assert_eq!(reviewer_for(Terminal, &[Codex, Terminal]), Some(Codex));
+        assert_eq!(reviewer_for(Claude, &[Terminal]), None);
+    }
+
+    #[test]
+    fn the_review_task_points_at_the_branch_and_forbids_edits() {
+        let worktree = Worktree {
+            repo: PathBuf::from("/repo"),
+            path: PathBuf::from("/orkai/worktrees/3"),
+            branch: "orkai/physics-merge".into(),
+            base: "0123abcd".into(),
+            source: PathBuf::from("/repo"),
+        };
+        let task = review_task(&worktree);
+        assert!(task.starts_with("Review the work on branch orkai/physics-merge since commit 0123abcd: "), "{task}");
+        assert!(task.contains("`git diff 0123abcd` and `git status` show every change, including"), "{task}");
+        assert!(task.ends_with("Do not change any file."), "{task}");
+        assert!(!task.contains('\n') && !task.contains("  "), "{task}");
     }
 
     #[test]

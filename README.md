@@ -288,7 +288,7 @@ stays on screen with `unavailable`.
 | `/where <folder>` or `ctrl+l` | picks the session folder (see [below](#choosing-the-folder-where)); clicking a project name does too |
 | `ctrl+t` | turns its own worktree on/off for the next agents (see [below](#one-worktree-per-agent-ctrlt)) |
 | `/bypass` | turns the permission bypass mode on/off for the next agents (see [below](#bypass-mode-bypass)) |
-| `/` | commands (`tab` completes the name): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/help`, `/quit`, plus the skills of the current `who` (see [below](#agent-skills-skill)) |
+| `/` | commands (`tab` completes the name): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/help`, `/quit`, plus the skills of the current `who` (see [below](#agent-skills-skill)) |
 
 **Agents**
 
@@ -351,6 +351,10 @@ each other, and your checkout stays intact. Terminals (`!command`) keep running 
 - `/merge` (with the agent stopped or done) commits whatever is pending on its branch and merges it into the
   current branch of the repository. If there is a conflict, the merge is undone, the repository stays as it was and
   orkai tells you the command to resolve it by hand. After the merge, the count starts over from zero.
+- `/cross-review` starts another agent in the selected agent's worktree to review its work: it gets the branch
+  and the commit to compare against, lists bugs, risks and missing tests, and is told not to change any file. By
+  default it is an installed agent other than the one that did the work (codex reviews claude, claude reviews
+  codex); `/cross-review <agent>` picks one. It shows up in the same project group, as `review-<name>`.
 - Deleting the agent (`delete` or `ctrl+x`) also deletes the worktree and the `orkai/…` branch; the popup warns you first.
 - On the command line: `orkai new --worktree …`; `orkai rm` also deletes the worktree.
 

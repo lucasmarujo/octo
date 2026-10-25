@@ -1365,6 +1365,35 @@ fn merge_asks_first_waits_for_the_agent_and_brings_the_work_home() {
 }
 
 #[test]
+fn cross_review_starts_another_agent_inside_the_selected_worktree() {
+    let mut scenario = scenario();
+    without_agent_programs(&mut scenario.app);
+    let notice = |scenario: &Scenario| scenario.app.notice.as_ref().unwrap().text.clone();
+    scenario.app.run_command("/cross-review");
+    assert_eq!(notice(&scenario), "the selected agent does not run in its own worktree");
+
+    let (id, _) = put_in_worktree(&mut scenario, "physics-merge");
+    scenario.app.selected = Some(id);
+    scenario.app.run_command("/cross-review");
+    assert_eq!(notice(&scenario), "install an AI agent to review the work");
+    scenario.app.run_command("/cross-review terminal");
+    assert_eq!(notice(&scenario), "usage: /cross-review [claude|codex|kilo|opencode|agy|grok|qwen|kimi]");
+    assert_eq!(scenario.app.launching, 0);
+
+    type_text(&mut scenario.app, "/cross-review codex");
+    press(&mut scenario.app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(notice(&scenario), "starting codex review-physics-merge…");
+    assert!(scenario.app.task.is_empty());
+    assert!(launched(&scenario).unwrap_err().contains("orkai-missing-codex"));
+
+    let records = scenario.app.launcher.store().list_agents().unwrap();
+    assert!(!records.iter().any(|r| r.name == "review-physics-merge"), "a failed launch leaves no agent behind");
+    scenario.app.show_help = true;
+    let help = text(&render(&mut scenario.app));
+    assert!(help.contains("another agent reviews the selected one's worktree"), "{help}");
+}
+
+#[test]
 fn deleting_an_agent_in_a_worktree_deletes_its_worktree_and_branch() {
     let mut scenario = scenario();
     let (id, worktree) = put_in_worktree(&mut scenario, "folder-icon-update");

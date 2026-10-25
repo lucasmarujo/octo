@@ -6,7 +6,7 @@ use std::process::{Command, Output, Stdio};
 
 use crate::fsutil;
 use crate::launch;
-use crate::model::{AgentId, Worktree};
+use crate::model::{AgentId, AgentRecord, Worktree};
 use crate::paths::{Home, create_private_dir, normalize_for_compare};
 
 pub const BRANCH_PREFIX: &str = "orkai/";
@@ -268,6 +268,18 @@ impl ChangeWatcher {
         }
         found
     }
+}
+
+pub fn project_of(cwd: &Path, records: &[AgentRecord]) -> Option<PathBuf> {
+    let cwd = normalize_for_compare(cwd);
+    records
+        .iter()
+        .filter_map(|record| record.worktree.as_ref())
+        .find(|worktree| {
+            let root = normalize_for_compare(&worktree.path);
+            cwd == root || cwd.starts_with(&format!("{root}/"))
+        })
+        .map(|worktree| worktree.source.clone())
 }
 
 pub fn overlaps(changed: &[(AgentId, &Worktree, &Changes)]) -> BTreeMap<AgentId, Vec<Overlap>> {
@@ -536,6 +548,32 @@ mod tests {
 
     fn touched(list: &[&str]) -> Changes {
         Changes { files: list.len(), paths: paths(list), ..Changes::default() }
+    }
+
+    #[test]
+    fn a_folder_inside_an_agents_worktree_belongs_to_that_agents_project() {
+        let record = |id: AgentId, worktree: Option<Worktree>| AgentRecord {
+            id,
+            session: "s".into(),
+            name: format!("agent-{id}"),
+            kind: crate::model::AgentKind::Claude,
+            cwd: PathBuf::from("/elsewhere"),
+            task: String::new(),
+            created_at_ms: 1,
+            conversation_id: None,
+            launches: 0,
+            worktree,
+            bypass: false,
+            project: None,
+        };
+        let web = Worktree { source: PathBuf::from("/src/web/app"), ..tree("/src/web") };
+        let records = [record(1, None), record(2, Some(web))];
+        let expected = Some(PathBuf::from("/src/web/app"));
+        assert_eq!(project_of(Path::new("/src/web-wt"), &records), expected);
+        assert_eq!(project_of(Path::new("/src/web-wt/app/deep"), &records), expected);
+        assert_eq!(project_of(Path::new("/src/web-wt-2"), &records), None, "a sibling folder is not inside");
+        assert_eq!(project_of(Path::new("/src/web"), &records), None);
+        assert_eq!(project_of(Path::new("/elsewhere"), &records), None);
     }
 
     #[test]

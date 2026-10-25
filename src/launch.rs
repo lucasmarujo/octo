@@ -917,6 +917,10 @@ impl Launcher {
     pub fn create(&self, draft: NewAgent, size: TermSize, isolate: bool, bypass: bool) -> io::Result<AgentRecord> {
         let mut record = self.store.create_agent(draft)?;
         record.bypass = bypass;
+        if !isolate {
+            record.project =
+                self.store.list_agents().ok().and_then(|records| worktree::project_of(&record.cwd, &records));
+        }
         let started =
             self.isolate(&mut record, isolate).and_then(|()| self.start(&mut record, LaunchMode::Fresh, size));
         if let Err(err) = started {
@@ -1028,6 +1032,7 @@ mod tests {
             launches: 0,
             worktree: None,
             bypass: false,
+            project: None,
         }
     }
 

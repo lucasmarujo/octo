@@ -1237,6 +1237,7 @@ const HELP: &[(&str, &str)] = &[
     ("ctrl+t /worktree", "new agents in their own git worktree and branch"),
     ("/bypass", "new agents skip every permission prompt"),
     ("/diff · /merge", "see or merge the selected agent's worktree"),
+    ("/cross-review", "another agent reviews the selected one's worktree"),
     ("ctrl+p · /pwa", "your orkai on the phone, from anywhere (/pwa off turns it off)"),
     ("↑ ↓ / mouse", "select agent · click or enter opens it"),
     ("alt+1..9", "jump to an open tab"),

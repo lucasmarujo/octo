@@ -141,11 +141,17 @@ pub struct AgentRecord {
     pub worktree: Option<Worktree>,
     #[serde(default)]
     pub bypass: bool,
+    #[serde(default)]
+    pub project: Option<PathBuf>,
 }
 
 impl AgentRecord {
     pub fn project_dir(&self) -> &Path {
-        self.worktree.as_ref().map_or(&self.cwd, |worktree| &worktree.source)
+        self.worktree
+            .as_ref()
+            .map(|worktree| worktree.source.as_path())
+            .or(self.project.as_deref())
+            .unwrap_or(&self.cwd)
     }
 }
 
@@ -421,6 +427,20 @@ mod tests {
             base: "abc".into(),
             source: PathBuf::from("/repo/app"),
         });
+        assert_eq!(record.project_dir(), Path::new("/repo/app"));
+        let saved = serde_json::to_string(&record).unwrap();
+        assert_eq!(serde_json::from_str::<AgentRecord>(&saved).unwrap(), record);
+    }
+
+    #[test]
+    fn agents_working_inside_another_agents_worktree_belong_to_its_project() {
+        let mut record: AgentRecord = serde_json::from_str(
+            r#"{"id":2,"session":"s","name":"review","kind":"codex","cwd":"/orkai/worktrees/1/app","created_at_ms":1}"#,
+        )
+        .unwrap();
+        assert_eq!(record.project, None);
+        assert_eq!(record.project_dir(), Path::new("/orkai/worktrees/1/app"));
+        record.project = Some(PathBuf::from("/repo/app"));
         assert_eq!(record.project_dir(), Path::new("/repo/app"));
         let saved = serde_json::to_string(&record).unwrap();
         assert_eq!(serde_json::from_str::<AgentRecord>(&saved).unwrap(), record);

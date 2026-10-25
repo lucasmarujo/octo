@@ -25,6 +25,7 @@ pub const COMMANDS: &[&str] = &[
     "/bypass [on|off]",
     "/diff",
     "/merge",
+    "/cross-review [agent]",
     "/pwa [off|new]",
     "/help",
     "/quit",
@@ -206,6 +207,7 @@ mod tests {
         assert_eq!(complete_command("/qu", &[]).as_deref(), Some("/quit"));
         assert_eq!(complete_command("/wh", &[]), None);
         assert_eq!(complete_command("/ren", &[]).as_deref(), Some("/rename"));
+        assert_eq!(complete_command("/cro", &[]).as_deref(), Some("/cross-review "));
         assert_eq!(complete_command("/rev", &["/review".into()]).as_deref(), Some("/review "));
         let family = ["/maestri".to_string(), "/maestri-chat".to_string(), "/maestri-manager".to_string()];
         assert_eq!(complete_command("/mae", &family).as_deref(), Some("/maestri"));
