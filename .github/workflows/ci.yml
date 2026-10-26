@@ -32,10 +32,33 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: cargo test --test installer_e2e -- --ignored
 
+  version:
+    name: check the version
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      publish: ${{ steps.release.outputs.publish }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check whether this version is already released
+        id: release
+        run: |
+          tag="v$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "$tag is already released; raise the version in Cargo.toml to publish a new one"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: build ${{ matrix.target }}
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: test
+    if: needs.version.outputs.publish == 'true'
+    needs: [test, version]
     strategy:
       fail-fast: true
       matrix:
@@ -162,16 +185,17 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: publish latest
-    needs: build
+    name: publish ${{ needs.version.outputs.tag }}
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     concurrency:
-      group: publish-latest
+      group: publish-version
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - name: Check that this commit is still the head of main
@@ -214,33 +238,18 @@ jobs:
           (dist / "manifest.json").write_text(json.dumps(manifest, indent=2))
           print(json.dumps(manifest, indent=2))
           EOF
-      - name: Publish release
-        if: steps.head.outputs.publish == 'true'
-        run: |
-          subject=$(git log -1 --format=%s "$GITHUB_SHA")
-          gh release delete latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
-          gh release create latest dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "orkai latest (${GITHUB_SHA::7})" \
-            --notes "Continuous build of main at $GITHUB_SHA: $subject
-
-          On Windows, run orkai-setup.exe. Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy" \
-            --latest=false
       - name: Publish the version
         if: steps.head.outputs.publish == 'true'
         run: |
-          tag="v$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "$tag is already published; its files never change"
-            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --latest
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "$TAG is already released; its files never change"
             exit 0
           fi
-          gh release create "$tag" dist/* \
+          gh release create "$TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "orkai $tag" \
-            --notes "orkai $tag, built from $GITHUB_SHA. Its files never change, so winget and the releases/latest/download/orkai-setup.exe link always get the same installer; the continuous build of main is the release tagged latest.
+            --title "orkai $TAG" \
+            --notes "orkai $TAG, built from $GITHUB_SHA. Its files never change, so winget and the releases/latest/download links always get the same files, and older versions of orkai update themselves to it.
 
           On Windows, run orkai-setup.exe. Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy" \
             --latest

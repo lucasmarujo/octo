@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/lucasmarujo/orkai-cli/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lucasmarujo/orkai-cli/ci.yml?branch=main&style=flat-square&label=CI"></a>
-  <a href="https://github.com/lucasmarujo/orkai-cli/releases/tag/latest"><img alt="Download" src="https://img.shields.io/badge/download-latest-fe5d87?style=flat-square"></a>
+  <a href="https://github.com/lucasmarujo/orkai-cli/releases/latest"><img alt="Download" src="https://img.shields.io/badge/download-latest-fe5d87?style=flat-square"></a>
   <img alt="Windows · Linux · macOS" src="https://img.shields.io/badge/Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-1f1d29?style=flat-square">
   <img alt="Claude Code · Codex · +6 agentes" src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20%2B6%20agentes-1f1d29?style=flat-square">
   <img alt="Rust 1.88+" src="https://img.shields.io/badge/Rust-1.88%2B-1f1d29?style=flat-square&logo=rust">
@@ -103,7 +103,7 @@ https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
 ## Instalação
 
 No Windows, rode o instalador pelo PowerShell. No Linux e no macOS, baixe o binário da sua plataforma na
-release [`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest), renomeie para
+[release mais nova](https://github.com/lucasmarujo/orkai-cli/releases/latest), renomeie para
 `orkai` e coloque numa pasta do `PATH`:
 
 | Plataforma | Arquivo |
@@ -118,7 +118,7 @@ release [`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest)
 ```sh
 target=orkai-x86_64-unknown-linux-musl
 mkdir -p ~/.local/bin
-curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/orkai-cli/releases/download/latest/$target"
+curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/orkai-cli/releases/latest/download/$target"
 chmod +x ~/.local/bin/orkai
 ```
 
@@ -572,10 +572,10 @@ Nenhum servidor seu ou do orkai fica no meio.
 
 ## Atualização automática
 
-Cada push no `main` passa pelos testes nos três sistemas e vira uma nova build na release
-`latest`. A primeira build de cada versão nova (a `version` do `Cargo.toml`) vira também a release
-`v<versão>`, cujos arquivos nunca mudam, com um `manifest.json` contendo a versão, o commit e o SHA-256 de cada
-binário.
+Cada push no `main` passa pelos testes nos três sistemas e não publica nada. Quando um push sobe a
+`version` do `Cargo.toml`, o CI também gera o orkai para todas as plataformas e publica a release
+`v<versão>`, cujos arquivos nunca mudam, com o instalador e um `manifest.json` contendo a versão, o commit e o
+SHA-256 de cada binário.
 
 Toda vez que você abre `orkai`, ele consulta o manifesto da versão mais nova (timeout curto; sem internet,
 abre direto). Se essa versão for mais nova que a sua, ele baixa o binário da sua plataforma, confere
@@ -764,8 +764,9 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-O CI roda os três em Windows, Linux e macOS a cada push no `main` e em cada pull request; cada push no
-`main` que passa vira a release [`latest`](https://github.com/lucasmarujo/orkai-cli/releases/tag/latest).
+O CI roda os três em Windows, Linux e macOS a cada push no `main` e em cada pull request. Um push no
+`main` que sobe a `version` do `Cargo.toml` e passa vira a release
+[`v<versão>`](https://github.com/lucasmarujo/orkai-cli/releases/latest); os outros pushes não publicam nada.
 O instalador do Windows sai de [`installer/orkai.iss`](installer/orkai.iss) (veja
 [`installer/README.md`](installer/README.md)).
 
@@ -777,5 +778,5 @@ O instalador do Windows sai de [`installer/orkai.iss`](installer/orkai.iss) (vej
 
 <p align="center">
   <img src="docs/banner.png" alt="orkai" width="120"><br>
-  <sub><a href="https://github.com/lucasmarujo/orkai-cli/issues">Reportar um problema</a> · <a href="https://github.com/lucasmarujo/orkai-cli/releases/tag/latest">Baixar a última build</a></sub>
+  <sub><a href="https://github.com/lucasmarujo/orkai-cli/issues">Reportar um problema</a> · <a href="https://github.com/lucasmarujo/orkai-cli/releases/latest">Baixar a última versão</a></sub>
 </p>

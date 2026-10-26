@@ -33,19 +33,22 @@ Windows e `PATH`), por isso ficam fora do `cargo test`; o CI roda no runner Wind
 
 ## winget
 
+O CI só publica quando a versão sobe. Em cada push no `main`, o job `version` lê a `version` do `Cargo.toml` e
+procura a release `v<versão>`: se ela já existe, o push só roda os testes; se não existe, os jobs `build` e
+`publish` geram os binários e o instalador e criam a release, marcada como Latest no GitHub, e nunca mais mexem
+nos arquivos dela. Não há mais build contínua (a tag `latest` saiu em 26/10/2026). Os links do README, do site e
+do `llms.txt` usam `releases/latest/download/<arquivo>`, que o GitHub redireciona para a Latest, e a atualização
+automática lê `releases/latest/download/manifest.json` e só instala quando a versão de lá é maior que a que está
+rodando. Assim cada versão é o mesmo arquivo em todas as máquinas: a reputação no SmartScreen se acumula num hash
+só, e o Defender vê um binário por versão em vez de um exe novo, sem assinatura, a cada push (em outubro de 2026
+ele marcou um desses exes novos como `Trojan:Script/Wacatac.F!ml`). Para uma mudança chegar a quem usa o orkai,
+suba a `version` do `Cargo.toml`.
+
+Cópias do orkai de antes de 26/10/2026 que não abriram enquanto a tag `latest` existia ainda procuram por ela e
+não se atualizam mais sozinhas; rodar o `orkai-setup.exe` uma vez resolve.
+
 O pacote `LucasMarujo.orkai` do [winget-pkgs](https://github.com/microsoft/winget-pkgs) aponta para o
-`orkai-setup.exe` de uma release versionada (`v0.1.0`, …) e não da `latest`: o winget confere o SHA-256 do
-instalador, e a `latest` muda a cada push. O job `publish` cria a release `v<versão do Cargo.toml>` na primeira
-build de cada versão e nunca mais mexe nos arquivos dela. Ela é a release marcada como Latest no GitHub, e a
-build contínua (tag `latest`) não: por isso os links do `orkai-setup.exe` no README, no site e no `llms.txt`
-usam `releases/latest/download/orkai-setup.exe`, que o GitHub redireciona para a Latest. O instalador só muda
-quando a versão sobe, e a reputação dele no SmartScreen se acumula num hash só. A atualização automática segue
-o mesmo caminho: lê `releases/latest/download/manifest.json` e só instala quando a versão de lá é maior que a
-que está rodando, para que o Defender veja um binário por versão e não um exe novo, sem assinatura, a cada push
-(em outubro de 2026 ele marcou um desses exes novos como `Trojan:Script/Wacatac.F!ml`). Por isso uma mudança só
-chega a quem já tem o orkai quando a `version` do `Cargo.toml` sobe. Os binários
-de Linux e macOS dos comandos de instalação continuam em `releases/download/latest/`, a tag da build contínua,
-que também segue sendo publicada a cada push para as cópias antigas do orkai, que ainda se atualizam por ela.
+`orkai-setup.exe` de uma release versionada (`v0.1.0`, …), porque o winget confere o SHA-256 do instalador.
 Instalado pelo winget, o SmartScreen não pergunta nada, porque o winget marca como confiável o instalador da
 fonte oficial cujo hash bate com o manifesto; dali em diante o próprio orkai se atualiza a cada versão nova.
 
@@ -68,7 +71,8 @@ wingetcreate update LucasMarujo.orkai --version <versão> --submit `
 Com a variável `SIGNPATH_ORGANIZATION_ID` definida no repositório, o job `build` do Windows manda dois pedidos
 à SignPath: primeiro o `orkai.exe` (que vai dentro do instalador e é o binário da atualização automática),
 depois o `orkai-setup.exe` gerado com ele. Cada pedido espera até 1 hora pela aprovação manual, que a SignPath
-Foundation exige em toda release; se ninguém aprovar, o job falha e a release `latest` continua a anterior.
+Foundation exige em toda release; se ninguém aprovar, o job falha, a versão não sai e o próximo push no `main`
+tenta de novo.
 Depois da assinatura o CI confere as duas assinaturas com `Get-AuthenticodeSignature`. Sem a variável, a
 release sai sem assinatura e o CI deixa um aviso.
 

@@ -157,7 +157,7 @@ test('JSON-LD descreve o software e o vídeo com arquivos que existem', () => {
   const page = byType('WebPage');
   assert.equal(software.name, 'orkai');
   ['Windows', 'Linux', 'macOS'].forEach((os) => assert.ok(software.operatingSystem.includes(os), os));
-  assert.equal(software.downloadUrl, 'https://github.com/lucasmarujo/orkai-cli/releases/tag/latest');
+  assert.equal(software.downloadUrl, 'https://github.com/lucasmarujo/orkai-cli/releases/latest');
   assert.ok(existsSync(localPath(software.screenshot)), software.screenshot);
   assert.ok(existsSync(localPath(video.contentUrl)), video.contentUrl);
   assert.ok(existsSync(localPath(video.thumbnailUrl)), video.thumbnailUrl);
@@ -289,6 +289,12 @@ test('o instalador do Windows sai da versão mais nova, que nunca muda, e não d
     const links = [...source.matchAll(/https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/[^\s"()]*orkai-setup\.exe/g)].map((m) => m[0]);
     assert.ok(links.length > 0, `${name} sem link do instalador`);
     assert.deepEqual([...new Set(links)], [versioned], name);
+  }
+});
+
+test('nenhum link aponta para a build contínua, que não existe mais', () => {
+  for (const [name, source] of [['README.md', readme], ['README.pt-BR.md', readmePtBr], ['index.html', html], ['llms.txt', read('llms.txt')]]) {
+    assert.doesNotMatch(source, /releases\/(?:tag|download)\/latest/, name);
   }
 });
 
