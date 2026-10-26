@@ -39,11 +39,15 @@ instalador, e a `latest` muda a cada push. O job `publish` cria a release `v<ver
 build de cada versão e nunca mais mexe nos arquivos dela. Ela é a release marcada como Latest no GitHub, e a
 build contínua (tag `latest`) não: por isso os links do `orkai-setup.exe` no README, no site e no `llms.txt`
 usam `releases/latest/download/orkai-setup.exe`, que o GitHub redireciona para a Latest. O instalador só muda
-quando a versão sobe, e a reputação dele no SmartScreen se acumula num hash só. A atualização automática e os
-binários de Linux e macOS continuam em `releases/download/latest/`, a tag da build contínua; não troque um pelo
-outro. Instalado pelo winget, o SmartScreen não pergunta nada, porque o
-winget marca como confiável o instalador da fonte oficial cujo hash bate com o manifesto; dali em diante o
-próprio orkai se atualiza pela `latest`.
+quando a versão sobe, e a reputação dele no SmartScreen se acumula num hash só. A atualização automática segue
+o mesmo caminho: lê `releases/latest/download/manifest.json` e só instala quando a versão de lá é maior que a
+que está rodando, para que o Defender veja um binário por versão e não um exe novo, sem assinatura, a cada push
+(em outubro de 2026 ele marcou um desses exes novos como `Trojan:Script/Wacatac.F!ml`). Por isso uma mudança só
+chega a quem já tem o orkai quando a `version` do `Cargo.toml` sobe. Os binários
+de Linux e macOS dos comandos de instalação continuam em `releases/download/latest/`, a tag da build contínua,
+que também segue sendo publicada a cada push para as cópias antigas do orkai, que ainda se atualizam por ela.
+Instalado pelo winget, o SmartScreen não pergunta nada, porque o winget marca como confiável o instalador da
+fonte oficial cujo hash bate com o manifesto; dali em diante o próprio orkai se atualiza a cada versão nova.
 
 O winget roda o instalador com `/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`, sem escolher tasks, e reconhece
 o orkai instalado pelo nome, publisher e versão da entrada de desinstalação.

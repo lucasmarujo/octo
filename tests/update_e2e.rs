@@ -10,6 +10,8 @@ use orkai::util::now_ms;
 const TARGET: &str = "test-target";
 const OLD_COMMIT: &str = "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const NEW_COMMIT: &str = "2222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const OLD_VERSION: &str = "0.1.0";
+const NEW_VERSION: &str = "0.2.0";
 const NEW_BINARY: &[u8] = b"brand new orkai binary";
 
 struct Server {
@@ -65,7 +67,7 @@ fn manifest(binary: &[u8]) -> Manifest {
             size: u64::try_from(binary.len()).unwrap(),
         },
     );
-    Manifest { commit: NEW_COMMIT.into(), version: "0.1.0".into(), built_at: "now".into(), assets }
+    Manifest { commit: NEW_COMMIT.into(), version: NEW_VERSION.into(), built_at: "now".into(), assets }
 }
 
 fn release(manifest: &Manifest, served_binary: &[u8]) -> Server {
@@ -105,7 +107,7 @@ fn outdated_build_downloads_verifies_and_replaces_itself() {
     let source = Source::at(&server.base_url);
     let fetched = source.manifest().unwrap();
     assert_eq!(fetched.commit, NEW_COMMIT);
-    let outcome = apply(&source, &fetched, &install.exe, Some(OLD_COMMIT), TARGET).unwrap();
+    let outcome = apply(&source, &fetched, &install.exe, Some(OLD_COMMIT), OLD_VERSION, TARGET).unwrap();
     assert_eq!(outcome, Outcome::Updated { to: NEW_COMMIT.into() });
     assert_eq!(std::fs::read(&install.exe).unwrap(), NEW_BINARY);
     assert_eq!(dir_entries(&install), 1);
@@ -118,7 +120,19 @@ fn current_build_downloads_nothing() {
     let server = release(&manifest(NEW_BINARY), NEW_BINARY);
     let source = Source::at(&server.base_url);
     let fetched = source.manifest().unwrap();
-    let outcome = apply(&source, &fetched, &install.exe, Some(NEW_COMMIT), TARGET).unwrap();
+    let outcome = apply(&source, &fetched, &install.exe, Some(NEW_COMMIT), NEW_VERSION, TARGET).unwrap();
+    assert_eq!(outcome, Outcome::UpToDate);
+    assert_eq!(std::fs::read(&install.exe).unwrap(), b"old orkai binary");
+    assert_eq!(*server.requests.lock().unwrap(), vec![MANIFEST_NAME.to_string()]);
+}
+
+#[test]
+fn newer_push_of_the_released_version_downloads_nothing() {
+    let install = installed("same-version");
+    let server = release(&manifest(NEW_BINARY), NEW_BINARY);
+    let source = Source::at(&server.base_url);
+    let fetched = source.manifest().unwrap();
+    let outcome = apply(&source, &fetched, &install.exe, Some(OLD_COMMIT), NEW_VERSION, TARGET).unwrap();
     assert_eq!(outcome, Outcome::UpToDate);
     assert_eq!(std::fs::read(&install.exe).unwrap(), b"old orkai binary");
     assert_eq!(*server.requests.lock().unwrap(), vec![MANIFEST_NAME.to_string()]);
@@ -131,7 +145,7 @@ fn tampered_binary_is_rejected_and_nothing_changes() {
     let server = release(&manifest(NEW_BINARY), tampered);
     let source = Source::at(&server.base_url);
     let fetched = source.manifest().unwrap();
-    let err = apply(&source, &fetched, &install.exe, Some(OLD_COMMIT), TARGET).unwrap_err();
+    let err = apply(&source, &fetched, &install.exe, Some(OLD_COMMIT), OLD_VERSION, TARGET).unwrap_err();
     assert!(err.to_string().contains("checksum"), "{err}");
     assert_eq!(std::fs::read(&install.exe).unwrap(), b"old orkai binary");
     assert_eq!(dir_entries(&install), 1);
@@ -143,7 +157,7 @@ fn truncated_binary_is_rejected() {
     let server = release(&manifest(NEW_BINARY), &NEW_BINARY[..5]);
     let source = Source::at(&server.base_url);
     let fetched = source.manifest().unwrap();
-    let err = apply(&source, &fetched, &install.exe, Some(OLD_COMMIT), TARGET).unwrap_err();
+    let err = apply(&source, &fetched, &install.exe, Some(OLD_COMMIT), OLD_VERSION, TARGET).unwrap_err();
     assert!(err.to_string().contains("expected"), "{err}");
     assert_eq!(std::fs::read(&install.exe).unwrap(), b"old orkai binary");
 }
@@ -154,7 +168,7 @@ fn platform_without_binary_is_reported() {
     let server = release(&manifest(NEW_BINARY), NEW_BINARY);
     let source = Source::at(&server.base_url);
     let fetched = source.manifest().unwrap();
-    let outcome = apply(&source, &fetched, &install.exe, Some(OLD_COMMIT), "other-target").unwrap();
+    let outcome = apply(&source, &fetched, &install.exe, Some(OLD_COMMIT), OLD_VERSION, "other-target").unwrap();
     assert_eq!(outcome, Outcome::NoAsset);
 }
 

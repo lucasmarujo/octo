@@ -141,8 +141,8 @@ The installer isn't code signed yet (see [Code signing policy](#code-signing-pol
 PowerShell, it runs without a SmartScreen prompt. If you download
 [`orkai-setup.exe`](https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe) with a
 browser instead, SmartScreen may show "Windows protected your PC": click **More info** › **Run anyway**. Both
-links get the installer of the newest version, whose file never changes; orkai then updates itself to the
-latest build ([auto-update](#auto-update)).
+links get the installer of the newest version, whose file never changes; orkai then updates itself whenever
+a new version comes out ([auto-update](#auto-update)).
 
 For an unattended install, pass `/VERYSILENT` to the installer (`/MERGETASKS=!addtopath` leaves the `PATH`
 alone). The release also carries `orkai-x86_64-pc-windows-msvc`, the bare binary that
@@ -571,12 +571,18 @@ No server of yours or of orkai sits in the middle.
 ## Auto-update
 
 Every push to `main` goes through the tests on the three systems and becomes a new build in the
-`latest` release, with a `manifest.json` holding the commit and the SHA-256 of each binary.
+`latest` release. The first build of each new version (the `version` in `Cargo.toml`) also becomes the
+`v<version>` release, whose files never change, with a `manifest.json` holding the version, the commit and
+the SHA-256 of each binary.
 
-Every time you open `orkai`, it checks that manifest (short timeout; without internet,
-it opens right away). If there is a newer build, it downloads the binary for your platform, checks
+Every time you open `orkai`, it checks the manifest of the newest version (short timeout; without internet,
+it opens right away). If that version is newer than yours, it downloads the binary for your platform, checks
 size and SHA-256, replaces its own executable and opens already updated. Running
 agents aren't affected, because they run from their own copies of the binary.
+
+orkai updates from one version to the next, not on every push: each version is the same file on every
+machine, so Windows Defender and SmartScreen judge one binary per version instead of a new unsigned one
+every few hours.
 
 - `orkai update` updates right away (it also turns a local build into an official build);
 - `orkai --version` shows the version and the commit (`dev` for local builds, which don't
@@ -738,8 +744,8 @@ and every signing request is approved by hand.
 **Privacy.** orkai has no telemetry and sends nothing about you or your projects. It only uses the network
 for:
 
-- updates: each time it opens, it reads the `manifest.json` of this repository's `latest` release on GitHub
-  and downloads the new build when there is one (`ORKAI_NO_UPDATE=1` turns it off, see
+- updates: each time it opens, it reads the `manifest.json` of this repository's newest version release on
+  GitHub and downloads the new version when there is one (`ORKAI_NO_UPDATE=1` turns it off, see
   [Auto-update](#auto-update));
 - plan usage: each agent's login token goes only to the service that issued it (see Security, above);
 - the orkai PWA, only after you turn it on: the Cloudflare quick tunnel, with `cloudflared` downloaded from

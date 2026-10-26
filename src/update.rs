@@ -11,9 +11,10 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::hooks::parse_version;
 use crate::util::to_hex;
 
-pub const DEFAULT_BASE_URL: &str = "https://github.com/lucasmarujo/orkai-cli/releases/download/latest";
+pub const DEFAULT_BASE_URL: &str = "https://github.com/lucasmarujo/orkai-cli/releases/latest/download";
 pub const BASE_URL_ENV: &str = "ORKAI_UPDATE_URL";
 pub const DISABLE_ENV: &str = "ORKAI_NO_UPDATE";
 pub const UPDATED_ENV: &str = "ORKAI_UPDATED";
@@ -110,8 +111,10 @@ impl Manifest {
     }
 }
 
-pub fn plan(manifest: &Manifest, current: Option<&str>, target: &str) -> Plan {
-    if current.is_some_and(|commit| commit.eq_ignore_ascii_case(&manifest.commit)) {
+pub fn plan(manifest: &Manifest, current: Option<&str>, version: &str, target: &str) -> Plan {
+    let newer =
+        parse_version(&manifest.version).zip(parse_version(version)).is_some_and(|(latest, running)| latest > running);
+    if current.is_some() && !newer {
         return Plan::UpToDate;
     }
     match manifest.assets.get(target) {
@@ -229,9 +232,10 @@ pub fn apply(
     manifest: &Manifest,
     exe: &Path,
     current: Option<&str>,
+    version: &str,
     target: &str,
 ) -> io::Result<Outcome> {
-    match plan(manifest, current, target) {
+    match plan(manifest, current, version, target) {
         Plan::UpToDate => Ok(Outcome::UpToDate),
         Plan::NoAsset => Ok(Outcome::NoAsset),
         Plan::Install { to, asset } => {
@@ -299,9 +303,10 @@ pub fn on_launch(args: &[OsString]) -> Option<ExitCode> {
     }
     let (current, target) = (BUILD_COMMIT?, current_target()?);
     let (source, manifest) = manifest_with_notice(Source::from_env())?;
-    let Plan::Install { to, .. } = plan(&manifest, Some(current), target) else { return None };
+    let version = env!("CARGO_PKG_VERSION");
+    let Plan::Install { to, .. } = plan(&manifest, Some(current), version, target) else { return None };
     eprint!("orkai: updating {} → {}… ", short_commit(current), short_commit(&to));
-    match apply(&source, &manifest, &exe, Some(current), target) {
+    match apply(&source, &manifest, &exe, Some(current), version, target) {
         Ok(Outcome::Updated { to }) => {
             eprintln!("done");
             Some(relaunch(&exe, args, &to))
@@ -325,7 +330,7 @@ pub fn update_now() -> io::Result<()> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no prebuilt orkai exists for this platform"))?;
     let source = Source::from_env();
     let manifest = source.manifest()?;
-    match apply(&source, &manifest, &exe, BUILD_COMMIT, target)? {
+    match apply(&source, &manifest, &exe, BUILD_COMMIT, env!("CARGO_PKG_VERSION"), target)? {
         Outcome::UpToDate => println!("orkai {} is up to date", VERSION.as_str()),
         Outcome::Updated { to } => println!("orkai updated to {} ({})", manifest.version, short_commit(&to)),
         Outcome::NoAsset => {
@@ -351,7 +356,7 @@ mod tests {
             target.to_string(),
             Asset { name: format!("orkai-{target}"), sha256: sha256_hex(b"new binary"), size: 10 },
         );
-        Manifest { commit: COMMIT_B.into(), version: "0.1.0".into(), built_at: String::new(), assets }
+        Manifest { commit: COMMIT_B.into(), version: "0.2.0".into(), built_at: String::new(), assets }
     }
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {
@@ -367,13 +372,25 @@ mod tests {
     }
 
     #[test]
-    fn plan_compares_commits_and_targets() {
-        let m = manifest("x86_64-pc-windows-msvc");
-        assert_eq!(plan(&m, Some(COMMIT_B), "x86_64-pc-windows-msvc"), Plan::UpToDate);
-        assert_eq!(plan(&m, Some(&COMMIT_B.to_uppercase()), "x86_64-pc-windows-msvc"), Plan::UpToDate);
-        assert!(matches!(plan(&m, Some(COMMIT_A), "x86_64-pc-windows-msvc"), Plan::Install { .. }));
-        assert!(matches!(plan(&m, None, "x86_64-pc-windows-msvc"), Plan::Install { .. }));
-        assert_eq!(plan(&m, Some(COMMIT_A), "riscv64-unknown-linux-gnu"), Plan::NoAsset);
+    fn plan_installs_only_a_newer_version_for_the_target() {
+        let win = "x86_64-pc-windows-msvc";
+        let m = manifest(win);
+        assert!(matches!(plan(&m, Some(COMMIT_A), "0.1.0", win), Plan::Install { .. }));
+        assert!(matches!(plan(&m, Some(COMMIT_A), "0.1.9", win), Plan::Install { .. }));
+        assert_eq!(plan(&m, Some(COMMIT_B), "0.2.0", win), Plan::UpToDate);
+        assert_eq!(plan(&m, Some(COMMIT_A), "0.2.0", win), Plan::UpToDate, "a newer push of the same version stays");
+        assert_eq!(plan(&m, Some(COMMIT_A), "0.10.0", win), Plan::UpToDate, "an older version never replaces it");
+        assert!(matches!(plan(&m, None, "0.2.0", win), Plan::Install { .. }), "a local build becomes the release");
+        assert_eq!(plan(&m, Some(COMMIT_A), "0.1.0", "riscv64-unknown-linux-gnu"), Plan::NoAsset);
+        let mut unknown = manifest(win);
+        unknown.version = "next".into();
+        assert_eq!(plan(&unknown, Some(COMMIT_A), "0.1.0", win), Plan::UpToDate);
+        assert_eq!(plan(&m, Some(COMMIT_A), "0.2.0-rc.1", win), Plan::UpToDate);
+    }
+
+    #[test]
+    fn updates_follow_the_newest_version_and_not_every_push() {
+        assert!(DEFAULT_BASE_URL.ends_with("/releases/latest/download"), "{DEFAULT_BASE_URL}");
     }
 
     #[test]

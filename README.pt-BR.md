@@ -142,7 +142,7 @@ PowerShell, ele roda sem o aviso do SmartScreen. Se você baixar o
 [`orkai-setup.exe`](https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe) pelo
 navegador, o SmartScreen pode mostrar "O Windows protegeu o computador": clique em **Mais informações** ›
 **Executar assim mesmo**. Os dois links baixam o instalador da versão mais nova, cujo arquivo nunca muda; depois
-o orkai se atualiza sozinho para a última build ([atualização automática](#atualização-automática)).
+o orkai se atualiza sozinho a cada versão nova ([atualização automática](#atualização-automática)).
 
 Para instalar sem perguntas, passe `/VERYSILENT` ao instalador (`/MERGETASKS=!addtopath` não mexe no
 `PATH`). A release também traz o `orkai-x86_64-pc-windows-msvc`, o binário puro que a
@@ -573,12 +573,18 @@ Nenhum servidor seu ou do orkai fica no meio.
 ## Atualização automática
 
 Cada push no `main` passa pelos testes nos três sistemas e vira uma nova build na release
-`latest`, com um `manifest.json` contendo o commit e o SHA-256 de cada binário.
+`latest`. A primeira build de cada versão nova (a `version` do `Cargo.toml`) vira também a release
+`v<versão>`, cujos arquivos nunca mudam, com um `manifest.json` contendo a versão, o commit e o SHA-256 de cada
+binário.
 
-Toda vez que você abre `orkai`, ele consulta esse manifesto (timeout curto; sem internet,
-abre direto). Se houver uma build mais nova, ele baixa o binário da sua plataforma, confere
+Toda vez que você abre `orkai`, ele consulta o manifesto da versão mais nova (timeout curto; sem internet,
+abre direto). Se essa versão for mais nova que a sua, ele baixa o binário da sua plataforma, confere
 tamanho e SHA-256, substitui o próprio executável e abre já atualizado. Os agentes em
 execução não são afetados, porque rodam de cópias próprias do binário.
+
+O orkai se atualiza de uma versão para a próxima, não a cada push: cada versão é o mesmo arquivo em todas as
+máquinas, então o Windows Defender e o SmartScreen avaliam um binário por versão em vez de um novo, sem
+assinatura, a cada poucas horas.
 
 - `orkai update` atualiza na hora (também converte uma build local em build oficial);
 - `orkai --version` mostra a versão e o commit (`dev` para builds locais, que não se
@@ -740,8 +746,8 @@ as builds deste repositório são assinadas, e cada pedido de assinatura é apro
 **Privacidade.** O orkai não tem telemetria e não envia nada sobre você ou seus projetos. Ele só usa a rede
 para:
 
-- atualizações: cada vez que abre, lê o `manifest.json` da release `latest` deste repositório no GitHub e
-  baixa a build nova quando existe (`ORKAI_NO_UPDATE=1` desliga, veja
+- atualizações: cada vez que abre, lê o `manifest.json` da release da versão mais nova deste repositório no
+  GitHub e baixa a versão nova quando existe (`ORKAI_NO_UPDATE=1` desliga, veja
   [Atualização automática](#atualização-automática));
 - consumo dos planos: o token de login de cada agente vai só para o serviço que o emitiu (veja Segurança,
   acima);
