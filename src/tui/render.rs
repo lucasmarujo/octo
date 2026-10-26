@@ -642,8 +642,9 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
     let selected_line =
         app.selected.and_then(|sel| lines.iter().position(|l| matches!(l, ListLine::Agent(id) if *id == sel)));
     if let Some(index) = selected_line {
-        if index < app.list_offset {
-            app.list_offset = index.saturating_sub(1);
+        let above = if height > 1 { index.saturating_sub(1) } else { index };
+        if above < app.list_offset {
+            app.list_offset = above;
         } else if index >= app.list_offset + height {
             app.list_offset = index + 1 - height;
         }

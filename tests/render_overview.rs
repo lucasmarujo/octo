@@ -254,6 +254,53 @@ fn agents_are_grouped_by_project_in_creation_order() {
     assert_eq!(labels, vec!["acme/web", "acme/mobile", "studio/game", "studio/assets", "lab/infra", "orkai/cli"]);
 }
 
+fn wheel(app: &mut App, kind: MouseEventKind) {
+    let event = MouseEvent { kind, column: 40, row: 20, modifiers: KeyModifiers::NONE };
+    app.handle(AppEvent::Input(Event::Mouse(event)));
+}
+
+#[test]
+fn scrolling_back_to_the_top_shows_the_first_project_above_its_agents() {
+    for together in 1..=3 {
+        for height in 15..=24 {
+            let mut scenario = scenario();
+            let first = scenario.app.groups()[0].cwd.clone();
+            for name in ["simulator-builds", "physics-merge"].into_iter().take(together - 1) {
+                let id = agent_named(&scenario.app, name);
+                scenario.app.agents.get_mut(&id).unwrap().record.cwd = first.clone();
+            }
+            let count = scenario.app.ordered_ids().len();
+            for _ in 0..count {
+                wheel(&mut scenario.app, MouseEventKind::ScrollDown);
+                render_at(&mut scenario.app, WIDTH, height);
+            }
+            let mut screen = String::new();
+            for _ in 0..count {
+                wheel(&mut scenario.app, MouseEventKind::ScrollUp);
+                screen = render_at(&mut scenario.app, WIDTH, height);
+            }
+            let (row, _) = line_with(&screen, "checkout-redesign");
+            let above = screen.lines().nth(row - 1).unwrap();
+            assert!(above.contains("acme/web ›"), "{together} agents, height {height}:\n{screen}");
+        }
+    }
+}
+
+#[test]
+fn a_one_line_list_keeps_the_selected_agent_in_view_while_scrolling_up() {
+    let mut scenario = scenario();
+    let count = scenario.app.ordered_ids().len();
+    for _ in 0..count {
+        wheel(&mut scenario.app, MouseEventKind::ScrollDown);
+        render_at(&mut scenario.app, WIDTH, 14);
+    }
+    for _ in 0..count {
+        wheel(&mut scenario.app, MouseEventKind::ScrollUp);
+        let screen = render_at(&mut scenario.app, WIDTH, 14);
+        assert!(screen.contains('▸'), "{screen}");
+    }
+}
+
 #[test]
 fn help_overlay_and_small_screens_render() {
     let mut scenario = scenario();
