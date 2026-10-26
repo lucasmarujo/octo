@@ -897,6 +897,14 @@
     connect();
   }
 
+  function onVisible() {
+    if (!document.hidden && state.view === 'agent' && state.wanted) {
+      state.wanted = phoneSize();
+      send({ type: 'size', rows: state.wanted.rows, cols: state.wanted.cols });
+    }
+    reconnectNow();
+  }
+
   function onResize() {
     if (state.view !== 'agent') return;
     const size = phoneSize();
@@ -960,7 +968,7 @@
       clearTimeout(state.resizeTimer);
       state.resizeTimer = setTimeout(onResize, 150);
     });
-    document.addEventListener('visibilitychange', reconnectNow);
+    document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('online', reconnectNow);
     setInterval(() => {
       state.frame += 1;

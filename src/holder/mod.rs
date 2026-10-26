@@ -45,18 +45,21 @@ struct Watch {
 struct ClientSlot {
     id: u64,
     tx: SyncSender<Frame>,
-    attached: bool,
+    attached: Option<TermSize>,
+    used_at: u64,
 }
 
 #[derive(Default)]
 struct Clients {
     slots: Vec<ClientSlot>,
+    sized_by: Option<u64>,
+    uses: u64,
 }
 
 impl Clients {
     fn broadcast(&mut self, frame: &Frame, attached_only: bool) {
         self.slots.retain(|slot| {
-            if attached_only && !slot.attached {
+            if attached_only && slot.attached.is_none() {
                 return true;
             }
             match slot.tx.try_send(Arc::clone(frame)) {
@@ -74,18 +77,51 @@ impl Clients {
         }
     }
 
-    fn set_attached(&mut self, id: u64, attached: bool) {
+    fn attach(&mut self, id: u64, size: TermSize) {
         if let Some(slot) = self.slots.iter_mut().find(|s| s.id == id) {
-            slot.attached = attached;
+            slot.attached = Some(size);
         }
+        self.claim(id);
     }
 
-    fn remove(&mut self, id: u64) {
+    fn claim(&mut self, id: u64) -> Option<TermSize> {
+        let slot = self.slots.iter_mut().find(|s| s.id == id)?;
+        let size = slot.attached?;
+        self.uses += 1;
+        slot.used_at = self.uses;
+        self.sized_by = Some(id);
+        Some(size)
+    }
+
+    fn resize(&mut self, id: u64, size: TermSize) -> Option<TermSize> {
+        let slot = self.slots.iter_mut().find(|s| s.id == id && s.attached.is_some())?;
+        slot.attached = Some(size);
+        (self.sized_by == Some(id)).then_some(size)
+    }
+
+    fn detach(&mut self, id: u64) -> Option<TermSize> {
+        if let Some(slot) = self.slots.iter_mut().find(|s| s.id == id) {
+            slot.attached = None;
+        }
+        self.hand_over(id)
+    }
+
+    fn remove(&mut self, id: u64) -> Option<TermSize> {
         self.slots.retain(|s| s.id != id);
+        self.hand_over(id)
+    }
+
+    fn hand_over(&mut self, gone: u64) -> Option<TermSize> {
+        if self.sized_by != Some(gone) {
+            return None;
+        }
+        let next = self.slots.iter().filter(|s| s.attached.is_some()).max_by_key(|s| s.used_at);
+        self.sized_by = next.map(|s| s.id);
+        next.and_then(|s| s.attached)
     }
 
     fn viewers(&self) -> u16 {
-        u16::try_from(self.slots.iter().filter(|s| s.attached).count()).unwrap_or(u16::MAX)
+        u16::try_from(self.slots.iter().filter(|s| s.attached.is_some()).count()).unwrap_or(u16::MAX)
     }
 }
 
@@ -125,9 +161,9 @@ impl Shared {
         }
     }
 
-    fn resize(&self, term: &mut TermState, size: TermSize) {
+    fn resize(&self, term: &mut TermState, size: TermSize) -> bool {
         if term.size() == size {
-            return;
+            return false;
         }
         term.resize(size);
         let pty_size = PtySize { rows: size.rows, cols: size.cols, pixel_width: 0, pixel_height: 0 };
@@ -136,6 +172,16 @@ impl Shared {
         }
         if let Some(log) = lock(&self.log).as_mut() {
             let _ = log.resize(size);
+        }
+        true
+    }
+
+    fn fit(&self, pick: impl FnOnce(&mut Clients) -> Option<TermSize>) {
+        let mut term = lock(&self.term);
+        let Some(size) = pick(&mut lock(&self.clients)) else { return };
+        if self.resize(&mut term, size) {
+            let frame = Arc::new(HolderMsg::Snapshot(Snapshot { size: term.size(), data: term.snapshot() }).to_frame());
+            lock(&self.clients).broadcast(&frame, true);
         }
     }
 
@@ -160,13 +206,17 @@ impl Shared {
 
     fn attach(&self, client: u64, size: TermSize) {
         let mut term = lock(&self.term);
-        self.resize(&mut term, size);
+        let resized = self.resize(&mut term, size);
         let data = term.snapshot();
         let seen_changed = term.mark_seen();
         let frame = Arc::new(HolderMsg::Snapshot(Snapshot { size: term.size(), data }).to_frame());
         let mut clients = lock(&self.clients);
-        clients.send_to(client, frame);
-        clients.set_attached(client, true);
+        clients.attach(client, size);
+        if resized {
+            clients.broadcast(&frame, true);
+        } else {
+            clients.send_to(client, frame);
+        }
         drop(clients);
         drop(term);
         if seen_changed {
@@ -183,15 +233,13 @@ impl Shared {
         match msg {
             ClientMsg::Hello(_) => {}
             ClientMsg::Attach(size) => self.attach(client, TermSize::new(size.rows, size.cols)),
-            ClientMsg::Detach => lock(&self.clients).set_attached(client, false),
+            ClientMsg::Detach => self.fit(|clients| clients.detach(client)),
             ClientMsg::Input(bytes) => {
+                self.fit(|clients| clients.claim(client));
                 lock(&self.term).note_input(&bytes);
                 self.write_pty(&bytes);
             }
-            ClientMsg::Resize(size) => {
-                let mut term = lock(&self.term);
-                self.resize(&mut term, TermSize::new(size.rows, size.cols));
-            }
+            ClientMsg::Resize(size) => self.fit(|clients| clients.resize(client, TermSize::new(size.rows, size.cols))),
             ClientMsg::Kill => {
                 if let Err(err) = lock(&self.killer).kill() {
                     self.diag(&format!("kill failed: {err}"));
@@ -470,7 +518,7 @@ fn serve_client(shared: &Arc<Shared>, mut stream: TcpStream) -> io::Result<()> {
     });
     let _ = tx.try_send(Arc::new(welcome.to_frame()));
     let _ = tx.try_send(Arc::new(HolderMsg::Status(shared.status()).to_frame()));
-    lock(&shared.clients).slots.push(ClientSlot { id, tx, attached: false });
+    lock(&shared.clients).slots.push(ClientSlot { id, tx, attached: None, used_at: 0 });
 
     let result = loop {
         match ClientMsg::read(&mut stream) {
@@ -478,11 +526,77 @@ fn serve_client(shared: &Arc<Shared>, mut stream: TcpStream) -> io::Result<()> {
             Err(err) => break err,
         }
     };
-    lock(&shared.clients).remove(id);
+    shared.fit(|clients| clients.remove(id));
     let _ = stream.shutdown(Shutdown::Both);
     if result.kind() == io::ErrorKind::UnexpectedEof || result.kind() == io::ErrorKind::ConnectionReset {
         Ok(())
     } else {
         Err(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DESK: TermSize = TermSize { rows: 40, cols: 120 };
+    const PHONE: TermSize = TermSize { rows: 30, cols: 50 };
+
+    fn clients(ids: &[u64]) -> (Clients, Vec<mpsc::Receiver<Frame>>) {
+        let mut clients = Clients::default();
+        let mut receivers = Vec::new();
+        for id in ids {
+            let (tx, rx) = mpsc::sync_channel(CLIENT_QUEUE);
+            clients.slots.push(ClientSlot { id: *id, tx, attached: None, used_at: 0 });
+            receivers.push(rx);
+        }
+        (clients, receivers)
+    }
+
+    #[test]
+    fn the_client_that_attached_or_typed_last_sizes_the_agent() {
+        let (mut clients, _receivers) = clients(&[1, 2]);
+        clients.attach(1, DESK);
+        clients.attach(2, PHONE);
+        assert_eq!(clients.sized_by, Some(2));
+        assert_eq!(clients.claim(1), Some(DESK));
+        assert_eq!(clients.claim(2), Some(PHONE));
+        assert_eq!(clients.viewers(), 2);
+    }
+
+    #[test]
+    fn only_the_client_that_sizes_the_agent_resizes_it() {
+        let (mut clients, _receivers) = clients(&[1, 2]);
+        clients.attach(1, DESK);
+        clients.attach(2, PHONE);
+        let wider = TermSize { rows: 40, cols: 140 };
+        assert_eq!(clients.resize(1, wider), None, "the desk keeps its new size for later");
+        assert_eq!(clients.resize(2, TermSize { rows: 50, cols: 30 }), Some(TermSize { rows: 50, cols: 30 }));
+        assert_eq!(clients.claim(1), Some(wider));
+    }
+
+    #[test]
+    fn when_the_client_that_sizes_the_agent_leaves_the_one_used_last_takes_over() {
+        let (mut clients, _receivers) = clients(&[1, 2, 3]);
+        clients.attach(1, DESK);
+        clients.attach(2, PHONE);
+        clients.attach(3, TermSize { rows: 20, cols: 40 });
+        clients.claim(2);
+        assert_eq!(clients.detach(1), None, "the desk did not size the agent");
+        assert_eq!(clients.remove(2), Some(TermSize { rows: 20, cols: 40 }));
+        assert_eq!(clients.sized_by, Some(3));
+        assert_eq!(clients.detach(3), None);
+        assert_eq!(clients.sized_by, None);
+        assert_eq!(clients.viewers(), 0);
+    }
+
+    #[test]
+    fn clients_that_only_watch_the_status_never_size_the_agent() {
+        let (mut clients, _receivers) = clients(&[1, 2]);
+        clients.attach(1, DESK);
+        assert_eq!(clients.claim(2), None);
+        assert_eq!(clients.resize(2, PHONE), None);
+        assert_eq!(clients.remove(2), None);
+        assert_eq!(clients.sized_by, Some(1));
     }
 }

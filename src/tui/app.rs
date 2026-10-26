@@ -1164,7 +1164,7 @@ impl App {
                 if viewing
                     && entry.attached
                     && let (Some(size), Some(conn)) = (desk_size, entry.conn())
-                    && (status.rows, status.cols) != (size.rows, size.cols)
+                    && desk_takes_back(&status, size)
                 {
                     let _ = conn.send(&ClientMsg::Resize(size));
                 }
@@ -2622,6 +2622,10 @@ fn compare_header(entry: &AgentEntry) -> String {
     )
 }
 
+fn desk_takes_back(status: &StatusReport, desk: TermSize) -> bool {
+    status.viewers.is_none_or(|viewers| viewers <= 1) && (status.rows, status.cols) != (desk.rows, desk.cols)
+}
+
 fn read_tail(path: &Path, max: usize) -> Vec<u8> {
     let Ok(mut file) = std::fs::File::open(path) else { return Vec::new() };
     let max = u64::try_from(max).unwrap_or(u64::MAX);
@@ -2698,6 +2702,21 @@ mod tests {
         assert_eq!(merge_message(&record), "fix-login: Fix the login redirect loop");
         record.task = "x".repeat(200);
         assert_eq!(merge_message(&record).chars().count(), "fix-login: ".len() + MERGE_SUBJECT_MAX);
+    }
+
+    #[test]
+    fn the_desk_takes_its_size_back_only_when_no_one_else_watches() {
+        let status = |viewers: &str| -> StatusReport {
+            serde_json::from_str(&format!(
+                r#"{{"state":"working","state_since_ms":1,"started_at_ms":1,"rows":30,"cols":50{viewers}}}"#
+            ))
+            .unwrap()
+        };
+        let desk = TermSize { rows: 40, cols: 120 };
+        assert!(desk_takes_back(&status(r#","viewers":1"#), desk), "a phone that left gave the size back");
+        assert!(!desk_takes_back(&status(r#","viewers":2"#), desk), "the phone watching too keeps its size");
+        assert!(desk_takes_back(&status(""), desk), "an older holder does not count viewers");
+        assert!(!desk_takes_back(&status(r#","viewers":1"#), TermSize { rows: 30, cols: 50 }));
     }
 
     #[test]

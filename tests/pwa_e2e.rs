@@ -361,7 +361,7 @@ fn a_phone_alone_on_an_agent_gets_a_screen_its_size() {
 }
 
 #[test]
-fn the_phone_follows_the_desk_size_and_takes_it_back_when_the_desk_leaves() {
+fn the_phone_gets_its_size_when_it_opens_an_agent_the_desk_shows_and_whoever_types_last_keeps_it() {
     let fx = fixture();
     let id = start_terminal(&fx, "shared");
     let runtime = fx.store.read_runtime(id).unwrap().unwrap();
@@ -378,7 +378,13 @@ fn the_phone_follows_the_desk_size_and_takes_it_back_when_the_desk_leaves() {
     let mut phone = Phone::pair(fx.port, &fx.secret);
     phone.send(&PhoneMsg::Open { agent: id, rows: 30, cols: 50 });
     let screen = phone.screen_where(|screen, _| screen.full);
-    assert_eq!((screen.rows, screen.cols), (40, 120), "the phone must not resize what the desk is showing");
+    assert_eq!((screen.rows, screen.cols), (30, 50), "the phone must not get the screen of the desk");
+    desk.send(&ClientMsg::Input(b"\r".to_vec())).unwrap();
+    phone.screen_where(|screen, _| (screen.rows, screen.cols) == (40, 120));
+    phone.send(&PhoneMsg::Size { rows: 30, cols: 50 });
+    phone.screen_where(|screen, _| (screen.rows, screen.cols) == (30, 50));
+    desk.send(&ClientMsg::Input(b"\r".to_vec())).unwrap();
+    phone.screen_where(|screen, _| (screen.rows, screen.cols) == (40, 120));
     drop(desk);
     phone.screen_where(|screen, _| (screen.rows, screen.cols) == (30, 50));
 }

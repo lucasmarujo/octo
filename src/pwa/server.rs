@@ -167,13 +167,9 @@ struct View {
 }
 
 impl View {
-    fn alone(&self) -> bool {
-        self.viewers.is_some_and(|viewers| viewers <= u16::from(self.requested.is_some()))
-    }
-
     fn target(&self) -> Option<TermSize> {
         let pty = self.pty?;
-        Some(if self.alone() { self.want } else { pty })
+        Some(if self.viewers.is_some() { self.want } else { pty })
     }
 
     fn scroll(&mut self, lines: i32) {
@@ -459,6 +455,7 @@ impl Phone {
             PhoneMsg::Size { rows, cols } => {
                 if let Some(view) = self.view.as_mut() {
                     view.want = clamp(rows, cols);
+                    view.requested = None;
                 }
                 self.fit();
             }
@@ -579,10 +576,10 @@ mod tests {
     }
 
     #[test]
-    fn a_phone_follows_the_size_of_the_desk_when_it_watches_too() {
-        assert_eq!(view(Some(1), None).target(), Some(TermSize { rows: 40, cols: 120 }));
+    fn a_phone_gets_the_size_of_its_screen_even_when_the_desk_watches_too() {
+        assert_eq!(view(Some(1), None).target(), Some(TermSize { rows: 30, cols: 50 }));
         let attached = Some(TermSize { rows: 30, cols: 50 });
-        assert_eq!(view(Some(2), attached).target(), Some(TermSize { rows: 40, cols: 120 }));
+        assert_eq!(view(Some(2), attached).target(), Some(TermSize { rows: 30, cols: 50 }));
     }
 
     #[test]

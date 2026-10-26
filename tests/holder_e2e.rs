@@ -198,6 +198,49 @@ fn status_is_pushed_to_every_client() {
     wait_for_exit(&rx);
 }
 
+fn wait_for_snapshot(rx: &Receiver<Option<HolderMsg>>, size: TermSize) {
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        assert!(!remaining.is_zero(), "no screen of {size:?} arrived");
+        match rx.recv_timeout(remaining) {
+            Ok(Some(HolderMsg::Snapshot(snapshot))) if snapshot.size == size => return,
+            Ok(None) => panic!("holder disconnected while waiting for a screen of {size:?}"),
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn the_client_that_used_an_agent_last_sizes_it_and_the_others_get_its_screen() {
+    let fx = fixture("sizes");
+    let (_id, runtime) = start_terminal(&fx, None);
+    let desk_size = TermSize { rows: 40, cols: 120 };
+    let phone_size = TermSize { rows: 30, cols: 50 };
+    let (desk, desk_rx) = open(&runtime);
+    desk.send(&ClientMsg::Attach(desk_size)).unwrap();
+    wait_for_snapshot(&desk_rx, desk_size);
+
+    let (phone, phone_rx) = open(&runtime);
+    phone.send(&ClientMsg::Attach(phone_size)).unwrap();
+    wait_for_snapshot(&phone_rx, phone_size);
+    wait_for_snapshot(&desk_rx, phone_size);
+
+    let wider = TermSize { rows: 44, cols: 130 };
+    desk.send(&ClientMsg::Resize(wider)).unwrap();
+    desk.send(&ClientMsg::Input(b"\r".to_vec())).unwrap();
+    wait_for_snapshot(&phone_rx, wider);
+    wait_for_snapshot(&desk_rx, wider);
+
+    phone.send(&ClientMsg::Input(b"\r".to_vec())).unwrap();
+    wait_for_snapshot(&desk_rx, phone_size);
+    drop(phone);
+    wait_for_snapshot(&desk_rx, wider);
+
+    desk.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&desk_rx);
+}
+
 #[test]
 fn connection_with_wrong_token_is_rejected() {
     let fx = fixture("token");
