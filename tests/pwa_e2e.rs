@@ -300,6 +300,20 @@ fn the_phone_watches_an_agent_and_types_into_it() {
     phone.screen_where(|_, text| text.lines().any(|line| line.trim() == marker));
 }
 
+#[test]
+fn the_phone_lists_the_agent_typed_into_last_first() {
+    let fx = fixture();
+    let older = start_terminal(&fx, "older");
+    let newer = start_terminal(&fx, "newer");
+    let order = |overview: &Overview| overview.agents.iter().map(|agent| agent.id).collect::<Vec<_>>();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.overview_where(|overview| overview.agents.iter().all(running) && order(overview) == [newer, older]);
+    phone.send(&PhoneMsg::Open { agent: older, rows: 30, cols: 60 });
+    phone.screen_where(|screen, _| screen.full && screen.agent == older);
+    phone.send(&PhoneMsg::Keys { data: "x".into() });
+    phone.overview_where(|overview| order(overview) == [older, newer]);
+}
+
 const FULL_SCREEN_PS1: &str = r#"
 Add-Type -Namespace Orkai -Name Console -MemberDefinition @'
 [DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int handle);

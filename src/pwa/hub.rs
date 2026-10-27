@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashSet};
 use std::io;
 use std::sync::mpsc::Sender;
@@ -405,7 +406,9 @@ impl Hub {
     }
 
     fn overview(&self, inner: &Inner) -> Overview {
-        let agents: Vec<AgentView> = inner.agents.values().map(Tracked::view).collect();
+        let mut tracked: Vec<&Tracked> = inner.agents.values().collect();
+        tracked.sort_by_key(|t| Reverse(t.record.last_used_ms(t.status.as_ref())));
+        let agents: Vec<AgentView> = tracked.into_iter().map(Tracked::view).collect();
         let sessions = inner
             .sessions
             .iter()

@@ -604,6 +604,7 @@ mod tests {
             nested: None,
             viewers: None,
             test: None,
+            input_at_ms: 0,
         }
     }
 

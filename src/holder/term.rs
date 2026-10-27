@@ -79,6 +79,7 @@ pub struct TermState {
     pending_input: Option<String>,
     submit_after: Option<u64>,
     echoed_at: Option<u64>,
+    input_at: u64,
 }
 
 impl TermState {
@@ -104,6 +105,7 @@ impl TermState {
             pending_input,
             submit_after: None,
             echoed_at: None,
+            input_at: 0,
         }
     }
 
@@ -161,7 +163,8 @@ impl TermState {
         true
     }
 
-    pub fn note_input(&mut self, bytes: &[u8]) {
+    pub fn note_input(&mut self, bytes: &[u8], now: u64) {
+        self.input_at = now;
         if self.kind == AgentKind::Terminal {
             self.tracker.feed(bytes);
         }
@@ -220,6 +223,7 @@ impl TermState {
             nested: self.nested.clone(),
             viewers: None,
             test: None,
+            input_at_ms: self.input_at,
         }
     }
 
@@ -311,7 +315,7 @@ mod tests {
         assert_eq!(t.report(None).state, AgentState::Working);
         t.process(b"\x1b]7501;state=blocked:kind=permission\x1b\\", 2_000);
         assert_eq!(t.report(None).state, AgentState::Paused);
-        t.note_input(b"1");
+        t.note_input(b"1", 2_500);
         t.process(b"\x1b]7501;state=working\x07", 3_000);
         assert_eq!(t.report(None).state, AgentState::Working);
         t.process(b"\x1b]7501;state=done:msg=ZG9uZQ==\x07", 9_000);
@@ -366,8 +370,21 @@ mod tests {
             Some("npm run dev".into()),
         );
         assert_eq!(t.activity(), "npm run dev");
-        t.note_input(b"cargo test\r");
+        t.note_input(b"cargo test\r", 10);
         assert_eq!(t.activity(), "cargo test");
+    }
+
+    #[test]
+    fn the_report_says_when_someone_last_typed_into_the_agent() {
+        let mut t = state(AgentKind::Claude);
+        assert_eq!(t.report(None).input_at_ms, 0);
+        t.note_input(b"fix the tests", 1_000);
+        t.process(b"fix the tests", 1_100);
+        assert_eq!(t.report(None).input_at_ms, 1_000);
+        t.note_input(b"\r", 1_500);
+        t.process(b"thinking (esc to interrupt)", 9_000);
+        t.evaluate(9_100);
+        assert_eq!(t.report(None).input_at_ms, 1_500, "output from the agent is not someone using it");
     }
 
     #[test]
@@ -534,7 +551,7 @@ mod tests {
     fn a_terminal_running_an_agent_is_tracked_as_that_agent() {
         let mut t =
             TermState::new(AgentKind::Terminal, TermSize { rows: 6, cols: 40 }, 0, String::new(), Some("ls".into()));
-        t.note_input(b"claude\r");
+        t.note_input(b"claude\r", 50);
         t.process(b"thinking (esc to interrupt)", 100);
         t.evaluate(200);
         assert_eq!(t.report(None).state, AgentState::Working);
@@ -584,10 +601,10 @@ mod tests {
         t.process(b"Bash command\r\nRun it?\r\n> 1. Yes\r\nEnter to confirm \xc2\xb7 Esc to cancel", 250);
         t.evaluate(300);
         assert_eq!(t.report(None).state, AgentState::Paused, "a dialog the screen detector misreads stays paused");
-        t.note_input(b"\x1b[B");
+        t.note_input(b"\x1b[B", 350);
         t.evaluate(400);
         assert_eq!(t.report(None).state, AgentState::Paused, "moving through the options is not an answer yet");
-        t.note_input(b"\r");
+        t.note_input(b"\r", 450);
         t.process(b"\x1b[2J\x1b[Hrunning tests (esc to interrupt)", 500);
         t.evaluate(600);
         assert_eq!(t.report(None).state, AgentState::Working);

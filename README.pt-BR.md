@@ -186,7 +186,7 @@ Pode sair quando quiser (`ctrl+q`): os agentes continuam rodando e o orkai recon
 | --- | --- |
 | Lateral | máquina, sessões com o número de agentes ativos em cada uma, `+ new session` |
 | Topo | o homenzinho pixelado, os contadores `agents`, `working`, `paused` e `done` da sessão e, à direita, o consumo dos agentes em que você está logado (veja [abaixo](#consumo-dos-planos)) |
-| Lista | agentes agrupados por pasta (com a contagem de cada uma): número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`, `kimi`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
+| Lista | agentes agrupados por pasta (com a contagem de cada uma), a pasta e o agente que você usou por último no topo: número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`, `kimi`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
 | Rodapé | `write a task`, `pc`, `who`, `worktree`, `bypass` e `where` para lançar novos agentes |
 
 ### Estados

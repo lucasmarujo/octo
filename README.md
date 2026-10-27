@@ -185,7 +185,7 @@ You can quit whenever you want (`ctrl+q`): the agents keep running and orkai rec
 | --- | --- |
 | Sidebar | machine, sessions with the number of active agents in each one, `+ new session` |
 | Top | the little pixel-art man, the session's `agents`, `working`, `paused` and `done` counters and, on the right, the usage of the agents you're logged into (see [below](#plan-usage)) |
-| List | agents grouped by folder (with the count of each one): number, status, name, time in the current status, lifetime, type (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`, `kimi`, `terminal`) and a line saying what the agent is doing; right below each agent, the subagents it spawned that are still running (`↳`, type, how long ago, description and the tool in use) |
+| List | agents grouped by folder (with the count of each one), the folder and the agent you used last on top: number, status, name, time in the current status, lifetime, type (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`, `kimi`, `terminal`) and a line saying what the agent is doing; right below each agent, the subagents it spawned that are still running (`↳`, type, how long ago, description and the tool in use) |
 | Footer | `write a task`, `pc`, `who`, `worktree`, `bypass` and `where` to launch new agents |
 
 ### States

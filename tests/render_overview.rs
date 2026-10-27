@@ -98,11 +98,12 @@ fn scenario() -> Scenario {
             "Installing Docker inside the container",
         ),
     ];
+    let offset = |index: usize| (index as u64 + 1) * 97_000;
     let mut ids = Vec::new();
-    for (project, name, kind, _, _) in &agents {
+    for (index, (project, name, kind, _, _)) in agents.iter().enumerate() {
         let cwd = dir.join(project);
         std::fs::create_dir_all(&cwd).unwrap();
-        let record = store
+        let mut record = store
             .create_agent(NewAgent {
                 session: "default".into(),
                 name: (*name).into(),
@@ -111,6 +112,8 @@ fn scenario() -> Scenario {
                 task: String::new(),
             })
             .unwrap();
+        record.created_at_ms -= offset(index) * 9;
+        store.save_agent(&record).unwrap();
         ids.push(record.id);
     }
     let launcher = Launcher::new(store, Config::default(), &std::env::current_exe().unwrap()).unwrap();
@@ -119,7 +122,7 @@ fn scenario() -> Scenario {
     let now = now_ms();
     for (index, (id, (_, _, _, state, activity))) in ids.iter().zip(agents.iter()).enumerate() {
         let entry = app.agents.get_mut(id).unwrap();
-        let offset = (index as u64 + 1) * 97_000;
+        let offset = offset(index);
         entry.link = Link::Connecting(0);
         entry.status = Some(StatusReport {
             state: *state,
@@ -135,6 +138,7 @@ fn scenario() -> Scenario {
             nested: None,
             viewers: None,
             test: None,
+            input_at_ms: now - index as u64 * 1_000,
         });
     }
     app.where_dir = dir.join("studio/game");
@@ -248,10 +252,70 @@ fn stats_count_only_live_ai_agents() {
 }
 
 #[test]
-fn agents_are_grouped_by_project_in_creation_order() {
+fn agents_are_grouped_by_project_most_recently_used_first() {
     let scenario = scenario();
     let labels: Vec<String> = scenario.app.groups().into_iter().map(|g| g.label).collect();
     assert_eq!(labels, vec!["acme/web", "acme/mobile", "studio/game", "studio/assets", "lab/infra", "orkai/cli"]);
+}
+
+fn group_names(app: &App) -> Vec<(String, Vec<String>)> {
+    app.groups()
+        .into_iter()
+        .map(|group| (group.label, group.ids.iter().map(|id| app.agents[id].record.name.clone()).collect()))
+        .collect()
+}
+
+fn status_of<'a>(app: &'a mut App, name: &str) -> &'a mut StatusReport {
+    let id = agent_named(app, name);
+    app.agents.get_mut(&id).unwrap().status.as_mut().unwrap()
+}
+
+#[test]
+fn using_an_agent_brings_it_and_its_project_to_the_top() {
+    let mut scenario = scenario();
+    let app = &mut scenario.app;
+    let newest = app.agents.values().map(|e| e.record.last_used_ms(e.status.as_ref())).max().unwrap();
+
+    status_of(app, "docker-install").input_at_ms = newest + 1_000;
+    let groups = group_names(app);
+    let labels: Vec<&str> = groups.iter().map(|(label, _)| label.as_str()).collect();
+    assert_eq!(labels, ["orkai/cli", "acme/web", "acme/mobile", "studio/game", "studio/assets", "lab/infra"]);
+    assert_eq!(groups[0].1, ["docker-install", "folder-icon-update"]);
+    assert_eq!(app.ordered_ids()[0], agent_named(app, "docker-install"), "keyboard order follows the screen");
+    let screen = text(&render(app));
+    assert!(line_with(&screen, "orkai/cli ›").0 < line_with(&screen, "acme/web ›").0, "{screen}");
+    assert_eq!(line_with(&screen, "docker-install").0, line_with(&screen, "orkai/cli ›").0 + 1, "{screen}");
+
+    let status = status_of(app, "sidebar-sessions");
+    status.state = AgentState::Working;
+    status.turn_started_ms = Some(newest + 2_000);
+    let groups = group_names(app);
+    assert_eq!(
+        groups[0],
+        ("studio/assets".into(), vec!["sidebar-sessions".into(), "term-3".into(), "npm-start-error".into()])
+    );
+    assert_eq!(groups[1].0, "orkai/cli", "an agent that starts working on its own is in use too");
+
+    let status = status_of(app, "term-3");
+    status.turn_started_ms = Some(newest + 3_000);
+    status.state_since_ms = newest + 3_000;
+    assert_eq!(group_names(app)[0].1, ["sidebar-sessions", "term-3", "npm-start-error"], "a terminal printing logs");
+}
+
+#[test]
+fn an_agent_started_by_another_stays_under_it_when_used_more_recently() {
+    let mut scenario = scenario();
+    let app = &mut scenario.app;
+    let newest = app.agents.values().map(|e| e.record.last_used_ms(e.status.as_ref())).max().unwrap();
+    let parent = agent_named(app, "sidebar-sessions");
+    let child = agent_named(app, "npm-start-error");
+    app.agents.get_mut(&child).unwrap().record.parent = Some(parent);
+    status_of(app, "npm-start-error").input_at_ms = newest + 1_000;
+    let groups = group_names(app);
+    assert_eq!(
+        groups[0],
+        ("studio/assets".into(), vec!["term-3".into(), "sidebar-sessions".into(), "npm-start-error".into()])
+    );
 }
 
 fn wheel(app: &mut App, kind: MouseEventKind) {

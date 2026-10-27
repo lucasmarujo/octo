@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashSet};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -647,8 +648,10 @@ impl App {
     }
 
     pub fn groups(&self) -> Vec<Group> {
+        let mut entries: Vec<&AgentEntry> = self.agents.values().filter(|e| e.record.session == self.session).collect();
+        entries.sort_by_key(|e| Reverse(e.record.last_used_ms(e.status.as_ref())));
         let mut groups: Vec<Group> = Vec::new();
-        for entry in self.agents.values().filter(|e| e.record.session == self.session) {
+        for entry in entries {
             let project = entry.record.project_dir();
             let key = normalize_for_compare(project);
             match groups.iter_mut().find(|g| normalize_for_compare(&g.cwd) == key) {

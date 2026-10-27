@@ -157,6 +157,12 @@ impl AgentRecord {
             .or(self.project.as_deref())
             .unwrap_or(&self.cwd)
     }
+
+    pub fn last_used_ms(&self, status: Option<&StatusReport>) -> u64 {
+        let Some(status) = status else { return self.created_at_ms };
+        let turn = status.running_kind(self.kind).is_ai().then(|| status.last_turn_started_ms()).flatten();
+        turn.into_iter().fold(self.created_at_ms.max(status.input_at_ms), u64::max)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -279,11 +285,17 @@ pub struct StatusReport {
     pub viewers: Option<u16>,
     #[serde(default)]
     pub test: Option<Box<TestReport>>,
+    #[serde(default)]
+    pub input_at_ms: u64,
 }
 
 impl StatusReport {
     pub fn running_kind(&self, launched: AgentKind) -> AgentKind {
         self.nested.as_ref().map_or(launched, |nested| nested.kind)
+    }
+
+    pub fn last_turn_started_ms(&self) -> Option<u64> {
+        self.turn_started_ms.or_else(|| self.last_turn_ms.map(|took| self.state_since_ms.saturating_sub(took)))
     }
 }
 
@@ -443,6 +455,56 @@ mod tests {
         status.nested =
             Some(NestedAgent { kind: AgentKind::Codex, pid: 42, conversation_id: None, cwd: None, since_ms: 5 });
         assert_eq!(status.running_kind(AgentKind::Terminal), AgentKind::Codex);
+    }
+
+    #[test]
+    fn an_agent_was_last_used_when_it_started_got_typed_into_or_began_a_turn() {
+        let record: AgentRecord = serde_json::from_str(
+            r#"{"id":1,"session":"s","name":"n","kind":"claude","cwd":"/x","created_at_ms":1000}"#,
+        )
+        .unwrap();
+        assert_eq!(record.last_used_ms(None), 1_000, "an agent orkai has not heard from yet");
+        let mut status: StatusReport =
+            serde_json::from_str(r#"{"state":"idle","state_since_ms":1000,"started_at_ms":1000,"rows":24,"cols":80}"#)
+                .unwrap();
+        assert_eq!(status.input_at_ms, 0, "a holder of an older orkai does not report input");
+        assert_eq!(record.last_used_ms(Some(&status)), 1_000);
+
+        status.input_at_ms = 4_000;
+        assert_eq!(record.last_used_ms(Some(&status)), 4_000);
+
+        status.state = AgentState::Working;
+        status.state_since_ms = 9_000;
+        status.turn_started_ms = Some(9_000);
+        assert_eq!(record.last_used_ms(Some(&status)), 9_000, "a turn that began on its own counts too");
+
+        status.state = AgentState::Done;
+        status.state_since_ms = 15_000;
+        status.turn_started_ms = None;
+        status.last_turn_ms = Some(6_000);
+        assert_eq!(status.last_turn_started_ms(), Some(9_000));
+        assert_eq!(record.last_used_ms(Some(&status)), 9_000, "finishing the turn does not move it again");
+
+        status.input_at_ms = 20_000;
+        assert_eq!(record.last_used_ms(Some(&status)), 20_000);
+    }
+
+    #[test]
+    fn a_terminal_is_used_when_typed_into_not_when_it_prints() {
+        let record: AgentRecord = serde_json::from_str(
+            r#"{"id":2,"session":"s","name":"dev","kind":"terminal","cwd":"/x","created_at_ms":1000}"#,
+        )
+        .unwrap();
+        let mut status: StatusReport = serde_json::from_str(
+            r#"{"state":"working","state_since_ms":8000,"turn_started_ms":8000,"started_at_ms":1000,"rows":24,"cols":80}"#,
+        )
+        .unwrap();
+        assert_eq!(record.last_used_ms(Some(&status)), 1_000, "a dev server printing logs");
+        status.input_at_ms = 3_000;
+        assert_eq!(record.last_used_ms(Some(&status)), 3_000);
+        status.nested =
+            Some(NestedAgent { kind: AgentKind::Claude, pid: 7, conversation_id: None, cwd: None, since_ms: 2_000 });
+        assert_eq!(record.last_used_ms(Some(&status)), 8_000, "claude running inside the terminal");
     }
 
     #[test]

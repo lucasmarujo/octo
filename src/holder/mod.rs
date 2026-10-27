@@ -236,7 +236,7 @@ impl Shared {
             ClientMsg::Detach => self.fit(|clients| clients.detach(client)),
             ClientMsg::Input(bytes) => {
                 self.fit(|clients| clients.claim(client));
-                lock(&self.term).note_input(&bytes);
+                lock(&self.term).note_input(&bytes, now_ms());
                 self.write_pty(&bytes);
             }
             ClientMsg::Resize(size) => self.fit(|clients| clients.resize(client, TermSize::new(size.rows, size.cols))),
