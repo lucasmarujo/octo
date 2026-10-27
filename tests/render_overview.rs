@@ -611,26 +611,51 @@ fn slash_suggests_completes_and_launches_agent_skills() {
     assert!(error.contains("orkai-missing-claude"), "{error}");
 }
 
+fn skill_hint_color(app: &mut App, skill: &str) -> Color {
+    let buffer = render(app);
+    let screen = text(&buffer);
+    let lines: Vec<&str> = screen.lines().collect();
+    let hints = lines[lines.len() - 1];
+    assert!(hints.contains(skill), "{hints}");
+    buffer[(column_of(hints, skill), u16::try_from(lines.len() - 1).unwrap())].fg
+}
+
 #[test]
-fn codex_skills_are_suggested_only_for_codex() {
+fn skills_of_other_agents_are_suggested_in_their_color_and_started_in_who() {
     let mut scenario = scenario();
     write_skill(&scenario.app.where_dir.join(".agents").join("skills"), "orkai-codex-skill");
     without_agent_programs(&mut scenario.app);
     let app = &mut scenario.app;
+    assert_eq!(app.who, AgentKind::Claude);
 
     type_text(app, "/orkai-codex");
-    assert!(!text(&render(app)).lines().last().unwrap().contains("/orkai-codex-skill"));
+    assert_eq!(skill_hint_color(app, "/orkai-codex-skill"), theme::kind_color(AgentKind::Codex));
     press(app, KeyCode::Enter, KeyModifiers::NONE);
     assert!(app.notice.as_ref().unwrap().text.contains("unknown command /orkai-codex"));
 
-    app.who = AgentKind::Codex;
     type_text(app, "/orkai-codex");
-    assert!(text(&render(app)).lines().last().unwrap().contains("/orkai-codex-skill"));
     press(app, KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(app.task.text(), "/orkai-codex-skill ");
+    type_text(app, "now");
     press(app, KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(app.launching, 1);
+    assert!(app.notice.as_ref().unwrap().text.contains("starting claude orkai-codex-skill"));
+    assert!(launched(&scenario).unwrap_err().contains("orkai-missing-claude"));
+
+    let app = &mut scenario.app;
+    app.who = AgentKind::Codex;
+    type_text(app, "/orkai-codex");
+    assert_eq!(skill_hint_color(app, "/orkai-codex-skill"), theme::kind_color(AgentKind::Codex));
+    press(app, KeyCode::Tab, KeyModifiers::NONE);
+    press(app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(app.launching, 2);
     assert!(app.notice.as_ref().unwrap().text.contains("starting codex"));
     assert!(launched(&scenario).unwrap_err().contains("orkai-missing-codex"));
+
+    let app = &mut scenario.app;
+    app.who = AgentKind::Kimi;
+    type_text(app, "/orkai-codex");
+    assert_eq!(skill_hint_color(app, "/orkai-codex-skill"), theme::kind_color(AgentKind::Kimi));
 }
 
 #[test]

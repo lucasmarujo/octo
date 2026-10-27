@@ -55,8 +55,9 @@ https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
   está logado, com contagem regressiva até o reset; quem não tem login não aparece.
 - **Nada se perde.** Fechar, travar ou atualizar a interface não derruba nenhum agente; depois de um reboot,
   `ctrl+r` retoma cada conversa de onde parou.
-- **Skills no `/`.** As skills de cada agente aparecem no autocomplete e iniciam um agente já invocando a
-  skill.
+- **Skills no `/`, de qualquer agente.** As skills de cada agente aparecem no autocomplete e iniciam um
+  agente já invocando a skill, e todo agente usa as skills dos outros: uma skill do Claude Code no Codex, uma
+  do Codex no Antigravity.
 - **O orkai no celular, de qualquer lugar.** `ctrl+p` mostra um QR code; o celular abre o overview, o
   terminal de cada agente e cria agentes novos, cifrado de ponta a ponta (veja
   [O orkai no celular](#o-orkai-no-celular-pwa)).
@@ -97,8 +98,8 @@ https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
   O orkai não mexe em nenhum arquivo de configuração seu. Se você já define uma dessas variáveis, ele não a
   substitui. O Grok Build e o Kimi Code só aceitam hooks na configuração global do usuário, então ficam
   na leitura da tela e do título.
-- **Skills no `/`.** Cada agente sugere as skills e os comandos das pastas que ele mesmo lê (veja
-  [abaixo](#skills-dos-agentes-skill)).
+- **Skills no `/`.** Cada agente sugere as skills e os comandos das pastas que ele mesmo lê, e também as
+  dos outros agentes (veja [abaixo](#skills-dos-agentes-skill)).
 
 ## Instalação
 
@@ -289,7 +290,7 @@ continua na tela com `unavailable`.
 | `/where <pasta>` ou `ctrl+l` | escolhe a pasta da sessão (veja [abaixo](#escolhendo-a-pasta-where)); clicar no nome de um projeto também |
 | `ctrl+t` | liga/desliga a worktree própria para os próximos agentes (veja [abaixo](#uma-worktree-por-agente-ctrlt)) |
 | `/bypass` | liga/desliga o modo bypass de permissões para os próximos agentes (veja [abaixo](#modo-bypass-bypass)) |
-| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/tests`, `/trust`, `/race`, `/compare`, `/pick`, `/help`, `/quit`, além das skills do `who` atual (veja [abaixo](#skills-dos-agentes-skill)) |
+| `/` | comandos (`tab` completa o nome): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/tests`, `/trust`, `/race`, `/compare`, `/pick`, `/help`, `/quit`, além das skills do `who` atual e dos outros agentes (veja [abaixo](#skills-dos-agentes-skill)) |
 
 **Agentes**
 
@@ -443,6 +444,19 @@ pasta do `where` até a raiz do repositório:
 `tab` completa (ou estende o prefixo comum), e `/skill argumentos` + `enter` inicia um agente já
 invocando a skill. No Codex o orkai envia no formato dele (`$skill argumentos`) e no Kimi Code como
 `/skill:skill argumentos`. Os comandos do próprio orkai têm prioridade quando o nome coincide.
+
+### Skills de outros agentes
+
+O `/` também sugere as skills e os comandos de todos os outros agentes, na cor do agente de onde vêm, então
+uma skill do Claude Code funciona no Codex, uma do Codex no Antigravity, e assim por diante. O orkai inicia o
+agente do `who` pedindo que ele leia o arquivo da skill (o `SKILL.md`, ou o `.md` do comando) e siga as
+instruções, com os argumentos que você digitou. Nada é copiado nem instalado, e nenhuma pasta ou configuração
+de agente muda. O caminho vai com `/` em qualquer sistema, e os arquivos que a skill cita são lidos a partir
+da pasta dela.
+
+Quando o `who` tem uma skill com o mesmo nome, vale a dele; entre os outros agentes, vale o primeiro na ordem
+da [tabela](#agentes-suportados). Uma skill fora do projeto pode fazer o agente pedir permissão antes de ler,
+como qualquer outro arquivo seu.
 
 ## Linha de comando
 

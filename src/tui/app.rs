@@ -1420,11 +1420,15 @@ impl App {
     }
 
     fn launch_task(&mut self, kind: AgentKind, task: String) {
+        let name = self.default_name(kind, &task);
+        self.launch_named(kind, name, task);
+    }
+
+    fn launch_named(&mut self, kind: AgentKind, name: String, task: String) {
         if !self.where_dir.is_dir() {
             self.set_notice(Tone::Error, format!("{} is not a directory", self.display(&self.where_dir)));
             return;
         }
-        let name = self.default_name(kind, &task);
         self.task.clear();
         self.start_agent(kind, name, task, self.where_dir.clone(), self.worktree && kind.is_ai(), None);
     }
@@ -1967,7 +1971,8 @@ impl App {
         }
         if text.starts_with('/') && !text.contains(char::is_whitespace) {
             self.skills.refresh(self.who, &self.where_dir);
-            let skills = self.skills.matching(self.who, &text);
+            let skills: Vec<String> =
+                self.skills.matching(self.who, &text).iter().map(|skill| format!("/{}", skill.name)).collect();
             if let Some(completed) = complete_command(&text, &skills) {
                 self.task.set(&completed);
             }
@@ -2434,10 +2439,12 @@ impl App {
             "" => {}
             other => {
                 self.skills.refresh(self.who, &self.where_dir);
-                if self.skills.contains(self.who, other) {
-                    self.launch_task(self.who, skills::invocation(self.who, line));
-                } else {
-                    self.set_notice(Tone::Error, format!("unknown command /{other} — try /help"));
+                match self.skills.find(self.who, other).map(|skill| skills::invocation(self.who, skill, &arg)) {
+                    Some(task) => {
+                        let name = self.default_name(self.who, line);
+                        self.launch_named(self.who, name, task);
+                    }
+                    None => self.set_notice(Tone::Error, format!("unknown command /{other} — try /help")),
                 }
             }
         }

@@ -988,12 +988,14 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
         let word = typed.split_whitespace().next().unwrap_or("/");
         let commands = matching_commands(word).join("  ");
         let mut cx = put(buf, x, y, &commands, fg(theme::MUTED), right);
-        let skills = app.skills.matching(app.who, word);
-        if !skills.is_empty() {
-            if !commands.is_empty() {
+        for skill in app.skills.matching(app.who, word) {
+            if cx >= right {
+                break;
+            }
+            if cx > x {
                 cx = put(buf, cx, y, "  ", Style::default(), right);
             }
-            put(buf, cx, y, &skills.join("  "), fg(theme::kind_color(app.who)), right);
+            cx = put(buf, cx, y, &format!("/{}", skill.name), fg(theme::kind_color(skill.owner)), right);
         }
     } else if app.diff.is_some() && app.prompt.is_none() && app.notice.is_none() {
         put(buf, x, y, DIFF_HINT, fg(theme::FAINT), right);

@@ -55,8 +55,9 @@ https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
   logged into, with a countdown to the reset; agents without a login don't show up.
 - **Nothing gets lost.** Closing, crashing or updating the interface takes down no agent; after a reboot,
   `ctrl+r` resumes every conversation where it left off.
-- **Skills in `/`.** Each agent's skills show up in the autocomplete and start an agent already invoking the
-  skill.
+- **Skills in `/`, from any agent.** Each agent's skills show up in the autocomplete and start an agent
+  already invoking the skill, and every agent can use the skills of the others: a Claude Code skill in Codex,
+  a Codex one in Antigravity.
 - **orkai on your phone, from anywhere.** `ctrl+p` shows a QR code; the phone opens the overview, each
   agent's terminal and creates new agents, end-to-end encrypted (see
   [orkai on your phone](#orkai-on-your-phone-pwa)).
@@ -97,8 +98,8 @@ https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
   orkai doesn't touch any of your config files. If you already set one of these variables, it doesn't
   replace it. Grok Build and Kimi Code only accept hooks in the user's global config, so they rely on
   reading the screen and the title.
-- **Skills in `/`.** Each agent suggests the skills and commands from the folders it reads itself (see
-  [below](#agent-skills-skill)).
+- **Skills in `/`.** Each agent suggests the skills and commands from the folders it reads itself, and also
+  the ones of the other agents (see [below](#agent-skills-skill)).
 
 ## Installation
 
@@ -288,7 +289,7 @@ stays on screen with `unavailable`.
 | `/where <folder>` or `ctrl+l` | picks the session folder (see [below](#choosing-the-folder-where)); clicking a project name does too |
 | `ctrl+t` | turns its own worktree on/off for the next agents (see [below](#one-worktree-per-agent-ctrlt)) |
 | `/bypass` | turns the permission bypass mode on/off for the next agents (see [below](#bypass-mode-bypass)) |
-| `/` | commands (`tab` completes the name): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/tests`, `/trust`, `/race`, `/compare`, `/pick`, `/help`, `/quit`, plus the skills of the current `who` (see [below](#agent-skills-skill)) |
+| `/` | commands (`tab` completes the name): `/where`, `/cd`, `/who`, `/session`, `/new-session`, `/rename-session`, `/delete-session`, `/rename`, `/kill`, `/restart`, `/recover`, `/open`, `/worktree`, `/bypass`, `/diff`, `/merge`, `/cross-review`, `/tests`, `/trust`, `/race`, `/compare`, `/pick`, `/help`, `/quit`, plus the skills of the current `who` and of the other agents (see [below](#agent-skills-skill)) |
 
 **Agents**
 
@@ -442,6 +443,18 @@ the `where` folder up to the repository root:
 `tab` completes (or extends the common prefix), and `/skill arguments` + `enter` starts an agent already
 invoking the skill. In Codex orkai sends it in its format (`$skill arguments`) and in Kimi Code as
 `/skill:skill arguments`. orkai's own commands take precedence when the name is the same.
+
+### Skills from other agents
+
+`/` also suggests the skills and commands of every other agent, in the color of the agent they come from, so
+a Claude Code skill works in Codex, a Codex one in Antigravity, and so on. orkai starts the `who` agent telling
+it to read the skill's file (its `SKILL.md`, or the command's `.md`) and follow it, with the arguments you
+typed. Nothing is copied or installed, and no agent's folders or settings change. The path goes with `/` on
+every system, and the files the skill mentions are read from its folder.
+
+When `who` has a skill with the same name, its own wins; among the other agents, the first in the order of the
+[table](#supported-agents) wins. A skill outside the project may make the agent ask before reading it, like
+any other file of yours.
 
 ## Command line
 

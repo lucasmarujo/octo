@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use crate::model::AgentKind;
 use crate::paths::{common_prefix, complete_directory, directory_query, matching_directories, separator_for};
-use crate::skills;
+use crate::skills::{self, Skill};
 
 pub const WHERE_COMMANDS: [&str; 2] = ["/where", "/cd"];
 const SKILLS_TTL: Duration = Duration::from_secs(5);
@@ -65,7 +65,7 @@ pub fn complete_command(typed: &str, skills: &[String]) -> Option<String> {
 pub struct SkillCatalog {
     source: Option<(AgentKind, PathBuf)>,
     loaded_at: Option<Instant>,
-    names: Vec<String>,
+    skills: Vec<Skill>,
 }
 
 impl SkillCatalog {
@@ -74,25 +74,28 @@ impl SkillCatalog {
         if same_source && self.loaded_at.is_some_and(|at| at.elapsed() < SKILLS_TTL) {
             return;
         }
-        self.names = skills::discover(kind, dir);
+        self.skills = skills::discover(kind, dir);
         self.source = Some((kind, dir.to_path_buf()));
         self.loaded_at = Some(Instant::now());
     }
 
-    fn names_for(&self, kind: AgentKind) -> &[String] {
+    fn skills_for(&self, kind: AgentKind) -> &[Skill] {
         match &self.source {
-            Some((source, _)) if *source == kind => &self.names,
+            Some((source, _)) if *source == kind => &self.skills,
             _ => &[],
         }
     }
 
-    pub fn matching(&self, kind: AgentKind, word: &str) -> Vec<String> {
+    pub fn matching(&self, kind: AgentKind, word: &str) -> Vec<&Skill> {
         let typed = word.strip_prefix('/').unwrap_or(word);
-        self.names_for(kind).iter().filter(|name| name.starts_with(typed)).map(|name| format!("/{name}")).collect()
+        self.skills_for(kind).iter().filter(|skill| skill.name.starts_with(typed)).collect()
     }
 
-    pub fn contains(&self, kind: AgentKind, name: &str) -> bool {
-        self.names_for(kind).iter().any(|skill| skill.eq_ignore_ascii_case(name))
+    pub fn find(&self, kind: AgentKind, name: &str) -> Option<&Skill> {
+        self.skills_for(kind)
+            .iter()
+            .filter(|skill| skill.name.eq_ignore_ascii_case(name))
+            .min_by_key(|skill| skill.owner != kind)
     }
 }
 
@@ -229,12 +232,30 @@ mod tests {
         std::fs::write(&skill, "---\nname: orkai-probe-skill\n---\n").unwrap();
         let mut catalog = SkillCatalog::default();
         catalog.refresh(AgentKind::Claude, &t.0);
-        assert_eq!(catalog.matching(AgentKind::Claude, "/orkai-probe"), ["/orkai-probe-skill"]);
-        assert!(catalog.contains(AgentKind::Claude, "ORKAI-PROBE-SKILL"));
+        let found: Vec<(&str, AgentKind)> =
+            catalog.matching(AgentKind::Claude, "/orkai-probe").iter().map(|s| (s.name.as_str(), s.owner)).collect();
+        assert_eq!(found, [("orkai-probe-skill", AgentKind::Claude)]);
+        assert_eq!(catalog.find(AgentKind::Claude, "ORKAI-PROBE-SKILL").map(|s| &s.file), Some(&skill));
         assert!(catalog.matching(AgentKind::Codex, "/orkai-probe").is_empty());
-        assert!(!catalog.contains(AgentKind::Codex, "orkai-probe-skill"));
+        assert!(catalog.find(AgentKind::Codex, "orkai-probe-skill").is_none());
         catalog.refresh(AgentKind::Terminal, &t.0);
         assert!(catalog.matching(AgentKind::Terminal, "/").is_empty());
+        assert!(catalog.find(AgentKind::Terminal, "orkai-probe-skill").is_none());
+    }
+
+    #[test]
+    fn skill_catalog_offers_the_skills_of_the_other_agents_with_their_owner() {
+        let t = tree("bridged");
+        let skill = t.0.join(".claude").join("skills").join("orkai-probe-bridge").join("SKILL.md");
+        std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        std::fs::write(&skill, "---\nname: orkai-probe-bridge\n---\n").unwrap();
+        let mut catalog = SkillCatalog::default();
+        catalog.refresh(AgentKind::Codex, &t.0);
+        let found: Vec<(&str, AgentKind)> =
+            catalog.matching(AgentKind::Codex, "/orkai-probe").iter().map(|s| (s.name.as_str(), s.owner)).collect();
+        assert_eq!(found, [("orkai-probe-bridge", AgentKind::Claude)]);
+        let bridged = catalog.find(AgentKind::Codex, "Orkai-Probe-Bridge").unwrap();
+        assert_eq!((bridged.owner, &bridged.file), (AgentKind::Claude, &skill));
     }
 
     #[test]
