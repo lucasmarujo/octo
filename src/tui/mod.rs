@@ -26,6 +26,7 @@ use ratatui::crossterm::terminal::{
 };
 use ratatui::layout::Rect;
 
+use crate::browser;
 use crate::clipboard;
 use crate::launch::Launcher;
 use crate::notify::{self, Notifier};
@@ -183,6 +184,12 @@ fn deliver_clipboard(app: &mut App) {
     clipboard::copy(text);
 }
 
+fn deliver_link(app: &mut App) {
+    if let Some(url) = app.take_open_link() {
+        browser::open(url);
+    }
+}
+
 fn sync_window_title(app: &App, shown: &mut String) {
     let title = app.window_title();
     if *shown != title && execute!(io::stdout(), SetTitle(&title)).is_ok() {
@@ -226,6 +233,7 @@ pub fn run(launcher: Launcher) -> io::Result<()> {
         app.sync_attached_size();
         deliver_alerts(&mut app, &notifier, ring, player.as_ref());
         deliver_clipboard(&mut app);
+        deliver_link(&mut app);
         switch_profile(&mut profile, started);
         if !app.take_dirty() {
             continue;

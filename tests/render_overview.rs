@@ -25,6 +25,7 @@ use orkai::pwa::tunnel::TunnelKind;
 use orkai::store::Store;
 use orkai::subagents::Subagent;
 use orkai::tui::app::{App, AppEvent, Confirm, Hit, Link, PairingCode, Prompt, View};
+use orkai::tui::view::TermView;
 use orkai::tui::{render, theme};
 use orkai::usage::{self, Limits, Problem, Usage, Window};
 use orkai::util::now_ms;
@@ -2051,4 +2052,111 @@ fn ctrl_p_opens_the_orkai_pwa() {
     press(&mut scenario.app, KeyCode::Char('p'), KeyModifiers::CONTROL);
     assert_eq!(scenario.app.view, View::Pwa);
     assert!(scenario.app.pwa.enabled);
+}
+
+fn showing(scenario: &mut Scenario, screen: &[u8]) -> (AgentId, Rect) {
+    let id = agent_named(&scenario.app, "term-3");
+    let size = scenario.app.agent_term_size();
+    scenario.app.agents.get_mut(&id).unwrap().term = Some(TermView::from_snapshot(size, screen));
+    scenario.app.view = View::Agent(id);
+    render(&mut scenario.app);
+    (id, render::areas(scenario.app.screen, true, true, 1).body)
+}
+
+fn mouse(app: &mut App, kind: MouseEventKind, column: u16, row: u16, modifiers: KeyModifiers) {
+    app.handle(AppEvent::Input(Event::Mouse(MouseEvent { kind, column, row, modifiers })));
+}
+
+const LEFT_DOWN: MouseEventKind = MouseEventKind::Down(MouseButton::Left);
+const LEFT_DRAG: MouseEventKind = MouseEventKind::Drag(MouseButton::Left);
+const LEFT_UP: MouseEventKind = MouseEventKind::Up(MouseButton::Left);
+
+#[test]
+fn dragging_over_an_agent_that_ignores_the_mouse_highlights_and_copies_its_text() {
+    let mut scenario = scenario();
+    let (_, body) = showing(&mut scenario, b"first line\r\nsecond line\r\nthird");
+    let app = &mut scenario.app;
+    mouse(app, LEFT_DOWN, body.x + 6, body.y, KeyModifiers::NONE);
+    mouse(app, LEFT_DRAG, body.x + 2, body.y + 1, KeyModifiers::NONE);
+    mouse(app, LEFT_DRAG, body.x + 5, body.y + 1, KeyModifiers::NONE);
+    assert_eq!(app.take_clipboard(), None, "nothing is copied before the button is released");
+    let buffer = render(app);
+    let reversed = |x: u16, y: u16| buffer[(body.x + x, body.y + y)].modifier.contains(Modifier::REVERSED);
+    for (x, y, selected) in [(5, 0, false), (6, 0, true), (body.width - 1, 0, true), (0, 1, true), (5, 1, true)] {
+        assert_eq!(reversed(x, y), selected, "cell {x},{y}");
+    }
+    assert!(!reversed(6, 1) && !reversed(0, 2));
+
+    mouse(app, LEFT_UP, body.x + 5, body.y + 1, KeyModifiers::NONE);
+    assert_eq!(app.take_clipboard().as_deref(), Some("line\nsecond"));
+    let notice = app.notice.as_ref().unwrap().text.clone();
+    assert!(notice.contains("copied 11 characters"), "{notice}");
+    assert!(app.selection.is_some(), "the copied text stays highlighted");
+    press(app, KeyCode::Char('c'), KeyModifiers::CONTROL);
+    assert_eq!(app.take_clipboard().as_deref(), Some("line\nsecond"), "ctrl+c copies it again");
+    assert_eq!(app.selection, None);
+    press(app, KeyCode::Char('c'), KeyModifiers::CONTROL);
+    assert_eq!(app.take_clipboard(), None, "without a selection ctrl+c goes to the agent");
+}
+
+#[test]
+fn a_click_copies_nothing_and_a_drag_past_the_agent_stops_at_its_edge() {
+    let mut scenario = scenario();
+    let (_, body) = showing(&mut scenario, b"first line\r\nsecond line\r\nthird");
+    let app = &mut scenario.app;
+    mouse(app, LEFT_DOWN, body.x + 3, body.y + 2, KeyModifiers::NONE);
+    mouse(app, LEFT_UP, body.x + 3, body.y + 2, KeyModifiers::NONE);
+    assert_eq!(app.take_clipboard(), None);
+    assert_eq!(app.selection, None);
+
+    mouse(app, LEFT_DOWN, body.x + 1, body.y + 2, KeyModifiers::NONE);
+    mouse(app, LEFT_DRAG, 0, body.y + 2, KeyModifiers::NONE);
+    mouse(app, LEFT_UP, 0, body.y + 2, KeyModifiers::NONE);
+    assert_eq!(app.take_clipboard().as_deref(), Some("th"), "the sidebar is never part of the text");
+
+    mouse(app, LEFT_DOWN, body.x, body.y, KeyModifiers::NONE);
+    wheel(app, MouseEventKind::ScrollUp);
+    assert_eq!(app.selection, None, "scrolling drops the selection");
+}
+
+#[test]
+fn ctrl_click_opens_the_link_under_the_pointer_even_when_only_its_title_is_shown() {
+    let mut scenario = scenario();
+    let screen = b"read \x1b]8;id=1;https://example.com/guide\x1b\\the guide\x1b]8;;\x1b\\ or https://example.com/raw.";
+    let (_, body) = showing(&mut scenario, screen);
+    let app = &mut scenario.app;
+    mouse(app, LEFT_DOWN, body.x + 7, body.y, KeyModifiers::NONE);
+    mouse(app, LEFT_UP, body.x + 7, body.y, KeyModifiers::NONE);
+    assert_eq!(app.take_open_link(), None, "a plain click opens nothing");
+
+    mouse(app, LEFT_DOWN, body.x + 7, body.y, KeyModifiers::CONTROL);
+    assert_eq!(app.take_open_link().as_deref(), Some("https://example.com/guide"));
+    let notice = app.notice.as_ref().unwrap().text.clone();
+    assert!(notice.contains("opening https://example.com/guide"), "{notice}");
+    assert_eq!(app.selection, None);
+    mouse(app, LEFT_UP, body.x + 7, body.y, KeyModifiers::CONTROL);
+
+    for (x, link) in [(20, Some("https://example.com/raw")), (1, None), (41, None)] {
+        mouse(app, LEFT_DOWN, body.x + x, body.y, KeyModifiers::CONTROL);
+        mouse(app, LEFT_UP, body.x + x, body.y, KeyModifiers::CONTROL);
+        assert_eq!(app.take_open_link().as_deref(), link, "column {x}");
+    }
+}
+
+#[test]
+fn new_output_clears_a_copied_selection_but_not_one_still_being_dragged() {
+    let mut scenario = scenario();
+    let (id, body) = showing(&mut scenario, b"one two three");
+    let app = &mut scenario.app;
+    let output = |app: &mut App, bytes: &[u8]| {
+        app.handle(AppEvent::Holder { id, generation: 0, msg: Some(HolderMsg::Output(bytes.to_vec())) });
+    };
+    mouse(app, LEFT_DOWN, body.x, body.y, KeyModifiers::NONE);
+    mouse(app, LEFT_DRAG, body.x + 2, body.y, KeyModifiers::NONE);
+    output(app, b"!");
+    assert!(app.selection.is_some_and(|selection| selection.dragging));
+    mouse(app, LEFT_UP, body.x + 2, body.y, KeyModifiers::NONE);
+    assert_eq!(app.take_clipboard().as_deref(), Some("one"));
+    output(app, b"?");
+    assert_eq!(app.selection, None);
 }

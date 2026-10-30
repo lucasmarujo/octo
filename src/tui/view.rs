@@ -3,28 +3,34 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::protocol::TermSize;
+use crate::termlink::LinkTracker;
 
 pub const CLIENT_SCROLLBACK: usize = 3_000;
 const DOCUMENT_TRUNCATED: &[u8] = b"\x1b[m\r\n(truncated)";
 
 pub struct TermView {
     parser: vt100::Parser,
+    links: LinkTracker,
     scroll: usize,
 }
 
 impl TermView {
     pub fn new(size: TermSize) -> Self {
-        Self { parser: vt100::Parser::new(size.rows, size.cols, CLIENT_SCROLLBACK), scroll: 0 }
+        Self {
+            parser: vt100::Parser::new(size.rows, size.cols, CLIENT_SCROLLBACK),
+            links: LinkTracker::default(),
+            scroll: 0,
+        }
     }
 
     pub fn from_snapshot(size: TermSize, data: &[u8]) -> Self {
         let mut view = Self::new(size);
-        view.parser.process(data);
+        view.process(data);
         view
     }
 
     pub fn from_parser(parser: vt100::Parser) -> Self {
-        Self { parser, scroll: 0 }
+        Self { parser, links: LinkTracker::default(), scroll: 0 }
     }
 
     pub fn document(size: TermSize, text: &[u8]) -> Self {
@@ -51,6 +57,7 @@ impl TermView {
 
     pub fn process(&mut self, bytes: &[u8]) {
         self.parser.process(bytes);
+        self.links.feed(bytes);
         if self.scroll > 0 {
             self.parser.screen_mut().set_scrollback(self.scroll);
             self.scroll = self.parser.screen().scrollback();
@@ -87,6 +94,17 @@ impl TermView {
 
     pub fn is_scrolled(&self) -> bool {
         self.scroll > 0
+    }
+
+    pub fn link_at(&self, row: u16, col: u16) -> Option<String> {
+        self.links.link_at(self.parser.screen(), row, col)
+    }
+
+    pub fn text(&self, from: (u16, u16), to: (u16, u16)) -> String {
+        let screen = self.parser.screen();
+        let (_, cols) = screen.size();
+        let text = screen.contents_between(from.0, from.1, to.0, to.1.saturating_add(1).min(cols));
+        text.lines().map(str::trim_end).collect::<Vec<_>>().join("\n")
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer) -> Option<Position> {
@@ -219,6 +237,31 @@ mod tests {
         let mut buf = Buffer::empty(area);
         view.render(area, &mut buf);
         assert_eq!(buf[(3, 0)].symbol(), "d");
+    }
+
+    #[test]
+    fn text_between_two_cells_follows_the_rows_and_trims_line_ends() {
+        let mut view = TermView::new(TermSize { rows: 4, cols: 12 });
+        view.process(b"first line  \r\nsecond\r\nthe third one");
+        assert_eq!(view.text((0, 6), (1, 2)), "line\nsec");
+        assert_eq!(view.text((0, 0), (0, 4)), "first");
+        assert_eq!(view.text((1, 0), (2, 11)), "second\nthe third on");
+        assert_eq!(view.text((2, 4), (3, 3)), "third one");
+    }
+
+    #[test]
+    fn links_come_from_the_snapshot_live_output_and_the_scrolled_history() {
+        let records = b"\x1b]7502;aHR0cHM6Ly9leGFtcGxlLmNvbS9vbGQ=;b2xkIGRvY3M=\x07";
+        let mut view =
+            TermView::from_snapshot(TermSize { rows: 2, cols: 40 }, &[b"old docs".as_slice(), records].concat());
+        assert_eq!(view.link_at(0, 2).as_deref(), Some("https://example.com/old"));
+        view.process(b"\r\n\x1b]8;;https://example.com/new\x07new docs\x1b]8;;\x07 and https://example.com/raw");
+        assert_eq!(view.link_at(1, 1).as_deref(), Some("https://example.com/new"));
+        assert_eq!(view.link_at(1, 20).as_deref(), Some("https://example.com/raw"));
+        view.process(b"\r\nthree\r\nfour");
+        view.scroll_by(2);
+        assert_eq!(view.link_at(0, 1).as_deref(), Some("https://example.com/old"));
+        assert_eq!(view.text((0, 0), (0, 7)), "old docs");
     }
 
     #[test]

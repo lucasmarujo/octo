@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod cli;
 pub mod client;
 pub mod clipboard;
@@ -19,6 +20,7 @@ pub mod store;
 pub mod subagents;
 pub mod termfmt;
 pub mod terminal_profile;
+pub mod termlink;
 pub mod tui;
 pub mod update;
 pub mod usage;

@@ -76,6 +76,12 @@ pub fn is_next_waiting_key(key: &KeyEvent) -> bool {
         && !key.modifiers.contains(KeyModifiers::CONTROL)
 }
 
+pub fn is_copy_key(key: &KeyEvent) -> bool {
+    key.modifiers.contains(KeyModifiers::CONTROL)
+        && !key.modifiers.contains(KeyModifiers::ALT)
+        && matches!(key.code, KeyCode::Char('c' | 'C'))
+}
+
 pub fn is_press(key: &KeyEvent) -> bool {
     key.kind != KeyEventKind::Release
 }
@@ -416,6 +422,15 @@ mod tests {
         assert!(!is_next_waiting_key(&key(KeyCode::Char('n'), KeyModifiers::CONTROL)));
         assert!(!is_next_waiting_key(&key(KeyCode::Char('n'), KeyModifiers::CONTROL | KeyModifiers::ALT)));
         assert!(!is_next_waiting_key(&key(KeyCode::Char('N'), KeyModifiers::ALT | KeyModifiers::SHIFT)));
+    }
+
+    #[test]
+    fn copy_key_is_ctrl_c_with_or_without_shift() {
+        assert!(is_copy_key(&key(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+        assert!(is_copy_key(&key(KeyCode::Char('C'), KeyModifiers::CONTROL | KeyModifiers::SHIFT)));
+        assert!(!is_copy_key(&key(KeyCode::Char('c'), KeyModifiers::NONE)));
+        assert!(!is_copy_key(&key(KeyCode::Char('c'), KeyModifiers::CONTROL | KeyModifiers::ALT)));
+        assert!(!is_copy_key(&key(KeyCode::Char('v'), KeyModifiers::CONTROL)));
     }
 
     #[test]

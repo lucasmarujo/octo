@@ -299,6 +299,7 @@ continua na tela com `unavailable`.
 | `↑` `↓` / mouse | seleciona; `enter` ou clique abre o agente numa aba |
 | `ctrl+]` | sai da aba do agente e volta para a visão geral |
 | `shift+pgup` / roda do mouse | histórico do agente |
+| arrastar · `ctrl`+clique | num agente que não usa o mouse: seleciona e copia o texto · abre o link web sob o ponteiro |
 | `alt+1..9` | pula para uma aba aberta |
 | `alt+n` | abre o próximo agente esperando você (ou que terminou), de qualquer tela |
 | `ctrl+e` / `f2` | renomeia o agente |
@@ -316,7 +317,10 @@ continua na tela com `unavailable`.
 | `ctrl+c` / `ctrl+q` | sai do orkai; os agentes continuam rodando |
 
 Dentro da aba de um agente todas as teclas vão para ele (Claude Code, OpenCode, PowerShell, bash…),
-inclusive `esc`, setas, colagem e mouse quando o programa usa mouse.
+inclusive `esc`, setas, colagem e mouse quando o programa usa mouse. Quando não usa (um shell, o Codex,
+a tela clássica do Claude Code), o orkai faz o que o terminal faria: arrastar seleciona o texto e o copia ao
+soltar (`ctrl+c` copia de novo em vez de interromper o agente), e `ctrl`+clique abre um link, inclusive os
+mostrados só pelo título.
 
 ## Escolhendo a pasta (`/where`)
 

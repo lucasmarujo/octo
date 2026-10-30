@@ -298,6 +298,7 @@ stays on screen with `unavailable`.
 | `↑` `↓` / mouse | selects; `enter` or a click opens the agent in a tab |
 | `ctrl+]` | leaves the agent's tab and goes back to the overview |
 | `shift+pgup` / mouse wheel | agent history |
+| drag · `ctrl`+click | in an agent that doesn't use the mouse: selects and copies its text · opens the web link under the pointer |
 | `alt+1..9` | jumps to an open tab |
 | `alt+n` | opens the next agent waiting for you (or that is done), from any screen |
 | `ctrl+e` / `f2` | renames the agent |
@@ -315,7 +316,10 @@ stays on screen with `unavailable`.
 | `ctrl+c` / `ctrl+q` | quits orkai; the agents keep running |
 
 Inside an agent's tab every key goes to it (Claude Code, OpenCode, PowerShell, bash…),
-including `esc`, arrows, paste and the mouse when the program uses the mouse.
+including `esc`, arrows, paste and the mouse when the program uses the mouse. When it doesn't (a shell,
+Codex, Claude Code's classic screen), orkai does what the terminal would: dragging selects the text and
+copies it when you let go (`ctrl+c` copies it again instead of interrupting the agent), and `ctrl`+click
+opens a link, including the ones shown only by their title.
 
 ## Choosing the folder (`/where`)
 

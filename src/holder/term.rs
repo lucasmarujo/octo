@@ -4,6 +4,7 @@ use crate::hooks::{self, HookSignal};
 use crate::model::{AgentKind, ExitInfo, NestedAgent, StatusReport};
 use crate::protocol::TermSize;
 use crate::termfmt;
+use crate::termlink::LinkTracker;
 
 pub const HOLDER_SCROLLBACK: usize = 1_000;
 pub const INPUT_QUIET_MS: u64 = 900;
@@ -67,6 +68,7 @@ impl vt100::Callbacks for Responder {
 
 pub struct TermState {
     parser: vt100::Parser<Responder>,
+    links: LinkTracker,
     kind: AgentKind,
     nested: Option<NestedAgent>,
     detector: Detector,
@@ -93,6 +95,7 @@ impl TermState {
         }
         Self {
             parser: vt100::Parser::new_with_callbacks(size.rows, size.cols, HOLDER_SCROLLBACK, Responder::default()),
+            links: LinkTracker::default(),
             kind,
             nested: None,
             detector: Detector::new(started_at),
@@ -111,6 +114,7 @@ impl TermState {
 
     pub fn process(&mut self, bytes: &[u8], now: u64) -> Vec<u8> {
         self.parser.process(bytes);
+        self.links.feed(bytes);
         for signal in std::mem::take(&mut self.parser.callbacks_mut().signals) {
             self.apply_hook(signal, now);
         }
@@ -272,7 +276,9 @@ impl TermState {
     }
 
     pub fn snapshot(&mut self) -> Vec<u8> {
-        termfmt::snapshot(self.parser.screen_mut())
+        let mut data = termfmt::snapshot(self.parser.screen_mut());
+        data.extend_from_slice(&self.links.records());
+        data
     }
 }
 
@@ -298,6 +304,20 @@ mod tests {
 
     fn state(kind: AgentKind) -> TermState {
         TermState::new(kind, TermSize { rows: 6, cols: 40 }, 0, "write the docs".into(), None)
+    }
+
+    #[test]
+    fn snapshots_carry_the_links_the_agent_printed() {
+        let mut t = state(AgentKind::Claude);
+        t.process(b"read \x1b]8;id=1;https://example.com/guide\x1b\\the guide\x1b]8;;\x1b\\ first", 1);
+        let data = t.snapshot();
+        let mut replica = vt100::Parser::new(6, 40, 0);
+        replica.process(&data);
+        let mut links = LinkTracker::default();
+        links.feed(&data);
+        assert_eq!(replica.screen().contents(), "read the guide first");
+        assert_eq!(links.link_at(replica.screen(), 0, 8).as_deref(), Some("https://example.com/guide"));
+        assert_eq!(links.link_at(replica.screen(), 0, 2), None);
     }
 
     #[test]

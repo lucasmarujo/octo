@@ -10,7 +10,9 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wra
 use crate::model::{AgentId, AgentKind, AgentState, TestReport, TestState};
 use crate::pwa::bridge::Phase;
 use crate::pwa::qr::Qr;
-use crate::tui::app::{AgentEntry, App, Confirm, Hit, Link, PaneMode, Prompt, PwaPanel, SHELL_PREFIX, Tone, View};
+use crate::tui::app::{
+    AgentEntry, App, Confirm, Hit, Link, PaneMode, Prompt, PwaPanel, SHELL_PREFIX, TextSelection, Tone, View,
+};
 use crate::tui::complete::matching_commands;
 use crate::tui::format::{duration_short, pad, pad_left, skip_columns, split_columns, truncate, truncate_start, width};
 use crate::tui::sprite;
@@ -1204,13 +1206,37 @@ fn draw_agent(app: &mut App, id: AgentId, area: Rect, buf: &mut Buffer) -> Optio
     app.hits.push((area, Hit::Terminal));
     let entry = app.agents.get(&id)?;
     match entry.term.as_ref() {
-        Some(term) => term.render(area, buf),
+        Some(term) => {
+            let cursor = term.render(area, buf);
+            if let Some(selection) = app.selection.filter(|selection| selection.agent == id) {
+                let size = term.size();
+                let shown = Rect::new(area.x, area.y, area.width.min(size.cols), area.height.min(size.rows));
+                draw_selection(selection, shown, buf);
+            }
+            cursor
+        }
         None => {
             let message = if entry.is_dead() { "loading the last recorded screen…" } else { "connecting…" };
             let y = area.y + area.height / 2;
             let x = area.x + area.width.saturating_sub(u16::try_from(width(message)).unwrap_or(0)) / 2;
             put(buf, x, y, message, fg(theme::DIM), area.right());
             None
+        }
+    }
+}
+
+fn draw_selection(selection: TextSelection, area: Rect, buf: &mut Buffer) {
+    let (from, to) = selection.range();
+    for row in from.0..=to.0 {
+        let first = if row == from.0 { from.1 } else { 0 };
+        let last = if row == to.0 { to.1 } else { area.width.saturating_sub(1) };
+        for col in first..=last {
+            if row < area.height
+                && col < area.width
+                && let Some(cell) = buf.cell_mut((area.x + col, area.y + row))
+            {
+                cell.modifier.toggle(Modifier::REVERSED);
+            }
         }
     }
 }
@@ -1331,6 +1357,7 @@ const HELP: &[(&str, &str)] = &[
     ("alt+n", "open the next agent waiting for you (or finished)"),
     ("ctrl+]", "leave an agent and return to the overview"),
     ("shift+pgup/pgdn", "scroll an agent's history (or mouse wheel)"),
+    ("drag · ctrl+click", "copy an agent's text · open the link under the pointer"),
     ("ctrl+e / f2", "rename selected agent"),
     ("ctrl+x", "stop a running agent / remove a stopped one"),
     ("delete", "stop and remove the selected agent (asks first)"),

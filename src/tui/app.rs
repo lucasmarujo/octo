@@ -209,6 +209,20 @@ pub enum View {
     Pwa,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextSelection {
+    pub agent: AgentId,
+    pub anchor: (u16, u16),
+    pub head: (u16, u16),
+    pub dragging: bool,
+}
+
+impl TextSelection {
+    pub fn range(&self) -> ((u16, u16), (u16, u16)) {
+        if self.anchor <= self.head { (self.anchor, self.head) } else { (self.head, self.anchor) }
+    }
+}
+
 pub enum Prompt {
     Where(LineInput),
     Rename(AgentId, LineInput),
@@ -361,6 +375,8 @@ pub struct App {
     change_requests: Option<Sender<Vec<(AgentId, Worktree)>>>,
     alerts: Vec<Alert>,
     clipboard: Option<String>,
+    open_link: Option<String>,
+    pub selection: Option<TextSelection>,
     installed: Option<Vec<AgentKind>>,
     pub pwa: PwaPanel,
 }
@@ -429,6 +445,8 @@ impl App {
             change_requests: None,
             alerts: Vec::new(),
             clipboard: None,
+            open_link: None,
+            selection: None,
             installed: None,
             pwa: PwaPanel { enabled: ui.pwa, ..PwaPanel::default() },
         };
@@ -735,6 +753,10 @@ impl App {
 
     pub fn take_clipboard(&mut self) -> Option<String> {
         self.clipboard.take()
+    }
+
+    pub fn take_open_link(&mut self) -> Option<String> {
+        self.open_link.take()
     }
 
     pub fn session_count(&self, name: &str) -> usize {
@@ -1210,6 +1232,9 @@ impl App {
                         self.dirty = true;
                     }
                 }
+                if self.selection.is_some_and(|selection| selection.agent == id && !selection.dragging) {
+                    self.selection = None;
+                }
             }
             Some(HolderMsg::Exited(info)) => {
                 let text = format!("{} {}", entry.record.name, info.describe());
@@ -1292,6 +1317,7 @@ impl App {
     }
 
     fn detach(&mut self, id: AgentId) {
+        self.selection = None;
         let Some(entry) = self.agents.get_mut(&id) else { return };
         if entry.attached {
             if let Some(conn) = entry.conn() {
@@ -2038,6 +2064,12 @@ impl App {
         match event {
             Event::Key(key) if keys::is_press(&key) => {
                 self.dirty = true;
+                if let Some(selection) = self.selection.take()
+                    && keys::is_copy_key(&key)
+                {
+                    self.copy_selection(selection);
+                    return;
+                }
                 if self.show_help {
                     self.show_help = false;
                     return;
@@ -2467,6 +2499,7 @@ impl App {
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => {
                 self.dirty = true;
+                self.selection = None;
                 if self.show_help {
                     self.show_help = false;
                     return;
@@ -2509,12 +2542,16 @@ impl App {
                     }
                     Some(Hit::Pwa) => self.open_pwa(),
                     Some(Hit::CopyPwaLink) => self.copy_pwa_link(),
-                    Some(Hit::Terminal) | None => {}
+                    Some(Hit::Terminal) => self.press_terminal(&mouse),
+                    None => {}
                 }
             }
+            MouseEventKind::Drag(MouseButton::Left) => self.drag_selection(&mouse),
+            MouseEventKind::Up(MouseButton::Left) => self.release_selection(),
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 let up = mouse.kind == MouseEventKind::ScrollUp;
                 self.dirty = true;
+                self.selection = None;
                 match self.view {
                     View::Agent(id) => {
                         if let Some(term) = self.agents.get_mut(&id).and_then(|e| e.term.as_mut()) {
@@ -2557,6 +2594,68 @@ impl App {
             }
             None => false,
         }
+    }
+
+    fn terminal_cell(&self, id: AgentId, mouse: &MouseEvent) -> Option<(u16, u16)> {
+        let body = render::areas(self.screen, true, true, 1).body;
+        let size = self.agents.get(&id)?.term.as_ref()?.size();
+        let rows = body.height.min(size.rows);
+        let cols = body.width.min(size.cols);
+        if rows == 0 || cols == 0 {
+            return None;
+        }
+        Some((mouse.row.saturating_sub(body.y).min(rows - 1), mouse.column.saturating_sub(body.x).min(cols - 1)))
+    }
+
+    fn press_terminal(&mut self, mouse: &MouseEvent) {
+        let View::Agent(id) = self.view else { return };
+        let Some(cell) = self.terminal_cell(id, mouse) else { return };
+        if mouse.modifiers.contains(KeyModifiers::CONTROL)
+            && let Some(url) =
+                self.agents.get(&id).and_then(|entry| entry.term.as_ref()).and_then(|term| term.link_at(cell.0, cell.1))
+        {
+            self.set_notice(Tone::Info, format!("opening {url}"));
+            self.open_link = Some(url);
+            return;
+        }
+        self.selection = Some(TextSelection { agent: id, anchor: cell, head: cell, dragging: true });
+    }
+
+    fn drag_selection(&mut self, mouse: &MouseEvent) {
+        let Some(selection) = self.selection.filter(|s| s.dragging && self.view == View::Agent(s.agent)) else {
+            return;
+        };
+        let Some(head) = self.terminal_cell(selection.agent, mouse) else { return };
+        if head != selection.head {
+            self.selection = Some(TextSelection { head, ..selection });
+            self.dirty = true;
+        }
+    }
+
+    fn release_selection(&mut self) {
+        let Some(selection) = self.selection.filter(|s| s.dragging) else { return };
+        self.dirty = true;
+        if selection.anchor == selection.head {
+            self.selection = None;
+            return;
+        }
+        let selection = TextSelection { dragging: false, ..selection };
+        self.selection = Some(selection);
+        self.copy_selection(selection);
+    }
+
+    fn copy_selection(&mut self, selection: TextSelection) {
+        let (from, to) = selection.range();
+        let Some(text) = self.agents.get(&selection.agent).and_then(|e| e.term.as_ref()).map(|t| t.text(from, to))
+        else {
+            return;
+        };
+        if text.is_empty() {
+            return;
+        }
+        let count = text.chars().count();
+        self.set_notice(Tone::Success, format!("copied {count} character{}", if count == 1 { "" } else { "s" }));
+        self.clipboard = Some(text);
     }
 }
 
