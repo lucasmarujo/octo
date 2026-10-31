@@ -262,6 +262,39 @@ function mountHero(hero) {
   });
 }
 
+function mountKai(kai) {
+  const LOOK = 3.2;
+  let cheer = 0;
+  kai.addEventListener('click', () => {
+    kai.classList.remove('cheer');
+    void kai.offsetWidth;
+    kai.classList.add('cheer');
+    clearTimeout(cheer);
+    cheer = setTimeout(() => kai.classList.remove('cheer'), 1300);
+  });
+  if (REDUCED_MOTION) return;
+  let frame = 0;
+  let pointer = null;
+  const look = () => {
+    frame = 0;
+    const box = kai.getBoundingClientRect();
+    const dx = pointer.x - (box.left + box.width / 2);
+    const dy = pointer.y - (box.top + box.height * 0.44);
+    const distance = Math.hypot(dx, dy) || 1;
+    const reach = Math.min(distance / 240, 1) * LOOK;
+    kai.style.setProperty('--look-x', `${((dx / distance) * reach).toFixed(2)}%`);
+    kai.style.setProperty('--look-y', `${((dy / distance) * reach).toFixed(2)}%`);
+  };
+  addEventListener(
+    'pointermove',
+    (event) => {
+      pointer = { x: event.clientX, y: event.clientY };
+      if (!frame) frame = requestAnimationFrame(look);
+    },
+    { passive: true },
+  );
+}
+
 function mountMarquee(rows) {
   if (REDUCED_MOTION) return;
   rows.forEach((row) => {
@@ -920,6 +953,7 @@ function mountCopy() {
 mountReveal();
 mountHeader(document.querySelector('[data-top]'));
 mountHero(document.querySelector('.hero'));
+mountKai(document.querySelector('[data-kai]'));
 mountTui(document.querySelector('[data-tui]'));
 mountMarquee(document.querySelectorAll('[data-marquee]'));
 mountChaos(document.querySelector('[data-chaos]'));

@@ -2,8 +2,9 @@
 
 Landing page do orkai: HTML, CSS e JavaScript estáticos, sem build e sem nenhum recurso de terceiros (fontes,
 vídeo e imagens ficam em `assets/`). A simulação da TUI em `assets/tui.js` reproduz a lógica de
-`src/tui` (tempos, cores por projeto, glifos, título da janela e avisos), e o mascote é o sprite de
-`src/tui/sprite.rs`.
+`src/tui` (tempos, cores por projeto, glifos, título da janela e avisos) e mostra o sprite de `src/tui/sprite.rs`,
+como o CLI. Os outros mascotes são o Kai, o polvo do app desktop, com as mesmas formas de `desktop/ui/js/kai.js`,
+montado em camadas que só animam `transform` e `opacity` para rodar a 60 fps.
 
 ## Testes
 
@@ -12,7 +13,7 @@ cd site
 node --test
 ```
 
-Os testes comparam a página com a fonte da verdade do repositório: o sprite e a paleta da TUI, a tabela de
+Os testes comparam a página com a fonte da verdade do repositório: o sprite e a paleta da TUI, o Kai do app, a tabela de
 agentes, os comandos de instalação e os binários do `README.md`. Ao mudar algum deles, atualize a página junto.
 A página é em inglês, como o `README.md`, então a tabela de agentes é igual à do README. O `README.pt-BR.md` é a
 tradução dele e os testes conferem que os dois têm o mesmo vídeo, a mesma estrutura e âncoras válidas.

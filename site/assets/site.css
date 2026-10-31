@@ -742,3 +742,76 @@ kbd + kbd { margin-left: 0.25em; }
   .waving .m-idle { animation: none; visibility: visible; }
   .waving .m-busy { animation: none; visibility: hidden; }
 }
+
+.kai { position: relative; display: inline-block; flex-shrink: 0; }
+.kai-layer, .kai-body, .kai-face { position: absolute; inset: 0; }
+.kai-layer svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.kai-body { transform-origin: 50% 86%; will-change: transform; animation: kai-breathe 3.6s ease-in-out infinite; }
+.kai-face { transform-origin: 50% 46.9%; animation: kai-blink 5s ease-in-out infinite; }
+.kai-leg-1 { transform-origin: 34.4% 59.4%; animation: kai-drift 3.6s ease-in-out infinite; }
+.kai-leg-2 { transform-origin: 50% 64%; animation: kai-drift 3.6s ease-in-out -1.2s infinite; }
+.kai-leg-3 { transform-origin: 65.6% 59.4%; animation: kai-drift 3.6s ease-in-out -2.4s infinite; }
+.kai-head, .kai-eyes, .kai-cap { transform-origin: 50% 50%; }
+.kai-pupils { transform-origin: 50% 50%; transform: translate(var(--look-x, 0), var(--look-y, 0)); transition: transform 0.24s ease-out, opacity 0.2s ease-out; }
+.brand-mascot.kai { width: 26px; height: 26px; }
+.top-runner.kai { position: absolute; left: 0; bottom: 1px; width: 20px; height: 20px; }
+.top-runner.kai.is-walking { animation: none; }
+.top-runner.is-walking .kai-leg-1, .top-runner.is-walking .kai-leg-2, .top-runner.is-walking .kai-leg-3,
+.finale-mascot.is-walking .kai-leg-1, .finale-mascot.is-walking .kai-leg-2, .finale-mascot.is-walking .kai-leg-3 { animation: kai-paddle 0.32s ease-in-out infinite alternate; }
+.top-runner.is-walking .kai-leg-2, .finale-mascot.is-walking .kai-leg-2 { animation-delay: -0.1s; }
+.top-runner.is-walking .kai-leg-3, .finale-mascot.is-walking .kai-leg-3 { animation-delay: -0.2s; }
+.finale-mascot.kai { width: 190px; height: 190px; }
+.finale-mascot.kai::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: #1f2b5c; box-shadow: 0 18px 40px rgba(26, 10, 16, 0.28); }
+.finale-mascot.kai.is-walking { animation: none; }
+.finale-mascot.is-walking .kai-body { animation: kai-swim 0.64s ease-in-out infinite; }
+
+.kai-hero { width: 232px; height: 232px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.kai-hero .kai-body { transform-origin: 50% 85%; animation: kai-float 4.2s ease-in-out infinite; }
+.kai-hero .kai-face { transform-origin: 50% 44%; }
+.kai-ring { transform-origin: 50% 50%; animation: kai-sonar 3.4s ease-out infinite; }
+.kai-bubble-1, .kai-bubble-2, .kai-bubble-3 { transform-origin: 50% 50%; opacity: 0; animation: kai-bubble 5.2s ease-in infinite; }
+.kai-bubble-2 { animation-duration: 6.4s; animation-delay: 1.7s; }
+.kai-bubble-3 { animation-duration: 4.6s; animation-delay: 3.1s; }
+.kai-curls { transform-origin: 50% 60.5%; animation: kai-drift 4.2s ease-in-out infinite; }
+.kai-arm-left { transform-origin: 35% 54%; animation: kai-press-left 2.1s ease-in-out infinite; }
+.kai-arm-right { transform-origin: 65% 54%; animation: kai-press-right 2.1s ease-in-out 1.4s infinite; }
+.kai-arm-center { transform-origin: 50% 62.5%; animation: kai-press-down 2.1s ease-in-out 0.7s infinite; }
+.kai-cursor { animation: kai-cursor 1.05s steps(1) infinite; }
+.kai-arm-right .kai-cursor { animation-delay: 0.35s; }
+.kai-arm-center .kai-cursor { animation-delay: 0.7s; }
+.kai-hat { transform-origin: 52% 23%; transition: transform 0.3s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.kai-pompom { transform-origin: 52% 13%; animation: kai-pompom 1.4s ease-in-out infinite; }
+.kai-happy, .kai-grin { opacity: 0; transition: opacity 0.18s ease-out; }
+.kai-eyes, .kai-smile { transition: opacity 0.18s ease-out; }
+.kai-hero.cheer .kai-body { animation: kai-cheer 1.3s cubic-bezier(0.3, 0, 0.3, 1) both; }
+.kai-hero.cheer .kai-arm-left { animation: kai-hooray-left 1.3s ease-in-out both; }
+.kai-hero.cheer .kai-arm-right { animation: kai-hooray-right 1.3s ease-in-out both; }
+.kai-hero.cheer .kai-hat { transform: rotate(-16deg) translateY(-6%); }
+.kai-hero.cheer .kai-happy, .kai-hero.cheer .kai-grin { opacity: 1; }
+.kai-hero.cheer .kai-eyes, .kai-hero.cheer .kai-pupils, .kai-hero.cheer .kai-smile { opacity: 0; }
+
+@keyframes kai-breathe { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(1.5%) scale(1.02, 0.98); } }
+@keyframes kai-float { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-3%) rotate(-1deg); } }
+@keyframes kai-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.08); } }
+@keyframes kai-drift { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes kai-paddle { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
+@keyframes kai-swim { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-5%) rotate(4deg); } }
+@keyframes kai-sonar { 0% { transform: scale(0.96); opacity: 0.9; } 70%, 100% { transform: scale(1.12); opacity: 0; } }
+@keyframes kai-bubble { 0% { transform: translateY(0) scale(0.6); opacity: 0; } 15% { opacity: 0.9; } 80% { opacity: 0.6; } 100% { transform: translateY(-34%) scale(1.15); opacity: 0; } }
+@keyframes kai-press-left { 0%, 100% { transform: rotate(0); } 10% { transform: rotate(-6deg); } 20% { transform: rotate(2deg); } 30% { transform: rotate(-4deg); } 40% { transform: rotate(0); } }
+@keyframes kai-press-right { 0%, 100% { transform: rotate(0); } 10% { transform: rotate(6deg); } 20% { transform: rotate(-2deg); } 30% { transform: rotate(4deg); } 40% { transform: rotate(0); } }
+@keyframes kai-press-down { 0%, 100% { transform: translateY(0); } 10% { transform: translateY(2.5%); } 20% { transform: translateY(-1%); } 30% { transform: translateY(2%); } 40% { transform: translateY(0); } }
+@keyframes kai-cursor { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes kai-pompom { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5%); } }
+@keyframes kai-cheer { 0% { transform: translateY(0) scale(1, 1); } 22% { transform: translateY(-14%) scale(0.96, 1.05); } 44% { transform: translateY(0) scale(1.05, 0.95); } 60% { transform: translateY(-5%) scale(1, 1); } 100% { transform: translateY(0) scale(1, 1); } }
+@keyframes kai-hooray-left { 0%, 100% { transform: rotate(0); } 25%, 70% { transform: rotate(38deg); } }
+@keyframes kai-hooray-right { 0%, 100% { transform: rotate(0); } 25%, 70% { transform: rotate(-38deg); } }
+
+@media (max-width: 720px) {
+  .kai-hero { width: 176px; height: 176px; }
+  .finale-mascot.kai { width: 128px; height: 128px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kai, .kai * { animation: none !important; transition: none !important; }
+}

@@ -192,13 +192,14 @@ test('a página, os metadados e os textos do app.js estão em inglês', () => {
   assert.doesNotMatch(text, /\b(?:para|uma|seus|seu|sua|agentes|quem|sem|todos|voce|projetos|tarefa)\b/i);
 });
 
-test('todo mascote da página é o sprite IDLE/BUSY do src/tui/sprite.rs, pixel a pixel', () => {
+test('o mascote da TUI simulada é o sprite IDLE/BUSY do src/tui/sprite.rs, pixel a pixel', () => {
   const sprite = readFileSync(join(REPO, 'src/tui/sprite.rs'), 'utf8');
   const palette = rustPalette(sprite);
   const idle = expectedGrid(rustFrame(sprite, 'IDLE'), palette);
   const busy = expectedGrid(rustFrame(sprite, 'BUSY'), palette);
   const svgs = [...html.matchAll(/<svg class="mascot[^"]*"[^>]*>([\s\S]*?)<\/svg>/g)].map((m) => m[1]);
-  assert.ok(svgs.length >= 5, `${svgs.length} mascotes`);
+  assert.equal(svgs.length, 1, 'só a TUI simulada mostra o marinheiro, como o CLI');
+  assert.match(html, /<svg class="mascot tui-mascot/);
   svgs.forEach((svg, i) => {
     const groups = [...svg.matchAll(/<g class="m-(base|idle|busy)">([\s\S]*?)<\/g>/g)];
     assert.deepEqual(rasterize(groups, ['base', 'idle']), idle, `mascote ${i} (idle)`);
@@ -206,6 +207,32 @@ test('todo mascote da página é o sprite IDLE/BUSY do src/tui/sprite.rs, pixel 
   });
   const favicon = read('favicon.svg');
   assert.deepEqual(rasterize([[null, 'base', favicon]], ['base']), idle, 'favicon.svg');
+});
+
+test('os outros mascotes da página são o Kai do app, com as mesmas formas', async () => {
+  const { LAYERS } = await import(new URL('../../desktop/ui/js/kai.js', import.meta.url));
+  const mascots = [...html.matchAll(/<span class="kai ([^"]*)"[^>]*>/g)].map((m) => m[1]);
+  for (const place of ['brand-mascot', 'top-runner', 'kai-hero hero-mascot', 'finale-mascot']) assert.ok(mascots.includes(place), place);
+  const glyphs = [...html.matchAll(/<span class="kai (?:brand-mascot|top-runner|finale-mascot)"[^>]*>([\s\S]*?)<\/span><\/span><\/span>(?=\s|<)/g)];
+  assert.ok(glyphs.length >= 4, `${glyphs.length} kais`);
+  const shapes = (markup) => [...markup.matchAll(/<(?:path|ellipse|circle|rect)\b[^>]*>/g)].map((m) => m[0].replace(/\s*\/?>$/, ''));
+  for (const name of ['leg-1', 'leg-2', 'leg-3', 'head', 'eyes', 'pupils', 'cap']) {
+    const expected = shapes(LAYERS.find((layer) => layer.name === name).markup);
+    for (const [markup] of glyphs) {
+      const found = shapes(markup.split(`kai-${name}"`)[1].split('</svg>')[0]);
+      assert.deepEqual(found, expected, name);
+    }
+  }
+  assert.match(app, /mountKai\(document\.querySelector\('\[data-kai\]'\)\)/);
+});
+
+test('o Kai só anima o que o compositor roda sozinho, a 60 fps', () => {
+  const frames = [...css.matchAll(/@keyframes (kai-[\w-]+) \{(.*)\}\s*$/gm)];
+  assert.ok(frames.length >= 10, 'keyframes do Kai');
+  for (const [, name, rules] of frames) {
+    for (const [, property] of rules.matchAll(/([a-z-]+)\s*:/g)) assert.ok(['transform', 'opacity'].includes(property), `${name} anima ${property}`);
+  }
+  assert.match(css, /prefers-reduced-motion: reduce\) \{\s*\.kai, \.kai \* \{ animation: none/);
 });
 
 test('o ícone do orkai (exe, terminais e site) é o sprite IDLE em cada tamanho', () => {
