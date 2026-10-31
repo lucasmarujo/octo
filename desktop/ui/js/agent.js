@@ -109,7 +109,7 @@ function actions(agent) {
   const button = (text, onclick, tone = '') => h('button', { class: `button agent-action ${tone}`, type: 'button', onclick: () => onclick(agent) }, text);
   return [
     button('Rename', rename),
-    agent.kind === 'terminal' && !alive(agent) ? null : button('Restart', restart),
+    button('Restart', restart),
     agent.branch ? button('Cross-review', crossReview) : null,
     alive(agent) ? button('Stop', stop, 'warn') : button('Remove', remove, 'warn'),
   ].filter(Boolean);
