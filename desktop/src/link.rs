@@ -59,14 +59,14 @@ impl Link {
                 while current.load(Ordering::SeqCst) == generation && peer.wait(&mut webview).is_ok() {}
             })
             .map_err(|err| err.to_string())?;
-        let inbox = inbox.recv().map_err(|_| "the window could not join orkai".to_string())?;
+        let inbox = inbox.recv().map_err(|_| "the window could not join Octo".to_string())?;
         *lock(&self.inbox) = Some(inbox);
         Ok(())
     }
 
     fn send(&self, message: PhoneMsg) -> Result<(), String> {
         let inbox = lock(&self.inbox).clone().ok_or_else(|| "the window is not attached yet".to_string())?;
-        inbox.send(Event::Inbound(message)).map_err(|_| "orkai stopped listening to this window".to_string())
+        inbox.send(Event::Inbound(message)).map_err(|_| "Octo stopped listening to this window".to_string())
     }
 }
 

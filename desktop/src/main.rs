@@ -13,7 +13,7 @@ use clap::error::ErrorKind;
 use orkai::cli::Internal;
 
 #[derive(Parser)]
-#[command(name = "orkai-desktop", version, about = "Every agent of every project in one window")]
+#[command(name = "octo", version, about = "Octo, by OctoAI: every agent of every project in one window")]
 struct Args {
     #[command(subcommand)]
     internal: Option<Internal>,
@@ -32,7 +32,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("orkai: {err}");
+            eprintln!("octo: {err}");
             ExitCode::FAILURE
         }
     }

@@ -1,5 +1,5 @@
 export const ALERT_REPEAT_MS = 15_000;
-export const APP_TITLE = 'orkai';
+export const APP_TITLE = 'Octo';
 
 const ai = (agent) => agent.kind !== 'terminal' && !agent.starting;
 

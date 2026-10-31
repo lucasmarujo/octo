@@ -11,7 +11,7 @@ const QR_DARK = '#121218';
 const QR_LIGHT = '#ececf0';
 const STEPS = [
   'Point the phone camera at the code',
-  'Your orkai opens in the browser, already paired',
+  'Octo opens in the browser, already paired',
   'Share › Add to Home Screen keeps it one tap away',
 ];
 const PRIVACY = 'The tunnel only carries encrypted bytes; the key lives in this code, never on a server.';
@@ -42,7 +42,7 @@ export function badge(pairing) {
 }
 
 export function waiting(pairing) {
-  if (!pairing.phase) return { text: 'Starting the orkai pwa…', tone: 't-yellow' };
+  if (!pairing.phase) return { text: 'Starting Octo for the phone…', tone: 't-yellow' };
   if (pairing.phase === 'installing') return { text: 'Downloading cloudflared, the official build from github.com/cloudflare…', tone: 't-yellow' };
   if (pairing.phase === 'connecting') return { text: `Opening the ${pairing.tunnel} tunnel…`, tone: 't-yellow' };
   if (pairing.phase === 'failed') return { text: `${pairing.error || 'The tunnel failed'} · retrying`, tone: 't-red' };
@@ -69,7 +69,7 @@ function detail(label, ...value) {
 
 function body(pairing) {
   if (!pairing.enabled) {
-    return h('p', { class: 'dialog-text' }, 'The orkai pwa is off. Turn it on to show the pairing code: your agents on the phone, from anywhere.');
+    return h('p', { class: 'dialog-text' }, 'Octo is off on your phone. Turn it on to show the pairing code: your agents on the phone, from anywhere.');
   }
   if (!pairing.link || !pairing.qr) {
     const text = waiting(pairing);
@@ -131,7 +131,7 @@ function render(pairing) {
   shown = signature;
   const mark = badge(pairing);
   const title = [h('span', null, 'Pair your phone'), h('span', { class: `pair-badge ${mark.tone}` }, mark.text)];
-  const tagline = h('p', { class: 'pair-tagline' }, 'Your orkai on the phone, from anywhere · end-to-end encrypted');
+  const tagline = h('p', { class: 'pair-tagline' }, 'Octo on your phone, from anywhere · end-to-end encrypted');
   const dialog = openDialog(title, [tagline, body(pairing)], actions(pairing));
   dialog.classList.add('pairing');
 }

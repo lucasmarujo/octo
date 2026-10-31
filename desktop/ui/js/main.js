@@ -284,13 +284,13 @@ function raiseAlerts(agents) {
 function announceUpdate(version) {
   if (state.updateReady === version) return;
   state.updateReady = version;
-  toast(`orkai ${version} is ready · restart the app to use it, your agents keep running`, 'success');
+  toast(`Octo ${version} is ready · restart the app to use it, your agents keep running`, 'success');
 }
 
 async function confirmTrust(message) {
   const sure = await confirm({
     title: `Run the tests of ${message.repo}?`,
-    text: `After each turn of an agent in a worktree of this repository, orkai runs: ${message.command}`,
+    text: `After each turn of an agent in a worktree of this repository, Octo runs: ${message.command}`,
     action: 'Trust',
   });
   if (sure) send({ type: 'trust', cwd: message.cwd, command: message.command });
@@ -299,7 +299,7 @@ async function confirmTrust(message) {
 function phone(arg) {
   if (arg === 'off') {
     invoke('set_phone', { on: false })
-      .then(() => toast('The orkai pwa is off · ctrl+p turns it on again', 'info'))
+      .then(() => toast('Octo is off on your phone · ctrl+p turns it on again', 'info'))
       .catch((err) => toast(String(err), 'error'));
   } else openPairing();
 }
@@ -522,7 +522,7 @@ function start() {
   }).catch(() => {});
   invoke('update_ready').then((version) => version && announceUpdate(version)).catch(() => {});
   window.__TAURI__.event.listen('update-ready', (event) => announceUpdate(event.payload));
-  connect(onMessage).catch((err) => toast(`could not reach orkai: ${err}`, 'error'));
+  connect(onMessage).catch((err) => toast(`could not reach Octo: ${err}`, 'error'));
   $('task').focus();
 }
 

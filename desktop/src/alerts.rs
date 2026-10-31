@@ -10,7 +10,7 @@ use tauri_plugin_notification::NotificationExt;
 
 use crate::link::Link;
 
-const NOTIFICATION_TITLE: &str = "orkai";
+const NOTIFICATION_TITLE: &str = "Octo";
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

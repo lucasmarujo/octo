@@ -297,7 +297,7 @@ test('an agent that starts waiting or finishes raises one alert, like in the TUI
 
 test('the window title counts who waits and who finished, like the terminal title of the TUI', async () => {
   const { windowTitle } = await import('../js/alerts.js');
-  assert.equal(windowTitle([]), 'orkai');
+  assert.equal(windowTitle([]), 'Octo');
   const agents = [
     agent({ id: 1, state: 'paused' }),
     agent({ id: 2, state: 'paused' }),
@@ -305,8 +305,8 @@ test('the window title counts who waits and who finished, like the terminal titl
     agent({ id: 4, state: 'done', kind: 'terminal' }),
     agent({ id: 5, state: 'working' }),
   ];
-  assert.equal(windowTitle(agents), '‖2 ✔1 · orkai');
-  assert.equal(windowTitle([agent({ state: 'done' })]), '✔1 · orkai');
+  assert.equal(windowTitle(agents), '‖2 ✔1 · Octo');
+  assert.equal(windowTitle([agent({ state: 'done' })]), '✔1 · Octo');
 });
 
 test('the pairing code is drawn from the modules the core encodes', async () => {

@@ -48,7 +48,7 @@ pub fn updates_itself() -> bool {
 
 pub fn install_newer(source: &Source, exe: &Path) -> Result<Option<String>, String> {
     let commit = BUILD_COMMIT.ok_or("a build made on this computer does not update itself")?;
-    let target = target().ok_or("there is no prebuilt orkai app for this platform")?;
+    let target = target().ok_or("there is no prebuilt Octo app for this platform")?;
     let manifest = source.manifest().map_err(|err| err.to_string())?;
     let outcome = update::apply(source, &manifest, exe, Some(commit), env!("CARGO_PKG_VERSION"), &asset_key(target))
         .map_err(|err| err.to_string())?;

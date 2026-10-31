@@ -11,14 +11,14 @@ const key = (text) => h('span', { class: 'help-key' }, text);
 
 export const HELP = {
   en: {
-    title: 'How to use orkai',
-    lead: 'Run many AI agents across your projects from one window. Closing orkai stops no agent: they keep working and orkai reconnects when you come back.',
+    title: 'How to use Octo',
+    lead: 'Run many AI agents across your projects from one window. Closing Octo stops no agent: they keep working and Octo reconnects when you come back.',
     language: 'Language',
     steps: [
       ['Pick the folder', () => ['Click ', key('where'), ' or press ', key('ctrl L'), '. Each session remembers its own folder.']],
       ['Pick who runs it', () => ['Any installed agent or a terminal. ', key('tab'), ' cycles through them.']],
       ['Write the task', () => ['Press ', key('enter'), ' and the agent starts already working on it.']],
-      ['Answer when it needs you', () => ['orkai chimes and ', key('alt N'), ' opens the agent waiting the longest.']],
+      ['Answer when it needs you', () => ['Octo chimes and ', key('alt N'), ' opens the agent waiting the longest.']],
     ],
     groups: [
       ['Launching', [['enter', 'Launch the agent'], ['shift enter', 'New line in the task'], ['ctrl ↑', 'Tasks you already sent'], ['tab', 'Change who runs it'], ['ctrl L', 'Change the folder'], ['ctrl T', 'One worktree per agent'], ['/', 'Commands and skills'], ['!command', 'Run it in a new terminal']]],
@@ -37,14 +37,14 @@ export const HELP = {
     ],
   },
   'pt-BR': {
-    title: 'Como usar o orkai',
-    lead: 'Rode vários agentes de IA nos seus projetos a partir de uma janela. Fechar o orkai não para nenhum agente: eles continuam trabalhando e o orkai se reconecta quando você volta.',
+    title: 'Como usar o Octo',
+    lead: 'Rode vários agentes de IA nos seus projetos a partir de uma janela. Fechar o Octo não para nenhum agente: eles continuam trabalhando e o Octo se reconecta quando você volta.',
     language: 'Idioma',
     steps: [
       ['Escolha a pasta', () => ['Clique em ', key('where'), ' ou aperte ', key('ctrl L'), '. Cada sessão lembra a própria pasta.']],
       ['Escolha quem roda', () => ['Qualquer agente instalado ou um terminal. ', key('tab'), ' alterna entre eles.']],
       ['Escreva a tarefa', () => ['Aperte ', key('enter'), ' e o agente já começa trabalhando nela.']],
-      ['Responda quando ele precisar', () => ['O orkai toca um aviso e ', key('alt N'), ' abre o agente que espera há mais tempo.']],
+      ['Responda quando ele precisar', () => ['O Octo toca um aviso e ', key('alt N'), ' abre o agente que espera há mais tempo.']],
     ],
     groups: [
       ['Para lançar', [['enter', 'Lança o agente'], ['shift enter', 'Nova linha na tarefa'], ['ctrl ↑', 'Tarefas que você já enviou'], ['tab', 'Troca quem roda'], ['ctrl L', 'Troca a pasta'], ['ctrl T', 'Um worktree por agente'], ['/', 'Comandos e skills'], ['!comando', 'Roda num terminal novo']]],

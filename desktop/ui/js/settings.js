@@ -118,7 +118,7 @@ function agentsSection() {
       'div',
       { class: 'settings-heading with-text' },
       h('h2', null, 'Agents'),
-      h('p', null, 'The program orkai runs for each agent and the extra arguments it passes. Only installed agents show up in ', mono('who'), '.'),
+      h('p', null, 'The program Octo runs for each agent and the extra arguments it passes. Only installed agents show up in ', mono('who'), '.'),
     ),
     h('div', { class: 'agents-head' }, h('span', { class: 'caps agents-name' }, 'Agent'), h('span', { class: 'caps agents-command' }, 'Command'), h('span', { class: 'caps agents-args' }, 'Arguments'), h('span', { class: 'caps agent-status' }, 'Status')),
     ...agents.map(agentRow),
@@ -153,7 +153,7 @@ async function checkUpdate() {
 }
 
 function updateLine() {
-  const version = `orkai ${state.version || ''}`.trim();
+  const version = `Octo ${state.version || ''}`.trim();
   if (state.updateReady) return [version, h('span', { class: 'update-note t-green' }, ` · ${state.updateReady} is ready, restart to use it`)];
   if (!update) return [version];
   if (update.checking) return [version, h('span', { class: 'update-note t-muted' }, ' · checking…')];
@@ -183,9 +183,9 @@ function content() {
       h('div', { class: 'settings-heading' }, h('h2', null, 'Alerts')),
       row('Alert when an agent needs you or finishes', 'Sound, desktop notification and the count in the taskbar title.', toggle(config.notify, (on) => save({ notify: on }), 'Alerts')),
       row(
-        'orkai chime',
+        'Octo chime',
         'Falling tone when an agent waits for you, rising when it finishes. Off uses the system bell.',
-        h('div', { class: 'setting-controls' }, h('button', { class: 'link-button', type: 'button', onclick: playChimes }, 'Play'), toggle(config.notify_sound, (on) => save({ notify_sound: on }), 'orkai chime')),
+        h('div', { class: 'setting-controls' }, h('button', { class: 'link-button', type: 'button', onclick: playChimes }, 'Play'), toggle(config.notify_sound, (on) => save({ notify_sound: on }), 'Octo chime')),
       ),
       h(
         'div',
