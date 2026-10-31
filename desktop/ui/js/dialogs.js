@@ -149,3 +149,5 @@ export function showFolders(message) {
   if (!message.dirs.length) rows.push(h('div', { class: 'folder up' }, 'No folders inside'));
   list.replaceChildren(...rows);
 }
+
+export { close as closeDialog, open as openDialog };

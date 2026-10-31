@@ -475,7 +475,24 @@ h1, p { margin: 0; }
 
 .connecting { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; flex: 1; color: var(--color-text-muted); }
 
-.sidebar-footer { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-shrink: 0; }
+.sidebar-footer { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.footer-pair { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 32px; padding: 0 10px; border-radius: 8px; color: var(--color-text-muted); font-size: var(--text-sm); font-weight: 500; line-height: 16px; }
+.footer-pair:hover { background: var(--color-surface-raised); color: var(--color-text); }
+.footer-pair svg { flex-shrink: 0; }
+.dialog.pairing { width: min(760px, 92vw); }
+.dialog-title { display: flex; align-items: center; gap: 10px; }
+.pair-badge { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 700; }
+.pair-tagline { margin: -6px 0 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+.pair { display: flex; gap: 24px; align-items: flex-start; }
+.pair-qr { width: 232px; height: 232px; flex-shrink: 0; border-radius: 10px; }
+.pair-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; flex: 1; }
+.pair-steps { margin: 0 0 6px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--color-text); line-height: 20px; }
+.pair-steps li::marker { color: var(--color-accent); font-family: var(--font-mono); font-weight: 700; }
+.pair-detail { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.pair-label { width: 64px; flex-shrink: 0; color: var(--color-text-faint); font-family: var(--font-mono); font-size: var(--text-xs); }
+.pair-value { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--text-sm); line-height: 18px; }
+.pair-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-link); font-family: var(--font-mono); font-size: var(--text-xs); user-select: text; }
+.pair-waiting { display: flex; align-items: center; gap: 10px; padding: 24px 0; font-size: var(--text-sm); }
 .footer-icon { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; color: var(--color-text-muted); }
 .footer-icon:hover { color: var(--color-text); }
 .footer-icon:hover, .footer-icon[aria-current="true"] { background: var(--color-surface-raised); }

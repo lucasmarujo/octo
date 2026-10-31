@@ -7,9 +7,10 @@ import { $, h, svg } from './dom.js';
 import { SPINNER, glyph } from './format.js';
 import { peekRequest, renderGrid, tickGrid } from './grid.js';
 import { renderHelp } from './help.js';
-import { ICON_HELP, ICON_OVERVIEW, ICON_SETTINGS } from './icons.js';
+import { ICON_HELP, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
 import { renderList, tickList } from './list.js';
+import { openPairing } from './pair.js';
 import { applyTheme, renderSettings } from './settings.js';
 import { promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setView, state, visible } from './state.js';
@@ -344,6 +345,7 @@ function overviewShortcut(event) {
   else if (plain && key === 'l') $('where').click();
   else if (plain && key === 't') $('worktree').click();
   else if (plain && key === 'r') send({ type: 'recover', session: state.session });
+  else if (plain && key === 'p') openPairing();
   else if (plain && key === 'e' && focused) rename(focused);
   else if (event.key === 'Delete' && !event.ctrlKey && !event.altKey && focused) stopOrRemove(focused);
   else if (event.altKey && !event.ctrlKey && event.key === 'ArrowUp') switchSession(-1);
@@ -385,6 +387,8 @@ function initWindow() {
   $('brand-mascot').replaceChildren(kai('idle'));
   $('open-help').replaceChildren(svg(ICON_HELP));
   $('open-settings').replaceChildren(svg(ICON_SETTINGS));
+  $('pair').replaceChildren(svg(ICON_PAIR), 'Pair phone');
+  $('pair').addEventListener('click', openPairing);
   $('open-help').addEventListener('click', () => openPage('help'));
   $('open-settings').addEventListener('click', () => openPage('settings'));
 }
@@ -392,7 +396,7 @@ function initWindow() {
 function spin() {
   state.frame += 1;
   const text = SPINNER[state.frame % SPINNER.length];
-  for (const node of document.querySelectorAll('.tabs [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin]')) node.textContent = text;
+  for (const node of document.querySelectorAll('.tabs [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin], #dialog [data-spin]')) node.textContent = text;
   spinBoard();
   spinSidebar();
 }

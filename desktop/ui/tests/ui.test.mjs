@@ -308,3 +308,22 @@ test('the window title counts who waits and who finished, like the terminal titl
   assert.equal(windowTitle(agents), '‖2 ✔1 · orkai');
   assert.equal(windowTitle([agent({ state: 'done' })]), '✔1 · orkai');
 });
+
+test('the pairing code is drawn from the modules the core encodes', async () => {
+  const { qrPath } = await import('../js/pair.js');
+  assert.equal(qrPath(['110', '001']), 'M0 0h2v1h-2zM2 1h1v1h-1z');
+  assert.equal(qrPath(['000']), '');
+});
+
+test('the pairing badge and the waiting line follow the bridge like in the TUI', async () => {
+  const { badge, waiting } = await import('../js/pair.js');
+  assert.deepEqual(badge({ enabled: false }), { text: 'off', tone: 't-faint' });
+  assert.equal(badge({ enabled: true, phase: 'ready', phones: 2 }).text, '● 2');
+  assert.equal(badge({ enabled: true, phase: 'ready', phones: 0 }).text, 'on');
+  assert.equal(badge({ enabled: true, phase: 'failed' }).tone, 't-red');
+  assert.equal(badge({ enabled: true, phase: 'connecting' }).text, '…');
+  assert.match(waiting({ phase: null }).text, /Starting/);
+  assert.match(waiting({ phase: 'installing' }).text, /cloudflared/);
+  assert.equal(waiting({ phase: 'connecting', tunnel: 'tailscale' }).text, 'Opening the tailscale tunnel…');
+  assert.equal(waiting({ phase: 'failed', error: 'no network' }).text, 'no network · retrying');
+});

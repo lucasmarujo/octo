@@ -11,7 +11,7 @@ use orkai::pwa::server::{Outbox, Peer, welcome};
 use orkai::util::lock;
 use tauri::State;
 
-use crate::{alerts, settings};
+use crate::{alerts, pair, settings};
 use tauri::ipc::{Channel, InvokeResponseBody};
 
 pub struct Link {
@@ -80,7 +80,9 @@ fn send(link: State<'_, Link>, message: PhoneMsg) -> Result<(), String> {
 }
 
 pub fn run() -> io::Result<()> {
-    let link = Link::new(Hub::open(&Home::resolve()?)?);
+    let hub = Hub::open(&Home::resolve()?)?;
+    pair::keep_alive(Arc::clone(&hub));
+    let link = Link::new(hub);
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(link)
@@ -91,7 +93,10 @@ pub fn run() -> io::Result<()> {
             settings::save_settings,
             settings::play_chime,
             settings::check_update,
-            alerts::alert
+            alerts::alert,
+            pair::pairing,
+            pair::set_phone,
+            pair::renew_phone
         ])
         .run(tauri::generate_context!())
         .map_err(io::Error::other)

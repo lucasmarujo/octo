@@ -2,6 +2,7 @@
 
 mod alerts;
 mod link;
+mod pair;
 mod settings;
 
 use std::process::ExitCode;
