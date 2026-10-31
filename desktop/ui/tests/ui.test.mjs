@@ -108,6 +108,30 @@ test('every mood of Kai has its animation in the stylesheet', () => {
   assert.ok(css.includes('prefers-reduced-motion'), 'motion can be turned off');
 });
 
+test('Kai only animates what the compositor runs on its own, so it stays at 60 fps', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const frames = [...css.matchAll(/@keyframes (kai-[\w-]+) \{(.*)\}\s*$/gm)];
+  assert.ok(frames.length >= 10, 'Kai keyframes not found');
+  for (const [, name, body] of frames) {
+    const properties = [...body.matchAll(/([a-z-]+)\s*:/g)].map((match) => match[1]);
+    for (const property of properties) assert.ok(['transform', 'opacity'].includes(property), `${name} animates ${property}`);
+  }
+  const animated = [...css.matchAll(/^([^{}@]*\.kai[^{}]*)\{[^}]*animation:\s*kai-/gm)].map((match) => match[1]);
+  assert.ok(animated.length >= 10, 'Kai animations not found');
+  for (const selector of animated) {
+    for (const part of selector.split(',')) assert.ok(/\.kai-[\w-]+\s*$/.test(part.trim()), `animated inside an svg: ${part.trim()}`);
+  }
+});
+
+test('every moving part of Kai is a layer of its own', async () => {
+  const { LAYERS, SLEEPING_LAYERS } = await import('../js/kai.js');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  for (const layer of [...LAYERS, ...SLEEPING_LAYERS]) {
+    assert.ok(layer.markup.trim().startsWith('<'), layer.name);
+    assert.ok(css.includes(`.kai-${layer.name}`), `no style for the ${layer.name} layer`);
+  }
+});
+
 test('the colored git diff becomes colored runs without escape codes', async () => {
   const { sgrRuns, BASE16 } = await import('../js/palette.js');
   assert.deepEqual(sgrRuns('plain line'), [{ text: 'plain line', color: null, bold: false, dim: false }]);
