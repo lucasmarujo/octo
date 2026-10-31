@@ -115,9 +115,9 @@ function installBlock(id) {
   return decode(match[1]);
 }
 
-test('title começa com a marca e cabe no SERP', () => {
+test('title começa com o produto e cabe no SERP', () => {
   const title = head.match(/<title>([^<]+)<\/title>/)[1];
-  assert.ok(title.startsWith('orkai'), title);
+  assert.ok(title.startsWith('Octo by OctoAI'), title);
   assert.ok(title.length <= 60, `title com ${title.length} caracteres`);
 });
 
@@ -131,7 +131,7 @@ test('canonical, Open Graph e Twitter apontam para o domínio e para uma imagem 
   assert.match(head, new RegExp(`<link rel="canonical" href="${SITE}">`));
   assert.equal(meta('property', 'og:url'), SITE);
   const image = meta('property', 'og:image');
-  assert.equal(image, `${SITE}og-image.png`);
+  assert.equal(image, `${SITE}og-octo.png`);
   assert.equal(meta('name', 'twitter:image'), image);
   assert.equal(meta('name', 'twitter:card'), 'summary_large_image');
   const png = readFileSync(localPath(image));
@@ -155,7 +155,9 @@ test('JSON-LD descreve o software e o vídeo com arquivos que existem', () => {
   const software = byType('SoftwareApplication');
   const video = byType('VideoObject');
   const page = byType('WebPage');
-  assert.equal(software.name, 'orkai');
+  assert.equal(software.name, 'Octo');
+  assert.deepEqual(software.brand, { '@type': 'Brand', name: 'OctoAI' });
+  assert.equal(byType('WebSite').name, 'OctoAI');
   ['Windows', 'Linux', 'macOS'].forEach((os) => assert.ok(software.operatingSystem.includes(os), os));
   assert.equal(software.downloadUrl, 'https://github.com/lucasmarujo/orkai-cli/releases/latest');
   assert.ok(existsSync(localPath(software.screenshot)), software.screenshot);
@@ -178,7 +180,7 @@ test('sitemap e robots apontam para o domínio e batem com o dateModified', () =
 test('um único H1, com o texto no HTML estático, sem depender de JavaScript', () => {
   const h1s = html.match(/<h1[\s\S]*?<\/h1>/g);
   assert.equal(h1s.length, 1);
-  assert.equal(stripTags(h1s[0]), 'all your agents. one terminal.');
+  assert.equal(stripTags(h1s[0]), 'all your agents. one window.');
 });
 
 test('a página, os metadados e os textos do app.js estão em inglês', () => {
@@ -200,28 +202,28 @@ test('o mascote da TUI simulada é o sprite IDLE/BUSY do src/tui/sprite.rs, pixe
   const svgs = [...html.matchAll(/<svg class="mascot[^"]*"[^>]*>([\s\S]*?)<\/svg>/g)].map((m) => m[1]);
   assert.equal(svgs.length, 1, 'só a TUI simulada mostra o marinheiro, como o CLI');
   assert.match(html, /<svg class="mascot tui-mascot/);
+  const cli = html.slice(html.indexOf('<section class="section" id="cli"'));
+  assert.match(cli.slice(0, cli.indexOf('</section>')), /<svg class="mascot tui-mascot/, 'a TUI simulada fica na seção do orkai CLI');
   svgs.forEach((svg, i) => {
     const groups = [...svg.matchAll(/<g class="m-(base|idle|busy)">([\s\S]*?)<\/g>/g)];
     assert.deepEqual(rasterize(groups, ['base', 'idle']), idle, `mascote ${i} (idle)`);
     assert.deepEqual(rasterize(groups, ['base', 'busy']), busy, `mascote ${i} (busy)`);
   });
-  const favicon = read('favicon.svg');
-  assert.deepEqual(rasterize([[null, 'base', favicon]], ['base']), idle, 'favicon.svg');
 });
 
 test('os outros mascotes da página são o Kai do app, com as mesmas formas', async () => {
   const { LAYERS } = await import(new URL('../../desktop/ui/js/kai.js', import.meta.url));
   const mascots = [...html.matchAll(/<span class="kai ([^"]*)"[^>]*>/g)].map((m) => m[1]);
   for (const place of ['brand-mascot', 'top-runner', 'kai-hero hero-mascot', 'finale-mascot']) assert.ok(mascots.includes(place), place);
-  const glyphs = [...html.matchAll(/<span class="kai (?:brand-mascot|top-runner|finale-mascot)"[^>]*>([\s\S]*?)<\/span><\/span><\/span>(?=\s|<)/g)];
+  const glyphs = [...html.matchAll(/<span class="kai (?:brand-mascot|top-runner|finale-mascot)"[^>]*>([\s\S]*?)<\/span><\/span><\/span>(?=\s|<)/g)].map(([markup]) => markup);
   assert.ok(glyphs.length >= 4, `${glyphs.length} kais`);
+  const favicon = read('favicon.svg');
   const shapes = (markup) => [...markup.matchAll(/<(?:path|ellipse|circle|rect)\b[^>]*>/g)].map((m) => m[0].replace(/\s*\/?>$/, ''));
+  const layer = (markup, name) => markup.split(`kai-${name}"`)[1].split(/<\/svg>|<\/g>/)[0];
   for (const name of ['leg-1', 'leg-2', 'leg-3', 'head', 'eyes', 'pupils', 'cap']) {
-    const expected = shapes(LAYERS.find((layer) => layer.name === name).markup);
-    for (const [markup] of glyphs) {
-      const found = shapes(markup.split(`kai-${name}"`)[1].split('</svg>')[0]);
-      assert.deepEqual(found, expected, name);
-    }
+    const expected = shapes(LAYERS.find((entry) => entry.name === name).markup);
+    for (const markup of glyphs) assert.deepEqual(shapes(layer(markup, name)), expected, name);
+    assert.deepEqual(shapes(layer(favicon, name)), expected, `favicon.svg ${name}`);
   }
   assert.match(app, /mountKai\(document\.querySelector\('\[data-kai\]'\)\)/);
 });
@@ -235,13 +237,12 @@ test('o Kai só anima o que o compositor roda sozinho, a 60 fps', () => {
   assert.match(css, /prefers-reduced-motion: reduce\) \{\s*\.kai, \.kai \* \{ animation: none/);
 });
 
-test('o ícone do orkai (exe, terminais e site) é o sprite IDLE em cada tamanho', () => {
+test('o ícone do orkai CLI (exe e terminais) é o sprite IDLE em cada tamanho', () => {
   const sprite = readFileSync(join(REPO, 'src/tui/sprite.rs'), 'utf8');
   const palette = rustPalette(sprite);
   const idle = rustFrame(sprite, 'IDLE');
   const ico = readFileSync(join(REPO, 'assets/orkai.ico'));
   assert.deepEqual(readFileSync(join(ROOT, 'orkai.ico')), ico, 'site/orkai.ico');
-  assert.deepEqual(readFileSync(join(ROOT, 'favicon.ico')), ico, 'site/favicon.ico');
   const pngs = [...icoFrames(ico), readFileSync(join(REPO, 'assets/orkai.png'))];
   const sizes = pngs.map((png) => decodePng(png).width);
   [16, 32, 48, 256].forEach((size) => assert.ok(sizes.includes(size), `falta ${size}px`));
@@ -260,6 +261,37 @@ test('o ícone do orkai (exe, terminais e site) é o sprite IDLE em cada tamanho
       }
     }
   }
+});
+
+test('o favicon do site é o ícone do Octo, nos tamanhos de aba', () => {
+  const ico = readFileSync(join(ROOT, 'octo.ico'));
+  assert.deepEqual(readFileSync(join(ROOT, 'favicon.ico')), ico, 'site/favicon.ico');
+  const sizes = icoFrames(ico).map((frame) => frame.readUInt32BE(16));
+  assert.deepEqual([...sizes].sort((a, b) => a - b), [16, 32, 48]);
+  const touch = readFileSync(join(ROOT, 'octo-touch-icon.png'));
+  assert.equal(touch.readUInt32BE(16), 180);
+  assert.equal(touch.readUInt32BE(20), 180);
+  assert.match(head, /<link rel="icon" href="\/octo\.ico" sizes="48x48">/);
+  assert.match(head, /<link rel="apple-touch-icon" href="\/octo-touch-icon\.png">/);
+});
+
+test('a marca é OctoAI, o produto é Octo e o orkai só aparece como o CLI legado', () => {
+  const wordmarks = [...html.matchAll(/<span class="wordmark">([^<]+)<\/span>/g)].map((m) => m[1]);
+  assert.deepEqual(wordmarks, ['OctoAI', 'OctoAI']);
+  const octo = html.slice(html.indexOf('<main'), html.indexOf('<section class="section" id="cli"')).replace(/<pre>[\s\S]*?<\/pre>|<code[^>]*>[\s\S]*?<\/code>/g, '');
+  assert.doesNotMatch(stripTags(octo), /\borkai\b(?! CLI)/i);
+  assert.match(html, /<span class="kicker">orkai cli · legacy<\/span>/);
+});
+
+test('o hero mostra a tela real do Octo, com 1x e 2x', () => {
+  const hero = html.slice(html.indexOf('<section class="hero"'), html.indexOf('</section>'));
+  const img = hero.match(/<div class="shot" data-screen>\s*<img ([^>]+)>/)[1];
+  assert.match(img, /src="\/assets\/octo-board\.webp"/);
+  assert.match(img, /width="1440" height="900"/);
+  const srcset = img.match(/srcset="([^"]+)"/)[1].split(', ').map((entry) => entry.split(' '));
+  assert.deepEqual(srcset.map(([, density]) => density), ['1x', '2x']);
+  srcset.forEach(([file]) => assert.ok(existsSync(join(ROOT, file)), file));
+  assert.match(app, /stage\.querySelector\('\[data-screen\]'\)/);
 });
 
 test('a URL do ícone do perfil do Windows Terminal existe no site com o mesmo nome de arquivo', () => {
@@ -304,10 +336,15 @@ test('os comandos de instalação são os mesmos do README', () => {
   assert.equal(installBlock('source'), readmeBlock('**From source**'));
 });
 
-test('os downloads diretos são os binários da tabela de plataformas do README', () => {
-  const files = readmeTable('| Platform | File |').map(([, file]) => file);
-  const links = [...html.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/(?:download\/latest|latest\/download)\/([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual([...links].sort(), [...files].sort());
+test('os downloads diretos são os arquivos das tabelas do Octo e do CLI no README', () => {
+  const links = (section) => [...section.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/(?:download\/latest|latest\/download)\/([^"]+)"/g)].map((m) => m[1]);
+  const section = (id) => html.slice(html.indexOf(`<section class="section" id="${id}"`)).split('</section>')[0];
+  const octo = readmeTable('| System | Download |').map(([, file]) => file);
+  const cli = readmeTable('| Platform | File |').map(([, file]) => file);
+  assert.deepEqual(links(section('instalar')).sort(), [...octo].sort());
+  assert.deepEqual(links(section('cli')).sort(), [...cli].sort());
+  assert.deepEqual(links(html).sort(), [...octo, ...cli].sort());
+  assert.match(readmePtBr, /\| Sistema \| Download \|\n\| --- \| --- \|\n\| Windows 10 e 11 x64 \| `Octo\.exe` \|/);
 });
 
 test('o instalador do Windows sai da versão mais nova, que nunca muda, e não da build contínua', () => {
@@ -441,6 +478,8 @@ test('orçamento de peso para carregar rápido', () => {
   assert.ok(size('assets/orkai-demo-v3.mp4') < 5 * 1024 * 1024, 'vídeo');
   assert.ok(size('assets/orkai-demo-v3-poster.webp') < 50 * 1024, 'poster');
   assert.ok(size('assets/overview.webp') < 120 * 1024, 'overview');
+  assert.ok(size('assets/octo-board.webp') < 100 * 1024, 'octo-board');
+  assert.ok(size('assets/octo-board-2x.webp') < 180 * 1024, 'octo-board-2x');
 });
 
 test('nginx: CSP estrita, bloqueio de arquivos internos e compose no padrão da VPS', () => {

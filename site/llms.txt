@@ -1,15 +1,15 @@
-# orkai
+# Octo by OctoAI
 
-> Terminal orchestrator, written in Rust, that runs and monitors multiple AI coding agents (Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok Build, Qwen Code and Kimi Code) and plain terminals across multiple projects at once, organized into sessions. A single native binary with no runtime, for Windows, Linux and macOS.
+> Desktop app, written in Rust, that runs and monitors multiple AI coding agents (Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok Build, Qwen Code and Kimi Code) and plain terminals across multiple projects at once, organized into sessions, in one window. For Windows, Linux and macOS.
 
-orkai shows every agent in one overview, grouped by project folder, with each one's exact status (working, waiting for you, done), time, type, a line saying what the agent is doing and the subagents that Claude Code and Codex spawn. The status comes from each agent's hooks, plugins and protocols, without relying on screen text.
+Octo shows every agent on a board by status (needs you, working, done, idle), with its project, time, type, a line saying what the agent is doing and the subagents that Claude Code and Codex spawn. The status comes from each agent's hooks, plugins and protocols, without relying on screen text. Octo grew out of orkai, a terminal app that is now legacy.
 
 ## Highlights
 
-- Alerts when an agent is waiting for you or finishes: bell, terminal notification (OSC 9), window title and alt+n to jump straight to the agent; `notify_command` to send the alert to your phone.
-- One git worktree per agent (ctrl+t), on the `orkai/<name>` branch, with `/diff` and `/merge`.
+- Alerts when an agent is waiting for you or finishes: chime, desktop notification, window title and alt+n to jump straight to the agent; ctrl+p pairs your phone, end-to-end encrypted, and `notify_command` sends the alert anywhere.
+- One git worktree per agent (ctrl+t), on the `orkai/<name>` branch, with diff and merge.
 - Plan usage (5-hour, weekly and monthly windows, or balance) for the agents you're logged into, with a countdown to the reset.
-- Each agent runs in its own holder process: closing, crashing or updating the interface takes down no agent; after a reboot, ctrl+r resumes every conversation.
+- Each agent runs in its own holder process: closing, crashing or updating Octo takes down no agent; after a reboot, ctrl+r resumes every conversation.
 - Each agent's skills in the `/` autocomplete.
 - Auto-update verified by size and SHA-256.
 
@@ -19,11 +19,24 @@ orkai shows every agent in one overview, grouped by project folder, with each on
 - Login tokens are read in memory only and sent, over HTTPS, solely to the service that issued them.
 - No user config file is ever changed.
 
+## Downloads
+
+- Windows 10 and 11 x64: https://github.com/lucasmarujo/orkai-cli/releases/latest/download/Octo.exe
+- macOS Apple Silicon: https://github.com/lucasmarujo/orkai-cli/releases/latest/download/Octo-macos-apple-silicon.zip
+- macOS Intel: https://github.com/lucasmarujo/orkai-cli/releases/latest/download/Octo-macos-intel.zip
+- Linux x64 (WebKitGTK 4.1): https://github.com/lucasmarujo/orkai-cli/releases/latest/download/Octo-linux-x86_64
+
+## orkai CLI (legacy)
+
+The terminal app Octo grew out of. It runs the same agents and keeps updating itself, but new features land in Octo.
+
+- Windows installer: https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe
+- Linux and macOS binaries and documentation: https://github.com/lucasmarujo/orkai-cli#installation
+
 ## Links
 
 - Site: https://orkai.marujo.dev/
 - Code and documentation: https://github.com/lucasmarujo/orkai-cli
 - Latest version: https://github.com/lucasmarujo/orkai-cli/releases/latest
-- Windows installer: https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe
 - Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy
 - Author: Lucas Marujo (https://marujo.dev/)

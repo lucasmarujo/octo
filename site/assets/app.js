@@ -248,7 +248,7 @@ function mountHero(hero) {
   const copy = hero.querySelector('.hero-copy');
   const mascot = hero.querySelector('.hero-mascot');
   const stage = hero.querySelector('[data-tilt]');
-  const screen = stage.querySelector('.tui');
+  const screen = stage.querySelector('[data-screen]');
   const heroItem = track(hero);
   const stageItem = track(stage);
   scrollers.push((y) => {
@@ -614,7 +614,7 @@ function mountTour(root) {
     const waiting = state.rows.filter((r) => r.state === 'paused').length;
     const done = state.rows.filter((r) => r.state === 'done').length;
     const parts = [waiting && `‖${waiting}`, done && `✔${done}`].filter(Boolean);
-    setText(title, parts.length ? `${parts.join(' ')} · Orkai` : 'Orkai');
+    setText(title, parts.length ? `${parts.join(' ')} · Octo` : 'Octo');
     setText(count, String(state.rows.length));
     setText(worktree, state.worktree ? 'on' : 'off');
     setClass(worktree, state.worktree ? 't-pink' : 't-dim');

@@ -29,6 +29,22 @@
   <b>English</b> · <a href="README.pt-BR.md">Português (Brasil)</a>
 </p>
 
+## Octo, the desktop app
+
+**Octo, by OctoAI**, is the desktop app that grew out of orkai: the same agents, sessions and phone pairing in
+one window, with a board of who needs you, who is working and who is done. Octo updates itself, and closing it
+never stops an agent. Download it from the
+[newest release](https://github.com/lucasmarujo/orkai-cli/releases/latest):
+
+| System | Download |
+| --- | --- |
+| Windows 10 and 11 x64 | `Octo.exe` |
+| macOS Apple Silicon | `Octo-macos-apple-silicon.zip` |
+| macOS Intel | `Octo-macos-intel.zip` |
+| Linux x64 (WebKitGTK 4.1) | `Octo-linux-x86_64` |
+
+The orkai CLI described below keeps working and updating itself, but it is now legacy: new features land in Octo.
+
 ## orkai in 56 seconds
 
 https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
