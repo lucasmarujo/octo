@@ -6,7 +6,7 @@ import { runCommand } from './commands.js';
 import { closeMenu, confirm, showCompare, showDiff, showFolders, showTests } from './dialogs.js';
 import { $, h, svg } from './dom.js';
 import { SPINNER, alive, glyph } from './format.js';
-import { peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
+import { deactivateGrid, peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
 import { renderHelp } from './help.js';
 import { ICON_HELP, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
@@ -32,7 +32,7 @@ const PAGES = {
 };
 const VIEWS = ['overview', 'agent-view', 'help-view', 'settings-view'];
 
-const handlers = { open: (agent) => openAgent(agent) };
+const handlers = { open: (agent) => openAgent(agent), term: terminalHandlers(gridShortcut) };
 let terminal = null;
 let watchedState = null;
 const alerting = { previous: new Map(), last: new Map(), title: null };
@@ -132,6 +132,7 @@ function shownView() {
 
 function renderView() {
   const view = shownView();
+  if (view !== 'grid') deactivateGrid();
   for (const name of Object.keys(RENDERERS)) $(name).hidden = name !== view;
   RENDERERS[view][0](handlers);
 }
@@ -197,6 +198,7 @@ function leaveAgent() {
 
 function openPage(name) {
   if (state.active === name) return;
+  deactivateGrid();
   leaveAgent();
   if (!state.tabs.includes(name)) {
     state.tabs.push(name);
@@ -215,6 +217,7 @@ function openTab(id) {
 
 function openAgent(agent) {
   if (!agent) return;
+  deactivateGrid();
   if (agent.session !== state.session) selectSession(agent.session);
   if (!state.tabs.includes(agent.id)) {
     state.tabs.push(agent.id);
@@ -424,6 +427,7 @@ function overviewShortcut(event) {
 
 function onShortcut(event) {
   if (event.defaultPrevented || $('dialog').open) return;
+  if (event.target instanceof Element && event.target.closest('.xterm')) return;
   if (appShortcut(event)) {
     event.preventDefault();
     return;
@@ -440,16 +444,29 @@ function openLink(url) {
   invoke('open_link', { url }).catch((err) => toast(String(err), 'warn'));
 }
 
-function initTerminal() {
-  terminal = new Terminal($('terminal'), {
+function terminalHandlers(shortcut) {
+  return {
     open: (agent, size, onFrame) => invoke('term_open', { agent, rows: size.rows, cols: size.cols, channel: channel(onFrame) }),
-    input: (bytes) => invoke('term_input', { data: Array.from(bytes) }).catch(() => {}),
-    resize: (size) => invoke('term_resize', { rows: size.rows, cols: size.cols }).catch(() => {}),
-    close: () => invoke('term_close').catch(() => {}),
+    input: (session, bytes) => invoke('term_input', { session, data: Array.from(bytes) }).catch(() => {}),
+    resize: (session, size) => invoke('term_resize', { session, rows: size.rows, cols: size.cols }).catch(() => {}),
+    close: (session) => invoke('term_close', { session }).catch(() => {}),
     link: openLink,
     copy,
-    shortcut: appShortcut,
-  });
+    shortcut,
+  };
+}
+
+function gridShortcut(event) {
+  if (event.ctrlKey && !event.altKey && event.key === ']') {
+    deactivateGrid();
+    render();
+    return true;
+  }
+  return appShortcut(event);
+}
+
+function initTerminal() {
+  terminal = new Terminal($('terminal'), terminalHandlers(appShortcut));
 }
 
 function reopenTerminal() {

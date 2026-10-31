@@ -20,6 +20,7 @@ const MIN_COLS = 20;
 const FALLBACK_SIZE = { rows: 24, cols: 80 };
 const RESIZE_MS = 60;
 const REOPEN_MS = 2000;
+const CONNECT_RETRY_MS = 3000;
 const encoder = new TextEncoder();
 
 function color(value) {
@@ -47,12 +48,15 @@ export function run([text, fg, bg, flags]) {
 }
 
 export class Terminal {
-  constructor(host, handlers) {
+  constructor(host, handlers, options = {}) {
     this.host = host;
     this.handlers = handlers;
+    this.session = null;
     this.screen = h('div', { class: 'term-screen' });
     this.live = h('button', { class: 'term-live', type: 'button', hidden: true, onclick: () => this.xterm.scrollToBottom() }, 'Back to live ↓');
-    host.replaceChildren(this.screen, this.live);
+    this.status = h('div', { class: 'term-status' }, 'Connecting…');
+    host.replaceChildren(this.screen, this.status, this.live);
+    host.dataset.status = 'closed';
     this.agent = null;
     this.size = null;
     this.ended = true;
@@ -60,9 +64,10 @@ export class Terminal {
     this.generation = 0;
     this.records = [];
     this.resizeTimer = 0;
+    this.watchdog = 0;
     this.xterm = new window.Terminal({
       fontFamily: FONT,
-      fontSize: FONT_SIZE,
+      fontSize: options.fontSize || FONT_SIZE,
       lineHeight: LINE_HEIGHT,
       cursorBlink: true,
       scrollback: SCROLLBACK,
@@ -76,7 +81,7 @@ export class Terminal {
     this.xterm.unicode.activeVersion = '11';
     this.xterm.loadAddon(new window.WebLinksAddon.WebLinksAddon((event, uri) => this.follow(event, uri)));
     this.ready = document.fonts
-      .load(`${FONT_SIZE}px ${FONT}`)
+      .load(`${options.fontSize || FONT_SIZE}px ${FONT}`)
       .catch(() => [])
       .then(() => this.mount());
   }
@@ -89,6 +94,7 @@ export class Terminal {
       webgl.onContextLoss(() => {
         webgl.dispose();
         this.host.dataset.renderer = 'dom';
+        this.xterm.refresh(0, this.xterm.rows - 1);
       });
       this.xterm.loadAddon(webgl);
       this.host.dataset.renderer = 'webgl';
@@ -113,6 +119,9 @@ export class Terminal {
       this.resizeTimer = setTimeout(() => this.refit(), RESIZE_MS);
     }).observe(this.host);
     new MutationObserver(() => this.retheme()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.redraw();
+    });
     this.retheme();
   }
 
@@ -163,35 +172,60 @@ export class Terminal {
     return { rows: Math.max(MIN_ROWS, dims.rows), cols: Math.max(MIN_COLS, dims.cols) };
   }
 
-  async open(agent) {
+  async open(agent, retry = true) {
     await this.ready;
+    clearTimeout(this.watchdog);
     this.generation += 1;
     const generation = this.generation;
     this.agent = agent;
+    this.session = null;
     this.ended = false;
     this.openedAt = Date.now();
     this.records = [];
+    this.host.dataset.status = 'connecting';
     this.xterm.reset();
     this.size = this.measure();
     this.xterm.resize(this.size.cols, this.size.rows);
-    await this.handlers.open(agent, this.size, (payload) => {
+    const session = await this.handlers.open(agent, this.size, (payload) => {
       if (generation === this.generation) this.receive(payload);
     });
+    if (generation !== this.generation) {
+      this.handlers.close(session);
+      return;
+    }
+    this.session = session;
+    if (retry) this.watchdog = setTimeout(() => this.unstick(generation), CONNECT_RETRY_MS);
+  }
+
+  unstick(generation) {
+    if (generation !== this.generation || this.host.dataset.status !== 'connecting') return;
+    this.open(this.agent, false).catch(() => {});
   }
 
   receive(payload) {
     const frame = decodeFrame(payload);
     if (!frame) return;
     if (frame.kind === 'output') {
-      this.xterm.write(frame.data);
+      this.xterm.write(frame.data, () => this.shown());
     } else if (frame.kind === 'snapshot') {
       this.records = [];
       this.xterm.reset();
       if (frame.rows !== this.xterm.rows || frame.cols !== this.xterm.cols) this.xterm.resize(frame.cols, frame.rows);
-      this.xterm.write(frame.data);
+      this.xterm.write(frame.data, () => this.shown());
     } else {
       this.ended = true;
+      if (this.host.dataset.status === 'connecting') this.host.dataset.status = 'ended';
     }
+  }
+
+  shown() {
+    if (this.host.dataset.status !== 'connecting') return;
+    this.host.dataset.status = 'live';
+    requestAnimationFrame(() => this.redraw());
+  }
+
+  redraw() {
+    if (this.agent !== null) this.xterm.refresh(0, this.xterm.rows - 1);
   }
 
   stale(agent) {
@@ -199,7 +233,7 @@ export class Terminal {
   }
 
   send(bytes) {
-    if (this.agent !== null && !this.ended) this.handlers.input(bytes);
+    if (this.session !== null && !this.ended) this.handlers.input(this.session, bytes);
   }
 
   refit() {
@@ -208,7 +242,7 @@ export class Terminal {
     if (this.size && next.rows === this.size.rows && next.cols === this.size.cols) return;
     this.size = next;
     this.xterm.resize(next.cols, next.rows);
-    if (!this.ended) this.handlers.resize(next);
+    if (this.session !== null && !this.ended) this.handlers.resize(this.session, next);
   }
 
   focus() {
@@ -216,10 +250,13 @@ export class Terminal {
   }
 
   close() {
+    clearTimeout(this.watchdog);
     this.generation += 1;
-    if (this.agent !== null) this.handlers.close();
+    if (this.session !== null) this.handlers.close(this.session);
+    this.session = null;
     this.agent = null;
     this.ended = true;
     this.live.hidden = true;
+    this.host.dataset.status = 'closed';
   }
 }

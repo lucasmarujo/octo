@@ -513,3 +513,39 @@ test('the real terminal ships inside the app, licensed, and loads before the int
   assert.match(csp, /script-src 'self'(;|$)/, 'the terminal scripts are local files, allowed by the CSP');
   assert.doesNotMatch(html, /class="terminal"/, 'xterm names its own root .terminal, so the frame uses another class');
 });
+
+test('every terminal names its session, so a late close never ends the terminal that replaced it', () => {
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  for (const command of ['term_input', 'term_resize', 'term_close']) assert.match(main, new RegExp(`invoke\\('${command}', \\{ session`), command);
+  const terminal = readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8');
+  assert.match(terminal, /this\.handlers\.close\(this\.session\)/);
+  assert.match(terminal, /else this\.handlers\.close\(session\)|this\.handlers\.close\(session\);\n\s*return;/, 'a terminal closed while it was opening lets its new session go');
+  assert.match(rust('desktop/src/term.rs'), /pub fn term_close\(console: State<'_, Console>, session: SessionId\)/);
+});
+
+test('an agent terminal says it is connecting instead of staying black, retries once and redraws once shown', () => {
+  const terminal = readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(terminal, /dataset\.status = 'connecting'/);
+  assert.match(css, /\[data-status="connecting"\] > \.term-status \{ display: grid; \}/);
+  assert.match(terminal, /CONNECT_RETRY_MS = \d+/);
+  assert.match(terminal, /unstick\(generation\)/);
+  assert.match(terminal, /requestAnimationFrame\(\(\) => this\.redraw\(\)\)/, 'the first screen is drawn again on the next frame');
+  assert.match(terminal, /visibilitychange/, 'a window shown again is redrawn');
+  assert.match(terminal, /onContextLoss\(\(\) => \{[\s\S]*?this\.xterm\.refresh/, 'losing WebGL falls back and draws at once');
+});
+
+test('a grid tile runs its agent in place: a click makes it the live terminal and a tab opens only from its button', () => {
+  const grid = readFileSync(join(REPO, 'desktop/ui/js/grid.js'), 'utf8');
+  assert.match(grid, /onclick: \(\) => activate\(agent, handlers\)/);
+  assert.equal(grid.match(/handlers\.open\(agent\)/g).length, 1, 'only the open-in-a-tab button opens the tab');
+  assert.match(grid, /new Terminal\(live\.host, handlers\.term/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /event\.target\.closest\('\.xterm'\)\) return;/, 'keys typed into a terminal never reach the overview shortcuts');
+  assert.match(main, /function gridShortcut[\s\S]*?event\.key === '\]'[\s\S]*?deactivateGrid\(\)/, 'ctrl+] lets go of the tile');
+  for (const place of ['function openAgent', 'function openPage', 'function renderView']) {
+    const body = main.slice(main.indexOf(place), main.indexOf('\n}\n', main.indexOf(place)));
+    assert.match(body, /deactivateGrid\(\)/, `${place} lets the live tile go`);
+  }
+});
+

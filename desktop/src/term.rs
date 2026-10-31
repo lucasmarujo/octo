@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use orkai::client::{self, Connection};
@@ -17,9 +18,12 @@ pub const SNAPSHOT: u8 = 1;
 pub const ENDED: u8 = 2;
 const NOTHING_RECORDED: &[u8] = b"(no output was recorded)";
 
+pub type SessionId = u64;
+
 #[derive(Default)]
 pub struct Console {
-    session: Mutex<Option<Arc<Connection>>>,
+    session: Mutex<Option<(SessionId, Arc<Connection>)>>,
+    next: AtomicU64,
 }
 
 pub fn frame(message: &HolderMsg) -> Option<Vec<u8>> {
@@ -55,14 +59,15 @@ fn push(channel: &Channel, bytes: Vec<u8>) -> bool {
 }
 
 impl Console {
-    pub fn open(&self, link: &Link, agent: AgentId, size: TermSize, channel: Channel) -> Result<(), String> {
-        self.close();
+    pub fn open(&self, link: &Link, agent: AgentId, size: TermSize, channel: Channel) -> Result<SessionId, String> {
+        self.close_current();
+        let id = self.next.fetch_add(1, Ordering::SeqCst) + 1;
         let store = link.hub().store();
         let connected = store.read_runtime(agent).ok().flatten().and_then(|runtime| client::connect(&runtime).ok());
         let Some((conn, reader, _)) = connected else {
             push(&channel, recorded(&store.home().output_log(agent), size));
             push(&channel, vec![ENDED]);
-            return Ok(());
+            return Ok(id);
         };
         conn.send(&ClientMsg::Attach(size)).map_err(|err| err.to_string())?;
         client::spawn_reader(reader, move |message| match message {
@@ -73,25 +78,40 @@ impl Console {
             }
         })
         .map_err(|err| err.to_string())?;
-        *lock(&self.session) = Some(Arc::new(conn));
-        Ok(())
+        *lock(&self.session) = Some((id, Arc::new(conn)));
+        Ok(id)
     }
 
-    fn deliver(&self, message: ClientMsg) -> Result<(), String> {
-        let conn = lock(&self.session).clone().ok_or_else(|| "no agent terminal is open".to_string())?;
+    fn deliver(&self, session: SessionId, message: ClientMsg) -> Result<(), String> {
+        let conn = lock(&self.session)
+            .as_ref()
+            .filter(|(current, _)| *current == session)
+            .map(|(_, conn)| Arc::clone(conn))
+            .ok_or_else(|| "this agent terminal is not open anymore".to_string())?;
         conn.send(&message).map_err(|err| err.to_string())
     }
 
-    pub fn input(&self, data: Vec<u8>) -> Result<(), String> {
-        self.deliver(ClientMsg::Input(data))
+    pub fn input(&self, session: SessionId, data: Vec<u8>) -> Result<(), String> {
+        self.deliver(session, ClientMsg::Input(data))
     }
 
-    pub fn resize(&self, size: TermSize) -> Result<(), String> {
-        self.deliver(ClientMsg::Resize(size))
+    pub fn resize(&self, session: SessionId, size: TermSize) -> Result<(), String> {
+        self.deliver(session, ClientMsg::Resize(size))
     }
 
-    pub fn close(&self) {
-        if let Some(conn) = lock(&self.session).take() {
+    pub fn close(&self, session: SessionId) {
+        let mut current = lock(&self.session);
+        if current.as_ref().is_some_and(|(id, _)| *id == session) {
+            Self::detach(current.take());
+        }
+    }
+
+    fn close_current(&self) {
+        Self::detach(lock(&self.session).take());
+    }
+
+    fn detach(session: Option<(SessionId, Arc<Connection>)>) {
+        if let Some((_, conn)) = session {
             let _ = conn.send(&ClientMsg::Detach);
             conn.close();
         }
@@ -106,23 +126,23 @@ pub fn term_open(
     rows: u16,
     cols: u16,
     channel: Channel,
-) -> Result<(), String> {
+) -> Result<SessionId, String> {
     console.open(&link, agent, TermSize::new(rows, cols), channel)
 }
 
 #[tauri::command]
-pub fn term_input(console: State<'_, Console>, data: Vec<u8>) -> Result<(), String> {
-    console.input(data)
+pub fn term_input(console: State<'_, Console>, session: SessionId, data: Vec<u8>) -> Result<(), String> {
+    console.input(session, data)
 }
 
 #[tauri::command]
-pub fn term_resize(console: State<'_, Console>, rows: u16, cols: u16) -> Result<(), String> {
-    console.resize(TermSize::new(rows, cols))
+pub fn term_resize(console: State<'_, Console>, session: SessionId, rows: u16, cols: u16) -> Result<(), String> {
+    console.resize(session, TermSize::new(rows, cols))
 }
 
 #[tauri::command]
-pub fn term_close(console: State<'_, Console>) {
-    console.close();
+pub fn term_close(console: State<'_, Console>, session: SessionId) {
+    console.close(session);
 }
 
 #[cfg(test)]
@@ -225,7 +245,7 @@ mod tests {
         let holder = fake_holder(&fx.home);
         let console = Console::default();
         let (channel, frames) = window();
-        console.open(&fx.link, AGENT, TermSize::new(40, 120), channel).unwrap();
+        let session = console.open(&fx.link, AGENT, TermSize::new(40, 120), channel).unwrap();
         let mut stream = holder.recv_timeout(WAIT).unwrap();
         assert_eq!(ClientMsg::read(&mut stream).unwrap(), ClientMsg::Attach(TermSize::new(40, 120)));
 
@@ -239,15 +259,43 @@ mod tests {
         reply(&mut stream, HolderMsg::Output("ção\r\n".as_bytes().to_vec()));
         assert_eq!(frames.recv_timeout(WAIT).unwrap(), [&[OUTPUT][..], "ção\r\n".as_bytes()].concat());
 
-        console.input(b"ls\r".to_vec()).unwrap();
+        console.input(session, b"ls\r".to_vec()).unwrap();
         assert_eq!(ClientMsg::read(&mut stream).unwrap(), ClientMsg::Input(b"ls\r".to_vec()));
-        console.resize(TermSize::new(50, 160)).unwrap();
+        console.resize(session, TermSize::new(50, 160)).unwrap();
         assert_eq!(ClientMsg::read(&mut stream).unwrap(), ClientMsg::Resize(TermSize::new(50, 160)));
 
         drop(stream);
         assert_eq!(frames.recv_timeout(WAIT).unwrap(), vec![ENDED], "the window learns the holder is gone");
-        console.close();
-        assert!(console.input(b"x".to_vec()).unwrap_err().contains("no agent terminal"));
+        console.close(session);
+        assert!(console.input(session, b"x".to_vec()).unwrap_err().contains("not open anymore"));
+    }
+
+    #[test]
+    fn a_terminal_that_was_replaced_cannot_close_or_type_into_the_new_one() {
+        let fx = fixture("replaced");
+        let holder = fake_holder(&fx.home);
+        let console = Console::default();
+        let (grid, _grid_frames) = window();
+        let first = console.open(&fx.link, AGENT, TermSize::new(20, 60), grid).unwrap();
+        let mut first_stream = holder.recv_timeout(WAIT).unwrap();
+        assert!(matches!(ClientMsg::read(&mut first_stream).unwrap(), ClientMsg::Attach(_)));
+
+        let holder = fake_holder(&fx.home);
+        let (tab, _tab_frames) = window();
+        let second = console.open(&fx.link, AGENT, TermSize::new(40, 120), tab).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(ClientMsg::read(&mut first_stream).unwrap(), ClientMsg::Detach, "opening the tab lets the grid go");
+        let mut second_stream = holder.recv_timeout(WAIT).unwrap();
+        assert!(matches!(ClientMsg::read(&mut second_stream).unwrap(), ClientMsg::Attach(_)));
+
+        console.close(first);
+        assert!(console.input(first, b"stale".to_vec()).is_err());
+        console.input(second, b"live".to_vec()).unwrap();
+        assert_eq!(
+            ClientMsg::read(&mut second_stream).unwrap(),
+            ClientMsg::Input(b"live".to_vec()),
+            "the tab is still open"
+        );
     }
 
     #[test]
@@ -256,10 +304,10 @@ mod tests {
         let holder = fake_holder(&fx.home);
         let console = Console::default();
         let (channel, _frames) = window();
-        console.open(&fx.link, AGENT, TermSize::new(24, 80), channel).unwrap();
+        let session = console.open(&fx.link, AGENT, TermSize::new(24, 80), channel).unwrap();
         let mut stream = holder.recv_timeout(WAIT).unwrap();
         assert!(matches!(ClientMsg::read(&mut stream).unwrap(), ClientMsg::Attach(_)));
-        console.close();
+        console.close(session);
         assert_eq!(ClientMsg::read(&mut stream).unwrap(), ClientMsg::Detach);
         assert!(ClientMsg::read(&mut stream).is_err(), "the connection is closed after the detach");
     }
