@@ -131,7 +131,7 @@ test('canonical, Open Graph e Twitter apontam para o domínio e para uma imagem 
   assert.match(head, new RegExp(`<link rel="canonical" href="${SITE}">`));
   assert.equal(meta('property', 'og:url'), SITE);
   const image = meta('property', 'og:image');
-  assert.equal(image, `${SITE}og-octo.png`);
+  assert.equal(image, `${SITE}og-octo-kai.png`);
   assert.equal(meta('name', 'twitter:image'), image);
   assert.equal(meta('name', 'twitter:card'), 'summary_large_image');
   const png = readFileSync(localPath(image));
@@ -211,26 +211,38 @@ test('o mascote da TUI simulada é o sprite IDLE/BUSY do src/tui/sprite.rs, pixe
   });
 });
 
-test('os outros mascotes da página são o Kai do app, com as mesmas formas', async () => {
-  const { LAYERS } = await import(new URL('../../desktop/ui/js/kai.js', import.meta.url));
-  const mascots = [...html.matchAll(/<span class="kai ([^"]*)"[^>]*>/g)].map((m) => m[1]);
-  for (const place of ['brand-mascot', 'top-runner', 'kai-hero hero-mascot', 'finale-mascot']) assert.ok(mascots.includes(place), place);
-  const glyphs = [...html.matchAll(/<span class="kai (?:brand-mascot|top-runner|finale-mascot)"[^>]*>([\s\S]*?)<\/span><\/span><\/span>(?=\s|<)/g)].map(([markup]) => markup);
-  assert.ok(glyphs.length >= 4, `${glyphs.length} kais`);
-  const favicon = read('favicon.svg');
-  const shapes = (markup) => [...markup.matchAll(/<(?:path|ellipse|circle|rect)\b[^>]*>/g)].map((m) => m[0].replace(/\s*\/?>$/, ''));
-  const layer = (markup, name) => markup.split(`kai-${name}"`)[1].split(/<\/svg>|<\/g>/)[0];
-  for (const name of ['leg-1', 'leg-2', 'leg-3', 'head', 'eyes', 'pupils', 'cap']) {
-    const expected = shapes(LAYERS.find((entry) => entry.name === name).markup);
-    for (const markup of glyphs) assert.deepEqual(shapes(layer(markup, name)), expected, name);
-    assert.deepEqual(shapes(layer(favicon, name)), expected, `favicon.svg ${name}`);
+test('os outros mascotes da página são o Kai pixel do app, com as mesmas tiras', () => {
+  const mascots = [...html.matchAll(/<span class="kai ([^"]*)"([^>]*)>/g)].map((m) => ({ place: m[1], attrs: m[2] }));
+  for (const place of ['brand-mascot', 'top-runner', 'kai-hero hero-mascot', 'finale-mascot']) assert.ok(mascots.some((kai) => kai.place === place), place);
+  assert.equal(mascots.filter((kai) => kai.place === 'brand-mascot').length, 2, 'no cabeçalho e no rodapé');
+  const sprite = '<span class="kai-sprite"><span class="kai-strip"></span></span>';
+  const moods = new Set();
+  for (const { place, attrs } of mascots) {
+    const mood = attrs.match(/data-mood="(\w+)"/);
+    assert.ok(mood, `${place} sem data-mood`);
+    moods.add(mood[1]);
+    const start = html.indexOf(`<span class="kai ${place}"${attrs}>`);
+    assert.ok(html.slice(start, start + 2000).includes(sprite), `${place} sem a tira`);
   }
+  assert.deepEqual([...moods].sort(), ['idle', 'working']);
+  assert.match(html, /<span class="kai kai-hero hero-mascot" data-kai data-mood="working"/, 'o Kai do hero digita nos terminais');
+  assert.doesNotMatch(html, /kai-(?:leg|head|face|body|pupils)/, 'nada do Kai antigo em camadas');
+  for (const mood of ['idle', 'working', 'done']) {
+    assert.deepEqual(readFileSync(join(ROOT, `assets/kai/${mood}.svg`)), readFileSync(join(REPO, `desktop/ui/kai/${mood}.svg`)), `assets/kai/${mood}.svg`);
+    assert.ok(css.includes(`url("/assets/kai/${mood}.svg")`), mood);
+  }
+  assert.match(css, /\.kai-hero\.cheer \.kai-strip \{[^}]*done\.svg[^}]*steps\(5, jump-none\) forwards/, 'o clique comemora uma vez');
+  const firstPose = readFileSync(join(REPO, 'desktop/ui/kai/idle.svg'), 'utf8').match(/<svg x="0" width="48" height="48" viewBox="0 0 48 48">([\s\S]*?)<\/svg>/)[1];
+  const favicon = read('favicon.svg');
+  assert.ok(favicon.includes(`<g shape-rendering="crispEdges">${firstPose}</g>`), 'o favicon é a primeira pose do Kai parado');
+  assert.match(favicon, /<rect width="48" height="48" rx="[\d.]+" fill="#212B59"\/>/);
   assert.match(app, /mountKai\(document\.querySelector\('\[data-kai\]'\)\)/);
+  assert.match(app, /runnerWidth = runner\.offsetWidth/, 'o Kai da barra para no fim da tela, seja qual for o tamanho dele');
 });
 
 test('o Kai só anima o que o compositor roda sozinho, a 60 fps', () => {
   const frames = [...css.matchAll(/@keyframes (kai-[\w-]+) \{(.*)\}\s*$/gm)];
-  assert.ok(frames.length >= 10, 'keyframes do Kai');
+  assert.ok(frames.length >= 4, 'keyframes do Kai');
   for (const [, name, rules] of frames) {
     for (const [, property] of rules.matchAll(/([a-z-]+)\s*:/g)) assert.ok(['transform', 'opacity'].includes(property), `${name} anima ${property}`);
   }
@@ -264,15 +276,22 @@ test('o ícone do orkai CLI (exe e terminais) é o sprite IDLE em cada tamanho',
 });
 
 test('o favicon do site é o ícone do Octo, nos tamanhos de aba', () => {
-  const ico = readFileSync(join(ROOT, 'octo.ico'));
+  const ico = readFileSync(join(ROOT, 'octo-kai.ico'));
   assert.deepEqual(readFileSync(join(ROOT, 'favicon.ico')), ico, 'site/favicon.ico');
   const sizes = icoFrames(ico).map((frame) => frame.readUInt32BE(16));
   assert.deepEqual([...sizes].sort((a, b) => a - b), [16, 32, 48]);
-  const touch = readFileSync(join(ROOT, 'octo-touch-icon.png'));
+  const touch = readFileSync(join(ROOT, 'octo-kai-touch-icon.png'));
   assert.equal(touch.readUInt32BE(16), 180);
   assert.equal(touch.readUInt32BE(20), 180);
-  assert.match(head, /<link rel="icon" href="\/octo\.ico" sizes="48x48">/);
-  assert.match(head, /<link rel="apple-touch-icon" href="\/octo-touch-icon\.png">/);
+  assert.match(head, /<link rel="icon" href="\/octo-kai\.ico" sizes="48x48">/);
+  assert.match(head, /<link rel="apple-touch-icon" href="\/octo-kai-touch-icon\.png">/);
+});
+
+test('ícones e imagens trocados ganham nome novo, porque o nginx guarda png e ico por 30 dias', () => {
+  const cached = read('nginx.conf').match(/location ~\* \\\.\(\?:([\w|]+)\)\$/)[1].split('|');
+  assert.ok(cached.includes('png') && cached.includes('ico'));
+  assert.doesNotMatch(html, /\/og-octo\.png|\/octo\.ico|\/octo-touch-icon\.png/);
+  for (const old of ['og-octo.png', 'octo.ico', 'octo-touch-icon.png']) assert.ok(!existsSync(join(ROOT, old)), `${old} ficou para trás`);
 });
 
 test('a marca é OctoAI, o produto é Octo e o orkai só aparece como o CLI legado', () => {
@@ -286,7 +305,7 @@ test('a marca é OctoAI, o produto é Octo e o orkai só aparece como o CLI lega
 test('o hero mostra a tela real do Octo, com 1x e 2x', () => {
   const hero = html.slice(html.indexOf('<section class="hero"'), html.indexOf('</section>'));
   const img = hero.match(/<div class="shot" data-screen>\s*<img ([^>]+)>/)[1];
-  assert.match(img, /src="\/assets\/octo-board\.webp"/);
+  assert.match(img, /src="\/assets\/octo-board-kai\.webp"/);
   assert.match(img, /width="1440" height="900"/);
   const srcset = img.match(/srcset="([^"]+)"/)[1].split(', ').map((entry) => entry.split(' '));
   assert.deepEqual(srcset.map(([, density]) => density), ['1x', '2x']);
@@ -478,8 +497,8 @@ test('orçamento de peso para carregar rápido', () => {
   assert.ok(size('assets/orkai-demo-v3.mp4') < 5 * 1024 * 1024, 'vídeo');
   assert.ok(size('assets/orkai-demo-v3-poster.webp') < 50 * 1024, 'poster');
   assert.ok(size('assets/overview.webp') < 120 * 1024, 'overview');
-  assert.ok(size('assets/octo-board.webp') < 100 * 1024, 'octo-board');
-  assert.ok(size('assets/octo-board-2x.webp') < 180 * 1024, 'octo-board-2x');
+  assert.ok(size('assets/octo-board-kai.webp') < 100 * 1024, 'octo-board');
+  assert.ok(size('assets/octo-board-kai-2x.webp') < 180 * 1024, 'octo-board-2x');
 });
 
 test('nginx: CSP estrita, bloqueio de arquivos internos e compose no padrão da VPS', () => {

@@ -5,8 +5,8 @@ terceiros (fontes, vídeo e imagens ficam em `assets/`). O hero mostra a tela re
 a versão 2x), e a seção de download aponta para os arquivos do Octo na release mais nova. O orkai CLI, agora legado,
 tem a própria seção no fim da página: a simulação da TUI em `assets/tui.js` reproduz a lógica de `src/tui` (tempos,
 cores por projeto, glifos, título da janela e avisos) e mostra o sprite de `src/tui/sprite.rs`, como o CLI. Os
-mascotes do resto da página e o favicon são o Kai, o polvo do Octo, com as mesmas formas de `desktop/ui/js/kai.js`,
-montado em camadas que só animam `transform` e `opacity` para rodar a 60 fps.
+mascotes do resto da página, o favicon, os ícones e a imagem de compartilhamento são o Kai pixel do Octo: as tiras em
+`assets/kai/` são cópias exatas das de `desktop/ui/kai/`, uma pose por quadro, que só animam `transform` para rodar a 60 fps.
 
 ## Testes
 
