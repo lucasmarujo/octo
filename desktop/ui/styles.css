@@ -178,7 +178,7 @@ h1, p { margin: 0; }
 .sidebar { display: flex; flex-direction: column; gap: 24px; width: var(--sidebar); flex-shrink: 0; padding: 20px 12px 16px; border-right: 1px solid var(--color-border); overflow-y: auto; }
 .sidebar .spacer { flex: 1; min-height: 0; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px; }
-.brand-mascot { display: flex; width: 32px; height: 32px; flex-shrink: 0; }
+.brand-mascot { display: flex; width: 48px; height: 48px; flex-shrink: 0; }
 .brand-text { display: flex; flex-direction: column; gap: 2px; }
 .wordmark { font-size: 22px; font-weight: 800; line-height: 22px; letter-spacing: -0.02em; }
 .host { font-family: var(--font-mono); font-size: var(--text-xs); line-height: 14px; color: var(--color-text-faint); }
@@ -468,70 +468,21 @@ h1, p { margin: 0; }
 .diff { margin: 0; max-height: 64vh; overflow: auto; padding: 12px 14px; border-radius: 8px; background: var(--term-bg); border: 1px solid var(--color-border); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 17px; color: var(--color-text-muted); }
 .diff-line { white-space: pre; min-height: 17px; }
 
-.kai { position: relative; display: block; width: 100%; height: 100%; }
-.kai-layer, .kai-body, .kai-face { position: absolute; inset: 0; }
-.kai-layer svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.kai-body { transform-origin: 50% 86%; will-change: transform; }
-.kai-leg-1 { transform-origin: 34.4% 59.4%; }
-.kai-leg-2 { transform-origin: 50% 64%; }
-.kai-leg-3 { transform-origin: 65.6% 59.4%; }
-.kai-head { transform-origin: 50% 50%; }
-.kai-face { transform-origin: 50% 46.9%; animation: kai-blink 5s ease-in-out infinite; }
-.kai-eyes, .kai-pupils { transform-origin: 50% 47%; }
-.kai-pupils { transition: transform 240ms ease-out, opacity 200ms ease-out; }
-.kai-eyes { transition: opacity 200ms ease-out; }
-.kai-lids, .kai-happy, .kai-dizzy { transform-origin: 50% 47%; opacity: 0; transition: opacity 200ms ease-out; }
-.kai[data-mood="idle"] .kai-lids { opacity: 1; }
-.kai[data-mood="done"] .kai-happy, .kai[data-mood="lost"] .kai-dizzy { opacity: 1; }
-.kai[data-mood="done"] .kai-eyes, .kai[data-mood="done"] .kai-pupils, .kai[data-mood="lost"] .kai-eyes, .kai[data-mood="lost"] .kai-pupils { opacity: 0; }
-.kai-cap { transform-origin: 50% 27%; }
-.kai-badge-needs, .kai-badge-done, .kai-badge-lost { transform-origin: 84.4% 17.2%; opacity: 0; transform: scale(0.4); transition: opacity 180ms ease-out, transform 220ms cubic-bezier(0.3, 1.6, 0.5, 1); }
-.kai[data-mood="idle"] .kai-body { animation: kai-breathe 3.6s ease-in-out infinite; }
-.kai[data-mood="idle"] .kai-leg-1, .kai[data-mood="idle"] .kai-leg-2, .kai[data-mood="idle"] .kai-leg-3 { animation: kai-drift 3.6s ease-in-out infinite; }
-.kai[data-mood="idle"] .kai-leg-2 { animation-delay: -1.2s; }
-.kai[data-mood="idle"] .kai-leg-3 { animation-delay: -2.4s; }
-.kai[data-mood="working"] .kai-body { animation: kai-bob 1.1s ease-in-out infinite; }
-.kai[data-mood="working"] .kai-leg-1, .kai[data-mood="working"] .kai-leg-2, .kai[data-mood="working"] .kai-leg-3 { animation: kai-type 0.42s ease-in-out infinite alternate; }
-.kai[data-mood="working"] .kai-leg-2 { animation-delay: -0.14s; }
-.kai[data-mood="working"] .kai-leg-3 { animation-delay: -0.28s; }
-.kai[data-mood="working"] .kai-pupils { transform: translateY(2%); }
-.kai[data-mood="needs"] .kai-body { animation: kai-hop 0.9s cubic-bezier(0.3, 0, 0.3, 1) infinite; }
-.kai[data-mood="needs"] .kai-leg-3 { animation: kai-wave 0.45s ease-in-out infinite alternate; }
-.kai[data-mood="needs"] .kai-pupils { transform: translate(1.5%, -1.5%); }
-.kai[data-mood="needs"] .kai-badge-needs { opacity: 1; transform: scale(1); animation: kai-pulse 0.9s ease-in-out infinite; }
-.kai[data-mood="done"] .kai-body { animation: kai-celebrate 2.4s ease-in-out infinite; }
-.kai[data-mood="done"] .kai-cap { animation: kai-tip 2.4s ease-in-out infinite; }
-.kai[data-mood="done"] .kai-badge-done { opacity: 1; transform: scale(1); }
-.kai[data-mood="lost"] .kai-body { animation: kai-dizzy 1.6s ease-in-out infinite; }
-.kai[data-mood="lost"] .kai-face { animation: kai-woozy 1.6s ease-in-out infinite; }
-.kai[data-mood="lost"] .kai-badge-lost { opacity: 1; transform: scale(1); }
-.kai-sleeping { width: 180px; height: 180px; flex-shrink: 0; }
-.kai-sleeping .kai-body { animation: kai-breathe 4s ease-in-out infinite; }
-.kai-sleep-halo { transform-origin: 50% 50%; }
-.kai-sleep-head { transform-origin: 50% 50%; }
-.kai-sleep-legs-outer { transform-origin: 50% 56%; animation: kai-drift 4s ease-in-out infinite; }
-.kai-sleep-legs-inner { transform-origin: 50% 60%; animation: kai-drift 4s ease-in-out -1.3s infinite; }
-.kai-sleep-leg-center { transform-origin: 50% 62%; animation: kai-drift 4s ease-in-out -2.6s infinite; }
-.kai-z-1, .kai-z-2 { opacity: 0; animation: kai-snore 4s ease-in-out infinite; }
-.kai-z-2 { animation-delay: 0.9s; }
+.kai { position: relative; display: block; width: 100%; height: 100%; overflow: hidden; }
+.kai-strip { position: absolute; top: 0; left: 0; height: 100%; background: no-repeat 0 0 / 100% 100%; will-change: transform; }
+.kai[data-mood="idle"] .kai-strip { width: 400%; background-image: url("kai/idle.svg"); animation: kai-strip-4 3.6s steps(4, jump-none) infinite; }
+.kai[data-mood="working"] .kai-strip { width: 400%; background-image: url("kai/working.svg"); animation: kai-strip-4 0.56s steps(4, jump-none) infinite; }
+.kai[data-mood="needs"] .kai-strip { width: 400%; background-image: url("kai/needs.svg"); animation: kai-strip-4 0.9s steps(4, jump-none) infinite; }
+.kai[data-mood="done"] .kai-strip { width: 500%; background-image: url("kai/done.svg"); animation: kai-strip-5 1.2s steps(5, jump-none) forwards; }
+.kai[data-mood="lost"] .kai-strip { width: 400%; background-image: url("kai/lost.svg"); animation: kai-strip-4 1.6s steps(4, jump-none) infinite; }
+.kai[data-mood="sleep"] .kai-strip { width: 400%; background-image: url("kai/sleep.svg"); animation: kai-strip-4 4s steps(4, jump-none) infinite; }
+.kai-sleeping { width: 192px; height: 192px; flex-shrink: 0; }
 
-@keyframes kai-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.08); } }
-@keyframes kai-breathe { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(1.5%) scale(1.02, 0.98); } }
-@keyframes kai-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3%); } }
-@keyframes kai-type { from { transform: rotate(-9deg); } to { transform: rotate(9deg); } }
-@keyframes kai-hop { 0%, 100% { transform: translateY(0) scale(1, 1); } 30% { transform: translateY(-9%) scale(0.97, 1.04); } 55% { transform: translateY(0) scale(1.04, 0.96); } 70% { transform: translateY(0) scale(1, 1); } }
-@keyframes kai-wave { from { transform: rotate(-60deg); } to { transform: rotate(-105deg); } }
-@keyframes kai-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.18); } }
-@keyframes kai-celebrate { 0%, 60%, 100% { transform: translateY(0) rotate(0); } 70% { transform: translateY(-8%) rotate(-6deg); } 80% { transform: translateY(0) rotate(0); } 88% { transform: translateY(-5%) rotate(6deg); } }
-@keyframes kai-tip { 0%, 60%, 100% { transform: rotate(0); } 75% { transform: rotate(-12deg) translateY(-6%); } }
-@keyframes kai-dizzy { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
-@keyframes kai-woozy { 0%, 100% { transform: translateX(-2%) scaleY(0.85); } 50% { transform: translateX(2%) scaleY(0.85); } }
-@keyframes kai-drift { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
-@keyframes kai-snore { 0% { opacity: 0; transform: translate(0, 0); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(6%, -40%); } }
+@keyframes kai-strip-4 { from { transform: translateX(0); } to { transform: translateX(-75%); } }
+@keyframes kai-strip-5 { from { transform: translateX(0); } to { transform: translateX(-80%); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .kai *, .kai { animation: none !important; transition: none !important; }
-  .kai-z-1, .kai-z-2 { opacity: 1; }
+  .kai-strip { animation: none !important; }
 }
 
 .connecting { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; flex: 1; color: var(--color-text-muted); }

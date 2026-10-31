@@ -150,25 +150,40 @@ test('every mood of Kai has its animation in the stylesheet', () => {
 test('Kai only animates what the compositor runs on its own, so it stays at 60 fps', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   const frames = [...css.matchAll(/@keyframes (kai-[\w-]+) \{(.*)\}\s*$/gm)];
-  assert.ok(frames.length >= 10, 'Kai keyframes not found');
+  assert.ok(frames.length >= 2, 'Kai keyframes not found');
   for (const [, name, body] of frames) {
     const properties = [...body.matchAll(/([a-z-]+)\s*:/g)].map((match) => match[1]);
     for (const property of properties) assert.ok(['transform', 'opacity'].includes(property), `${name} animates ${property}`);
   }
   const animated = [...css.matchAll(/^([^{}@]*\.kai[^{}]*)\{[^}]*animation:\s*kai-/gm)].map((match) => match[1]);
-  assert.ok(animated.length >= 10, 'Kai animations not found');
+  assert.ok(animated.length >= 6, 'Kai animations not found');
   for (const selector of animated) {
     for (const part of selector.split(',')) assert.ok(/\.kai-[\w-]+\s*$/.test(part.trim()), `animated inside an svg: ${part.trim()}`);
   }
 });
 
-test('every moving part of Kai is a layer of its own', async () => {
-  const { LAYERS, SLEEPING_LAYERS } = await import('../js/kai.js');
+test('every state of the pixel Kai plays its own strip at the pace of the design', async () => {
+  const { SLEEP } = await import('../js/kai.js');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
-  for (const layer of [...LAYERS, ...SLEEPING_LAYERS]) {
-    assert.ok(layer.markup.trim().startsWith('<'), layer.name);
-    assert.ok(css.includes(`.kai-${layer.name}`), `no style for the ${layer.name} layer`);
+  const pace = { idle: '3.6s', working: '0.56s', needs: '0.9s', done: '1.2s', lost: '1.6s', [SLEEP]: '4s' };
+  for (const mood of [...MOODS, SLEEP]) {
+    const strip = readFileSync(join(REPO, `desktop/ui/kai/${mood}.svg`), 'utf8');
+    const width = Number(strip.match(/^<svg [^>]*viewBox="0 0 (\d+) 48"/)[1]);
+    const count = width / 48;
+    assert.ok(Number.isInteger(count) && count >= 4, `${mood} has ${count} frames`);
+    assert.equal(strip.match(/<svg x="/g).length, count, `${mood} frames`);
+    assert.ok(strip.includes('shape-rendering="crispEdges"'), `${mood} keeps the pixels sharp`);
+    assert.doesNotMatch(strip, /<(script|image|use)\b|href=/, `${mood} draws only shapes`);
+    const rule = css.match(new RegExp(`\\.kai\\[data-mood="${mood}"\\] \\.kai-strip \\{([^}]*)\\}`));
+    assert.ok(rule, `no strip rule for ${mood}`);
+    assert.ok(rule[1].includes(`width: ${count * 100}%`), `${mood} strip width`);
+    assert.ok(rule[1].includes(`url("kai/${mood}.svg")`), `${mood} strip image`);
+    assert.ok(rule[1].includes(`kai-strip-${count} ${pace[mood]} steps(${count}, jump-none)`), `${mood} pace`);
+    assert.equal(rule[1].includes('infinite'), mood !== 'done', `${mood} loops unless it is the celebration`);
+    const shift = ((count - 1) / count) * 100;
+    assert.ok(css.includes(`@keyframes kai-strip-${count} { from { transform: translateX(0); } to { transform: translateX(-${shift}%); } }`), `kai-strip-${count} ends on the last frame`);
   }
+  assert.match(css, /\.kai\[data-mood="done"\] \.kai-strip \{[^}]*forwards/, 'the celebration stays on its last frame');
 });
 
 test('the colored git diff becomes colored runs without escape codes', async () => {
