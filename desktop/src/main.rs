@@ -4,6 +4,7 @@ mod alerts;
 mod link;
 mod pair;
 mod settings;
+mod updates;
 
 use std::process::ExitCode;
 

@@ -1,6 +1,6 @@
 [package]
 name = "orkai-desktop"
-version = "0.1.0"
+version = "0.1.5"
 edition = "2024"
 rust-version = "1.88"
 description = "The orkai desktop app: every agent of every project in one window"

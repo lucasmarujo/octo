@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::link::Link;
+use crate::updates;
 
 pub const MIN_PORT: u16 = 1024;
 
@@ -41,6 +42,7 @@ pub struct AgentStatus {
 pub struct UpdateCheck {
     pub latest: String,
     pub newer: bool,
+    pub ready: bool,
 }
 
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,7 +117,7 @@ pub fn check(source: &Source) -> Result<UpdateCheck, String> {
     let newer = parse_version(&manifest.version)
         .zip(parse_version(&update::VERSION))
         .is_some_and(|(latest, running)| latest > running);
-    Ok(UpdateCheck { latest: manifest.version, newer })
+    Ok(UpdateCheck { latest: manifest.version, newer, ready: false })
 }
 
 #[tauri::command]
@@ -138,8 +140,16 @@ pub fn play_chime(link: State<'_, Link>, sound: Sound) -> bool {
 }
 
 #[tauri::command]
-pub async fn check_update() -> Result<UpdateCheck, String> {
-    tauri::async_runtime::spawn_blocking(|| check(&Source::from_env())).await.map_err(|err| err.to_string())?
+pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateCheck, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut checked = check(&Source::from_env())?;
+        if checked.newer && updates::updates_itself() {
+            checked.ready = updates::install_and_announce(&app)?.is_some();
+        }
+        Ok(checked)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[cfg(test)]

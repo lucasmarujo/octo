@@ -144,6 +144,7 @@ async function checkUpdate() {
   render();
   try {
     update = await invoke('check_update');
+    if (update.ready) state.updateReady = update.latest;
   } catch (err) {
     update = { failed: true };
     toast(`Could not check for updates: ${err}`, 'warn');
@@ -153,6 +154,7 @@ async function checkUpdate() {
 
 function updateLine() {
   const version = `orkai ${state.version || ''}`.trim();
+  if (state.updateReady) return [version, h('span', { class: 'update-note t-green' }, ` · ${state.updateReady} is ready, restart to use it`)];
   if (!update) return [version];
   if (update.checking) return [version, h('span', { class: 'update-note t-muted' }, ' · checking…')];
   if (update.failed) return [version, h('span', { class: 'update-note t-muted' }, ' · could not check')];
@@ -214,7 +216,9 @@ function content() {
       row(
         h('span', null, ...updateLine()),
         'Updates install on their own, checked by size and SHA-256. Running agents are never stopped.',
-        h('button', { class: 'button', type: 'button', disabled: Boolean(update && update.checking), onclick: checkUpdate }, 'Check now'),
+        state.updateReady
+          ? h('button', { class: 'button primary', type: 'button', onclick: () => invoke('restart_app') }, 'Restart now')
+          : h('button', { class: 'button', type: 'button', disabled: Boolean(update && update.checking), onclick: checkUpdate }, 'Check now'),
       ),
     ),
   );

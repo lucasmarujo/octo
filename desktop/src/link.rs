@@ -11,6 +11,7 @@ use orkai::pwa::server::{Outbox, Peer, welcome};
 use orkai::util::lock;
 use tauri::State;
 
+use crate::updates::{self, Updates};
 use crate::{alerts, pair, settings};
 use tauri::ipc::{Channel, InvokeResponseBody};
 
@@ -100,6 +101,11 @@ pub fn run() -> io::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(link)
+        .manage(Updates::default())
+        .setup(|app| {
+            updates::on_launch(app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             attach,
             send,
@@ -112,7 +118,9 @@ pub fn run() -> io::Result<()> {
             alerts::alert,
             pair::pairing,
             pair::set_phone,
-            pair::renew_phone
+            pair::renew_phone,
+            updates::update_ready,
+            updates::restart_app
         ])
         .run(tauri::generate_context!())
         .map_err(io::Error::other)

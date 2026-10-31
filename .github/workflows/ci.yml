@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -213,9 +214,91 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  desktop-build:
+    name: build the app for ${{ matrix.target }}
+    if: ${{ !cancelled() && needs.desktop.result == 'success' && (needs.version.outputs.publish == 'true' || github.event_name == 'workflow_dispatch') }}
+    needs: [desktop, version]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: .exe
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            ext: ""
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            ext: ""
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            ext: ""
+    runs-on: ${{ matrix.os }}
+    env:
+      ORKAI_BUILD_COMMIT: ${{ github.sha }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-${{ matrix.target }}
+      - name: Install the webview libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+      - name: Build
+        run: cargo build --release --locked -p orkai-desktop --target ${{ matrix.target }}
+      - name: Stage
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/$TARGET/release/orkai-desktop${{ matrix.ext }}" "dist/orkai-desktop-$TARGET"
+          if [ "$RUNNER_OS" = Windows ]; then cp "target/$TARGET/release/orkai-desktop.exe" dist/orkai-desktop.exe; fi
+      - name: Bundle the macOS app
+        if: runner.os == 'macOS'
+        run: |
+          version=$(grep -m1 '^version' desktop/Cargo.toml | cut -d'"' -f2)
+          app="target/bundle/orkai.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp "target/$TARGET/release/orkai-desktop" "$app/Contents/MacOS/orkai-desktop"
+          cp desktop/icons/icon.icns "$app/Contents/Resources/icon.icns"
+          cat > "$app/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>orkai</string>
+            <key>CFBundleDisplayName</key><string>orkai</string>
+            <key>CFBundleIdentifier</key><string>dev.marujo.orkai</string>
+            <key>CFBundleExecutable</key><string>orkai-desktop</string>
+            <key>CFBundleIconFile</key><string>icon</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$version</string>
+            <key>CFBundleVersion</key><string>$version</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+          plutil -lint "$app/Contents/Info.plist"
+          ditto -c -k --keepParent "$app" "dist/orkai-desktop-$TARGET.app.zip"
+      - name: Warn that the app is unsigned
+        if: runner.os == 'Windows'
+        run: echo "::warning::the orkai app is published unsigned"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orkai-desktop-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
   publish:
     name: publish ${{ needs.version.outputs.tag }}
-    needs: [version, build]
+    needs: [version, build, desktop-build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -250,10 +333,9 @@ jobs:
           python3 - <<'EOF'
           import datetime, hashlib, json, os, pathlib
           dist = pathlib.Path("dist")
-          installer = "orkai-setup.exe"
           assets = {}
           for path in sorted(dist.iterdir()):
-              if not path.name.startswith("orkai-") or path.name == installer:
+              if not path.name.startswith("orkai-") or "." in path.name:
                   continue
               target = path.name[len("orkai-"):]
               data = path.read_bytes()
@@ -280,5 +362,7 @@ jobs:
             --title "orkai $TAG" \
             --notes "orkai $TAG, built from $GITHUB_SHA. Its files never change, so winget and the releases/latest/download links always get the same files, and older versions of orkai update themselves to it.
 
-          On Windows, run orkai-setup.exe. Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy" \
+          On Windows, run orkai-setup.exe. Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy
+
+          The orkai app: orkai-desktop.exe on Windows, orkai-desktop-aarch64-apple-darwin.app.zip (Apple Silicon) or orkai-desktop-x86_64-apple-darwin.app.zip (Intel) on macOS, and orkai-desktop-x86_64-unknown-linux-gnu on Linux, which needs WebKitGTK 4.1. The first time on macOS, right-click orkai.app and choose Open, since the app is not notarized. It updates itself to every new version, and closing it never stops an agent." \
             --latest

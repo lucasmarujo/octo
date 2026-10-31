@@ -281,6 +281,12 @@ function raiseAlerts(agents) {
   }
 }
 
+function announceUpdate(version) {
+  if (state.updateReady === version) return;
+  state.updateReady = version;
+  toast(`orkai ${version} is ready · restart the app to use it, your agents keep running`, 'success');
+}
+
 async function confirmTrust(message) {
   const sure = await confirm({
     title: `Run the tests of ${message.repo}?`,
@@ -514,6 +520,8 @@ function start() {
   invoke('home_dir').then((home) => {
     state.home = home;
   }).catch(() => {});
+  invoke('update_ready').then((version) => version && announceUpdate(version)).catch(() => {});
+  window.__TAURI__.event.listen('update-ready', (event) => announceUpdate(event.payload));
   connect(onMessage).catch((err) => toast(`could not reach orkai: ${err}`, 'error'));
   $('task').focus();
 }
