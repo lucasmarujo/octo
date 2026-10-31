@@ -7,7 +7,7 @@ import { inflateSync } from 'node:zlib';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REPO = join(ROOT, '..');
-const SITE = 'https://orkai.marujo.dev/';
+const SITE = 'https://octo.marujo.dev/';
 const read = (file) => readFileSync(join(ROOT, file), 'utf8');
 const html = read('index.html');
 const css = read('assets/site.css');
@@ -159,7 +159,7 @@ test('JSON-LD descreve o software e o vídeo com arquivos que existem', () => {
   assert.deepEqual(software.brand, { '@type': 'Brand', name: 'OctoAI' });
   assert.equal(byType('WebSite').name, 'OctoAI');
   ['Windows', 'Linux', 'macOS'].forEach((os) => assert.ok(software.operatingSystem.includes(os), os));
-  assert.equal(software.downloadUrl, 'https://github.com/lucasmarujo/orkai-cli/releases/latest');
+  assert.equal(software.downloadUrl, 'https://github.com/lucasmarujo/octo/releases/latest');
   assert.ok(existsSync(localPath(software.screenshot)), software.screenshot);
   assert.ok(existsSync(localPath(video.contentUrl)), video.contentUrl);
   assert.ok(existsSync(localPath(video.thumbnailUrl)), video.thumbnailUrl);
@@ -174,7 +174,7 @@ test('sitemap e robots apontam para o domínio e batem com o dateModified', () =
   const sitemap = read('sitemap.xml');
   assert.match(sitemap, new RegExp(`<loc>${SITE}</loc>`));
   assert.equal(sitemap.match(/<lastmod>([^<]+)<\/lastmod>/)[1], page.dateModified);
-  assert.match(read('robots.txt'), /^Sitemap: https:\/\/orkai\.marujo\.dev\/sitemap\.xml$/m);
+  assert.match(read('robots.txt'), /^Sitemap: https:\/\/octo\.marujo\.dev\/sitemap\.xml$/m);
 });
 
 test('um único H1, com o texto no HTML estático, sem depender de JavaScript', () => {
@@ -337,7 +337,7 @@ test('os comandos de instalação são os mesmos do README', () => {
 });
 
 test('os downloads diretos são os arquivos das tabelas do Octo e do CLI no README', () => {
-  const links = (section) => [...section.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/(?:download\/latest|latest\/download)\/([^"]+)"/g)].map((m) => m[1]);
+  const links = (section) => [...section.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/octo\/releases\/(?:download\/latest|latest\/download)\/([^"]+)"/g)].map((m) => m[1]);
   const section = (id) => html.slice(html.indexOf(`<section class="section" id="${id}"`)).split('</section>')[0];
   const octo = readmeTable('| System | Download |').map(([, file]) => file);
   const cli = readmeTable('| Platform | File |').map(([, file]) => file);
@@ -348,9 +348,9 @@ test('os downloads diretos são os arquivos das tabelas do Octo e do CLI no READ
 });
 
 test('o instalador do Windows sai da versão mais nova, que nunca muda, e não da build contínua', () => {
-  const versioned = 'https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe';
+  const versioned = 'https://github.com/lucasmarujo/octo/releases/latest/download/orkai-setup.exe';
   for (const [name, source] of [['README.md', readme], ['README.pt-BR.md', readmePtBr], ['index.html', html], ['llms.txt', read('llms.txt')]]) {
-    const links = [...source.matchAll(/https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/[^\s"()]*orkai-setup\.exe/g)].map((m) => m[0]);
+    const links = [...source.matchAll(/https:\/\/github\.com\/lucasmarujo\/octo\/releases\/[^\s"()]*orkai-setup\.exe/g)].map((m) => m[0]);
     assert.ok(links.length > 0, `${name} sem link do instalador`);
     assert.deepEqual([...new Set(links)], [versioned], name);
   }
@@ -369,7 +369,7 @@ test('a página e os dois READMEs mostram a code signing policy, que diz que o W
     assert.doesNotMatch(source, /Free code signing provided by/, `${name}: atribuição da SignPath sem assinatura`);
   }
   const footer = html.match(/<footer[\s\S]*?<\/footer>/)[0];
-  assert.match(footer, /<a href="https:\/\/github\.com\/lucasmarujo\/orkai-cli#code-signing-policy">code signing policy<\/a>/);
+  assert.match(footer, /<a href="https:\/\/github\.com\/lucasmarujo\/octo#code-signing-policy">code signing policy<\/a>/);
 });
 
 test('o README é em inglês e aponta para o README.pt-BR.md, que aponta de volta', () => {
@@ -495,7 +495,7 @@ test('nginx: CSP estrita, bloqueio de arquivos internos e compose no padrão da 
   assert.match(conf, /add_header X-Content-Type-Options "nosniff" always;/);
   assert.match(conf, /location \/ \{\s*expires -1;/);
   const compose = read('docker-compose.yml');
-  assert.match(compose, /container_name: orkai-site/);
+  assert.match(compose, /container_name: octo-site/);
   assert.match(compose, /\.\/nginx\.conf:\/etc\/nginx\/conf\.d\/default\.conf:ro/);
   assert.match(compose, /\.\/:\/usr\/share\/nginx\/html:ro/);
   assert.match(compose, /proxy:\s*\n\s*external: true/);

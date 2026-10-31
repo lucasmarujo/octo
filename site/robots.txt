@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://orkai.marujo.dev/sitemap.xml
+Sitemap: https://octo.marujo.dev/sitemap.xml

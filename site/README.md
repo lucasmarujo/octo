@@ -1,4 +1,4 @@
-# orkai.marujo.dev
+# octo.marujo.dev
 
 Landing page do Octo, o app desktop da OctoAI: HTML, CSS e JavaScript estáticos, sem build e sem nenhum recurso de
 terceiros (fontes, vídeo e imagens ficam em `assets/`). O hero mostra a tela real do app (`assets/octo-board.webp` e
@@ -22,12 +22,12 @@ tradução dele e os testes conferem que os dois têm o mesmo vídeo, a mesma es
 
 ## Deploy
 
-Na VPS, o site roda em `/opt/orkai` como o container `orkai-site` (nginx na rede `proxy`), atrás do Caddy em
-`/opt/proxy` com o bloco `orkai.marujo.dev`.
+Na VPS, o site roda em `/opt/octo` como o container `octo-site` (nginx na rede `proxy`), atrás do Caddy em
+`/opt/proxy` com o bloco `octo.marujo.dev`.
 
 ```sh
-tar -C site --exclude=tests --exclude=README.md -czf - . | ssh lucas@76.13.167.76 'tar -xzf - -C /opt/orkai'
-ssh lucas@76.13.167.76 'cd /opt/orkai && docker compose up -d'
+tar -C site --exclude=tests --exclude=README.md -czf - . | ssh lucas@76.13.167.76 'tar -xzf - -C /opt/octo'
+ssh lucas@76.13.167.76 'cd /opt/octo && docker compose up -d'
 ```
 
 O HTML, o CSS e o JS são revalidados a cada visita (`no-cache` com ETag); fontes, vídeo e imagens ficam 30 dias

@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "Octo, by OctoAI: every agent of every project in one window"
 license = "MIT"
-repository = "https://github.com/lucasmarujo/orkai-cli"
+repository = "https://github.com/lucasmarujo/octo"
 publish = false
 
 [[bin]]

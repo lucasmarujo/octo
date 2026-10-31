@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::hooks::parse_version;
 use crate::util::to_hex;
 
-pub const DEFAULT_BASE_URL: &str = "https://github.com/lucasmarujo/orkai-cli/releases/latest/download";
+pub const DEFAULT_BASE_URL: &str = "https://github.com/lucasmarujo/octo/releases/latest/download";
 pub const BASE_URL_ENV: &str = "ORKAI_UPDATE_URL";
 pub const DISABLE_ENV: &str = "ORKAI_NO_UPDATE";
 pub const UPDATED_ENV: &str = "ORKAI_UPDATED";

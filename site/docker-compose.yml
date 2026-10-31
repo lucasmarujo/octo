@@ -1,7 +1,7 @@
 services:
-  orkai:
+  octo:
     image: nginx:alpine
-    container_name: orkai-site
+    container_name: octo-site
 
     restart: unless-stopped
 

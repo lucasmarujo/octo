@@ -371,5 +371,5 @@ jobs:
 
           Download Octo: Octo.exe on Windows, Octo-macos-apple-silicon.zip or Octo-macos-intel.zip on macOS (the first time, right-click Octo.app and choose Open, since it is not notarized) and Octo-linux-x86_64 on Linux, which needs WebKitGTK 4.1. Octo updates itself to every new version, and closing it never stops an agent.
 
-          The orkai CLI, now legacy, ships with the same version: on Windows run orkai-setup.exe. Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy" \
+          The orkai CLI, now legacy, ships with the same version: on Windows run orkai-setup.exe. Code signing policy: https://github.com/lucasmarujo/octo#code-signing-policy" \
             --latest

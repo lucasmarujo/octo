@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lucasmarujo/orkai-cli/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lucasmarujo/orkai-cli/ci.yml?branch=main&style=flat-square&label=CI"></a>
-  <a href="https://github.com/lucasmarujo/orkai-cli/releases/latest"><img alt="Download" src="https://img.shields.io/badge/download-latest-fe5d87?style=flat-square"></a>
+  <a href="https://github.com/lucasmarujo/octo/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/lucasmarujo/octo/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="https://github.com/lucasmarujo/octo/releases/latest"><img alt="Download" src="https://img.shields.io/badge/download-latest-fe5d87?style=flat-square"></a>
   <img alt="Windows · Linux · macOS" src="https://img.shields.io/badge/Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-1f1d29?style=flat-square">
   <img alt="Claude Code · Codex · +6 agents" src="https://img.shields.io/badge/Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20%2B6%20agents-1f1d29?style=flat-square">
   <img alt="Rust 1.88+" src="https://img.shields.io/badge/Rust-1.88%2B-1f1d29?style=flat-square&logo=rust">
@@ -34,7 +34,7 @@
 **Octo, by OctoAI**, is the desktop app that grew out of orkai: the same agents, sessions and phone pairing in
 one window, with a board of who needs you, who is working and who is done. Octo updates itself, and closing it
 never stops an agent. Download it from the
-[newest release](https://github.com/lucasmarujo/orkai-cli/releases/latest):
+[newest release](https://github.com/lucasmarujo/octo/releases/latest):
 
 | System | Download |
 | --- | --- |
@@ -120,7 +120,7 @@ https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
 ## Installation
 
 On Windows, run the installer from PowerShell. On Linux and macOS, download the binary for your platform
-from the [newest release](https://github.com/lucasmarujo/orkai-cli/releases/latest), rename it to
+from the [newest release](https://github.com/lucasmarujo/octo/releases/latest), rename it to
 `orkai` and put it in a folder on your `PATH`:
 
 | Platform | File |
@@ -135,7 +135,7 @@ from the [newest release](https://github.com/lucasmarujo/orkai-cli/releases/late
 ```sh
 target=orkai-x86_64-unknown-linux-musl
 mkdir -p ~/.local/bin
-curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/orkai-cli/releases/latest/download/$target"
+curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/octo/releases/latest/download/$target"
 chmod +x ~/.local/bin/orkai
 ```
 
@@ -146,7 +146,7 @@ If `~/.local/bin` isn't on your `PATH` yet, add `export PATH="$HOME/.local/bin:$
 
 ```powershell
 $setup = "$env:TEMP\orkai-setup.exe"
-Invoke-WebRequest "https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe" -OutFile $setup
+Invoke-WebRequest "https://github.com/lucasmarujo/octo/releases/latest/download/orkai-setup.exe" -OutFile $setup
 Start-Process $setup -Wait
 ```
 
@@ -156,7 +156,7 @@ and Settings › Apps uninstalls it.
 
 The installer isn't code signed yet (see [Code signing policy](#code-signing-policy)). Downloaded from
 PowerShell, it runs without a SmartScreen prompt. If you download
-[`orkai-setup.exe`](https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe) with a
+[`orkai-setup.exe`](https://github.com/lucasmarujo/octo/releases/latest/download/orkai-setup.exe) with a
 browser instead, SmartScreen may show "Windows protected your PC": click **More info** › **Run anyway**. Both
 links get the installer of the newest version, whose file never changes; orkai then updates itself whenever
 a new version comes out ([auto-update](#auto-update)).
@@ -178,8 +178,8 @@ Open a new terminal and type `orkai` in PowerShell, Bash or zsh.
 **From source**, with Rust 1.88+ (goes to `~/.cargo/bin`):
 
 ```sh
-git clone https://github.com/lucasmarujo/orkai-cli.git
-cd orkai-cli
+git clone https://github.com/lucasmarujo/octo.git
+cd octo
 cargo install --path .
 ```
 
@@ -784,7 +784,7 @@ for:
 - the orkai PWA, only after you turn it on: the Cloudflare quick tunnel, with `cloudflared` downloaded from
   Cloudflare's GitHub release, and a query to `cloudflare-dns.com` that waits for the tunnel's address to
   exist before showing the QR code; or `tailscale serve`;
-- the Windows Terminal profile, whose icon Windows Terminal loads from `https://orkai.marujo.dev/orkai.ico`.
+- the Windows Terminal profile, whose icon Windows Terminal loads from `https://octo.marujo.dev/orkai.ico`.
 
 ## Development
 
@@ -796,7 +796,7 @@ cargo fmt --check
 
 CI runs all three on Windows, Linux and macOS on every push to `main` and on every pull request. A push to
 `main` that raises the `version` in `Cargo.toml` and passes becomes the
-[`v<version>`](https://github.com/lucasmarujo/orkai-cli/releases/latest) release; other pushes publish nothing.
+[`v<version>`](https://github.com/lucasmarujo/octo/releases/latest) release; other pushes publish nothing.
 The Windows installer is built from [`installer/orkai.iss`](installer/orkai.iss) (see
 [`installer/README.md`](installer/README.md)).
 
@@ -808,5 +808,5 @@ The Windows installer is built from [`installer/orkai.iss`](installer/orkai.iss)
 
 <p align="center">
   <img src="docs/banner.png" alt="orkai" width="120"><br>
-  <sub><a href="https://github.com/lucasmarujo/orkai-cli/issues">Report an issue</a> · <a href="https://github.com/lucasmarujo/orkai-cli/releases/latest">Download the latest version</a></sub>
+  <sub><a href="https://github.com/lucasmarujo/octo/issues">Report an issue</a> · <a href="https://github.com/lucasmarujo/octo/releases/latest">Download the latest version</a></sub>
 </p>

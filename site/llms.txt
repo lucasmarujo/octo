@@ -21,22 +21,22 @@ Octo shows every agent on a board by status (needs you, working, done, idle), wi
 
 ## Downloads
 
-- Windows 10 and 11 x64: https://github.com/lucasmarujo/orkai-cli/releases/latest/download/Octo.exe
-- macOS Apple Silicon: https://github.com/lucasmarujo/orkai-cli/releases/latest/download/Octo-macos-apple-silicon.zip
-- macOS Intel: https://github.com/lucasmarujo/orkai-cli/releases/latest/download/Octo-macos-intel.zip
-- Linux x64 (WebKitGTK 4.1): https://github.com/lucasmarujo/orkai-cli/releases/latest/download/Octo-linux-x86_64
+- Windows 10 and 11 x64: https://github.com/lucasmarujo/octo/releases/latest/download/Octo.exe
+- macOS Apple Silicon: https://github.com/lucasmarujo/octo/releases/latest/download/Octo-macos-apple-silicon.zip
+- macOS Intel: https://github.com/lucasmarujo/octo/releases/latest/download/Octo-macos-intel.zip
+- Linux x64 (WebKitGTK 4.1): https://github.com/lucasmarujo/octo/releases/latest/download/Octo-linux-x86_64
 
 ## orkai CLI (legacy)
 
 The terminal app Octo grew out of. It runs the same agents and keeps updating itself, but new features land in Octo.
 
-- Windows installer: https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe
-- Linux and macOS binaries and documentation: https://github.com/lucasmarujo/orkai-cli#installation
+- Windows installer: https://github.com/lucasmarujo/octo/releases/latest/download/orkai-setup.exe
+- Linux and macOS binaries and documentation: https://github.com/lucasmarujo/octo#installation
 
 ## Links
 
-- Site: https://orkai.marujo.dev/
-- Code and documentation: https://github.com/lucasmarujo/orkai-cli
-- Latest version: https://github.com/lucasmarujo/orkai-cli/releases/latest
-- Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy
+- Site: https://octo.marujo.dev/
+- Code and documentation: https://github.com/lucasmarujo/octo
+- Latest version: https://github.com/lucasmarujo/octo/releases/latest
+- Code signing policy: https://github.com/lucasmarujo/octo#code-signing-policy
 - Author: Lucas Marujo (https://marujo.dev/)

@@ -63,7 +63,7 @@ Para publicar uma versão nova no winget: subir `version` no `Cargo.toml`, esper
 
 ```powershell
 wingetcreate update LucasMarujo.orkai --version <versão> --submit `
-  --urls https://github.com/lucasmarujo/orkai-cli/releases/download/v<versão>/orkai-setup.exe
+  --urls https://github.com/lucasmarujo/octo/releases/download/v<versão>/orkai-setup.exe
 ```
 
 ## Assinatura (SignPath Foundation)
