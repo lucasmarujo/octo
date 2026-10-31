@@ -72,6 +72,21 @@ test('the dark theme keeps the colors of the TUI and the light theme redefines e
   for (const token of ['--color-bg', '--color-text', '--term-bg', '--term-fg']) assert.ok(light.includes(`${token}:`), token);
 });
 
+test('Octo draws its own thin scrollbar in both themes, pink while it is dragged', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const [dark, light] = [css.split(':root {')[1].split('}')[0], css.split(':root[data-theme="light"] {')[1].split('}')[0]];
+  for (const token of ['--scroll-thumb', '--scroll-thumb-hover', '--scroll-thumb-grab']) {
+    assert.ok(dark.includes(`${token}:`), `dark ${token}`);
+    assert.ok(light.includes(`${token}:`), `light ${token}`);
+  }
+  assert.match(css, /::-webkit-scrollbar-button \{ display: none;/, 'no arrow buttons');
+  assert.match(css, /::-webkit-scrollbar-thumb \{[^}]*background: var\(--scroll-thumb\) padding-box;/);
+  assert.match(css, /:hover::-webkit-scrollbar-thumb \{ background-color: var\(--scroll-thumb-hover\);/);
+  assert.match(css, /::-webkit-scrollbar-thumb:active \{[^}]*background-color: var\(--color-accent\);/);
+  assert.doesNotMatch(css, /scrollbar-(?:width|color)\s*:/, 'the standard properties make Chromium drop the custom scrollbar');
+  assert.match(css, /\.column-body \{[^}]*scrollbar-gutter: stable;/, 'cards keep one width whether their column scrolls or not');
+});
+
 test('agents are labelled like the CLI labels them', () => {
   const model = rust('src/model.rs');
   for (const [, kind, text] of model.matchAll(/AgentKind::(\w+) => "([a-z]+)",/g)) {
