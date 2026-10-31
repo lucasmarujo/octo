@@ -549,3 +549,20 @@ test('a grid tile runs its agent in place: a click makes it the live terminal an
   }
 });
 
+test('the idle column stops at once only the idle agents that are still running', async () => {
+  const { idleRunning } = await import('../js/format.js');
+  const list = [
+    agent({ id: 1, state: 'idle' }),
+    agent({ id: 2, state: 'exited' }),
+    agent({ id: 3, state: 'lost' }),
+    agent({ id: 4, state: 'working' }),
+    agent({ id: 5, state: 'idle', starting: true }),
+    agent({ id: 6, state: 'idle' }),
+  ];
+  assert.deepEqual(idleRunning(list).map((entry) => entry.id), [1, 6]);
+  assert.deepEqual(idleRunning([]), []);
+  const board = readFileSync(join(REPO, 'desktop/ui/js/board.js'), 'utf8');
+  assert.match(board, /def\.key === 'idle' \? h\('button'/);
+  assert.match(board, /const sure = await confirm\(\{[\s\S]*?danger: true/, 'it asks before stopping');
+  assert.match(board, /for \(const agent of targets\) send\(\{ type: 'stop', agent: agent\.id \}\)/);
+});

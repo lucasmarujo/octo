@@ -10,6 +10,7 @@ import {
   column,
   elapsed,
   glyph,
+  idleRunning,
   kindColor,
   label,
   nameTone,
@@ -136,7 +137,21 @@ function columnHead(def, count) {
     done: h('span', { class: 'glyph t-green' }, '✓'),
     idle: h('span', { class: 'glyph t-faint' }, '●'),
   }[def.key];
-  return h('div', { class: 'column-head' }, mark, h('span', { class: 'name' }, def.title), h('span', { class: 'count' }, String(count)));
+  const action = def.key === 'idle' ? h('button', { class: 'button tiny column-action', type: 'button', hidden: true, onclick: stopIdle }, 'Stop all') : null;
+  return h('div', { class: 'column-head' }, mark, h('span', { class: 'name' }, def.title), action, h('span', { class: 'count' }, String(count)));
+}
+
+async function stopIdle() {
+  const targets = idleRunning(visible());
+  if (!targets.length) return;
+  const sure = await confirm({
+    title: `Stop ${plural(targets.length, 'idle agent', 'idle agents')}?`,
+    text: 'Their processes end. The cards stay in Idle until you remove them.',
+    action: 'Stop all',
+    danger: true,
+  });
+  if (!sure) return;
+  for (const agent of targets) send({ type: 'stop', agent: agent.id });
 }
 
 function empty(session) {
@@ -177,6 +192,8 @@ export function renderBoard(handlers) {
       h('section', { class: 'column', dataset: { column: def.key } }, columnHead(def, 0), h('div', { class: 'column-body' })),
     );
     section.querySelector('.count').textContent = String(members.length);
+    const action = section.querySelector('.column-action');
+    if (action) action.hidden = idleRunning(members).length === 0;
     place(section.querySelector('.column-body'), nodes);
     return section;
   });
