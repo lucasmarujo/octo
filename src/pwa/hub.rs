@@ -254,7 +254,7 @@ impl Hub {
                     .store
                     .read_runtime(id)?
                     .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "the agent is not running"))?;
-                client::connect(&runtime)?.0.send(message)
+                client::deliver(&runtime, message)
             }
         }
     }

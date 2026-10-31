@@ -179,6 +179,26 @@ fn kill_terminates_the_agent_and_records_exit() {
     wait_until(|| fx.store.read_runtime(id).unwrap().is_none());
 }
 
+fn peek_text(runtime: &RuntimeInfo) -> String {
+    let snapshot = client::peek(runtime).unwrap();
+    let mut parser = vt100::Parser::new(snapshot.size.rows, snapshot.size.cols, 0);
+    parser.process(&snapshot.data);
+    parser.screen().contents()
+}
+
+#[test]
+fn a_message_sent_on_a_connection_closed_right_away_still_reaches_the_agent() {
+    let fx = fixture("deliver");
+    let (id, runtime) = start_terminal(&fx, None);
+    wait_until(|| !peek_text(&runtime).trim().is_empty());
+    for digit in 0..10 {
+        client::deliver(&runtime, &ClientMsg::Input(digit.to_string().into_bytes())).unwrap();
+    }
+    wait_until(|| peek_text(&runtime).contains("0123456789"));
+    client::deliver(&runtime, &ClientMsg::Kill).unwrap();
+    wait_until(|| fx.store.read_exit(id).unwrap().is_some());
+}
+
 #[test]
 fn status_is_pushed_to_every_client() {
     let fx = fixture("status");

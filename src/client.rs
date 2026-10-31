@@ -7,6 +7,7 @@ use crate::model::RuntimeInfo;
 use crate::protocol::{ClientMsg, Hello, HolderMsg, PROTOCOL_VERSION, Snapshot, Welcome};
 
 pub const CONNECT_TIMEOUT: Duration = Duration::from_millis(1_500);
+const FINISH_TIMEOUT: Duration = Duration::from_secs(2);
 const PEEK_TIMEOUT: Duration = Duration::from_secs(2);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -23,6 +24,13 @@ impl Connection {
 
     pub fn close(&self) {
         let _ = self.stream.shutdown(Shutdown::Both);
+    }
+
+    pub fn finish(self, mut reader: TcpStream) -> io::Result<()> {
+        self.stream.shutdown(Shutdown::Write)?;
+        reader.set_read_timeout(Some(FINISH_TIMEOUT))?;
+        let _ = io::copy(&mut reader, &mut io::sink());
+        Ok(())
     }
 }
 
@@ -54,15 +62,23 @@ pub fn connect(runtime: &RuntimeInfo) -> io::Result<(Connection, TcpStream, Welc
     Ok((Connection { stream }, reader, welcome))
 }
 
+pub fn deliver(runtime: &RuntimeInfo, message: &ClientMsg) -> io::Result<()> {
+    let (conn, reader, _) = connect(runtime)?;
+    conn.send(message)?;
+    conn.finish(reader)
+}
+
 pub fn peek(runtime: &RuntimeInfo) -> io::Result<Snapshot> {
     let (conn, mut reader, _) = connect(runtime)?;
     reader.set_read_timeout(Some(PEEK_TIMEOUT))?;
     conn.send(&ClientMsg::Peek)?;
-    loop {
+    let snapshot = loop {
         if let HolderMsg::Snapshot(snapshot) = HolderMsg::read(&mut reader)? {
-            return Ok(snapshot);
+            break snapshot;
         }
-    }
+    };
+    conn.finish(reader)?;
+    Ok(snapshot)
 }
 
 pub fn spawn_reader<F>(mut reader: TcpStream, mut on_message: F) -> io::Result<()>

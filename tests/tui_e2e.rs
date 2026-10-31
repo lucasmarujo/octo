@@ -27,10 +27,8 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         for store in [&self.inner, &self.outer] {
             for record in store.list_agents().unwrap_or_default() {
-                if let Ok(Some(runtime)) = store.read_runtime(record.id)
-                    && let Ok((conn, _, _)) = client::connect(&runtime)
-                {
-                    let _ = conn.send(&ClientMsg::Kill);
+                if let Ok(Some(runtime)) = store.read_runtime(record.id) {
+                    let _ = client::deliver(&runtime, &ClientMsg::Kill);
                 }
             }
         }

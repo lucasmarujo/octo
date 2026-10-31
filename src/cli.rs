@@ -342,7 +342,7 @@ pub fn wait(store: &Store, id: AgentId, timeout: Option<u64>) -> io::Result<()> 
 pub fn send(store: &Store, id: AgentId, text: &str, submit: bool) -> io::Result<()> {
     store.load_agent(id).map_err(|_| not_found(id))?;
     let runtime = store.read_runtime(id)?.ok_or_else(|| io::Error::other(format!("agent {id} is not running")))?;
-    let (conn, _reader, _) = client::connect(&runtime)?;
+    let (conn, reader, _) = client::connect(&runtime)?;
     if !text.is_empty() {
         conn.send(&ClientMsg::Input(text.as_bytes().to_vec()))?;
     }
@@ -350,8 +350,7 @@ pub fn send(store: &Store, id: AgentId, text: &str, submit: bool) -> io::Result<
         std::thread::sleep(SUBMIT_DELAY);
         conn.send(&ClientMsg::Input(b"\r".to_vec()))?;
     }
-    std::thread::sleep(Duration::from_millis(100));
-    Ok(())
+    conn.finish(reader)
 }
 
 pub fn remove(store: &Store, id: AgentId) -> io::Result<()> {
