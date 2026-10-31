@@ -69,6 +69,10 @@ export function idleRunning(list) {
   return list.filter((agent) => column(agent) === 'idle' && alive(agent) && !agent.starting);
 }
 
+export function idleStopped(list) {
+  return list.filter((agent) => column(agent) === 'idle' && agent.state === 'exited');
+}
+
 export function glyph(agent, frame) {
   if (agent.starting) return { text: '◌', tone: 't-faint' };
   if (agent.state === 'lost') return { text: '↻', tone: 't-red' };

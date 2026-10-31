@@ -11,6 +11,7 @@ import {
   elapsed,
   glyph,
   idleRunning,
+  idleStopped,
   kindColor,
   label,
   nameTone,
@@ -138,8 +139,13 @@ function columnHead(def, count) {
     done: h('span', { class: 'glyph t-green' }, '✓'),
     idle: h('span', { class: 'glyph t-faint' }, '●'),
   }[def.key];
-  const action = def.key === 'idle' ? h('button', { class: 'button tiny column-action', type: 'button', hidden: true, onclick: stopIdle }, t('Stop all')) : null;
-  return h('div', { class: 'column-head' }, mark, h('span', { class: 'name' }, def.title), action, h('span', { class: 'count' }, String(count)));
+  const actions = def.key === 'idle'
+    ? [
+        h('button', { class: 'button tiny column-action', type: 'button', hidden: true, dataset: { action: 'stop-all' }, onclick: stopIdle }, t('Stop all')),
+        h('button', { class: 'button tiny warn column-action', type: 'button', hidden: true, dataset: { action: 'remove-all' }, onclick: removeStopped }, t('Remove all')),
+      ]
+    : null;
+  return h('div', { class: 'column-head' }, mark, h('span', { class: 'name' }, def.title), actions, h('span', { class: 'count' }, String(count)));
 }
 
 async function stopIdle() {
@@ -153,6 +159,20 @@ async function stopIdle() {
   });
   if (!sure) return;
   for (const agent of targets) send({ type: 'stop', agent: agent.id });
+}
+
+async function removeStopped() {
+  const targets = idleStopped(visible());
+  if (!targets.length) return;
+  const worktrees = targets.some((agent) => agent.branch) ? ` ${t('Their worktrees and branches are deleted too.')}` : '';
+  const sure = await confirm({
+    title: t('Remove {agents}?', { agents: plural(targets.length, t('stopped agent'), t('stopped agents')) }),
+    text: `${t('The agents and their recorded output are deleted.')}${worktrees}`,
+    action: t('Remove all'),
+    danger: true,
+  });
+  if (!sure) return;
+  for (const agent of targets) send({ type: 'remove', agent: agent.id });
 }
 
 function empty(session) {
@@ -193,8 +213,10 @@ export function renderBoard(handlers) {
       h('section', { class: 'column', dataset: { column: def.key } }, columnHead(def, 0), h('div', { class: 'column-body' })),
     );
     section.querySelector('.count').textContent = String(members.length);
-    const action = section.querySelector('.column-action');
-    if (action) action.hidden = idleRunning(members).length === 0;
+    const stopAll = section.querySelector('[data-action="stop-all"]');
+    if (stopAll) stopAll.hidden = idleRunning(members).length === 0;
+    const removeAll = section.querySelector('[data-action="remove-all"]');
+    if (removeAll) removeAll.hidden = idleStopped(members).length === 0;
     place(section.querySelector('.column-body'), nodes);
     return section;
   });

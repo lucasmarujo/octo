@@ -602,9 +602,26 @@ test('the idle column stops at once only the idle agents that are still running'
   assert.deepEqual(idleRunning(list).map((entry) => entry.id), [1, 6]);
   assert.deepEqual(idleRunning([]), []);
   const board = readFileSync(join(REPO, 'desktop/ui/js/board.js'), 'utf8');
-  assert.match(board, /def\.key === 'idle' \? h\('button'/);
-  assert.match(board, /const sure = await confirm\(\{[\s\S]*?danger: true/, 'it asks before stopping');
-  assert.match(board, /for \(const agent of targets\) send\(\{ type: 'stop', agent: agent\.id \}\)/);
+  assert.match(board, /dataset: \{ action: 'stop-all' \}, onclick: stopIdle/);
+  assert.match(board, /async function stopIdle\(\) \{[\s\S]*?const sure = await confirm\(\{[\s\S]*?danger: true[\s\S]*?for \(const agent of targets\) send\(\{ type: 'stop', agent: agent\.id \}\)/, 'it asks before stopping');
+});
+
+test('once stopped, the idle column removes every stopped agent at once, after asking', async () => {
+  const { idleStopped } = await import('../js/format.js');
+  const list = [
+    agent({ id: 1, state: 'idle' }),
+    agent({ id: 2, state: 'exited' }),
+    agent({ id: 3, state: 'lost' }),
+    agent({ id: 4, state: 'done' }),
+    agent({ id: 5, state: 'exited', branch: 'orkai/fix' }),
+    agent({ id: 6, state: 'paused' }),
+  ];
+  assert.deepEqual(idleStopped(list).map((entry) => entry.id), [2, 5], 'interrupted agents stay, they can still be recovered');
+  assert.deepEqual(idleStopped([]), []);
+  const board = readFileSync(join(REPO, 'desktop/ui/js/board.js'), 'utf8');
+  assert.match(board, /dataset: \{ action: 'remove-all' \}, onclick: removeStopped/);
+  assert.match(board, /removeAll\.hidden = idleStopped\(members\)\.length === 0/, 'it shows up only when something stopped');
+  assert.match(board, /async function removeStopped\(\) \{[\s\S]*?const sure = await confirm\(\{[\s\S]*?danger: true[\s\S]*?for \(const agent of targets\) send\(\{ type: 'remove', agent: agent\.id \}\)/, 'it asks before removing');
 });
 
 test('every text the app shows has a Portuguese version', async () => {
