@@ -857,13 +857,13 @@ pub fn wait_for_runtime(store: &Store, id: AgentId, timeout: Duration) -> io::Re
 
 pub fn process_is_holder(pid: u32) -> bool {
     let output = if cfg!(windows) {
-        Command::new("tasklist")
+        without_console(&mut Command::new("tasklist"))
             .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             .output()
     } else {
-        Command::new("ps")
+        without_console(&mut Command::new("ps"))
             .args(["-p", &pid.to_string(), "-o", "comm="])
             .stdin(Stdio::null())
             .stderr(Stdio::null())
@@ -879,7 +879,7 @@ pub fn process_is_holder(pid: u32) -> bool {
 
 pub fn kill_process_tree(pid: u32) {
     if cfg!(windows) {
-        let _ = Command::new("taskkill")
+        let _ = without_console(&mut Command::new("taskkill"))
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -1979,5 +1979,55 @@ mod tests {
         let started = Instant::now();
         let _ = command_output(Command::new(program).args(&orphan), Duration::from_secs(2));
         assert!(started.elapsed() < Duration::from_secs(10), "a child left holding the output never blocks the caller");
+    }
+
+    fn sources(dir: &Path, found: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                sources(&path, found);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                found.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn no_program_the_core_runs_opens_a_console_window_on_windows() {
+        const SAFE: [&str; 3] = ["without_console(", "command_output(", "spawn_detached("];
+        const ALLOWED: [(&str, &str, &str); 6] = [
+            ("browser.rs", "Command::new(program).args(args).arg(url)", "the openers are windowed programs"),
+            (
+                "clipboard.rs",
+                "Command::new(program).args(args).stdin(Stdio::piped())",
+                "only the TUI copies, from its own console",
+            ),
+            ("sound.rs", "Command::new(program)", "the players run on unix only"),
+            ("usage.rs", "Command::new(\"/usr/bin/security\")", "macOS only"),
+            ("update.rs", "Command::new(exe);", "the updated CLI takes over its own terminal on purpose"),
+            ("gate.rs", "Command::new(", "shell_command is wrapped by its only caller"),
+        ];
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        sources(&root, &mut files);
+        let mut offenders = Vec::new();
+        for file in files {
+            let text = fs::read_to_string(&file).unwrap();
+            let code = text.split("#[cfg(test)]\nmod tests").next().unwrap_or_default();
+            let lines: Vec<&str> = code.lines().collect();
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            for (at, line) in lines.iter().enumerate() {
+                if !line.contains("Command::new(") {
+                    continue;
+                }
+                let statement = lines[at.saturating_sub(2)..lines.len().min(at + 16)].join("\n");
+                let safe = SAFE.iter().any(|marker| statement.contains(marker));
+                let allowed = ALLOWED.iter().any(|(file, needle, _)| name == *file && line.contains(needle));
+                if !safe && !allowed {
+                    offenders.push(format!("{name}:{}: {}", at + 1, line.trim()));
+                }
+            }
+        }
+        assert!(offenders.is_empty(), "these flash a console window when Octo runs them: {offenders:#?}");
     }
 }
