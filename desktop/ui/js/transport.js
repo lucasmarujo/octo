@@ -14,6 +14,10 @@ export function send(message) {
     });
 }
 
+export function invoke(command, args) {
+  return core().invoke(command, args);
+}
+
 export function currentWindow() {
   return window.__TAURI__.window.getCurrentWindow();
 }

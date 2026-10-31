@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { COLUMNS, USAGE_ALERT, USAGE_WARN, column, duration, elapsed, glyph, kindColor, label, usageColor } from '../js/format.js';
+import { COLUMNS, USAGE_ALERT, USAGE_WARN, column, duration, elapsed, glyph, kindColor, kindHex, label, usageColor } from '../js/format.js';
 import { MOODS, moodOf } from '../js/kai.js';
 
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
@@ -51,8 +51,25 @@ test('every agent kind keeps the color it has in the TUI', () => {
   for (const [kind, constant] of Object.entries(names)) {
     const [, r, g, b] = theme.match(new RegExp(`pub const ${constant}: Color = Color::Rgb\\((\\d+), (\\d+), (\\d+)\\)`));
     const hex = `#${[r, g, b].map((part) => Number(part).toString(16).padStart(2, '0')).join('')}`;
-    assert.equal(kindColor(kind), hex, kind);
+    assert.equal(kindHex(kind), hex, kind);
+    assert.equal(kindColor(kind), `var(--kind-${kind})`, kind);
   }
+});
+
+test('the dark theme keeps the colors of the TUI and the light theme redefines every one', async () => {
+  const { BASE16 } = await import('../js/palette.js');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const [dark, light] = [css.split(':root {')[1].split('}')[0], css.split(':root[data-theme="light"] {')[1].split('}')[0]];
+  const kinds = ['claude', 'codex', 'kilo', 'opencode', 'antigravity', 'grok', 'qwen', 'kimi', 'terminal'];
+  for (const kind of kinds) {
+    assert.ok(dark.includes(`--kind-${kind}: ${kindHex(kind)};`), kind);
+    assert.ok(light.includes(`--kind-${kind}:`), kind);
+  }
+  BASE16.forEach((color, index) => {
+    assert.ok(dark.includes(`--ansi-${index}: ${color};`), `ansi ${index}`);
+    assert.ok(light.includes(`--ansi-${index}:`), `ansi ${index}`);
+  });
+  for (const token of ['--color-bg', '--color-text', '--term-bg', '--term-fg']) assert.ok(light.includes(`${token}:`), token);
 });
 
 test('agents are labelled like the CLI labels them', () => {
@@ -136,7 +153,7 @@ test('the colored git diff becomes colored runs without escape codes', async () 
   const { sgrRuns, BASE16 } = await import('../js/palette.js');
   assert.deepEqual(sgrRuns('plain line'), [{ text: 'plain line', color: null, bold: false, dim: false }]);
   const added = sgrRuns('\x1b[32m+ added\x1b[m');
-  assert.deepEqual(added, [{ text: '+ added', color: BASE16[2], bold: false, dim: false }]);
+  assert.deepEqual(added, [{ text: '+ added', color: 'var(--ansi-2)', bold: false, dim: false }]);
   const header = sgrRuns('\x1b[1mdiff --git a/x b/x\x1b[m');
   assert.equal(header[0].bold, true);
   assert.equal(header.map((run) => run.text).join(''), 'diff --git a/x b/x');
@@ -145,7 +162,7 @@ test('the colored git diff becomes colored runs without escape codes', async () 
   assert.equal(sgrRuns('a\x1b[Kb').map((run) => run.text).join(''), 'ab', 'other escapes are dropped');
   const style = { color: null, bold: false, dim: false };
   sgrRuns('\x1b[31mstarts red', style);
-  assert.equal(sgrRuns('and keeps going', style)[0].color, BASE16[1], 'a color carries over to the next line');
+  assert.equal(sgrRuns('and keeps going', style)[0].color, 'var(--ansi-1)', 'a color carries over to the next line');
 });
 
 test('alt N opens the agent waiting the longest, then the ones that are done', async () => {
@@ -223,4 +240,33 @@ test('the grid asks for the screens of the running agents, as many as the core a
   assert.equal(peekRequest(list.slice(1, 4)), null, 'nothing running, nothing to ask');
   const many = Array.from({ length: MAX_PEEK_AGENTS + 6 }, (_, index) => agent({ id: index + 1, state: 'idle' }));
   assert.equal(peekRequest(many).agents.length, MAX_PEEK_AGENTS);
+});
+
+test('arguments typed in the settings become the list the config keeps', async () => {
+  const { joinArgs, splitArgs } = await import('../js/format.js');
+  assert.deepEqual(splitArgs('--model opus'), ['--model', 'opus']);
+  assert.deepEqual(splitArgs('  -c   curl -s -d "$ORKAI_MESSAGE" ntfy.sh/my-topic '), ['-c', 'curl', '-s', '-d', '$ORKAI_MESSAGE', 'ntfy.sh/my-topic']);
+  assert.deepEqual(splitArgs(`--title 'two words' ""`), ['--title', 'two words', '']);
+  assert.deepEqual(splitArgs(''), []);
+  for (const args of [['--model', 'opus'], ['-c', 'echo "hi there"'], ['a b', ''], []]) {
+    assert.deepEqual(splitArgs(joinArgs(args)).length, args.length, JSON.stringify(args));
+  }
+  assert.equal(joinArgs(['-m', 'opencode/big-pickle']), '-m opencode/big-pickle');
+  assert.equal(joinArgs(['--title', 'two words']), '--title "two words"');
+});
+
+test('the help says the same in English and in Portuguese, and English comes first', async () => {
+  const { HELP, LANGUAGES, language } = await import('../js/help.js');
+  assert.equal(LANGUAGES[0].code, 'en');
+  assert.equal(language(), 'en', 'English unless the person picks Portuguese');
+  const [en, pt] = [HELP.en, HELP['pt-BR']];
+  assert.equal(pt.steps.length, en.steps.length);
+  assert.equal(pt.legend.length, en.legend.length);
+  assert.deepEqual(pt.legend.map(([mark]) => mark), en.legend.map(([mark]) => mark));
+  assert.equal(pt.groups.length, en.groups.length);
+  const translated = { '!command': '!comando', 'ctrl click': 'ctrl clique' };
+  en.groups.forEach(([, rows], index) => {
+    const keys = pt.groups[index][1].map(([key]) => key);
+    assert.deepEqual(keys, rows.map(([key]) => translated[key] || key));
+  });
 });

@@ -128,11 +128,22 @@ struct Inner {
 
 pub struct Hub {
     store: Store,
-    launcher: Launcher,
+    tools: Mutex<Tools>,
     host: String,
-    kinds: Vec<AgentKind>,
     inner: Mutex<Inner>,
     wake: Condvar,
+}
+
+struct Tools {
+    launcher: Arc<Launcher>,
+    kinds: Vec<AgentKind>,
+}
+
+impl Tools {
+    fn new(launcher: Launcher) -> Self {
+        let kinds = launch::installed_kinds(launcher.config());
+        Self { launcher: Arc::new(launcher), kinds }
+    }
 }
 
 enum Check {
@@ -143,12 +154,10 @@ enum Check {
 
 impl Hub {
     pub fn new(launcher: Launcher, host: String) -> Arc<Self> {
-        let kinds = launch::installed_kinds(launcher.config());
         Arc::new(Self {
             store: launcher.store().clone(),
-            launcher,
+            tools: Mutex::new(Tools::new(launcher)),
             host,
-            kinds,
             inner: Mutex::new(Inner::default()),
             wake: Condvar::new(),
         })
@@ -166,16 +175,23 @@ impl Hub {
         &self.store
     }
 
-    pub fn launcher(&self) -> &Launcher {
-        &self.launcher
+    pub fn launcher(&self) -> Arc<Launcher> {
+        Arc::clone(&lock(&self.tools).launcher)
+    }
+
+    pub fn reconfigure(&self, config: Config) -> io::Result<()> {
+        let launcher = self.launcher().reconfigured(config)?;
+        *lock(&self.tools) = Tools::new(launcher);
+        self.nudge();
+        Ok(())
     }
 
     pub fn host(&self) -> &str {
         &self.host
     }
 
-    pub fn kinds(&self) -> &[AgentKind] {
-        &self.kinds
+    pub fn kinds(&self) -> Vec<AgentKind> {
+        lock(&self.tools).kinds.clone()
     }
 
     fn inner(&self) -> MutexGuard<'_, Inner> {
@@ -445,7 +461,7 @@ impl Hub {
                 .unwrap_or_default(),
             dirs: ui.session_dirs.iter().map(|(session, dir)| (session.clone(), shown(dir))).collect(),
             worktree: ui.worktree,
-            kinds: self.kinds.clone(),
+            kinds: self.kinds(),
         }
     }
 
@@ -472,7 +488,8 @@ impl Hub {
         }
         let hub = Arc::clone(self);
         let _ = thread::Builder::new().name("orkai-pwa-usage".into()).spawn(move || {
-            let config = hub.launcher.config();
+            let launcher = hub.launcher();
+            let config = launcher.config();
             let entries: Vec<UsageEntry> = thread::scope(|scope| {
                 let fetches: Vec<_> = usage::PROVIDERS
                     .iter()

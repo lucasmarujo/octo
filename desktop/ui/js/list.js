@@ -30,7 +30,7 @@ function row(agent, index, handlers) {
   const classes = ['row', waiting ? 'waiting' : '', agent.state === 'lost' ? 'lost' : ''].filter(Boolean).join(' ');
   return h(
     'div',
-    { class: classes, role: 'button', dataset: { agent: String(agent.id) }, onclick: () => handlers.open(agent) },
+    { class: classes, role: 'button', tabindex: '0', dataset: { agent: String(agent.id) }, onclick: () => handlers.open(agent) },
     h('span', { class: 'cell-index' }, String(index + 1)),
     h('span', { class: `cell-glyph glyph ${mark.tone}`, dataset: mark.spin ? { spin: '1' } : {} }, mark.text),
     h('span', { class: `cell-name ${waiting ? 't-yellow' : nameTone(agent)}`, title: agent.name }, agent.name),
@@ -48,7 +48,7 @@ function groupHead(group) {
     'div',
     { class: 'list-group' },
     h('span', { class: 'swatch', style: `background:${group.color}` }),
-    h('span', { class: 'list-project', style: `color:${group.color}` }, group.project),
+    h('span', { class: 'list-project', style: `--project:${group.color}` }, group.project),
     h('span', { class: 'list-count' }, String(group.agents.length)),
   );
 }

@@ -1,13 +1,15 @@
-import { nextAttention, renderAgent, renderAgentHead, renderStatus } from './agent.js';
-import { openProjectMenu, renderBoard, renderHead, spinBoard, tickBoard } from './board.js';
+import { nextAttention, rename, renderAgent, renderAgentHead, renderStatus } from './agent.js';
+import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tickBoard } from './board.js';
 import { initComposer, renderComposer } from './composer.js';
 import { closeMenu, showDiff, showFolders } from './dialogs.js';
 import { $, h, svg } from './dom.js';
 import { SPINNER, glyph } from './format.js';
-import { ICON_OVERVIEW } from './icons.js';
 import { peekRequest, renderGrid, tickGrid } from './grid.js';
+import { renderHelp } from './help.js';
+import { ICON_HELP, ICON_OVERVIEW, ICON_SETTINGS } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
 import { renderList, tickList } from './list.js';
+import { applyTheme, renderSettings } from './settings.js';
 import { promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setView, state, visible } from './state.js';
 import { Terminal } from './terminal.js';
@@ -20,6 +22,11 @@ const MAX_TAB_KEY = 9;
 const PEEK_MS = 2000;
 const PEEK_STALE_MS = 10_000;
 const RENDERERS = { board: [renderBoard, tickBoard], list: [renderList, tickList], grid: [renderGrid, tickGrid] };
+const PAGES = {
+  help: { label: 'How to use', icon: ICON_HELP, render: renderHelp },
+  settings: { label: 'Settings', icon: ICON_SETTINGS, render: renderSettings },
+};
+const VIEWS = ['overview', 'agent-view', 'help-view', 'settings-view'];
 
 const handlers = { open: (agent) => openAgent(agent) };
 let terminal = null;
@@ -40,13 +47,16 @@ function settleSession() {
   }
 }
 
+const isPage = (id) => Object.hasOwn(PAGES, id);
+const watching = () => state.active !== null && !isPage(state.active);
+
 function settleTabs() {
-  const kept = state.tabs.filter((id) => findAgent(id));
+  const kept = state.tabs.filter((id) => isPage(id) || findAgent(id));
   if (kept.length !== state.tabs.length) {
     state.tabs = kept;
     saveTabs();
   }
-  if (state.active !== null && !findAgent(state.active)) showOverview();
+  if (watching() && !findAgent(state.active)) showOverview();
 }
 
 function onSelect(name) {
@@ -55,41 +65,52 @@ function onSelect(name) {
   else onFilter();
 }
 
+function closer(id, name) {
+  return h(
+    'span',
+    {
+      class: 'tab-close',
+      role: 'button',
+      'aria-label': `Close ${name}`,
+      onclick: (event) => {
+        event.stopPropagation();
+        closeTab(id);
+      },
+    },
+    '×',
+  );
+}
+
 function tabButton(id) {
+  const classes = `tab${state.active === id ? ' active' : ''}`;
+  if (isPage(id)) {
+    const page = PAGES[id];
+    return h('div', { class: classes, role: 'button', tabindex: '0', onclick: () => openPage(id) }, svg(page.icon), h('span', { class: 'tab-label' }, page.label), closer(id, page.label));
+  }
   const agent = findAgent(id);
   if (!agent) return null;
   const mark = glyph(agent, state.frame);
   return h(
     'div',
-    { class: `tab${state.active === id ? ' active' : ''}`, role: 'button', tabindex: '0', onclick: () => openAgent(agent) },
+    { class: classes, role: 'button', tabindex: '0', onclick: () => openAgent(agent) },
     h('span', { class: `tab-glyph ${mark.tone}`, dataset: mark.spin ? { spin: '1' } : {} }, mark.text),
     h('span', { class: 'label-mono' }, agent.name),
-    h(
-      'span',
-      {
-        class: 'tab-close',
-        role: 'button',
-        'aria-label': `Close ${agent.name}`,
-        onclick: (event) => {
-          event.stopPropagation();
-          closeTab(id);
-        },
-      },
-      '×',
-    ),
+    closer(id, agent.name),
   );
 }
 
 function renderTabs() {
   const host = $('tabs');
   const signature = JSON.stringify([state.active, state.tabs.map((id) => {
+    if (isPage(id)) return id;
     const agent = findAgent(id);
     return agent ? [id, agent.name, agent.state, agent.kind, agent.starting] : null;
   })]);
   if (host.dataset.signature === signature) return;
   host.dataset.signature = signature;
+  for (const page of Object.keys(PAGES)) $(`open-${page}`).setAttribute('aria-current', String(state.active === page));
   host.replaceChildren(
-    h('button', { class: `tab${state.active === null ? ' active' : ''}`, type: 'button', onclick: showOverview }, svg(ICON_OVERVIEW), 'Overview'),
+    h('button', { class: `tab fixed${state.active === null ? ' active' : ''}`, type: 'button', onclick: showOverview }, svg(ICON_OVERVIEW), 'Overview'),
     ...state.tabs.map(tabButton).filter(Boolean),
   );
 }
@@ -139,15 +160,38 @@ function render() {
     renderHead();
     renderView();
     renderComposer();
-  } else {
+  } else if (watching()) {
     const agent = findAgent(state.active);
     if (agent) renderAgent(agent);
   }
 }
 
 function show(view) {
-  $('overview').hidden = view !== 'overview';
-  $('agent-view').hidden = view !== 'agent';
+  for (const id of VIEWS) $(id).hidden = id !== view;
+}
+
+function leaveAgent() {
+  if (watching()) send({ type: 'close' });
+  watchedState = null;
+  terminal.close();
+}
+
+function openPage(name) {
+  if (state.active === name) return;
+  leaveAgent();
+  if (!state.tabs.includes(name)) {
+    state.tabs.push(name);
+    saveTabs();
+  }
+  state.active = name;
+  show(`${name}-view`);
+  renderTabs();
+  PAGES[name].render();
+}
+
+function openTab(id) {
+  if (isPage(id)) openPage(id);
+  else openAgent(findAgent(id));
 }
 
 function openAgent(agent) {
@@ -159,7 +203,7 @@ function openAgent(agent) {
   }
   const switching = state.active !== agent.id;
   state.active = agent.id;
-  show('agent');
+  show('agent-view');
   render();
   if (switching) {
     const size = terminal.open(agent.id);
@@ -171,10 +215,8 @@ function openAgent(agent) {
 }
 
 function showOverview() {
-  if (state.active !== null) send({ type: 'close' });
+  leaveAgent();
   state.active = null;
-  watchedState = null;
-  terminal.close();
   show('overview');
   onFilter();
   $('task').focus();
@@ -194,7 +236,7 @@ function openNextAttention() {
 }
 
 function markSeenWhileWatching() {
-  if (state.active === null) return;
+  if (!watching()) return;
   const agent = findAgent(state.active);
   if (!agent) return;
   if (agent.state === 'done' && watchedState !== 'done') send({ type: 'seen', agent: agent.id });
@@ -258,10 +300,39 @@ function appShortcut(event) {
   }
   if (event.altKey && !event.ctrlKey && /^[1-9]$/.test(event.key)) {
     const id = state.tabs[Number(event.key) - 1];
-    if (Number(event.key) <= MAX_TAB_KEY && id !== undefined) openAgent(findAgent(id));
+    if (Number(event.key) <= MAX_TAB_KEY && id !== undefined) openTab(id);
+    return true;
+  }
+  if (event.key === 'F1' && !event.ctrlKey && !event.altKey) {
+    openPage('help');
+    return true;
+  }
+  if (event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'q') {
+    currentWindow().close();
     return true;
   }
   return false;
+}
+
+function focusedAgent() {
+  const node = document.activeElement && document.activeElement.closest('#overview [data-agent]');
+  return node ? findAgent(Number(node.dataset.agent)) : null;
+}
+
+function overviewShortcut(event) {
+  const plain = event.ctrlKey && !event.altKey && !event.shiftKey;
+  const key = event.key.toLowerCase();
+  const focused = focusedAgent();
+  if (plain && key === 'n') promptNewSession(onSelect);
+  else if (plain && key === 'l') $('where').click();
+  else if (plain && key === 't') $('worktree').click();
+  else if (plain && key === 'r') send({ type: 'recover', session: state.session });
+  else if (plain && key === 'e' && focused) rename(focused);
+  else if (event.key === 'Delete' && !event.ctrlKey && !event.altKey && focused) stopOrRemove(focused);
+  else if (event.altKey && !event.ctrlKey && event.key === 'ArrowUp') switchSession(-1);
+  else if (event.altKey && !event.ctrlKey && event.key === 'ArrowDown') switchSession(1);
+  else return false;
+  return true;
 }
 
 function onShortcut(event) {
@@ -271,16 +342,7 @@ function onShortcut(event) {
     return;
   }
   if (state.active !== null) return;
-  if (event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'n') {
-    event.preventDefault();
-    promptNewSession(onSelect);
-  } else if (event.altKey && event.key === 'ArrowUp') {
-    event.preventDefault();
-    switchSession(-1);
-  } else if (event.altKey && event.key === 'ArrowDown') {
-    event.preventDefault();
-    switchSession(1);
-  }
+  if (overviewShortcut(event)) event.preventDefault();
 }
 
 function copy(text) {
@@ -304,6 +366,10 @@ function initWindow() {
   $('win-max').addEventListener('click', () => win.toggleMaximize());
   $('win-close').addEventListener('click', () => win.close());
   $('brand-mascot').replaceChildren(kai('idle'));
+  $('open-help').replaceChildren(svg(ICON_HELP));
+  $('open-settings').replaceChildren(svg(ICON_SETTINGS));
+  $('open-help').addEventListener('click', () => openPage('help'));
+  $('open-settings').addEventListener('click', () => openPage('settings'));
 }
 
 function spin() {
@@ -321,6 +387,7 @@ function tick() {
     RENDERERS[shownView()][1]();
     return;
   }
+  if (!watching()) return;
   const agent = findAgent(state.active);
   if (agent) {
     renderAgentHead(agent);
@@ -329,6 +396,8 @@ function tick() {
 }
 
 function start() {
+  applyTheme();
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
   initWindow();
   initTerminal();
   initComposer();

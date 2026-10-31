@@ -591,3 +591,26 @@ fn a_peek_shows_the_last_lines_of_each_running_agent() {
     let text: String = previews[0].lines.iter().flatten().map(|run| run.0.as_str()).collect();
     assert!(text.contains("orkai-peek"), "{text}");
 }
+
+#[test]
+fn new_settings_reach_the_window_without_restarting_the_hub() {
+    let fx = fixture();
+    let launcher = Launcher::new(fx.store.clone(), Config::default(), Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let hub = Hub::new(launcher, HOST.to_string());
+    let mut peer = Peer::join(&hub);
+    let mut window = Window(Vec::new());
+    let installed = |claude: &str| Config { claude_command: claude.to_string(), ..Config::default() };
+    hub.reconfigure(installed(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    assert_eq!(hub.launcher().config().claude_command, env!("CARGO_BIN_EXE_orkai"));
+    pump_until(&mut peer, &mut window, |message| match message {
+        BridgeMsg::State(overview) if overview.kinds.contains(&AgentKind::Claude) => Some(()),
+        _ => None,
+    });
+    hub.reconfigure(installed("orkai-no-such-program")).unwrap();
+    assert!(!hub.kinds().contains(&AgentKind::Claude));
+    let kinds = pump_until(&mut peer, &mut window, |message| match message {
+        BridgeMsg::State(overview) if !overview.kinds.contains(&AgentKind::Claude) => Some(overview.kinds.clone()),
+        _ => None,
+    });
+    assert!(kinds.contains(&AgentKind::Terminal));
+}

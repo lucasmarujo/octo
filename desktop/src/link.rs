@@ -10,9 +10,11 @@ use orkai::pwa::protocol::PhoneMsg;
 use orkai::pwa::server::{Outbox, Peer, welcome};
 use orkai::util::lock;
 use tauri::State;
+
+use crate::settings;
 use tauri::ipc::{Channel, InvokeResponseBody};
 
-struct Link {
+pub struct Link {
     hub: Arc<Hub>,
     generation: Arc<AtomicU64>,
     inbox: Mutex<Option<Sender<Event>>>,
@@ -32,6 +34,10 @@ impl Outbox for Webview {
 impl Link {
     fn new(hub: Arc<Hub>) -> Self {
         Self { hub, generation: Arc::new(AtomicU64::new(0)), inbox: Mutex::new(None) }
+    }
+
+    pub fn hub(&self) -> &Hub {
+        &self.hub
     }
 
     fn attach(&self, channel: Channel) -> Result<(), String> {
@@ -77,7 +83,14 @@ pub fn run() -> io::Result<()> {
     let link = Link::new(Hub::open(&Home::resolve()?)?);
     tauri::Builder::default()
         .manage(link)
-        .invoke_handler(tauri::generate_handler![attach, send])
+        .invoke_handler(tauri::generate_handler![
+            attach,
+            send,
+            settings::settings,
+            settings::save_settings,
+            settings::play_chime,
+            settings::check_update
+        ])
         .run(tauri::generate_context!())
         .map_err(io::Error::other)
 }

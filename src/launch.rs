@@ -909,6 +909,10 @@ impl Launcher {
         Ok(Self { store, config, source: source_exe.to_path_buf(), exe })
     }
 
+    pub fn reconfigured(&self, config: Config) -> io::Result<Self> {
+        Self::new(self.store.clone(), config, &self.source)
+    }
+
     pub fn store(&self) -> &Store {
         &self.store
     }

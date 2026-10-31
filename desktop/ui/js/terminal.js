@@ -13,8 +13,8 @@ const MIN_ROWS = 8;
 const MIN_COLS = 20;
 const RESIZE_MS = 120;
 const WHEEL_STEP = 40;
-const INK = '#08080b';
-const TEXT = '#ececf2';
+const INK = 'var(--term-bg)';
+const TEXT = 'var(--term-fg)';
 const APP_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'Process', 'Dead', 'Unidentified']);
 
 function color(value) {

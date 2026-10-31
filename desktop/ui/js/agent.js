@@ -32,7 +32,7 @@ function stateLine(agent) {
   return { text: since ? `Idle for ${since}` : 'Idle', tone: 't-muted' };
 }
 
-async function rename(agent) {
+export async function rename(agent) {
   const name = await ask({ title: 'Rename the agent', value: agent.name, action: 'Rename' });
   if (name && name !== agent.name) send({ type: 'rename', agent: agent.id, name });
 }

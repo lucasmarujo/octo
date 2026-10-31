@@ -25,7 +25,7 @@ function tile(agent, handlers) {
   const classes = ['tile', waiting ? 'waiting' : '', agent.state === 'lost' ? 'lost' : ''].filter(Boolean).join(' ');
   return h(
     'article',
-    { class: classes, dataset: { agent: String(agent.id) }, onclick: () => handlers.open(agent) },
+    { class: classes, tabindex: '0', dataset: { agent: String(agent.id) }, onclick: () => handlers.open(agent) },
     tools(agent),
     h(
       'div',

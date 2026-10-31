@@ -23,7 +23,8 @@ export const COLUMNS = [
 ];
 
 export const label = (kind) => LABELS[kind] || kind;
-export const kindColor = (kind) => KIND_COLORS[kind] || '#9a9aa8';
+export const kindHex = (kind) => KIND_COLORS[kind] || '#9a9aa8';
+export const kindColor = (kind) => `var(--kind-${Object.hasOwn(KIND_COLORS, kind) ? kind : 'other'})`;
 
 const pad2 = (value) => String(value).padStart(2, '0');
 
@@ -98,4 +99,33 @@ export function usageColor(used) {
 
 export function plural(count, one, many) {
   return `${count} ${count === 1 ? one : many}`;
+}
+
+export function splitArgs(text) {
+  const args = [];
+  let current = '';
+  let quote = null;
+  let started = false;
+  for (const char of text) {
+    if (quote) {
+      if (char === quote) quote = null;
+      else current += char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+    } else if (/\s/.test(char)) {
+      if (started) args.push(current);
+      current = '';
+      started = false;
+    } else {
+      current += char;
+      started = true;
+    }
+  }
+  if (started) args.push(current);
+  return args;
+}
+
+export function joinArgs(args) {
+  return args.map((arg) => (arg === '' || /[\s"']/.test(arg) ? `"${arg.replaceAll('"', "'")}"` : arg)).join(' ');
 }

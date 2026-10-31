@@ -27,6 +27,10 @@ async function removeAgent(agent) {
   if (sure) send({ type: 'remove', agent: agent.id });
 }
 
+export function stopOrRemove(agent) {
+  return alive(agent) ? stopAgent(agent) : removeAgent(agent);
+}
+
 export function tools(agent) {
   const act = (work) => (event) => {
     event.stopPropagation();
@@ -60,7 +64,7 @@ function card(agent, handlers) {
     : null;
   return h(
     'article',
-    { class: classes, dataset: { agent: String(agent.id) }, onclick: handlers.open ? () => handlers.open(agent) : null },
+    { class: classes, tabindex: '0', dataset: { agent: String(agent.id) }, onclick: handlers.open ? () => handlers.open(agent) : null },
     tools(agent),
     h(
       'div',

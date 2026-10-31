@@ -3,8 +3,10 @@ export const BASE16 = [
   '#6e6e7a', '#ff7d9d', '#96e2aa', '#f0de96', '#89bafa', '#e8aaec', '#8ce2d6', '#ffffff',
 ];
 
+export const ansi = (index) => `var(--ansi-${index})`;
+
 export function palette(index) {
-  if (index < 16) return BASE16[index];
+  if (index < 16) return ansi(index);
   if (index < 232) {
     const value = index - 16;
     const level = (step) => (step === 0 ? 0 : 55 + step * 40);
@@ -24,8 +26,8 @@ function apply(style, codes) {
     else if (code === 1) style.bold = true;
     else if (code === 2) style.dim = true;
     else if (code === 22) Object.assign(style, { bold: false, dim: false });
-    else if (code >= 30 && code <= 37) style.color = BASE16[code - 30];
-    else if (code >= 90 && code <= 97) style.color = BASE16[code - 90 + 8];
+    else if (code >= 30 && code <= 37) style.color = ansi(code - 30);
+    else if (code >= 90 && code <= 97) style.color = ansi(code - 90 + 8);
     else if (code === 39) style.color = null;
     else if (code === 38 && codes[i + 1] === 5) {
       style.color = palette(codes[i + 2] || 0);
