@@ -1,4 +1,4 @@
-import { $, h, svg } from './dom.js';
+import { $, h, keep, place, svg } from './dom.js';
 import { confirm } from './dialogs.js';
 import { COLUMNS, SPINNER, activity, alive, column, elapsed, glyph, kindColor, label, nameTone, plural } from './format.js';
 import { ICON_BRANCH, ICON_STOP, ICON_TRASH } from './icons.js';
@@ -28,9 +28,13 @@ async function removeAgent(agent) {
 }
 
 function tools(agent) {
+  const act = (work) => (event) => {
+    event.stopPropagation();
+    work(agent);
+  };
   const button = alive(agent)
-    ? h('button', { class: 'icon-button danger', type: 'button', title: 'Stop', onclick: () => stopAgent(agent) }, svg(ICON_STOP))
-    : h('button', { class: 'icon-button danger', type: 'button', title: 'Remove', onclick: () => removeAgent(agent) }, svg(ICON_TRASH));
+    ? h('button', { class: 'icon-button danger', type: 'button', title: 'Stop', onclick: act(stopAgent) }, svg(ICON_STOP))
+    : h('button', { class: 'icon-button danger', type: 'button', title: 'Remove', onclick: act(removeAgent) }, svg(ICON_TRASH));
   return h('div', { class: 'card-tools' }, button);
 }
 
@@ -56,7 +60,7 @@ function card(agent, handlers) {
     : null;
   return h(
     'article',
-    { class: classes, dataset: { agent: String(agent.id) }, ondblclick: handlers.open ? () => handlers.open(agent) : null },
+    { class: classes, dataset: { agent: String(agent.id) }, onclick: handlers.open ? () => handlers.open(agent) : null },
     tools(agent),
     h(
       'div',
@@ -99,21 +103,41 @@ function empty(session) {
   );
 }
 
+const cards = new Map();
+const columns = new Map();
+
+function cardSignature(agent, handlers) {
+  return JSON.stringify([agent.name, agent.kind, agent.state, agent.starting, agent.activity, agent.project, agent.color, agent.branch, agent.exit, Boolean(handlers.open)]);
+}
+
 export function renderBoard(handlers) {
   const board = $('board');
   const list = inSession();
   if (!list.length) {
-    board.replaceChildren(empty(state.session));
+    const signature = `empty:${state.session}`;
+    if (board.dataset.signature !== signature) {
+      board.replaceChildren(empty(state.session));
+      board.dataset.signature = signature;
+    }
+    cards.clear();
     return;
   }
-  const columns = COLUMNS.map((def) => {
+  const sections = COLUMNS.map((def) => {
     const members = list.filter((agent) => column(agent) === def.key);
-    const body = members.length
-      ? members.map((agent) => card(agent, handlers))
-      : [h('div', { class: 'column-empty' }, def.empty)];
-    return h('section', { class: 'column', dataset: { column: def.key } }, columnHead(def, members.length), h('div', { class: 'column-body' }, body));
+    const nodes = members.length
+      ? members.map((agent) => keep(cards, agent.id, cardSignature(agent, handlers), () => card(agent, handlers)))
+      : [keep(columns, `empty:${def.key}`, '', () => h('div', { class: 'column-empty' }, def.empty))];
+    const section = keep(columns, def.key, '', () =>
+      h('section', { class: 'column', dataset: { column: def.key } }, columnHead(def, 0), h('div', { class: 'column-body' })),
+    );
+    section.querySelector('.count').textContent = String(members.length);
+    place(section.querySelector('.column-body'), nodes);
+    return section;
   });
-  board.replaceChildren(...columns);
+  place(board, sections);
+  board.dataset.signature = 'columns';
+  const ids = new Set(list.map((agent) => agent.id));
+  for (const id of cards.keys()) if (!ids.has(id)) cards.delete(id);
 }
 
 export function renderHead() {

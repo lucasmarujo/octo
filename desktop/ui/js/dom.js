@@ -19,6 +19,19 @@ export function h(tag, props, ...children) {
   return node;
 }
 
+export function keep(cache, key, signature, build) {
+  const hit = cache.get(key);
+  if (hit && hit.signature === signature) return hit.node;
+  const node = build();
+  cache.set(key, { signature, node });
+  return node;
+}
+
+export function place(parent, nodes) {
+  const same = parent.children.length === nodes.length && nodes.every((node, index) => parent.children[index] === node);
+  if (!same) parent.replaceChildren(...nodes);
+}
+
 export function svg(markup) {
   const holder = document.createElement('template');
   holder.innerHTML = markup.trim();

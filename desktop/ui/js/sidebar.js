@@ -111,7 +111,16 @@ function renderUsage() {
 export function renderSidebar(onSelect, onOpen) {
   $('host').textContent = state.host;
   const overview = state.overview;
-  if (overview) {
+  const host = $('sessions');
+  const signature = overview
+    ? JSON.stringify([
+        state.session,
+        [...state.expanded],
+        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map((agent) => [agent.name, agent.state, agent.starting])]),
+      ])
+    : '';
+  if (overview && host.dataset.signature !== signature) {
+    host.dataset.signature = signature;
     const items = overview.sessions.map((session) => sessionItem(session, onSelect, onOpen));
     const create = h(
       'button',
@@ -120,7 +129,7 @@ export function renderSidebar(onSelect, onOpen) {
       h('span', { class: 'session-name' }, 'New session'),
       h('span', { class: 'kbd' }, 'ctrl N'),
     );
-    $('sessions').replaceChildren(...items, create);
+    host.replaceChildren(...items, create);
   }
   renderUsage();
 }

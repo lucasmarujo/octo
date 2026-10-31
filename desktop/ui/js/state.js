@@ -6,6 +6,7 @@ const WHO_KEY = 'orkai.who';
 const WHERE_KEY = 'orkai.where';
 const WORKTREE_KEY = 'orkai.worktree';
 const BYPASS_KEY = 'orkai.bypass';
+const TABS_KEY = 'orkai.tabs';
 
 export const state = {
   host: '',
@@ -25,7 +26,17 @@ export const state = {
   history: [],
   recall: -1,
   folders: null,
+  tabs: storage.json(TABS_KEY, []),
+  active: null,
 };
+
+export function findAgent(id) {
+  return agents().find((agent) => agent.id === id) || null;
+}
+
+export function saveTabs() {
+  storage.set(TABS_KEY, JSON.stringify(state.tabs));
+}
 
 export const now = () => Date.now() - state.skew;
 

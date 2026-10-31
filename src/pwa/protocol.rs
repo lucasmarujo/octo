@@ -17,22 +17,66 @@ pub enum Greeting {
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum PhoneMsg {
     Sync,
-    Open { agent: AgentId, rows: u16, cols: u16 },
+    Open {
+        agent: AgentId,
+        rows: u16,
+        cols: u16,
+    },
     Close,
-    Size { rows: u16, cols: u16 },
-    Keys { data: String },
-    Send { text: String },
-    Scroll { lines: i32 },
-    Stop { agent: AgentId },
-    Remove { agent: AgentId },
-    Seen { agent: AgentId },
-    Rename { agent: AgentId, name: String },
+    Size {
+        rows: u16,
+        cols: u16,
+    },
+    Keys {
+        data: String,
+    },
+    Send {
+        text: String,
+    },
+    Paste {
+        text: String,
+    },
+    Key {
+        key: String,
+        #[serde(default)]
+        ctrl: bool,
+        #[serde(default)]
+        alt: bool,
+        #[serde(default)]
+        shift: bool,
+    },
+    Scroll {
+        lines: i32,
+    },
+    Stop {
+        agent: AgentId,
+    },
+    Remove {
+        agent: AgentId,
+    },
+    Seen {
+        agent: AgentId,
+    },
+    Rename {
+        agent: AgentId,
+        name: String,
+    },
     Start(StartRequest),
-    Session { name: String },
-    Recover { session: String },
-    Folders { path: String },
-    Diff { agent: AgentId },
-    Merge { agent: AgentId },
+    Session {
+        name: String,
+    },
+    Recover {
+        session: String,
+    },
+    Folders {
+        path: String,
+    },
+    Diff {
+        agent: AgentId,
+    },
+    Merge {
+        agent: AgentId,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

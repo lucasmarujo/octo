@@ -130,6 +130,45 @@ fn with_alt(mods: KeyModifiers, mut bytes: Vec<u8>) -> Vec<u8> {
     bytes
 }
 
+pub fn dom_key(name: &str, ctrl: bool, alt: bool, shift: bool) -> Option<KeyEvent> {
+    let code = match name {
+        "Enter" => KeyCode::Enter,
+        "Backspace" => KeyCode::Backspace,
+        "Tab" if shift => KeyCode::BackTab,
+        "Tab" => KeyCode::Tab,
+        "Escape" => KeyCode::Esc,
+        "ArrowUp" => KeyCode::Up,
+        "ArrowDown" => KeyCode::Down,
+        "ArrowLeft" => KeyCode::Left,
+        "ArrowRight" => KeyCode::Right,
+        "Home" => KeyCode::Home,
+        "End" => KeyCode::End,
+        "Insert" => KeyCode::Insert,
+        "Delete" => KeyCode::Delete,
+        "PageUp" => KeyCode::PageUp,
+        "PageDown" => KeyCode::PageDown,
+        other => match other.strip_prefix('F').and_then(|number| number.parse::<u8>().ok()) {
+            Some(number @ 1..=12) => KeyCode::F(number),
+            Some(_) => return None,
+            None => {
+                let mut chars = other.chars();
+                let c = chars.next()?;
+                if chars.next().is_some() {
+                    return None;
+                }
+                KeyCode::Char(c)
+            }
+        },
+    };
+    let mut mods = KeyModifiers::NONE;
+    for (on, flag) in [(ctrl, KeyModifiers::CONTROL), (alt, KeyModifiers::ALT), (shift, KeyModifiers::SHIFT)] {
+        if on {
+            mods |= flag;
+        }
+    }
+    Some(KeyEvent::new(code, mods))
+}
+
 pub fn encode_key(key: &KeyEvent, app_cursor: bool) -> Option<Vec<u8>> {
     if !is_press(key) {
         return None;
@@ -288,6 +327,39 @@ mod tests {
 
     fn key(code: KeyCode, mods: KeyModifiers) -> KeyEvent {
         KeyEvent::new(code, mods)
+    }
+
+    fn browser(name: &str, ctrl: bool, alt: bool, shift: bool, app_cursor: bool) -> Option<Vec<u8>> {
+        dom_key(name, ctrl, alt, shift).and_then(|event| encode_key(&event, app_cursor))
+    }
+
+    #[test]
+    fn a_key_named_by_the_browser_reaches_the_agent_as_the_terminal_would_send_it() {
+        assert_eq!(browser("a", false, false, false, false), Some(b"a".to_vec()));
+        assert_eq!(browser("A", false, false, true, false), Some(b"A".to_vec()));
+        assert_eq!(browser(" ", false, false, false, false), Some(b" ".to_vec()));
+        assert_eq!(browser("Enter", false, false, false, false), Some(b"\r".to_vec()));
+        assert_eq!(browser("Enter", false, false, true, false), Some(b"\x1b\r".to_vec()));
+        assert_eq!(browser("Backspace", false, false, false, false), Some(vec![0x7f]));
+        assert_eq!(browser("Tab", false, false, false, false), Some(b"\t".to_vec()));
+        assert_eq!(browser("Tab", false, false, true, false), Some(b"\x1b[Z".to_vec()));
+        assert_eq!(browser("Escape", false, false, false, false), Some(b"\x1b".to_vec()));
+        assert_eq!(browser("c", true, false, false, false), Some(vec![0x03]));
+        assert_eq!(browser("b", false, true, false, false), Some(b"\x1bb".to_vec()));
+        assert_eq!(browser("ArrowUp", false, false, false, false), Some(b"\x1b[A".to_vec()));
+        assert_eq!(browser("ArrowUp", false, false, false, true), Some(b"\x1bOA".to_vec()));
+        assert_eq!(browser("ArrowLeft", true, false, false, false), Some(b"\x1b[1;5D".to_vec()));
+        assert_eq!(browser("PageDown", false, false, false, false), Some(b"\x1b[6~".to_vec()));
+        assert_eq!(browser("F5", false, false, false, false), Some(b"\x1b[15~".to_vec()));
+        assert_eq!(browser("F1", false, false, false, false), Some(b"\x1bOP".to_vec()));
+    }
+
+    #[test]
+    fn keys_the_terminal_does_not_send_are_dropped() {
+        assert_eq!(dom_key("Shift", false, false, true), None);
+        assert_eq!(dom_key("Unidentified", false, false, false), None);
+        assert_eq!(dom_key("F13", false, false, false), None);
+        assert_eq!(dom_key("", false, false, false), None);
     }
 
     fn typed(text: &str) -> Vec<Event> {

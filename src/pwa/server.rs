@@ -270,7 +270,9 @@ impl Peer {
                     let _ = conn.send(&ClientMsg::Input(data.into_bytes()));
                 }
             }
-            PhoneMsg::Send { text } => self.type_text(&text, out)?,
+            PhoneMsg::Send { text } => self.type_text(&text, true, out)?,
+            PhoneMsg::Paste { text } => self.type_text(&text, false, out)?,
+            PhoneMsg::Key { key, ctrl, alt, shift } => self.press(&key, ctrl, alt, shift),
             PhoneMsg::Scroll { lines } => {
                 if let Some(view) = self.view.as_mut() {
                     view.scroll(lines);
@@ -405,7 +407,17 @@ impl Peer {
         self.view = Some(view);
     }
 
-    fn type_text(&mut self, text: &str, out: &mut impl Outbox) -> io::Result<()> {
+    fn press(&self, key: &str, ctrl: bool, alt: bool, shift: bool) {
+        let Some(view) = self.view.as_ref() else { return };
+        let Some(conn) = view.conn.as_ref() else { return };
+        let app_cursor = view.term.as_ref().is_some_and(|term| term.screen().application_cursor());
+        if let Some(bytes) = keys::dom_key(key, ctrl, alt, shift).and_then(|event| keys::encode_key(&event, app_cursor))
+        {
+            let _ = conn.send(&ClientMsg::Input(bytes));
+        }
+    }
+
+    fn type_text(&mut self, text: &str, submit: bool, out: &mut impl Outbox) -> io::Result<()> {
         let Some(view) = self.view.as_mut() else { return Ok(()) };
         let Some(conn) = view.conn.clone() else {
             return self.notice(out, Tone::Warn, "this agent is not running");
@@ -413,8 +425,10 @@ impl Peer {
         let bracketed = view.term.as_ref().is_some_and(|term| term.screen().bracketed_paste());
         let bytes = encode_typed_text(text, bracketed);
         if bytes.is_empty() {
-            let _ = conn.send(&ClientMsg::Input(SUBMIT.to_vec()));
-        } else if conn.send(&ClientMsg::Input(bytes)).is_ok() {
+            if submit {
+                let _ = conn.send(&ClientMsg::Input(SUBMIT.to_vec()));
+            }
+        } else if conn.send(&ClientMsg::Input(bytes)).is_ok() && submit {
             view.submit_at = Some(Instant::now() + SUBMIT_DELAY);
         }
         Ok(())

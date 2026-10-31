@@ -107,3 +107,38 @@ test('every mood of Kai has its animation in the stylesheet', () => {
   for (const mood of MOODS) assert.ok(css.includes(`.kai[data-mood="${mood}"]`), mood);
   assert.ok(css.includes('prefers-reduced-motion'), 'motion can be turned off');
 });
+
+test('the colored git diff becomes colored runs without escape codes', async () => {
+  const { sgrRuns, BASE16 } = await import('../js/palette.js');
+  assert.deepEqual(sgrRuns('plain line'), [{ text: 'plain line', color: null, bold: false, dim: false }]);
+  const added = sgrRuns('\x1b[32m+ added\x1b[m');
+  assert.deepEqual(added, [{ text: '+ added', color: BASE16[2], bold: false, dim: false }]);
+  const header = sgrRuns('\x1b[1mdiff --git a/x b/x\x1b[m');
+  assert.equal(header[0].bold, true);
+  assert.equal(header.map((run) => run.text).join(''), 'diff --git a/x b/x');
+  assert.equal(sgrRuns('\x1b[38;5;196mred\x1b[39m')[0].color, 'rgb(255,0,0)');
+  assert.equal(sgrRuns('\x1b[38;2;1;2;3mrgb')[0].color, 'rgb(1,2,3)');
+  assert.equal(sgrRuns('a\x1b[Kb').map((run) => run.text).join(''), 'ab', 'other escapes are dropped');
+  const style = { color: null, bold: false, dim: false };
+  sgrRuns('\x1b[31mstarts red', style);
+  assert.equal(sgrRuns('and keeps going', style)[0].color, BASE16[1], 'a color carries over to the next line');
+});
+
+test('alt N opens the agent waiting the longest, then the ones that are done', async () => {
+  const { state } = await import('../js/state.js');
+  const { nextAttention } = await import('../js/agent.js');
+  state.overview = {
+    agents: [
+      agent({ id: 1, state: 'done', stateSince: NOW - 90_000 }),
+      agent({ id: 2, state: 'paused', stateSince: NOW - 10_000 }),
+      agent({ id: 3, state: 'paused', stateSince: NOW - 60_000 }),
+      agent({ id: 4, state: 'working', stateSince: NOW - 99_000 }),
+    ],
+  };
+  assert.equal(nextAttention(null).id, 3);
+  assert.equal(nextAttention(3).id, 2, 'the agent already open is skipped');
+  state.overview.agents = state.overview.agents.filter((a) => a.state !== 'paused');
+  assert.equal(nextAttention(null).id, 1);
+  state.overview.agents = [agent({ id: 5, state: 'idle' })];
+  assert.equal(nextAttention(null), null);
+});

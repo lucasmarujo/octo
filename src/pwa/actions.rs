@@ -50,6 +50,8 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         | PhoneMsg::Size { .. }
         | PhoneMsg::Keys { .. }
         | PhoneMsg::Send { .. }
+        | PhoneMsg::Paste { .. }
+        | PhoneMsg::Key { .. }
         | PhoneMsg::Scroll { .. } => {}
     }
 }

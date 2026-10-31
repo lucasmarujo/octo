@@ -537,3 +537,36 @@ fn a_window_without_a_socket_drives_the_hub_through_its_inbox() {
     drop(peer);
     assert_eq!(hub.phones(), 0, "a closed window leaves the hub");
 }
+
+#[test]
+fn a_paste_types_the_text_and_leaves_the_enter_to_the_user() {
+    let fx = fixture();
+    let id = start_terminal(&fx, "paste");
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.overview_where(|overview| agent(overview, id).is_some_and(running));
+    phone.send(&PhoneMsg::Open { agent: id, rows: 30, cols: 70 });
+    phone.screen_where(|screen, _| screen.full && screen.agent == id);
+    phone.send(&PhoneMsg::Paste { text: "echo orkai-paste-$((40+2))".into() });
+    phone.screen_where(|_, text| text.contains("echo orkai-paste-$((40+2))"));
+    std::thread::sleep(Duration::from_millis(1500));
+    phone.send(&PhoneMsg::Keys { data: "x".into() });
+    phone.screen_where(|_, text| text.contains("echo orkai-paste-$((40+2))x"));
+    phone.send(&PhoneMsg::Keys { data: "\r".into() });
+    let marker = if cfg!(windows) { "orkai-paste-$((40+2))x" } else { "orkai-paste-42x" };
+    phone.screen_where(|_, text| text.lines().any(|line| line.trim() == marker));
+}
+
+#[test]
+fn keys_named_by_the_browser_are_typed_into_the_agent() {
+    let fx = fixture();
+    let id = start_terminal(&fx, "keys");
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.overview_where(|overview| agent(overview, id).is_some_and(running));
+    phone.send(&PhoneMsg::Open { agent: id, rows: 30, cols: 70 });
+    phone.screen_where(|screen, _| screen.full && screen.agent == id);
+    let press = |key: &str| PhoneMsg::Key { key: key.into(), ctrl: false, alt: false, shift: false };
+    for key in ["e", "c", "h", "o", " ", "o", "r", "k", "a", "i", "-", "k", "e", "y", "s", "Enter"] {
+        phone.send(&press(key));
+    }
+    phone.screen_where(|_, text| text.lines().any(|line| line.trim() == "orkai-keys"));
+}

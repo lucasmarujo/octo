@@ -1,4 +1,5 @@
 import { $, h } from './dom.js';
+import { sgrRuns } from './palette.js';
 import { send } from './transport.js';
 
 let folderPick = null;
@@ -66,6 +67,32 @@ export function ask({ title, text, value, action, placeholder }) {
     field.focus();
     field.select();
   });
+}
+
+const DIFF_LINES = 4000;
+
+function diffLine(line, style) {
+  const runs = sgrRuns(line, style);
+  const spans = runs.map((run) => {
+    const css = [run.color ? `color:${run.color}` : '', run.bold ? 'font-weight:700' : '', run.dim ? 'opacity:0.6' : ''].filter(Boolean).join(';');
+    return css ? h('span', { style: css }, run.text) : run.text;
+  });
+  return h('div', { class: 'diff-line' }, spans.length ? spans : ' ');
+}
+
+export function showDiff(message) {
+  const dialog = $('dialog');
+  const lines = message.text.split('\n');
+  const style = { color: null, bold: false, dim: false };
+  const shown = lines.slice(0, DIFF_LINES).map((line) => diffLine(line, style));
+  const notes = [];
+  if (message.truncated || lines.length > DIFF_LINES) notes.push(h('span', { class: 'detail-note' }, 'The diff is too long to show whole; the rest is on the branch.'));
+  const body = message.text.trim()
+    ? h('pre', { class: 'diff selectable' }, shown)
+    : h('p', { class: 'dialog-text' }, 'No changes on this branch yet.');
+  dialog.classList.add('wide');
+  open(`Changes on ${message.branch}`, [body, notes], [h('button', { class: 'button primary', type: 'button', onclick: close }, 'Close')]);
+  dialog.addEventListener('close', () => dialog.classList.remove('wide'), { once: true });
 }
 
 export function pickFolder(start, onPick) {
