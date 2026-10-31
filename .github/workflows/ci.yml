@@ -291,6 +291,8 @@ jobs:
           </plist>
           EOF
           plutil -lint "$app/Contents/Info.plist"
+          codesign --force --sign - "$app"
+          codesign --verify --strict --verbose=2 "$app"
           ditto -c -k --keepParent "$app" "dist/$DOWNLOAD"
       - name: Warn that the app is unsigned
         if: runner.os == 'Windows'
