@@ -25,7 +25,7 @@ use crate::pwa::bridge::{self, Info};
 use crate::pwa::qr::Qr;
 use crate::pwa::tunnel::TunnelKind;
 use crate::skills;
-use crate::subagents::{Parent, Subagent, SubagentWatcher};
+use crate::subagents::{self, Parent, Subagent, SubagentWatcher};
 use crate::tui::complete::{PathCompleter, SkillCatalog, complete_command, where_argument};
 use crate::tui::format::{default_agent_name, display_path, project_label};
 use crate::tui::history::TaskHistory;
@@ -187,18 +187,10 @@ impl AgentEntry {
     }
 
     pub fn subagent_parent(&self) -> Option<Parent> {
-        if !self.kind().is_ai() || self.is_dead() {
+        if self.is_dead() {
             return None;
         }
-        let nested = self.nested();
-        Some(Parent {
-            id: self.record.id,
-            kind: self.kind(),
-            conversation_id: nested.map_or(self.record.conversation_id.clone(), |n| n.conversation_id.clone()),
-            cwd: nested.and_then(|n| n.cwd.clone()).unwrap_or_else(|| self.record.cwd.clone()),
-            created_at_ms: nested.map_or(self.record.created_at_ms, |n| n.since_ms),
-            busy: matches!(self.state(), AgentState::Working | AgentState::Paused),
-        })
+        subagents::parent_of(&self.record, self.kind(), self.nested(), self.state())
     }
 }
 
@@ -2735,7 +2727,7 @@ fn desk_takes_back(status: &StatusReport, desk: TermSize) -> bool {
     status.viewers.is_none_or(|viewers| viewers <= 1) && (status.rows, status.cols) != (desk.rows, desk.cols)
 }
 
-fn read_tail(path: &Path, max: usize) -> Vec<u8> {
+pub fn read_tail(path: &Path, max: usize) -> Vec<u8> {
     let Ok(mut file) = std::fs::File::open(path) else { return Vec::new() };
     let max = u64::try_from(max).unwrap_or(u64::MAX);
     let skip = file.metadata().map_or(0, |meta| meta.len().saturating_sub(max));

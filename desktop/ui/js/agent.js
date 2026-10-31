@@ -1,11 +1,14 @@
 import { $, h, svg } from './dom.js';
 import { ask, confirm } from './dialogs.js';
-import { activity, alive, duration, glyph, kindColor, label } from './format.js';
+import { SPINNER, activity, alive, duration, glyph, kindColor, label } from './format.js';
 import { ICON_BRANCH } from './icons.js';
 import { agents, now, state } from './state.js';
 import { send } from './transport.js';
 
 const ATTENTION = ['paused', 'done'];
+const TEST_SOURCE = '.orkai.json';
+
+export const restarts = new Set();
 
 export function nextAttention(skip) {
   const waiting = (name) =>
@@ -17,6 +20,14 @@ export function nextAttention(skip) {
     if (first) return first;
   }
   return null;
+}
+
+export function shortPath(path) {
+  const home = state.home;
+  if (!home || !path) return path || '';
+  const normal = path.replaceAll('\\', '/');
+  const base = home.replaceAll('\\', '/').replace(/\/$/, '');
+  return normal.toLowerCase().startsWith(base.toLowerCase()) ? `~${normal.slice(base.length)}` : normal;
 }
 
 function stateLine(agent) {
@@ -67,44 +78,137 @@ async function merge(agent) {
   if (sure) send({ type: 'merge', agent: agent.id });
 }
 
-function actions(agent) {
-  const buttons = [h('button', { class: 'button', type: 'button', onclick: () => rename(agent) }, 'Rename')];
-  if (agent.state === 'lost') {
-    buttons.push(h('button', { class: 'button', type: 'button', onclick: () => send({ type: 'recover', session: agent.session }) }, 'Recover'));
+async function restart(agent) {
+  if (!alive(agent)) {
+    send({ type: 'restart', agent: agent.id });
+    return;
   }
-  buttons.push(
-    alive(agent)
-      ? h('button', { class: 'button warn', type: 'button', onclick: () => stop(agent) }, 'Stop')
-      : h('button', { class: 'button warn', type: 'button', onclick: () => remove(agent) }, 'Remove'),
-  );
-  return buttons;
+  const sure = await confirm({
+    title: `Restart ${agent.name}?`,
+    text: 'The agent stops and starts again in the same folder, picking up its conversation where it was.',
+    action: 'Restart',
+  });
+  if (!sure) return;
+  restarts.add(agent.id);
+  send({ type: 'stop', agent: agent.id });
 }
 
-function section(title, ...body) {
-  return h('section', { class: 'detail' }, h('div', { class: 'detail-head' }, h('span', { class: 'caps' }, title)), body);
+export function restartWhenStopped(list) {
+  for (const agent of list) {
+    if (!restarts.has(agent.id) || alive(agent)) continue;
+    restarts.delete(agent.id);
+    send({ type: 'restart', agent: agent.id });
+  }
 }
 
-function details(agent) {
-  const parts = [];
-  if (agent.task) parts.push(section('Task', h('p', { class: 'detail-text selectable' }, agent.task)));
-  if (agent.branch) {
-    const busy = agent.state === 'working' || agent.state === 'paused';
-    parts.push(
-      section(
-        'Worktree',
-        h('div', { class: 'detail-branch' }, svg(ICON_BRANCH), h('span', null, agent.branch)),
+function crossReview(agent) {
+  send({ type: 'crossReview', agent: agent.id });
+}
+
+function actions(agent) {
+  const button = (text, onclick, tone = '') => h('button', { class: `button agent-action ${tone}`, type: 'button', onclick: () => onclick(agent) }, text);
+  return [
+    button('Rename', rename),
+    agent.kind === 'terminal' && !alive(agent) ? null : button('Restart', restart),
+    agent.branch ? button('Cross-review', crossReview) : null,
+    alive(agent) ? button('Stop', stop, 'warn') : button('Remove', remove, 'warn'),
+  ].filter(Boolean);
+}
+
+function section(title, aside, ...body) {
+  return h('section', { class: 'detail' }, h('div', { class: 'detail-head' }, h('span', { class: 'caps' }, title), aside ? h('span', { class: 'detail-aside' }, aside) : null), body);
+}
+
+function subagentsSection(list) {
+  const running = list.length ? `${list.length} running` : null;
+  const body = list.length
+    ? list.map((sub) =>
         h(
           'div',
-          { class: 'detail-actions' },
-          h('button', { class: 'button', type: 'button', onclick: () => send({ type: 'diff', agent: agent.id }) }, 'Open diff'),
-          h('button', { class: 'button primary', type: 'button', disabled: busy, onclick: () => merge(agent) }, 'Merge'),
+          { class: 'subagent' },
+          h(
+            'div',
+            { class: 'subagent-top' },
+            h('span', { class: 'glyph t-yellow', dataset: { spin: '1' } }, SPINNER[state.frame % SPINNER.length]),
+            h('span', { class: 'subagent-role' }, sub.role),
+            h('span', { class: 'subagent-meta' }, [duration(now() - sub.startedAt), sub.activity].filter(Boolean).join(' · ')),
+          ),
+          sub.description ? h('span', { class: 'subagent-text' }, sub.description) : null,
         ),
-        busy ? h('span', { class: 'detail-note' }, 'Merge unlocks when the agent stops or is done.') : null,
-      ),
-    );
-  }
-  parts.push(section('Folder', h('p', { class: 'detail-path selectable' }, agent.cwd)));
+      )
+    : [h('span', { class: 'detail-note' }, 'No subagent is running.')];
+  return section('Subagents', running, ...body);
+}
+
+function changesSection(agent, info) {
+  const busy = agent.state === 'working' || agent.state === 'paused';
+  const files = info && info.changes ? info.changes : [];
+  const plus = files.reduce((sum, file) => sum + file.insertions, 0);
+  const minus = files.reduce((sum, file) => sum + file.deletions, 0);
+  const totals = files.length
+    ? [`${files.length} file${files.length === 1 ? '' : 's'} · `, h('span', { class: 't-green' }, `+${plus}`), ' ', h('span', { class: 't-red' }, `−${minus}`)]
+    : null;
+  const list = info && info.changes
+    ? files.length
+      ? h('div', { class: 'changes' }, ...files.map((file) =>
+          h(
+            'div',
+            { class: 'change', title: file.path },
+            h('span', { class: 'change-path' }, file.path),
+            h('span', { class: `change-plus ${file.insertions ? 't-green' : 't-faint'}` }, `+${file.insertions}`),
+            h('span', { class: `change-minus ${file.deletions ? 't-red' : 't-faint'}` }, file.deletions ? `−${file.deletions}` : '0'),
+          ),
+        ))
+      : h('span', { class: 'detail-note' }, 'No changes on the branch yet.')
+    : h('span', { class: 'detail-note' }, 'Reading the changes…');
+  const overlaps = info ? info.overlaps : [];
+  return section(
+    'Changes',
+    totals,
+    list,
+    ...overlaps.map((overlap) => h('span', { class: 'overlap t-yellow', title: overlap.paths.join('\n') }, `⚠ ${overlap.name} also changes ${overlap.paths[0]}${overlap.paths.length > 1 ? ` and ${overlap.paths.length - 1} more` : ''}`)),
+    h(
+      'div',
+      { class: 'detail-actions' },
+      h('button', { class: 'button', type: 'button', onclick: () => send({ type: 'diff', agent: agent.id }) }, 'Open diff'),
+      h('button', { class: 'button merge', type: 'button', disabled: busy, onclick: () => merge(agent) }, 'Merge'),
+    ),
+    busy ? h('span', { class: 'detail-note' }, 'Merge unlocks when the agent stops or is done.') : null,
+  );
+}
+
+export function testLine(test, at) {
+  const ago = test.finishedAt ? ` · ${duration(at - test.finishedAt)} ago` : '';
+  if (test.state === 'running') return { mark: SPINNER[0], tone: 't-yellow', text: 'Running after the last turn…' };
+  if (test.state === 'passed') return { mark: '✓', tone: 't-green', text: `Passed after the last turn${ago}` };
+  if (test.state === 'failed') return { mark: '✗', tone: 't-red', text: `Failed${test.code === null ? '' : ` (exit ${test.code})`} after the last turn${ago}` };
+  return { mark: '!', tone: 't-yellow', text: 'Not trusted yet: the command changed since you trusted it' };
+}
+
+function testSection(agent, test) {
+  const line = testLine(test, now());
+  return section(
+    'Test',
+    TEST_SOURCE,
+    h(
+      'div',
+      { class: 'test' },
+      h('span', { class: `test-mark ${line.tone}` }, line.mark),
+      h('div', { class: 'test-text' }, h('span', { class: 'test-command' }, test.command), h('span', { class: 'test-state' }, line.text)),
+      h('button', { class: 'link-button small', type: 'button', onclick: () => send({ type: 'tests', agent: agent.id }) }, 'Output'),
+    ),
+  );
+}
+
+function details(agent, info) {
+  const parts = [subagentsSection(info ? info.subagents : [])];
+  if (agent.branch) parts.push(changesSection(agent, info));
+  if (info && info.test) parts.push(testSection(agent, info.test));
   return parts;
+}
+
+export function detailsSignature(agent, info) {
+  return JSON.stringify([agent.id, agent.branch, agent.state, info, Math.floor(now() / 10_000)]);
 }
 
 function refresh(host, signature, build) {
@@ -115,9 +219,9 @@ function refresh(host, signature, build) {
 
 export function renderAgent(agent) {
   renderAgentHead(agent);
-  const busy = agent.state === 'working' || agent.state === 'paused';
-  refresh($('agent-actions'), JSON.stringify([agent.id, agent.name, agent.state === 'lost', alive(agent)]), () => actions(agent));
-  refresh($('details'), JSON.stringify([agent.id, agent.task, agent.branch, agent.cwd, busy]), () => details(agent));
+  refresh($('agent-actions'), JSON.stringify([agent.id, agent.name, agent.kind, agent.branch, alive(agent)]), () => actions(agent));
+  const info = state.details && state.details.agent === agent.id ? state.details : null;
+  refresh($('details'), detailsSignature(agent, info), () => details(agent, info));
   renderStatus(agent);
 }
 
@@ -134,6 +238,7 @@ export function renderAgentHead(agent) {
     h('span', { class: 'meta-item' }, h('span', { class: 'swatch', style: `background:${agent.color}` }), agent.project),
   ];
   if (agent.branch) meta.push(h('span', { class: 'meta-item' }, svg(ICON_BRANCH), agent.branch));
+  meta.push(h('span', { class: 'meta-item meta-path selectable', title: agent.cwd }, shortPath(agent.cwd)));
   if (agent.startedAt && alive(agent)) meta.push(h('span', { class: 'meta-item t-faint' }, `alive ${duration(now() - agent.startedAt)}`));
   $('agent-meta').replaceChildren(...meta);
 }
@@ -148,6 +253,6 @@ export function renderStatus(agent) {
   $('tab-status').replaceChildren(
     left,
     h('span', { class: 'grow' }),
-    h('span', { class: 'kbd' }, 'drag selects · ctrl c copies · ctrl v pastes · ctrl ] overview'),
+    h('span', { class: 'kbd' }, 'drag to select · ctrl+click opens links · ctrl ] overview'),
   );
 }

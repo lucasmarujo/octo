@@ -1,8 +1,8 @@
-import { nextAttention, rename, renderAgent, renderAgentHead, renderStatus } from './agent.js';
+import { nextAttention, rename, renderAgent, renderAgentHead, renderStatus, restartWhenStopped } from './agent.js';
 import { detectAlerts, notice, windowTitle } from './alerts.js';
 import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tickBoard } from './board.js';
 import { initComposer, renderComposer } from './composer.js';
-import { closeMenu, showDiff, showFolders } from './dialogs.js';
+import { closeMenu, showDiff, showFolders, showTests } from './dialogs.js';
 import { $, h, svg } from './dom.js';
 import { SPINNER, glyph } from './format.js';
 import { peekRequest, renderGrid, tickGrid } from './grid.js';
@@ -23,6 +23,7 @@ const TICK_MS = 1000;
 const MAX_TAB_KEY = 9;
 const PEEK_MS = 2000;
 const PEEK_STALE_MS = 10_000;
+const DETAILS_MS = 3000;
 const RENDERERS = { board: [renderBoard, tickBoard], list: [renderList, tickList], grid: [renderGrid, tickGrid] };
 const PAGES = {
   help: { label: 'How to use', icon: ICON_HELP, render: renderHelp },
@@ -143,6 +144,21 @@ function peek() {
   send(request);
 }
 
+function askDetails() {
+  if (!watching() || (state.detailsAt && Date.now() - state.detailsAt < PEEK_STALE_MS)) return;
+  state.detailsAt = Date.now();
+  send({ type: 'details', agent: state.active });
+}
+
+function onDetails(details) {
+  state.detailsAt = 0;
+  state.details = details;
+  if (watching() && state.active === details.agent) {
+    const agent = findAgent(state.active);
+    if (agent) renderAgent(agent);
+  }
+}
+
 function onPreviews(previews) {
   state.peekAt = 0;
   state.previews = new Map(previews.map((preview) => [preview.agent, preview.lines]));
@@ -209,6 +225,9 @@ function openAgent(agent) {
   show('agent-view');
   render();
   if (switching) {
+    state.details = null;
+    state.detailsAt = 0;
+    askDetails();
     const size = terminal.open(agent.id);
     send({ type: 'open', agent: agent.id, rows: size.rows, cols: size.cols });
     watchedState = agent.state;
@@ -272,6 +291,7 @@ function onMessage(message) {
       settleSession();
       settleTabs();
       markSeenWhileWatching();
+      restartWhenStopped(message.agents);
       raiseAlerts(message.agents);
       render();
       break;
@@ -294,6 +314,15 @@ function onMessage(message) {
       break;
     case 'peek':
       onPreviews(message.previews);
+      break;
+    case 'details':
+      onDetails(message);
+      break;
+    case 'tests':
+      showTests(message);
+      break;
+    case 'link':
+      invoke('open_link', { url: message.url }).catch((err) => toast(String(err), 'warn'));
       break;
     default:
       break;
@@ -373,6 +402,7 @@ function initTerminal() {
     key: (key) => send({ type: 'key', ...key }),
     paste: (text) => send({ type: 'paste', text }),
     scroll: (lines) => send({ type: 'scroll', lines }),
+    link: (cell) => send({ type: 'linkAt', row: cell.row, col: cell.col }),
     resize: (size) => send({ type: 'size', rows: size.rows, cols: size.cols }),
     copy,
     shortcut: appShortcut,
@@ -396,7 +426,7 @@ function initWindow() {
 function spin() {
   state.frame += 1;
   const text = SPINNER[state.frame % SPINNER.length];
-  for (const node of document.querySelectorAll('.tabs [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin], #dialog [data-spin]')) node.textContent = text;
+  for (const node of document.querySelectorAll('.tabs [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin], #dialog [data-spin], #details [data-spin]')) node.textContent = text;
   spinBoard();
   spinSidebar();
 }
@@ -439,6 +469,10 @@ function start() {
   setInterval(spin, SPIN_MS);
   setInterval(tick, TICK_MS);
   setInterval(peek, PEEK_MS);
+  setInterval(askDetails, DETAILS_MS);
+  invoke('home_dir').then((home) => {
+    state.home = home;
+  }).catch(() => {});
   connect(onMessage).catch((err) => toast(`could not reach orkai: ${err}`, 'error'));
   $('task').focus();
 }

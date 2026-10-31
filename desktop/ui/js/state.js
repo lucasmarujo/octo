@@ -36,6 +36,9 @@ export const state = {
   projects: storage.json(PROJECT_KEY, {}),
   previews: new Map(),
   peekAt: 0,
+  details: null,
+  detailsAt: 0,
+  home: null,
 };
 
 export function findAgent(id) {

@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::fsutil;
 use crate::launch::{find_codex_session, is_safe_session_id, recent_codex_rollouts};
-use crate::model::{AgentId, AgentKind};
+use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, NestedAgent};
 use crate::util::is_uuid;
 
 pub const SUBAGENT_STALE_MS: u64 = 10 * 60 * 1_000;
@@ -49,6 +49,25 @@ pub struct Parent {
     pub cwd: PathBuf,
     pub created_at_ms: u64,
     pub busy: bool,
+}
+
+pub fn parent_of(
+    record: &AgentRecord,
+    kind: AgentKind,
+    nested: Option<&NestedAgent>,
+    state: AgentState,
+) -> Option<Parent> {
+    if !kind.is_ai() {
+        return None;
+    }
+    Some(Parent {
+        id: record.id,
+        kind,
+        conversation_id: nested.map_or(record.conversation_id.clone(), |n| n.conversation_id.clone()),
+        cwd: nested.and_then(|n| n.cwd.clone()).unwrap_or_else(|| record.cwd.clone()),
+        created_at_ms: nested.map_or(record.created_at_ms, |n| n.since_ms),
+        busy: matches!(state, AgentState::Working | AgentState::Paused),
+    })
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

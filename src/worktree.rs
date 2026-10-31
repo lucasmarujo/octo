@@ -35,6 +35,14 @@ impl Changes {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileChange {
+    pub path: String,
+    pub renamed_from: Option<String>,
+    pub insertions: usize,
+    pub deletions: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Overlap {
     pub agent: AgentId,
     pub paths: Vec<String>,
@@ -166,29 +174,47 @@ fn count_lines(path: &Path) -> usize {
     data.iter().filter(|b| **b == b'\n').count() + usize::from(data.last().is_some_and(|b| *b != b'\n'))
 }
 
-pub fn changes(worktree: &Worktree) -> io::Result<Changes> {
+pub fn files(worktree: &Worktree) -> io::Result<Vec<FileChange>> {
     let numstat = run(&worktree.path, &["diff", "--numstat", "-z", &worktree.base])?;
-    let mut changes = Changes::default();
+    let mut files = Vec::new();
     let mut fields = numstat.split('\0');
     while let Some(field) = fields.next() {
         let mut parts = field.splitn(3, '\t');
         let (Some(added), Some(removed), Some(path)) = (parts.next(), parts.next(), parts.next()) else { continue };
-        changes.files += 1;
-        changes.insertions += added.parse::<usize>().unwrap_or(0);
-        changes.deletions += removed.parse::<usize>().unwrap_or(0);
-        if path.is_empty() {
-            for renamed in [fields.next(), fields.next()].into_iter().flatten().filter(|p| !p.is_empty()) {
-                changes.paths.insert(renamed.to_string());
+        let (path, renamed_from) = if path.is_empty() {
+            let from = fields.next().filter(|p| !p.is_empty()).map(str::to_string);
+            let to = fields.next().filter(|p| !p.is_empty()).map(str::to_string);
+            match (to, from) {
+                (Some(to), from) => (to, from),
+                (None, Some(from)) => (from, None),
+                (None, None) => continue,
             }
         } else {
-            changes.paths.insert(path.to_string());
-        }
+            (path.to_string(), None)
+        };
+        files.push(FileChange {
+            path,
+            renamed_from,
+            insertions: added.parse::<usize>().unwrap_or(0),
+            deletions: removed.parse::<usize>().unwrap_or(0),
+        });
     }
-    let new_files = untracked(&worktree.path)?;
-    changes.files += new_files.len();
-    changes.insertions +=
-        new_files.iter().take(MAX_UNTRACKED_FILES).map(|file| count_lines(&worktree.path.join(file))).sum::<usize>();
-    changes.paths.extend(new_files);
+    for (index, file) in untracked(&worktree.path)?.into_iter().enumerate() {
+        let insertions = if index < MAX_UNTRACKED_FILES { count_lines(&worktree.path.join(&file)) } else { 0 };
+        files.push(FileChange { path: file, renamed_from: None, insertions, deletions: 0 });
+    }
+    Ok(files)
+}
+
+pub fn changes(worktree: &Worktree) -> io::Result<Changes> {
+    let mut changes = Changes::default();
+    for file in files(worktree)? {
+        changes.files += 1;
+        changes.insertions += file.insertions;
+        changes.deletions += file.deletions;
+        changes.paths.extend(file.renamed_from);
+        changes.paths.insert(file.path);
+    }
     Ok(changes)
 }
 
@@ -452,6 +478,9 @@ mod tests {
         fs::write(worktree.path.join("target").join("build.log"), "ignored\n").unwrap();
         let expected = Changes { files: 2, insertions: 5, deletions: 1, paths: paths(&["app/lib.txt", "app/new.txt"]) };
         assert_eq!(changes(&worktree).unwrap(), expected);
+        let listed: Vec<(String, usize, usize)> =
+            files(&worktree).unwrap().into_iter().map(|f| (f.path, f.insertions, f.deletions)).collect();
+        assert_eq!(listed, [("app/lib.txt".to_string(), 2, 1), ("app/new.txt".to_string(), 3, 0)], "one line per file");
 
         git_in(&cwd, &["add", "new.txt"]);
         git_in(&cwd, &["commit", "-q", "-m", "add"]);

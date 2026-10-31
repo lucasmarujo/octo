@@ -278,6 +278,13 @@ impl Peer {
                     view.scroll(lines);
                 }
             }
+            PhoneMsg::LinkAt { row, col } => {
+                let link =
+                    self.view.as_ref().and_then(|view| view.term.as_ref()).and_then(|term| term.link_at(row, col));
+                if let Some(url) = link.filter(|url| crate::termlink::is_web_link(url)) {
+                    out.send(&BridgeMsg::Link { url })?;
+                }
+            }
             other => actions::handle(&self.hub, other, &self.tx),
         }
         Ok(())

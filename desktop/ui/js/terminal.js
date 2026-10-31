@@ -63,6 +63,11 @@ export class Terminal {
     this.host.addEventListener('mouseup', () => {
       if (!window.getSelection().toString()) this.focus();
     });
+    this.host.addEventListener('click', (event) => {
+      if (!event.ctrlKey || !this.screen) return;
+      const cell = this.cellAt(event);
+      if (cell) this.handlers.link(cell);
+    });
     this.sink.addEventListener('keydown', (event) => this.onKey(event));
     this.sink.addEventListener('paste', (event) => {
       event.preventDefault();
@@ -117,6 +122,15 @@ export class Terminal {
     const box = this.probe.getBoundingClientRect();
     const style = getComputedStyle(this.rows);
     return { width: box.width / 10 || 8, height: parseFloat(style.lineHeight) || 18 };
+  }
+
+  cellAt(event) {
+    const { width, height } = this.metrics();
+    const box = this.host.getBoundingClientRect();
+    const row = Math.floor((event.clientY - box.top - PAD) / height);
+    const col = Math.floor((event.clientX - box.left - PAD) / width);
+    if (row < 0 || col < 0 || (this.size && (row >= this.size.rows || col >= this.size.cols))) return null;
+    return { row, col };
   }
 
   measure() {

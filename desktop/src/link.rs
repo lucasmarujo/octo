@@ -79,6 +79,20 @@ fn send(link: State<'_, Link>, message: PhoneMsg) -> Result<(), String> {
     link.send(message)
 }
 
+#[tauri::command]
+fn home_dir() -> Option<String> {
+    orkai::paths::user_home().map(|home| home.display().to_string())
+}
+
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    if !orkai::termlink::is_web_link(&url) {
+        return Err(format!("{url} is not a web link"));
+    }
+    orkai::browser::open(url);
+    Ok(())
+}
+
 pub fn run() -> io::Result<()> {
     let hub = Hub::open(&Home::resolve()?)?;
     pair::keep_alive(Arc::clone(&hub));
@@ -89,6 +103,8 @@ pub fn run() -> io::Result<()> {
         .invoke_handler(tauri::generate_handler![
             attach,
             send,
+            open_link,
+            home_dir,
             settings::settings,
             settings::save_settings,
             settings::play_chime,
@@ -203,6 +219,13 @@ mod tests {
             thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(fx.link.hub.phones(), 1, "the old window leaves the hub");
+    }
+
+    #[test]
+    fn only_web_links_leave_the_app() {
+        let err = open_link("file:///etc/passwd".into()).unwrap_err();
+        assert!(err.contains("not a web link"), "{err}");
+        assert!(open_link("javascript:alert(1)".into()).is_err());
     }
 
     #[test]

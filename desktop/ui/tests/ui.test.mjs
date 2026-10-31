@@ -327,3 +327,25 @@ test('the pairing badge and the waiting line follow the bridge like in the TUI',
   assert.equal(waiting({ phase: 'connecting', tunnel: 'tailscale' }).text, 'Opening the tailscale tunnel…');
   assert.equal(waiting({ phase: 'failed', error: 'no network' }).text, 'no network · retrying');
 });
+
+test('the test line of an agent says what the TUI says about its last run', async () => {
+  const { testLine } = await import('../js/agent.js');
+  const base = { command: 'cargo test', startedAt: NOW - 50_000, finishedAt: NOW - 41_000, code: 0 };
+  assert.deepEqual(testLine({ ...base, state: 'passed' }, NOW), { mark: '✓', tone: 't-green', text: 'Passed after the last turn · 41s ago' });
+  assert.equal(testLine({ ...base, state: 'failed', code: 101 }, NOW).text, 'Failed (exit 101) after the last turn · 41s ago');
+  assert.equal(testLine({ ...base, state: 'failed', code: null }, NOW).text, 'Failed after the last turn · 41s ago');
+  assert.equal(testLine({ ...base, state: 'running', finishedAt: null }, NOW).tone, 't-yellow');
+  assert.match(testLine({ ...base, state: 'untrusted' }, NOW).text, /trusted/);
+});
+
+test('paths under the home folder are shown from ~ like in the TUI', async () => {
+  const { shortPath } = await import('../js/agent.js');
+  const { state } = await import('../js/state.js');
+  state.home = 'C:\\Users\\ana';
+  assert.equal(shortPath('C:\\Users\\ana\\orkai\\worktrees\\3\\studio'), '~/orkai/worktrees/3/studio');
+  assert.equal(shortPath('D:\\work\\app'), 'D:/work/app');
+  state.home = '/home/ana';
+  assert.equal(shortPath('/home/ana/dev/app'), '~/dev/app');
+  state.home = null;
+  assert.equal(shortPath('/srv/app'), '/srv/app');
+});

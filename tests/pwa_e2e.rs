@@ -16,7 +16,7 @@ use orkai::paths::Home;
 use orkai::protocol::{ClientMsg, HolderMsg, TermSize};
 use orkai::pwa::crypto::{self, Channel, Ephemeral, Secret, Side};
 use orkai::pwa::hub::{Event, Hub};
-use orkai::pwa::protocol::{AgentView, BridgeMsg, Greeting, Overview, PhoneMsg, Screen, StartRequest, VERSION};
+use orkai::pwa::protocol::{AgentView, BridgeMsg, Greeting, Overview, PhoneMsg, Screen, StartRequest, Tone, VERSION};
 use orkai::pwa::server::{OUTDATED, Outbox, Peer, Server, UNPAIRED};
 use orkai::store::Store;
 
@@ -613,4 +613,36 @@ fn new_settings_reach_the_window_without_restarting_the_hub() {
         _ => None,
     });
     assert!(kinds.contains(&AgentKind::Terminal));
+}
+
+#[test]
+fn the_details_of_an_agent_and_its_restart_come_from_the_core() {
+    let fx = fixture();
+    let id = start_terminal(&fx, "details");
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.overview_where(|overview| agent(overview, id).is_some_and(running));
+    phone.send(&PhoneMsg::Details { agent: id });
+    let details = phone.until(|message| match message {
+        BridgeMsg::Details(details) => Some(details),
+        _ => None,
+    });
+    assert_eq!(details.agent, id);
+    assert!(details.subagents.is_empty() && details.overlaps.is_empty());
+    assert_eq!(details.changes, None, "a terminal outside a worktree has no changes to show");
+    phone.send(&PhoneMsg::CrossReview { agent: id, kind: None });
+    let refused = phone.until(|message| match message {
+        BridgeMsg::Notice { text, tone: Tone::Error } => Some(text),
+        _ => None,
+    });
+    assert!(refused.contains("no worktree"), "{refused}");
+    phone.send(&PhoneMsg::Restart { agent: id });
+    let busy = phone.until(|message| match message {
+        BridgeMsg::Notice { text, tone: Tone::Error } => Some(text),
+        _ => None,
+    });
+    assert!(busy.contains("still running"), "{busy}");
+    phone.send(&PhoneMsg::Stop { agent: id });
+    phone.overview_where(|overview| agent(overview, id).is_some_and(|a| a.state == AgentState::Exited));
+    phone.send(&PhoneMsg::Restart { agent: id });
+    phone.overview_where(|overview| agent(overview, id).is_some_and(running));
 }

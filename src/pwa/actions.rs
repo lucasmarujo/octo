@@ -5,16 +5,21 @@ use std::thread;
 
 use crate::cli::DEFAULT_SIZE;
 use crate::client;
+use crate::launch;
 use crate::launch::LaunchMode;
-use crate::model::{AgentId, AgentState, NewAgent, validate_agent_name};
+use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, NewAgent, validate_agent_name};
 use crate::paths::{expand_tilde, matching_directories, user_home};
 use crate::protocol::ClientMsg;
 use crate::pwa::hub::{Event, Hub};
-use crate::pwa::protocol::{BridgeMsg, Dir, PhoneMsg, Preview, Run, StartRequest, Tone};
+use crate::pwa::protocol::{
+    BridgeMsg, Details, Dir, FileView, OverlapView, PhoneMsg, Preview, Run, StartRequest, SubagentView, TestView, Tone,
+};
 use crate::pwa::screen;
 use crate::store::Store;
-use crate::tui::app::merge_message;
+use crate::subagents::{self, SubagentWatcher};
+use crate::tui::app::{merge_message, read_tail, review_task, reviewer_for};
 use crate::tui::format::default_agent_name;
+use crate::util::now_ms;
 use crate::worktree;
 
 pub const MAX_DIFF_BYTES: usize = 512 * 1024;
@@ -50,6 +55,10 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         PhoneMsg::Diff { agent } => diff(hub, agent, reply),
         PhoneMsg::Merge { agent } => merge(hub, agent, reply),
         PhoneMsg::Peek { agents, rows } => peek(hub, agents, rows, reply),
+        PhoneMsg::Details { agent } => details(hub, agent, reply),
+        PhoneMsg::Restart { agent } => restart(hub, agent, reply),
+        PhoneMsg::CrossReview { agent, kind } => cross_review(hub, agent, kind, reply),
+        PhoneMsg::Tests { agent } => tests(hub, agent, reply),
         PhoneMsg::Sync
         | PhoneMsg::Open { .. }
         | PhoneMsg::Close
@@ -58,6 +67,7 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         | PhoneMsg::Send { .. }
         | PhoneMsg::Paste { .. }
         | PhoneMsg::Key { .. }
+        | PhoneMsg::LinkAt { .. }
         | PhoneMsg::Scroll { .. } => {}
     }
 }
@@ -156,6 +166,19 @@ fn recover(hub: &Arc<Hub>, session: &str, reply: &Sender<Event>) {
         return notice(reply, Tone::Info, "nothing to recover in this session");
     }
     notice(reply, Tone::Info, format!("recovering {} agent(s)…", records.len()));
+    relaunch(hub, records, reply);
+}
+
+fn restart(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
+    let Some(record) = hub.record(agent) else { return };
+    if !matches!(hub.state(agent), Some(AgentState::Exited | AgentState::Lost)) {
+        return notice(reply, Tone::Error, format!("{} is still running", record.name));
+    }
+    notice(reply, Tone::Info, format!("restarting {}…", record.name));
+    relaunch(hub, vec![record], reply);
+}
+
+fn relaunch(hub: &Arc<Hub>, records: Vec<AgentRecord>, reply: &Sender<Event>) {
     let (hub, reply) = (Arc::clone(hub), reply.clone());
     spawn("orkai-pwa-recover", move || {
         for mut record in records {
@@ -184,6 +207,128 @@ fn folders(path: &str, reply: &Sender<Event>) {
     let (path, reply) = (path.to_string(), reply.clone());
     spawn("orkai-pwa-folders", move || {
         let _ = reply.send(Event::Reply(list_folders(&path)));
+    });
+}
+
+fn cross_review(hub: &Arc<Hub>, agent: AgentId, kind: Option<AgentKind>, reply: &Sender<Event>) {
+    let Some(record) = hub.record(agent) else { return };
+    let Some(worktree) = record.worktree.as_ref() else {
+        return notice(reply, Tone::Error, format!("{} has no worktree to review", record.name));
+    };
+    let reviewed = hub.live_status(agent).map_or(record.kind, |status| status.running_kind(record.kind));
+    let kinds = hub.kinds();
+    let Some(kind) = kind.filter(|kind| kind.is_ai()).or_else(|| reviewer_for(reviewed, &kinds)) else {
+        return notice(reply, Tone::Error, "install an AI agent to review the work");
+    };
+    start(
+        hub,
+        StartRequest {
+            kind,
+            session: record.session.clone(),
+            cwd: record.cwd.to_string_lossy().into_owned(),
+            task: review_task(worktree),
+            worktree: false,
+            bypass: false,
+        },
+        reply,
+    );
+}
+
+fn tests(hub: &Hub, agent: AgentId, reply: &Sender<Event>) {
+    let Some(record) = hub.record(agent) else { return };
+    let Some(test) = hub.live_status(agent).and_then(|status| status.test) else {
+        return notice(reply, Tone::Info, format!("{} has not run tests yet", record.name));
+    };
+    let path = hub.store().home().test_log(agent);
+    let (store_path, reply) = (path, reply.clone());
+    spawn("orkai-pwa-tests", move || {
+        let truncated = std::fs::metadata(&store_path).is_ok_and(|meta| meta.len() > MAX_DIFF_BYTES as u64);
+        let text = String::from_utf8_lossy(&read_tail(&store_path, MAX_DIFF_BYTES)).into_owned();
+        let _ = reply.send(Event::Reply(BridgeMsg::Tests {
+            agent,
+            command: test.command,
+            state: test.state,
+            text,
+            truncated,
+        }));
+    });
+}
+
+pub fn overlaps_with(
+    agent: AgentId,
+    mine: &worktree::Changes,
+    others: &[(AgentId, String, worktree::Changes)],
+) -> Vec<OverlapView> {
+    others
+        .iter()
+        .filter(|(id, _, _)| *id != agent)
+        .filter_map(|(id, name, changes)| {
+            let paths: Vec<String> = mine.paths.intersection(&changes.paths).cloned().collect();
+            (!paths.is_empty()).then(|| OverlapView { agent: *id, name: name.clone(), paths })
+        })
+        .collect()
+}
+
+fn describe(hub: &Hub, record: &AgentRecord) -> Details {
+    let agent = record.id;
+    let status = hub.live_status(agent);
+    let state = hub.state(agent).unwrap_or(AgentState::Idle);
+    let kind = status.as_ref().map_or(record.kind, |status| status.running_kind(record.kind));
+    let parent = status.as_ref().and_then(|status| subagents::parent_of(record, kind, status.nested.as_ref(), state));
+    let subagents = parent
+        .map(|parent| SubagentWatcher::new(launch::claude_home(), launch::codex_home()).scan(&[parent], now_ms()))
+        .and_then(|mut found| found.remove(&agent))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|sub| SubagentView {
+            role: sub.role,
+            description: sub.description,
+            activity: sub.activity,
+            started_at: sub.started_at_ms,
+        })
+        .collect();
+    let mut details = Details {
+        agent,
+        subagents,
+        test: status.and_then(|status| status.test).map(|test| TestView {
+            state: test.state,
+            command: test.command,
+            started_at: test.started_at_ms,
+            finished_at: test.finished_at_ms,
+            code: test.code,
+        }),
+        ..Details::default()
+    };
+    let Some(mine) = record.worktree.as_ref() else { return details };
+    let Ok(files) = worktree::files(mine) else { return details };
+    let changes = worktree::Changes {
+        files: files.len(),
+        insertions: files.iter().map(|file| file.insertions).sum(),
+        deletions: files.iter().map(|file| file.deletions).sum(),
+        paths: files.iter().flat_map(|file| file.renamed_from.iter().chain([&file.path])).cloned().collect(),
+    };
+    let repo = crate::paths::normalize_for_compare(&mine.repo);
+    let others: Vec<(AgentId, String, worktree::Changes)> = hub
+        .worktrees()
+        .into_iter()
+        .filter(|(id, _, worktree)| *id != agent && crate::paths::normalize_for_compare(&worktree.repo) == repo)
+        .filter_map(|(id, name, worktree)| worktree::changes(&worktree).ok().map(|changes| (id, name, changes)))
+        .collect();
+    details.overlaps = overlaps_with(agent, &changes, &others);
+    details.changes = Some(
+        files
+            .into_iter()
+            .map(|file| FileView { path: file.path, insertions: file.insertions, deletions: file.deletions })
+            .collect(),
+    );
+    details
+}
+
+fn details(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
+    let Some(record) = hub.record(agent) else { return };
+    let (hub, reply) = (Arc::clone(hub), reply.clone());
+    spawn("orkai-pwa-details", move || {
+        let _ = reply.send(Event::Reply(BridgeMsg::Details(describe(&hub, &record))));
     });
 }
 
@@ -300,6 +445,27 @@ mod tests {
         assert_eq!(agents.len(), MAX_PEEK_AGENTS);
         assert_eq!(rows, MAX_PEEK_ROWS);
         assert_eq!(peek_bounds(vec![7], 0), (vec![7], 1));
+    }
+
+    #[test]
+    fn the_radar_names_the_agents_that_touch_the_same_files() {
+        let changes = |paths: &[&str]| worktree::Changes {
+            files: paths.len(),
+            insertions: 0,
+            deletions: 0,
+            paths: paths.iter().map(|path| (*path).to_string()).collect(),
+        };
+        let mine = changes(&["src/engine.rs", "src/mod.rs"]);
+        let others = [
+            (1, "me".to_string(), changes(&["src/engine.rs"])),
+            (2, "physics".to_string(), changes(&["src/engine.rs", "README.md"])),
+            (3, "docs".to_string(), changes(&["README.md"])),
+        ];
+        assert_eq!(
+            overlaps_with(1, &mine, &others),
+            [OverlapView { agent: 2, name: "physics".into(), paths: vec!["src/engine.rs".into()] }],
+            "the agent itself and agents on other files stay out"
+        );
     }
 
     #[test]

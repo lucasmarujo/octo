@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{AgentId, AgentKind, AgentState};
+use crate::model::{AgentId, AgentKind, AgentState, TestState};
 
 pub const VERSION: u32 = 2;
 
@@ -81,6 +81,24 @@ pub enum PhoneMsg {
         agents: Vec<AgentId>,
         rows: u16,
     },
+    Details {
+        agent: AgentId,
+    },
+    Restart {
+        agent: AgentId,
+    },
+    CrossReview {
+        agent: AgentId,
+        #[serde(default)]
+        kind: Option<AgentKind>,
+    },
+    Tests {
+        agent: AgentId,
+    },
+    LinkAt {
+        row: u16,
+        col: u16,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -106,6 +124,9 @@ pub enum BridgeMsg {
     Folders { path: String, parent: Option<String>, dirs: Vec<Dir> },
     Diff { agent: AgentId, branch: String, text: String, truncated: bool },
     Peek { previews: Vec<Preview> },
+    Details(Details),
+    Tests { agent: AgentId, command: String, state: TestState, text: String, truncated: bool },
+    Link { url: String },
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -191,6 +212,51 @@ pub struct Screen {
     pub lines: Vec<(u16, Vec<Run>)>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Details {
+    pub agent: AgentId,
+    pub subagents: Vec<SubagentView>,
+    pub changes: Option<Vec<FileView>>,
+    pub overlaps: Vec<OverlapView>,
+    pub test: Option<TestView>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentView {
+    pub role: String,
+    pub description: String,
+    pub activity: String,
+    pub started_at: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileView {
+    pub path: String,
+    pub insertions: usize,
+    pub deletions: usize,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlapView {
+    pub agent: AgentId,
+    pub name: String,
+    pub paths: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TestView {
+    pub state: TestState,
+    pub command: String,
+    pub started_at: u64,
+    pub finished_at: Option<u64>,
+    pub code: Option<i32>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Preview {
@@ -223,6 +289,12 @@ mod tests {
             (r#"{"type":"send","text":"fix it"}"#, PhoneMsg::Send { text: "fix it".into() }),
             (r#"{"type":"scroll","lines":-3}"#, PhoneMsg::Scroll { lines: -3 }),
             (r#"{"type":"peek","agents":[2,5],"rows":6}"#, PhoneMsg::Peek { agents: vec![2, 5], rows: 6 }),
+            (r#"{"type":"details","agent":4}"#, PhoneMsg::Details { agent: 4 }),
+            (r#"{"type":"crossReview","agent":4}"#, PhoneMsg::CrossReview { agent: 4, kind: None }),
+            (
+                r#"{"type":"crossReview","agent":4,"kind":"codex"}"#,
+                PhoneMsg::CrossReview { agent: 4, kind: Some(AgentKind::Codex) },
+            ),
             (
                 r#"{"type":"start","kind":"claude","session":"default","cwd":"/w","task":"t","worktree":true}"#,
                 PhoneMsg::Start(StartRequest {

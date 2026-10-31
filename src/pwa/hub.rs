@@ -12,7 +12,7 @@ use crate::client::{self, Connection};
 use crate::config::Config;
 use crate::launch::{self, Launcher};
 use crate::model::{
-    AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, RuntimeInfo, Session, StatusReport, UiState,
+    AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, RuntimeInfo, Session, StatusReport, UiState, Worktree,
 };
 use crate::paths::Home;
 use crate::protocol::{ClientMsg, HolderMsg};
@@ -243,6 +243,24 @@ impl Hub {
 
     pub fn state(&self, id: AgentId) -> Option<AgentState> {
         self.inner().agents.get(&id).map(Tracked::state)
+    }
+
+    pub fn live_status(&self, id: AgentId) -> Option<StatusReport> {
+        self.inner().agents.get(&id).filter(|tracked| !tracked.is_dead()).and_then(|tracked| tracked.status.clone())
+    }
+
+    pub fn worktrees(&self) -> Vec<(AgentId, String, Worktree)> {
+        self.inner()
+            .agents
+            .values()
+            .filter_map(|tracked| {
+                tracked
+                    .record
+                    .worktree
+                    .clone()
+                    .map(|worktree| (tracked.record.id, tracked.record.name.clone(), worktree))
+            })
+            .collect()
     }
 
     pub fn lost_in(&self, session: &str) -> Vec<AgentRecord> {
