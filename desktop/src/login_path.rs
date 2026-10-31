@@ -29,7 +29,7 @@ pub fn adopt() {
 
 fn read(shell: &Path, timeout: Duration) -> Option<OsString> {
     let mut child = Command::new(shell)
-        .args(["-ilc", &format!("printf '%s' \"{MARK}$PATH{MARK}\"")])
+        .args(["-ilc", &format!("printf '%s' \"{MARK}:$PATH:{MARK}\"")])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -60,7 +60,7 @@ fn read(shell: &Path, timeout: Duration) -> Option<OsString> {
 fn parse(output: &str) -> Option<&str> {
     let start = output.find(MARK)? + MARK.len();
     let end = output.rfind(MARK)?;
-    let path = output.get(start..end)?.trim();
+    let path = output.get(start..end)?.trim_matches(|c: char| c == ':' || c.is_whitespace());
     (!path.is_empty()).then_some(path)
 }
 
@@ -83,8 +83,9 @@ mod tests {
 
     #[test]
     fn the_path_comes_from_between_the_marks_whatever_the_shell_prints_around_it() {
-        let noisy = format!("welcome back\n{MARK}/opt/homebrew/bin:/usr/bin{MARK}\nlogout\n");
+        let noisy = format!("welcome back\n{MARK}:/opt/homebrew/bin:/usr/bin:{MARK}\nlogout\n");
         assert_eq!(parse(&noisy), Some("/opt/homebrew/bin:/usr/bin"));
+        assert_eq!(parse(&format!("{MARK}::{MARK}")), None);
         assert_eq!(parse(&format!("{MARK}{MARK}")), None);
         assert_eq!(parse("no marks at all"), None);
         assert_eq!(parse(MARK), None);
