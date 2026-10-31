@@ -109,10 +109,14 @@ fn upgrade(hub: &Arc<Hub>, secret: &Secret, mut stream: TcpStream, request: &htt
     config.max_message_size = Some(MAX_INBOUND_BYTES);
     config.max_frame_size = Some(MAX_INBOUND_BYTES);
     let ws = WebSocket::from_raw_socket(stream, Role::Server, Some(config));
-    let Some(mut phone) = Phone::pair(ws, Arc::clone(hub), secret)? else { return Ok(()) };
-    let result = phone.run();
-    hub.leave(phone.id);
-    result
+    let Some(mut phone) = Phone::pair(ws, secret)? else { return Ok(()) };
+    phone.send(&welcome(hub))?;
+    let mut peer = Peer::join(hub);
+    phone.run(&mut peer)
+}
+
+pub fn welcome(hub: &Hub) -> BridgeMsg {
+    BridgeMsg::Welcome { host: hub.host().to_string(), version: env!("CARGO_PKG_VERSION").into() }
 }
 
 fn is_tick(err: &tungstenite::Error) -> bool {
@@ -207,113 +211,81 @@ impl View {
     }
 }
 
-struct Phone {
+pub trait Outbox {
+    fn deliver(&mut self, plain: &[u8]) -> io::Result<()>;
+
+    fn send(&mut self, message: &BridgeMsg) -> io::Result<()> {
+        self.deliver(&encode(message))
+    }
+}
+
+pub struct Peer {
     id: u64,
-    ws: WebSocket<TcpStream>,
-    channel: Channel,
     hub: Arc<Hub>,
     tx: Sender<Event>,
     rx: Receiver<Event>,
     view: Option<View>,
     generation: u64,
-    heard: Instant,
-    pinged: Instant,
 }
 
-impl Phone {
-    fn pair(mut ws: WebSocket<TcpStream>, hub: Arc<Hub>, secret: &Secret) -> io::Result<Option<Self>> {
-        let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
-        let Message::Text(text) = next_message(&mut ws, deadline)? else {
-            close(ws, OUTDATED, "expected the hello");
-            return Ok(None);
-        };
-        let peer = match serde_json::from_str::<Greeting>(text.as_str()) {
-            Ok(Greeting::Hello { version: VERSION, key }) => crypto::decode_public_key(&key),
-            _ => None,
-        };
-        let Some(peer) = peer else {
-            close(ws, OUTDATED, "this orkai speaks another pwa protocol; reload the app");
-            return Ok(None);
-        };
-        let own = Ephemeral::generate().map_err(io::Error::other)?;
-        let key = crypto::encode(own.public_key());
-        let mut channel = Channel::establish(Side::Bridge, own, &peer, secret).map_err(io::Error::other)?;
-        let hello = serde_json::to_string(&Greeting::Hello { version: VERSION, key }).map_err(io::Error::other)?;
-        ws.send(Message::text(hello)).map_err(ws_error)?;
-        let Message::Binary(first) = next_message(&mut ws, deadline)? else {
-            close(ws, UNPAIRED, "expected an encrypted frame");
-            return Ok(None);
-        };
-        let proven = channel.open(&first).ok().and_then(|plain| serde_json::from_slice::<PhoneMsg>(&plain).ok());
-        if proven.is_none() {
-            close(ws, UNPAIRED, "this phone is not paired with this orkai");
-            return Ok(None);
-        }
+impl Peer {
+    pub fn join(hub: &Arc<Hub>) -> Self {
         let (tx, rx) = mpsc::channel();
-        let welcome = BridgeMsg::Welcome { host: hub.host().to_string(), version: env!("CARGO_PKG_VERSION").into() };
-        let mut phone = Self {
-            id: 0,
-            ws,
-            channel,
-            hub: Arc::clone(&hub),
-            tx: tx.clone(),
-            rx,
-            view: None,
-            generation: 0,
-            heard: Instant::now(),
-            pinged: Instant::now(),
-        };
-        phone.send(&welcome)?;
-        phone.id = hub.join(tx);
-        Ok(Some(phone))
+        let id = hub.join(tx.clone());
+        Self { id, hub: Arc::clone(hub), tx, rx, view: None, generation: 0 }
     }
 
-    fn run(&mut self) -> io::Result<()> {
-        loop {
-            while let Ok(event) = self.rx.try_recv() {
-                self.on_event(event)?;
-            }
-            self.on_timers()?;
-            match self.ws.read() {
-                Ok(Message::Binary(frame)) => {
-                    self.heard = Instant::now();
-                    let plain = self.channel.open(&frame).map_err(io::Error::other)?;
-                    match serde_json::from_slice::<PhoneMsg>(&plain) {
-                        Ok(message) => self.on_phone(message)?,
-                        Err(_) => self.notice(Tone::Warn, "this orkai does not know that action; update it")?,
-                    }
+    pub fn inbox(&self) -> Sender<Event> {
+        self.tx.clone()
+    }
+
+    pub fn pump(&mut self, out: &mut impl Outbox) -> io::Result<()> {
+        while let Ok(event) = self.rx.try_recv() {
+            self.on_event(event, out)?;
+        }
+        self.flush(out)
+    }
+
+    pub fn wait(&mut self, out: &mut impl Outbox) -> io::Result<()> {
+        if let Ok(event) = self.rx.recv_timeout(TICK) {
+            self.on_event(event, out)?;
+        }
+        self.pump(out)
+    }
+
+    pub fn handle(&mut self, message: PhoneMsg, out: &mut impl Outbox) -> io::Result<()> {
+        match message {
+            PhoneMsg::Sync => self.hub.nudge(),
+            PhoneMsg::Open { agent, rows, cols } => self.open(agent, clamp(rows, cols)),
+            PhoneMsg::Close => self.view = None,
+            PhoneMsg::Size { rows, cols } => {
+                if let Some(view) = self.view.as_mut() {
+                    view.want = clamp(rows, cols);
+                    view.requested = None;
                 }
-                Ok(Message::Ping(_) | Message::Pong(_)) => self.heard = Instant::now(),
-                Ok(Message::Close(_)) => return Ok(()),
-                Ok(Message::Text(_) | Message::Frame(_)) => return Ok(()),
-                Err(err) if is_tick(&err) => {}
-                Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => return Ok(()),
-                Err(err) => return Err(ws_error(err)),
+                self.fit();
             }
+            PhoneMsg::Keys { data } => {
+                if let Some(conn) = self.view.as_ref().and_then(|view| view.conn.as_ref()) {
+                    let _ = conn.send(&ClientMsg::Input(data.into_bytes()));
+                }
+            }
+            PhoneMsg::Send { text } => self.type_text(&text, out)?,
+            PhoneMsg::Scroll { lines } => {
+                if let Some(view) = self.view.as_mut() {
+                    view.scroll(lines);
+                }
+            }
+            other => actions::handle(&self.hub, other, &self.tx),
         }
+        Ok(())
     }
 
-    fn send(&mut self, message: &BridgeMsg) -> io::Result<()> {
-        self.send_plain(&encode(message))
+    pub fn notice(&self, out: &mut impl Outbox, tone: Tone, text: &str) -> io::Result<()> {
+        out.send(&BridgeMsg::Notice { text: text.to_string(), tone })
     }
 
-    fn send_plain(&mut self, plain: &[u8]) -> io::Result<()> {
-        let frame = self.channel.seal(plain).map_err(io::Error::other)?;
-        self.ws.send(Message::binary(frame)).map_err(ws_error)
-    }
-
-    fn notice(&mut self, tone: Tone, text: &str) -> io::Result<()> {
-        self.send(&BridgeMsg::Notice { text: text.to_string(), tone })
-    }
-
-    fn on_timers(&mut self) -> io::Result<()> {
-        if self.heard.elapsed() >= SILENCE_LIMIT {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "the phone went quiet"));
-        }
-        if self.pinged.elapsed() >= PING_EVERY {
-            self.pinged = Instant::now();
-            self.ws.send(Message::Ping(Vec::new().into())).map_err(ws_error)?;
-        }
+    fn flush(&mut self, out: &mut impl Outbox) -> io::Result<()> {
         let Some(view) = self.view.as_mut() else { return Ok(()) };
         if view.submit_at.is_some_and(|at| Instant::now() >= at) {
             view.submit_at = None;
@@ -331,15 +303,16 @@ impl Phone {
             view.mirror.update(view.agent, term.screen(), scroll)
         });
         match update {
-            Some(screen) => self.send(&BridgeMsg::Screen(screen)),
+            Some(screen) => out.send(&BridgeMsg::Screen(screen)),
             None => Ok(()),
         }
     }
 
-    fn on_event(&mut self, event: Event) -> io::Result<()> {
+    fn on_event(&mut self, event: Event, out: &mut impl Outbox) -> io::Result<()> {
         match event {
-            Event::Broadcast(bytes) => self.send_plain(&bytes),
-            Event::Reply(message) => self.send(&message),
+            Event::Broadcast(bytes) => out.deliver(&bytes),
+            Event::Reply(message) => out.send(&message),
+            Event::Inbound(message) => self.handle(message, out),
             Event::Holder { generation, message } => {
                 if self.view.as_ref().is_some_and(|view| view.generation == generation) {
                     self.on_holder(message);
@@ -432,10 +405,10 @@ impl Phone {
         self.view = Some(view);
     }
 
-    fn type_text(&mut self, text: &str) -> io::Result<()> {
+    fn type_text(&mut self, text: &str, out: &mut impl Outbox) -> io::Result<()> {
         let Some(view) = self.view.as_mut() else { return Ok(()) };
         let Some(conn) = view.conn.clone() else {
-            return self.notice(Tone::Warn, "this agent is not running");
+            return self.notice(out, Tone::Warn, "this agent is not running");
         };
         let bracketed = view.term.as_ref().is_some_and(|term| term.screen().bracketed_paste());
         let bytes = encode_typed_text(text, bracketed);
@@ -446,31 +419,90 @@ impl Phone {
         }
         Ok(())
     }
+}
 
-    fn on_phone(&mut self, message: PhoneMsg) -> io::Result<()> {
-        match message {
-            PhoneMsg::Sync => self.hub.nudge(),
-            PhoneMsg::Open { agent, rows, cols } => self.open(agent, clamp(rows, cols)),
-            PhoneMsg::Close => self.view = None,
-            PhoneMsg::Size { rows, cols } => {
-                if let Some(view) = self.view.as_mut() {
-                    view.want = clamp(rows, cols);
-                    view.requested = None;
+impl Drop for Peer {
+    fn drop(&mut self) {
+        self.hub.leave(self.id);
+    }
+}
+
+struct Phone {
+    ws: WebSocket<TcpStream>,
+    channel: Channel,
+    heard: Instant,
+    pinged: Instant,
+}
+
+impl Outbox for Phone {
+    fn deliver(&mut self, plain: &[u8]) -> io::Result<()> {
+        let frame = self.channel.seal(plain).map_err(io::Error::other)?;
+        self.ws.send(Message::binary(frame)).map_err(ws_error)
+    }
+}
+
+impl Phone {
+    fn pair(mut ws: WebSocket<TcpStream>, secret: &Secret) -> io::Result<Option<Self>> {
+        let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
+        let Message::Text(text) = next_message(&mut ws, deadline)? else {
+            close(ws, OUTDATED, "expected the hello");
+            return Ok(None);
+        };
+        let peer = match serde_json::from_str::<Greeting>(text.as_str()) {
+            Ok(Greeting::Hello { version: VERSION, key }) => crypto::decode_public_key(&key),
+            _ => None,
+        };
+        let Some(peer) = peer else {
+            close(ws, OUTDATED, "this orkai speaks another pwa protocol; reload the app");
+            return Ok(None);
+        };
+        let own = Ephemeral::generate().map_err(io::Error::other)?;
+        let key = crypto::encode(own.public_key());
+        let mut channel = Channel::establish(Side::Bridge, own, &peer, secret).map_err(io::Error::other)?;
+        let hello = serde_json::to_string(&Greeting::Hello { version: VERSION, key }).map_err(io::Error::other)?;
+        ws.send(Message::text(hello)).map_err(ws_error)?;
+        let Message::Binary(first) = next_message(&mut ws, deadline)? else {
+            close(ws, UNPAIRED, "expected an encrypted frame");
+            return Ok(None);
+        };
+        let proven = channel.open(&first).ok().and_then(|plain| serde_json::from_slice::<PhoneMsg>(&plain).ok());
+        if proven.is_none() {
+            close(ws, UNPAIRED, "this phone is not paired with this orkai");
+            return Ok(None);
+        }
+        Ok(Some(Self { ws, channel, heard: Instant::now(), pinged: Instant::now() }))
+    }
+
+    fn run(&mut self, peer: &mut Peer) -> io::Result<()> {
+        loop {
+            peer.pump(self)?;
+            self.on_timers()?;
+            match self.ws.read() {
+                Ok(Message::Binary(frame)) => {
+                    self.heard = Instant::now();
+                    let plain = self.channel.open(&frame).map_err(io::Error::other)?;
+                    match serde_json::from_slice::<PhoneMsg>(&plain) {
+                        Ok(message) => peer.handle(message, self)?,
+                        Err(_) => peer.notice(self, Tone::Warn, "this orkai does not know that action; update it")?,
+                    }
                 }
-                self.fit();
+                Ok(Message::Ping(_) | Message::Pong(_)) => self.heard = Instant::now(),
+                Ok(Message::Close(_)) => return Ok(()),
+                Ok(Message::Text(_) | Message::Frame(_)) => return Ok(()),
+                Err(err) if is_tick(&err) => {}
+                Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => return Ok(()),
+                Err(err) => return Err(ws_error(err)),
             }
-            PhoneMsg::Keys { data } => {
-                if let Some(conn) = self.view.as_ref().and_then(|view| view.conn.as_ref()) {
-                    let _ = conn.send(&ClientMsg::Input(data.into_bytes()));
-                }
-            }
-            PhoneMsg::Send { text } => self.type_text(&text)?,
-            PhoneMsg::Scroll { lines } => {
-                if let Some(view) = self.view.as_mut() {
-                    view.scroll(lines);
-                }
-            }
-            other => actions::handle(&self.hub, other, &self.tx),
+        }
+    }
+
+    fn on_timers(&mut self) -> io::Result<()> {
+        if self.heard.elapsed() >= SILENCE_LIMIT {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "the phone went quiet"));
+        }
+        if self.pinged.elapsed() >= PING_EVERY {
+            self.pinged = Instant::now();
+            self.ws.send(Message::Ping(Vec::new().into())).map_err(ws_error)?;
         }
         Ok(())
     }

@@ -8,10 +8,9 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
 use crate::fsutil;
 use crate::holder::oplog;
-use crate::launch::{self, Launcher};
+use crate::launch;
 use crate::paths::{HOME_ENV, Home};
 use crate::pwa::cloudflared;
 use crate::pwa::crypto::{self, Secret};
@@ -204,13 +203,10 @@ pub fn wait_until(home: &Home, timeout: Duration, mut done: impl FnMut(Option<&I
 }
 
 pub fn run(home: &Home, tunnel: TunnelKind, port: u16) -> io::Result<()> {
-    let store = Store::open(home.clone())?;
-    let config = Config::load_or_init(home)?;
+    let hub = Hub::open(home)?;
+    let store = hub.store().clone();
     let exe = std::env::current_exe()?;
-    let launcher = Launcher::new(store.clone(), config, &exe)?;
     let secret = load_secret(home)?;
-    let host = gethostname::gethostname().to_string_lossy().to_lowercase();
-    let hub = Hub::new(launcher, host);
     let server = match Server::bind(port, Arc::clone(&hub), secret) {
         Ok(server) => server,
         Err(err) if err.kind() == io::ErrorKind::AddrInUse => return rival(home, tunnel, port, err),

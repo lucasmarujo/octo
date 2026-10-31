@@ -1,0 +1,23 @@
+[package]
+name = "orkai-desktop"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "The orkai desktop app: every agent of every project in one window"
+license = "MIT"
+repository = "https://github.com/lucasmarujo/orkai-cli"
+publish = false
+
+[[bin]]
+name = "orkai-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+gethostname = "1"
+orkai = { path = ".." }
+serde_json = "1"
+tauri = { version = "2", features = [] }

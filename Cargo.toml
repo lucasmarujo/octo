@@ -10,6 +10,10 @@ readme = "README.md"
 keywords = ["tui", "agents", "claude", "codex", "terminal"]
 categories = ["command-line-utilities"]
 
+[workspace]
+members = [".", "desktop"]
+default-members = ["."]
+
 [lib]
 name = "orkai"
 path = "src/lib.rs"

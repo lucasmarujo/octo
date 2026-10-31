@@ -11,7 +11,8 @@ use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 
 use crate::client;
-use crate::holder::oplog;
+use crate::holder::{self, oplog};
+use crate::hooks;
 use serde::Serialize;
 
 use crate::launch::{AGENT_ID_ENV, LaunchMode, Launcher};
@@ -516,6 +517,39 @@ pub enum PwaAction {
     NewCode,
 }
 
+#[derive(clap::Subcommand)]
+pub enum Internal {
+    #[command(name = "__holder", hide = true)]
+    Holder { id: AgentId },
+    #[command(name = "__hook", hide = true)]
+    Hook { source: String, id: AgentId, payload: Option<String> },
+    #[command(name = "__pwa", hide = true)]
+    PwaBridge {
+        #[arg(long, value_parser = tunnel_kind)]
+        tunnel: TunnelKind,
+        #[arg(long)]
+        port: u16,
+    },
+}
+
+impl Internal {
+    pub fn run(self) -> io::Result<()> {
+        let home = Home::resolve()?;
+        match self {
+            Internal::Holder { id } => holder::run(&home, id),
+            Internal::Hook { source, id, payload } => {
+                let _ = hooks::record(&home, id, &source, payload.as_deref());
+                Ok(())
+            }
+            Internal::PwaBridge { tunnel, port } => pwa::bridge::run(&home, tunnel, port),
+        }
+    }
+}
+
+pub fn tunnel_kind(text: &str) -> Result<TunnelKind, String> {
+    TunnelKind::parse(text).ok_or_else(|| "use cloudflare or tailscale".to_string())
+}
+
 fn set_pwa_enabled(store: &Store, enabled: bool) -> io::Result<()> {
     let mut ui = store.load_ui();
     if ui.pwa != enabled {
@@ -606,6 +640,32 @@ mod tests {
             test: None,
             input_at_ms: 0,
         }
+    }
+
+    #[derive(clap::Parser)]
+    struct Probe {
+        #[command(subcommand)]
+        internal: Internal,
+    }
+
+    fn internal(args: &[&str]) -> Option<Internal> {
+        use clap::Parser;
+        Probe::try_parse_from(args).ok().map(|probe| probe.internal)
+    }
+
+    #[test]
+    fn every_binary_that_spawns_holders_understands_the_internal_commands() {
+        assert!(matches!(internal(&["orkai", "__holder", "7"]), Some(Internal::Holder { id: 7 })));
+        assert!(matches!(
+            internal(&["orkai", "__hook", "plugin", "3", "busy"]),
+            Some(Internal::Hook { id: 3, payload: Some(payload), .. }) if payload == "busy"
+        ));
+        assert!(matches!(
+            internal(&["orkai", "__pwa", "--tunnel", "tailscale", "--port", "7470"]),
+            Some(Internal::PwaBridge { tunnel: TunnelKind::Tailscale, port: 7470 })
+        ));
+        assert!(internal(&["orkai", "__pwa", "--tunnel", "ngrok", "--port", "7470"]).is_none());
+        assert!(internal(&["orkai", "__holder", "not-a-number"]).is_none());
     }
 
     #[test]

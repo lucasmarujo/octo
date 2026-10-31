@@ -9,12 +9,14 @@ use std::time::{Duration, Instant};
 use ratatui::style::Color;
 
 use crate::client::{self, Connection};
+use crate::config::Config;
 use crate::launch::{self, Launcher};
 use crate::model::{
     AgentId, AgentKind, AgentRecord, AgentState, ExitInfo, RuntimeInfo, Session, StatusReport, UiState,
 };
+use crate::paths::Home;
 use crate::protocol::{ClientMsg, HolderMsg};
-use crate::pwa::protocol::{AgentView, BridgeMsg, Overview, SessionView, UsageEntry, UsageWindow};
+use crate::pwa::protocol::{AgentView, BridgeMsg, Overview, PhoneMsg, SessionView, UsageEntry, UsageWindow};
 use crate::store::Store;
 use crate::tui::format::{display_path, project_label};
 use crate::tui::render::{USAGE_MONTHLY_LABEL, USAGE_SESSION_LABEL, USAGE_WEEKLY_LABEL};
@@ -33,6 +35,7 @@ pub enum Event {
     Reply(BridgeMsg),
     Holder { generation: u64, message: Option<HolderMsg> },
     Replayed { generation: u64, parser: Option<Box<vt100::Parser>> },
+    Inbound(PhoneMsg),
 }
 
 enum Link {
@@ -149,6 +152,14 @@ impl Hub {
             inner: Mutex::new(Inner::default()),
             wake: Condvar::new(),
         })
+    }
+
+    pub fn open(home: &Home) -> io::Result<Arc<Self>> {
+        let store = Store::open(home.clone())?;
+        let config = Config::load_or_init(home)?;
+        let launcher = Launcher::new(store, config, &std::env::current_exe()?)?;
+        let host = gethostname::gethostname().to_string_lossy().to_lowercase();
+        Ok(Self::new(launcher, host))
     }
 
     pub fn store(&self) -> &Store {

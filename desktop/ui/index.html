@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>orkai</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="js/main.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="titlebar" data-tauri-drag-region>
+        <nav id="tabs" class="tabs" data-tauri-drag-region></nav>
+        <div class="window-controls">
+          <button id="win-min" class="win-button" type="button" aria-label="Minimize">
+            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg>
+          </button>
+          <button id="win-max" class="win-button" type="button" aria-label="Maximize">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor" stroke-width="1"/></svg>
+          </button>
+          <button id="win-close" class="win-button close" type="button" aria-label="Close">
+            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"/></svg>
+          </button>
+        </div>
+      </header>
+      <div class="body">
+        <aside class="sidebar">
+          <div class="brand">
+            <span id="brand-mascot" class="brand-mascot"></span>
+            <div class="brand-text">
+              <span class="wordmark">orkai</span>
+              <span id="host" class="host"></span>
+            </div>
+          </div>
+          <section class="sessions">
+            <span class="caps">Sessions</span>
+            <div id="sessions" class="session-list"></div>
+          </section>
+          <div class="spacer"></div>
+          <section id="usage" class="usage" hidden></section>
+        </aside>
+        <main class="main">
+          <section id="overview" class="overview">
+            <header class="overview-head">
+              <div class="headline">
+                <h1 id="session-title" class="session-title"></h1>
+                <p id="session-summary" class="session-summary"></p>
+              </div>
+              <div class="head-actions">
+                <button id="recover" class="button warn" type="button" hidden></button>
+              </div>
+            </header>
+            <div id="board" class="board"></div>
+            <form id="composer" class="composer" autocomplete="off">
+              <div class="composer-line">
+                <span class="caret"></span>
+                <textarea id="task" class="task" rows="1" placeholder="Write a task…" spellcheck="false"></textarea>
+                <div class="composer-hints">
+                  <span><b>!</b> run in a terminal</span>
+                  <span><b>ctrl ↑</b> history</span>
+                </div>
+              </div>
+              <div class="composer-options">
+                <button id="who" class="chip" type="button" aria-haspopup="menu"></button>
+                <button id="where" class="chip" type="button"></button>
+                <button id="worktree" class="toggle" type="button" aria-pressed="false"></button>
+                <button id="bypass" class="toggle" type="button" aria-pressed="false"></button>
+                <div class="grow"></div>
+                <span class="hint">⇧↵ new line</span>
+                <button id="launch" class="button primary" type="submit">Launch <span class="mono">↵</span></button>
+              </div>
+            </form>
+          </section>
+        </main>
+      </div>
+      <div id="toasts" class="toasts" aria-live="polite"></div>
+      <div id="menu" class="menu" role="menu" hidden></div>
+      <dialog id="dialog" class="dialog"></dialog>
+    </div>
+  </body>
+</html>

@@ -15,9 +15,9 @@ use orkai::model::{AgentId, AgentKind, AgentState, LaunchSpec, NewAgent};
 use orkai::paths::Home;
 use orkai::protocol::{ClientMsg, HolderMsg, TermSize};
 use orkai::pwa::crypto::{self, Channel, Ephemeral, Secret, Side};
-use orkai::pwa::hub::Hub;
+use orkai::pwa::hub::{Event, Hub};
 use orkai::pwa::protocol::{AgentView, BridgeMsg, Greeting, Overview, PhoneMsg, Screen, StartRequest, VERSION};
-use orkai::pwa::server::{OUTDATED, Server, UNPAIRED};
+use orkai::pwa::server::{OUTDATED, Outbox, Peer, Server, UNPAIRED};
 use orkai::store::Store;
 
 const TIMEOUT: Duration = Duration::from_secs(25);
@@ -475,4 +475,65 @@ fn every_paired_phone_sees_the_same_workspace_live() {
     let id = add_agent(&fx.store, "shared-view", fx.dir.clone());
     first.overview_where(|overview| agent(overview, id).is_some());
     second.overview_where(|overview| agent(overview, id).is_some());
+}
+
+struct Window(Vec<BridgeMsg>);
+
+impl Outbox for Window {
+    fn deliver(&mut self, plain: &[u8]) -> std::io::Result<()> {
+        self.0.push(serde_json::from_slice(plain).map_err(std::io::Error::other)?);
+        Ok(())
+    }
+}
+
+fn pump_until<T>(peer: &mut Peer, window: &mut Window, mut wanted: impl FnMut(&BridgeMsg) -> Option<T>) -> T {
+    let deadline = Instant::now() + TIMEOUT;
+    while Instant::now() < deadline {
+        peer.wait(window).unwrap();
+        if let Some(found) = window.0.drain(..).find_map(|message| wanted(&message)) {
+            return found;
+        }
+    }
+    panic!("the message did not arrive in time");
+}
+
+#[test]
+fn a_window_without_a_socket_drives_the_hub_through_its_inbox() {
+    let fx = fixture();
+    let launcher = Launcher::new(fx.store.clone(), Config::default(), Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let hub = Hub::new(launcher, HOST.to_string());
+    let mut peer = Peer::join(&hub);
+    let mut window = Window(Vec::new());
+    let host = pump_until(&mut peer, &mut window, |message| match message {
+        BridgeMsg::State(overview) => Some(overview.host.clone()),
+        _ => None,
+    });
+    assert_eq!(host, HOST);
+    assert_eq!(hub.phones(), 1);
+    let cwd = fx.dir.join("window");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let start = PhoneMsg::Start(StartRequest {
+        kind: AgentKind::Terminal,
+        session: "default".into(),
+        cwd: cwd.to_string_lossy().into_owned(),
+        task: String::new(),
+        worktree: false,
+        bypass: false,
+    });
+    peer.inbox().send(Event::Inbound(start)).unwrap();
+    let started = pump_until(&mut peer, &mut window, |message| match message {
+        BridgeMsg::State(overview) => {
+            overview.agents.iter().find(|agent| running(agent)).map(|agent| agent.name.clone())
+        }
+        _ => None,
+    });
+    assert_eq!(started, "term-1");
+    peer.handle(PhoneMsg::Folders { path: fx.dir.to_string_lossy().into_owned() }, &mut window).unwrap();
+    let names = pump_until(&mut peer, &mut window, |message| match message {
+        BridgeMsg::Folders { dirs, .. } => Some(dirs.iter().map(|dir| dir.name.clone()).collect::<Vec<_>>()),
+        _ => None,
+    });
+    assert!(names.contains(&"window".to_string()), "{names:?}");
+    drop(peer);
+    assert_eq!(hub.phones(), 0, "a closed window leaves the hub");
 }

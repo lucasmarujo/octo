@@ -713,6 +713,7 @@ pub fn holder_executable(home: &Home, source: &Path) -> io::Result<PathBuf> {
     let mut guard = crate::util::lock(cache);
     if let Some((cached_source, target)) = guard.as_ref()
         && cached_source == source
+        && target.parent() == Some(home.bin_dir().as_path())
         && target.exists()
     {
         return Ok(target.clone());
@@ -1300,6 +1301,24 @@ mod tests {
         assert!(is_safe_session_id("0199a-abc_DEF"));
         assert!(!is_safe_session_id("a&b"));
         assert!(!is_safe_session_id(""));
+    }
+
+    #[test]
+    fn every_home_runs_its_holders_from_its_own_bin_folder() {
+        let dir = temp_dir("stage-homes");
+        let source = dir.join("source-bin");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&source, b"shared-binary").unwrap();
+        let first = Home::at(dir.join("first"));
+        let second = Home::at(dir.join("second"));
+        first.ensure().unwrap();
+        second.ensure().unwrap();
+        let staged_first = holder_executable(&first, &source).unwrap();
+        let staged_second = holder_executable(&second, &source).unwrap();
+        assert!(staged_first.starts_with(first.bin_dir()), "{}", staged_first.display());
+        assert!(staged_second.starts_with(second.bin_dir()), "{}", staged_second.display());
+        fs::remove_dir_all(first.root()).unwrap();
+        assert!(holder_executable(&second, &source).unwrap().exists(), "a removed home takes no other home's holder");
     }
 
     #[test]

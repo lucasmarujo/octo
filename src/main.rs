@@ -3,14 +3,14 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use orkai::cli::PwaAction;
+use orkai::cli::{Internal, PwaAction, tunnel_kind};
 use orkai::config::Config;
 use orkai::launch::Launcher;
 use orkai::model::{AgentId, AgentKind, DEFAULT_SESSION};
 use orkai::paths::Home;
 use orkai::pwa::tunnel::TunnelKind;
 use orkai::store::Store;
-use orkai::{cli, holder, hooks, mcp, pwa, tui, update};
+use orkai::{cli, mcp, tui, update};
 
 #[derive(Parser)]
 #[command(
@@ -105,21 +105,8 @@ enum Command {
     Update,
     #[command(about = "Serve orkai to an agent over MCP (stdio), so it can start and follow other agents")]
     Mcp,
-    #[command(name = "__holder", hide = true)]
-    Holder { id: AgentId },
-    #[command(name = "__hook", hide = true)]
-    Hook { source: String, id: AgentId, payload: Option<String> },
-    #[command(name = "__pwa", hide = true)]
-    PwaBridge {
-        #[arg(long, value_parser = tunnel_kind)]
-        tunnel: TunnelKind,
-        #[arg(long)]
-        port: u16,
-    },
-}
-
-fn tunnel_kind(text: &str) -> Result<TunnelKind, String> {
-    TunnelKind::parse(text).ok_or_else(|| "use cloudflare or tailscale".to_string())
+    #[command(flatten)]
+    Internal(Internal),
 }
 
 fn launcher(store: Store) -> std::io::Result<Launcher> {
@@ -129,18 +116,11 @@ fn launcher(store: Store) -> std::io::Result<Launcher> {
 }
 
 fn run(command: Option<Command>) -> std::io::Result<()> {
-    let home = Home::resolve()?;
-    if let Some(Command::Holder { id }) = command {
-        return holder::run(&home, id);
-    }
-    if let Some(Command::Hook { source, id, payload }) = command {
-        let _ = hooks::record(&home, id, &source, payload.as_deref());
-        return Ok(());
-    }
-    if let Some(Command::PwaBridge { tunnel, port }) = command {
-        return pwa::bridge::run(&home, tunnel, port);
-    }
-    let store = Store::open(home)?;
+    let command = match command {
+        Some(Command::Internal(internal)) => return internal.run(),
+        other => other,
+    };
+    let store = Store::open(Home::resolve()?)?;
     match command {
         None => tui::run(launcher(store)?),
         Some(Command::Ls { session, json: false }) => cli::list(&store, session.as_deref()),
@@ -177,7 +157,7 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
             };
             cli::pwa(&launcher(store)?, tunnel, action)
         }
-        Some(Command::Holder { .. }) | Some(Command::Hook { .. }) | Some(Command::PwaBridge { .. }) => Ok(()),
+        Some(Command::Internal(_)) => Ok(()),
     }
 }
 
