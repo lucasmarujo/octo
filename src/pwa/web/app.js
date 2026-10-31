@@ -154,6 +154,15 @@
     return agents().find((agent) => agent.id === id) || null;
   }
 
+  function moodOf(list) {
+    const live = list.filter((agent) => !agent.starting);
+    if (live.some((agent) => agent.state === 'paused')) return 'needs';
+    if (list.some((agent) => agent.state === 'working' || agent.starting)) return 'working';
+    if (live.some((agent) => agent.state === 'done')) return 'done';
+    if (live.some((agent) => agent.state === 'lost')) return 'lost';
+    return 'idle';
+  }
+
   function inSession() {
     return agents().filter((agent) => agent.session === state.filter);
   }
@@ -314,7 +323,7 @@
     const lost = list.filter((agent) => agent.state === 'lost').length;
     el.lost.hidden = lost === 0;
     el.lost.textContent = `↻ ${lost} interrupted · tap to recover`;
-    el.mascot.classList.toggle('busy', list.some((agent) => agent.state === 'working'));
+    el.mascot.dataset.mood = moodOf(agents());
     const waiting = agents().filter((agent) => agent.state === 'paused').length;
     document.title = waiting ? `(${waiting}) Octo` : 'Octo';
     renderHeader();

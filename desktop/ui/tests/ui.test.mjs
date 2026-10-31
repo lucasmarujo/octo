@@ -141,6 +141,24 @@ test('Kai shows the most urgent state among every agent', () => {
   for (const mood of ['idle', 'working', 'needs', 'done', 'lost']) assert.ok(MOODS.includes(mood));
 });
 
+test('the Kai on the phone picks its state the same way as the one on the desktop', () => {
+  const phone = readFileSync(join(REPO, 'src/pwa/web/app.js'), 'utf8');
+  const source = phone.match(/function moodOf\(list\) \{[\s\S]*?\n {2}\}/)[0];
+  const phoneMoodOf = new Function(`${source}; return moodOf;`)();
+  const states = ['idle', 'working', 'paused', 'done', 'lost', 'exited'];
+  for (const first of states) {
+    for (const second of states) {
+      for (const starting of [false, true]) {
+        const list = [agent({ state: first, starting }), agent({ state: second })];
+        assert.equal(phoneMoodOf(list), moodOf(list), `${first}${starting ? ' starting' : ''} + ${second}`);
+      }
+    }
+  }
+  assert.equal(phoneMoodOf([]), moodOf([]));
+  const css = readFileSync(join(REPO, 'src/pwa/web/style.css'), 'utf8');
+  for (const mood of MOODS) assert.ok(css.includes(`url("/kai/${mood}.svg")`), mood);
+});
+
 test('every mood of Kai has its animation in the stylesheet', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   for (const mood of MOODS) assert.ok(css.includes(`.kai[data-mood="${mood}"]`), mood);
@@ -184,6 +202,12 @@ test('every state of the pixel Kai plays its own strip at the pace of the design
     assert.ok(css.includes(`@keyframes kai-strip-${count} { from { transform: translateX(0); } to { transform: translateX(-${shift}%); } }`), `kai-strip-${count} ends on the last frame`);
   }
   assert.match(css, /\.kai\[data-mood="done"\] \.kai-strip \{[^}]*forwards/, 'the celebration stays on its last frame');
+  for (const box of ['brand-mascot', 'kai-sleeping']) {
+    const [, width, height] = css.match(new RegExp(`\\.${box} \\{[^}]*width: (\\d+)px; height: (\\d+)px`));
+    assert.equal(width, height, box);
+    assert.equal(Number(width) % 48, 0, `${box} shows whole pixels of the 48 x 48 art`);
+  }
+  assert.match(css, /\.brand-mascot \{[^}]*width: 96px/, 'the sidebar Kai is twice the art, as asked');
 });
 
 test('the colored git diff becomes colored runs without escape codes', async () => {

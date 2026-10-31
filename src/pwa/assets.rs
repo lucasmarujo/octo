@@ -46,10 +46,40 @@ pub const ASSETS: &[Asset] = &[
         body: include_bytes!("web/manifest.webmanifest"),
     },
     Asset {
-        path: "/icon.png",
+        path: "/octo.png",
         content_type: "image/png",
         cache: IMMUTABLE,
-        body: include_bytes!("../../assets/orkai.png"),
+        body: include_bytes!("../../assets/octo.png"),
+    },
+    Asset {
+        path: "/kai/idle.svg",
+        content_type: "image/svg+xml",
+        cache: IMMUTABLE,
+        body: include_bytes!("../../desktop/ui/kai/idle.svg"),
+    },
+    Asset {
+        path: "/kai/working.svg",
+        content_type: "image/svg+xml",
+        cache: IMMUTABLE,
+        body: include_bytes!("../../desktop/ui/kai/working.svg"),
+    },
+    Asset {
+        path: "/kai/needs.svg",
+        content_type: "image/svg+xml",
+        cache: IMMUTABLE,
+        body: include_bytes!("../../desktop/ui/kai/needs.svg"),
+    },
+    Asset {
+        path: "/kai/done.svg",
+        content_type: "image/svg+xml",
+        cache: IMMUTABLE,
+        body: include_bytes!("../../desktop/ui/kai/done.svg"),
+    },
+    Asset {
+        path: "/kai/lost.svg",
+        content_type: "image/svg+xml",
+        cache: IMMUTABLE,
+        body: include_bytes!("../../desktop/ui/kai/lost.svg"),
     },
     Asset {
         path: "/fonts/mono-400.woff2",
@@ -149,8 +179,31 @@ mod tests {
     #[test]
     fn fonts_and_the_icon_are_cached_for_good_and_the_code_is_revalidated() {
         assert_eq!(lookup("/fonts/mono-400.woff2").unwrap().cache, IMMUTABLE);
-        assert_eq!(lookup("/icon.png").unwrap().cache, IMMUTABLE);
+        assert_eq!(lookup("/octo.png").unwrap().cache, IMMUTABLE);
+        assert_eq!(lookup("/kai/idle.svg").unwrap().cache, IMMUTABLE);
         assert_eq!(lookup("/app.js").unwrap().cache, REVALIDATE);
         assert_eq!(lookup("/sw.js").unwrap().cache, REVALIDATE);
+    }
+
+    #[test]
+    fn the_phone_shows_the_pixel_kai_of_the_desktop_app_and_its_icon() {
+        let manifest: serde_json::Value =
+            serde_json::from_slice(lookup("/manifest.webmanifest").unwrap().body).unwrap();
+        assert_eq!(manifest["icons"][0]["src"], "/octo.png");
+        assert_eq!(manifest["icons"][0]["sizes"], "512x512");
+        let icon = lookup("/octo.png").unwrap().body;
+        assert_eq!(&icon[1..4], b"PNG");
+        assert_eq!(u32::from_be_bytes(icon[16..20].try_into().unwrap()), 512);
+        assert_eq!(u32::from_be_bytes(icon[20..24].try_into().unwrap()), 512);
+        assert_ne!(icon, include_bytes!("../../assets/orkai.png").as_slice(), "the orkai CLI sailor stays on the CLI");
+        assert!(lookup("/icon.png").is_none(), "a new path, so phones drop the sailor they cached for good");
+        for mood in ["idle", "working", "needs", "done", "lost"] {
+            let strip = lookup(&format!("/kai/{mood}.svg")).unwrap();
+            assert_eq!(strip.content_type, "image/svg+xml");
+            assert!(strip.body.starts_with(b"<svg "), "{mood}");
+            assert!(text("/style.css").contains(&format!("url(\"/kai/{mood}.svg\")")), "{mood}");
+        }
+        assert!(text("/").contains(r#"id="mascot" class="kai mascot""#));
+        assert!(text("/app.js").contains("el.mascot.dataset.mood = moodOf(agents());"));
     }
 }

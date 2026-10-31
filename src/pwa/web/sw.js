@@ -1,5 +1,5 @@
-const CACHE = 'orkai-pwa-v2';
-const SHELL = ['/', '/app.js', '/wire.js', '/style.css', '/manifest.webmanifest', '/icon.png', '/fonts/mono-400.woff2', '/fonts/mono-700.woff2'];
+const CACHE = 'orkai-pwa-v3';
+const SHELL = ['/', '/app.js', '/wire.js', '/style.css', '/manifest.webmanifest', '/octo.png', '/kai/idle.svg', '/kai/working.svg', '/kai/needs.svg', '/kai/done.svg', '/kai/lost.svg', '/fonts/mono-400.woff2', '/fonts/mono-700.woff2'];
 const LIVE = ['/ws', '/health'];
 const UNREACHABLE = 500;
 

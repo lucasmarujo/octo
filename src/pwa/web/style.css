@@ -66,12 +66,16 @@ button { cursor: pointer; }
   padding: 4px 6px;
 }
 
-.mascot { width: 21px; height: 24px; image-rendering: pixelated; flex-shrink: 0; }
-.mascot .m-busy { visibility: hidden; }
-.busy .m-idle { animation: flag-idle 0.5s infinite; }
-.busy .m-busy { animation: flag-busy 0.5s infinite; }
-@keyframes flag-idle { 0%, 49.9% { visibility: visible; } 50%, 100% { visibility: hidden; } }
-@keyframes flag-busy { 0%, 49.9% { visibility: hidden; } 50%, 100% { visibility: visible; } }
+.mascot { width: 36px; height: 36px; }
+.kai { position: relative; display: block; flex-shrink: 0; overflow: hidden; }
+.kai-strip { position: absolute; top: 0; left: 0; height: 100%; background: no-repeat 0 0 / 100% 100%; will-change: transform; }
+.kai[data-mood="idle"] .kai-strip { width: 400%; background-image: url("/kai/idle.svg"); animation: kai-strip-4 3.6s steps(4, jump-none) infinite; }
+.kai[data-mood="working"] .kai-strip { width: 400%; background-image: url("/kai/working.svg"); animation: kai-strip-4 0.56s steps(4, jump-none) infinite; }
+.kai[data-mood="needs"] .kai-strip { width: 400%; background-image: url("/kai/needs.svg"); animation: kai-strip-4 0.9s steps(4, jump-none) infinite; }
+.kai[data-mood="done"] .kai-strip { width: 500%; background-image: url("/kai/done.svg"); animation: kai-strip-5 1.2s steps(5, jump-none) forwards; }
+.kai[data-mood="lost"] .kai-strip { width: 400%; background-image: url("/kai/lost.svg"); animation: kai-strip-4 1.6s steps(4, jump-none) infinite; }
+@keyframes kai-strip-4 { from { transform: translateX(0); } to { transform: translateX(-75%); } }
+@keyframes kai-strip-5 { from { transform: translateX(0); } to { transform: translateX(-80%); } }
 
 .who { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .who strong { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -325,7 +329,7 @@ textarea::placeholder { color: var(--dim); }
 .toast[data-tone="error"] { border-color: var(--red); color: var(--red); }
 
 .pair { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; }
-.pair-mascot .mascot { width: 84px; height: 96px; }
+.pair-mascot .mascot { width: 96px; height: 96px; }
 .pair h1 { margin: 6px 0 0; font-size: 20px; }
 .pair p { margin: 0; max-width: 34ch; color: var(--muted); }
 .steps { margin: 8px 0; padding: 0; list-style: none; counter-reset: step; text-align: left; }
@@ -353,6 +357,5 @@ kbd { border: 1px solid var(--rule); border-radius: 4px; padding: 0 5px; backgro
 .k-terminal { color: #5ad2d2; }
 
 @media (prefers-reduced-motion: reduce) {
-  .busy .m-idle, .busy .m-busy, .dot[data-state="connecting"], .cursor { animation: none; }
-  .busy .m-busy { visibility: hidden; }
+  .kai-strip, .dot[data-state="connecting"], .cursor { animation: none; }
 }

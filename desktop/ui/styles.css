@@ -178,7 +178,7 @@ h1, p { margin: 0; }
 .sidebar { display: flex; flex-direction: column; gap: 24px; width: var(--sidebar); flex-shrink: 0; padding: 20px 12px 16px; border-right: 1px solid var(--color-border); overflow-y: auto; }
 .sidebar .spacer { flex: 1; min-height: 0; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px; }
-.brand-mascot { display: flex; width: 48px; height: 48px; flex-shrink: 0; }
+.brand-mascot { display: flex; width: 96px; height: 96px; flex-shrink: 0; }
 .brand-text { display: flex; flex-direction: column; gap: 2px; }
 .wordmark { font-size: 22px; font-weight: 800; line-height: 22px; letter-spacing: -0.02em; }
 .host { font-family: var(--font-mono); font-size: var(--text-xs); line-height: 14px; color: var(--color-text-faint); }
