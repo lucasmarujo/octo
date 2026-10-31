@@ -770,6 +770,13 @@ pub fn prune_holder_binaries(home: &Home, keep: &Path) {
 }
 
 pub fn spawn_holder(home: &Home, id: AgentId, exe: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    match crate::holder::host::spawn_holder(home, exe, id) {
+        Ok(_) => return Ok(()),
+        Err(err) => {
+            crate::holder::diag(home, id, &format!("starting under the agents host failed, starting alone: {err}"))
+        }
+    }
     let mut cmd = Command::new(exe);
     cmd.arg(HOLDER_COMMAND)
         .arg(id.to_string())

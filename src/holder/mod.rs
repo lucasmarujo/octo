@@ -1,5 +1,6 @@
 pub mod detect;
 pub mod gate;
+pub mod host;
 pub mod input;
 pub mod nested;
 pub mod oplog;

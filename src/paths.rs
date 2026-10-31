@@ -79,6 +79,10 @@ impl Home {
         self.agent_dir(id).join("holder.log")
     }
 
+    pub fn agents_host_file(&self) -> PathBuf {
+        self.root().join("agents-host.json")
+    }
+
     pub fn test_log(&self, id: AgentId) -> PathBuf {
         self.agent_dir(id).join("test.log")
     }

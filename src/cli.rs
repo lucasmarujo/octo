@@ -520,6 +520,8 @@ pub enum PwaAction {
 pub enum Internal {
     #[command(name = "__holder", hide = true)]
     Holder { id: AgentId },
+    #[command(name = "__agents", hide = true)]
+    AgentsHost,
     #[command(name = "__hook", hide = true)]
     Hook { source: String, id: AgentId, payload: Option<String> },
     #[command(name = "__pwa", hide = true)]
@@ -536,6 +538,7 @@ impl Internal {
         let home = Home::resolve()?;
         match self {
             Internal::Holder { id } => holder::run(&home, id),
+            Internal::AgentsHost => holder::host::run(&home),
             Internal::Hook { source, id, payload } => {
                 let _ = hooks::record(&home, id, &source, payload.as_deref());
                 Ok(())
@@ -655,6 +658,7 @@ mod tests {
     #[test]
     fn every_binary_that_spawns_holders_understands_the_internal_commands() {
         assert!(matches!(internal(&["orkai", "__holder", "7"]), Some(Internal::Holder { id: 7 })));
+        assert!(matches!(internal(&["orkai", "__agents"]), Some(Internal::AgentsHost)));
         assert!(matches!(
             internal(&["orkai", "__hook", "plugin", "3", "busy"]),
             Some(Internal::Hook { id: 3, payload: Some(payload), .. }) if payload == "busy"
