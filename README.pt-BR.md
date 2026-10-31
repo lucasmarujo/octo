@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" alt="orkai" width="520">
+  <img src="docs/banner.png" alt="Octo" width="520">
 </p>
 
 <p align="center">
@@ -45,9 +45,9 @@ sozinho, e fechá-lo nunca para um agente. Baixe na
 
 O orkai CLI descrito abaixo continua funcionando e se atualizando, mas agora é legado: as novidades chegam no Octo.
 
-## O orkai em 56 segundos
+## O Octo em 60 segundos
 
-https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
+https://github.com/user-attachments/assets/b3e62649-f203-4ac6-8e52-9e83a3fa6c3c
 
 <p align="center">
   <img src="docs/overview.png" alt="Visão geral do orkai: sessões na lateral, contadores e consumo no topo, agentes agrupados por projeto">
@@ -811,6 +811,6 @@ O instalador do Windows sai de [`installer/orkai.iss`](installer/orkai.iss) (vej
 ---
 
 <p align="center">
-  <img src="docs/banner.png" alt="orkai" width="120"><br>
+  <img src="docs/banner.png" alt="Octo" width="120"><br>
   <sub><a href="https://github.com/lucasmarujo/octo/issues">Reportar um problema</a> · <a href="https://github.com/lucasmarujo/octo/releases/latest">Baixar a última versão</a></sub>
 </p>

@@ -163,7 +163,7 @@ test('JSON-LD descreve o software e o vídeo com arquivos que existem', () => {
   assert.ok(existsSync(localPath(software.screenshot)), software.screenshot);
   assert.ok(existsSync(localPath(video.contentUrl)), video.contentUrl);
   assert.ok(existsSync(localPath(video.thumbnailUrl)), video.thumbnailUrl);
-  assert.equal(video.duration, 'PT56S');
+  assert.equal(video.duration, 'PT60S');
   const ids = new Set(graph.map((node) => node['@id']));
   [page.isPartOf, page.about, page.video].forEach((ref) => assert.ok(ids.has(ref['@id']), ref['@id']));
   assert.match(page.dateModified, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
@@ -474,7 +474,7 @@ test('o vídeo só baixa quando o usuário pede e tem poster', () => {
 
 test('o player, o JSON-LD e o arquivo do vídeo têm a mesma duração', () => {
   const seconds = Number(jsonLd().find((node) => node['@type'] === 'VideoObject').duration.match(/^PT(\d+)S$/)[1]);
-  const label = `0:${String(seconds).padStart(2, '0')}`;
+  const label = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   assert.match(html, new RegExp(`<span class="kicker">in ${seconds} seconds</span>`));
   assert.match(html, new RegExp(`<video [^>]*aria-label="${seconds}-second video`));
   assert.match(html, new RegExp(`aria-label="Watch the ${seconds}-second video"`));
@@ -494,8 +494,8 @@ test('orçamento de peso para carregar rápido', () => {
   assert.ok(size('assets/site.css') + size('assets/app.js') + size('assets/tui.js') < 120 * 1024, 'css + js');
   const fonts = readdirSync(join(ROOT, 'assets/fonts')).reduce((sum, file) => sum + size(`assets/fonts/${file}`), 0);
   assert.ok(fonts < 220 * 1024, `fontes ${fonts}`);
-  assert.ok(size('assets/orkai-demo-v3.mp4') < 5 * 1024 * 1024, 'vídeo');
-  assert.ok(size('assets/orkai-demo-v3-poster.webp') < 50 * 1024, 'poster');
+  assert.ok(size('assets/octo-launch.mp4') < 12 * 1024 * 1024, 'vídeo');
+  assert.ok(size('assets/octo-launch-poster.webp') < 50 * 1024, 'poster');
   assert.ok(size('assets/overview.webp') < 120 * 1024, 'overview');
   assert.ok(size('assets/octo-board-kai.webp') < 100 * 1024, 'octo-board');
   assert.ok(size('assets/octo-board-kai-2x.webp') < 180 * 1024, 'octo-board-2x');

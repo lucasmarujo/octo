@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" alt="orkai" width="520">
+  <img src="docs/banner.png" alt="Octo" width="520">
 </p>
 
 <p align="center">
@@ -45,9 +45,9 @@ never stops an agent. Download it from the
 
 The orkai CLI described below keeps working and updating itself, but it is now legacy: new features land in Octo.
 
-## orkai in 56 seconds
+## Octo in 60 seconds
 
-https://github.com/user-attachments/assets/51c39ecc-d558-4723-806b-dd1427d06b28
+https://github.com/user-attachments/assets/b3e62649-f203-4ac6-8e52-9e83a3fa6c3c
 
 <p align="center">
   <img src="docs/overview.png" alt="orkai overview: sessions in the sidebar, counters and usage at the top, agents grouped by project">
@@ -807,6 +807,6 @@ The Windows installer is built from [`installer/orkai.iss`](installer/orkai.iss)
 ---
 
 <p align="center">
-  <img src="docs/banner.png" alt="orkai" width="120"><br>
+  <img src="docs/banner.png" alt="Octo" width="120"><br>
   <sub><a href="https://github.com/lucasmarujo/octo/issues">Report an issue</a> · <a href="https://github.com/lucasmarujo/octo/releases/latest">Download the latest version</a></sub>
 </p>
