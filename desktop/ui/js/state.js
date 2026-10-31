@@ -39,6 +39,8 @@ export const state = {
   details: null,
   detailsAt: 0,
   home: null,
+  selected: null,
+  skills: null,
 };
 
 export function findAgent(id) {

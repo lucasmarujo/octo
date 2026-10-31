@@ -69,7 +69,7 @@ async function remove(agent) {
   if (sure) send({ type: 'remove', agent: agent.id });
 }
 
-async function merge(agent) {
+export async function merge(agent) {
   const sure = await confirm({
     title: `Merge ${agent.branch}?`,
     text: 'Whatever is pending on the branch is committed and merged into the current branch of the repository. A conflict undoes the merge and leaves the repository as it was.',
@@ -78,7 +78,7 @@ async function merge(agent) {
   if (sure) send({ type: 'merge', agent: agent.id });
 }
 
-async function restart(agent) {
+export async function restart(agent) {
   if (!alive(agent)) {
     send({ type: 'restart', agent: agent.id });
     return;

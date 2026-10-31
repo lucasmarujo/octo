@@ -112,16 +112,23 @@ export function showDiff(message) {
   dialog.addEventListener('close', () => dialog.classList.remove('wide'), { once: true });
 }
 
-export function showTests(message) {
+function report(title, text, empty, notes) {
   const dialog = $('dialog');
-  const lines = message.text.split('\n');
   const style = { color: null, bold: false, dim: false };
-  const shown = lines.slice(-DIFF_LINES).map((line) => diffLine(line, style));
-  const notes = message.truncated ? [h('span', { class: 'detail-note' }, 'Only the end of the output is shown.')] : [];
-  const body = message.text.trim() ? h('pre', { class: 'diff selectable' }, shown) : h('p', { class: 'dialog-text' }, 'The test printed nothing.');
+  const shown = text.split('\n').slice(-DIFF_LINES).map((line) => diffLine(line, style));
+  const body = text.trim() ? h('pre', { class: 'diff selectable' }, shown) : h('p', { class: 'dialog-text' }, empty);
   dialog.classList.add('wide');
-  open(`${message.command} · ${message.state}`, [body, notes], [h('button', { class: 'button primary', type: 'button', onclick: close }, 'Close')]);
+  open(title, [body, notes], [h('button', { class: 'button primary', type: 'button', onclick: close }, 'Close')]);
   dialog.addEventListener('close', () => dialog.classList.remove('wide'), { once: true });
+}
+
+export function showTests(message) {
+  const notes = message.truncated ? [h('span', { class: 'detail-note' }, 'Only the end of the output is shown.')] : [];
+  report(`${message.command} · ${message.state}`, message.text, 'The test printed nothing.', notes);
+}
+
+export function showCompare(message) {
+  report(`Race · ${message.title}`, message.text, 'No agent of the race changed anything yet.', []);
 }
 
 export function pickFolder(start, onPick) {

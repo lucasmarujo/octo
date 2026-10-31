@@ -629,7 +629,7 @@ fn the_details_of_an_agent_and_its_restart_come_from_the_core() {
     assert_eq!(details.agent, id);
     assert!(details.subagents.is_empty() && details.overlaps.is_empty());
     assert_eq!(details.changes, None, "a terminal outside a worktree has no changes to show");
-    phone.send(&PhoneMsg::CrossReview { agent: id, kind: None });
+    phone.send(&PhoneMsg::CrossReview { agent: id, reviewer: String::new() });
     let refused = phone.until(|message| match message {
         BridgeMsg::Notice { text, tone: Tone::Error } => Some(text),
         _ => None,
@@ -645,4 +645,32 @@ fn the_details_of_an_agent_and_its_restart_come_from_the_core() {
     phone.overview_where(|overview| agent(overview, id).is_some_and(|a| a.state == AgentState::Exited));
     phone.send(&PhoneMsg::Restart { agent: id });
     phone.overview_where(|overview| agent(overview, id).is_some_and(running));
+}
+
+#[test]
+fn sessions_are_renamed_and_deleted_and_trust_needs_a_repository() {
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.send(&PhoneMsg::Session { name: "nightly".into() });
+    phone.overview_where(|overview| overview.sessions.iter().any(|session| session.name == "nightly"));
+    phone.send(&PhoneMsg::RenameSession { name: "nightly".into(), to: "weekly".into() });
+    phone.overview_where(|overview| {
+        overview.sessions.iter().any(|session| session.name == "weekly")
+            && !overview.sessions.iter().any(|session| session.name == "nightly")
+    });
+    phone.send(&PhoneMsg::DeleteSession { name: "default".into() });
+    let refused = phone.until(|message| match message {
+        BridgeMsg::Notice { text, tone: Tone::Error } => Some(text),
+        _ => None,
+    });
+    assert!(refused.contains("default session"), "{refused}");
+    phone.send(&PhoneMsg::DeleteSession { name: "weekly".into() });
+    phone.overview_where(|overview| !overview.sessions.iter().any(|session| session.name == "weekly"));
+    let plain = fx.dir.join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    phone.send(&PhoneMsg::Trust { cwd: plain.to_string_lossy().into_owned(), command: None });
+    phone.until(|message| match message {
+        BridgeMsg::Notice { tone: Tone::Error, .. } => Some(()),
+        _ => None,
+    });
 }

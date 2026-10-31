@@ -9,15 +9,20 @@ use crate::launch;
 use crate::launch::LaunchMode;
 use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, NewAgent, validate_agent_name};
 use crate::paths::{expand_tilde, matching_directories, user_home};
+use crate::project;
 use crate::protocol::ClientMsg;
 use crate::pwa::hub::{Event, Hub};
 use crate::pwa::protocol::{
-    BridgeMsg, Details, Dir, FileView, OverlapView, PhoneMsg, Preview, Run, StartRequest, SubagentView, TestView, Tone,
+    BridgeMsg, Details, Dir, FileView, OverlapView, PhoneMsg, Preview, Run, SkillView, StartRequest, SubagentView,
+    TestView, Tone,
 };
 use crate::pwa::screen;
+use crate::skills;
 use crate::store::Store;
 use crate::subagents::{self, SubagentWatcher};
-use crate::tui::app::{merge_message, read_tail, review_task, reviewer_for};
+use crate::tui::app::{
+    MAX_RACERS, first_line, merge_message, parse_race, race_header, read_tail, review_task, reviewer_for,
+};
 use crate::tui::format::default_agent_name;
 use crate::util::now_ms;
 use crate::worktree;
@@ -25,6 +30,8 @@ use crate::worktree;
 pub const MAX_DIFF_BYTES: usize = 512 * 1024;
 pub const MAX_PEEK_AGENTS: usize = 24;
 pub const MAX_PEEK_ROWS: u16 = 40;
+const DISCARD_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
+const DISCARD_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
 fn notice(reply: &Sender<Event>, tone: Tone, text: impl Into<String>) {
     let _ = reply.send(Event::Reply(BridgeMsg::Notice { text: text.into(), tone }));
@@ -57,8 +64,30 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         PhoneMsg::Peek { agents, rows } => peek(hub, agents, rows, reply),
         PhoneMsg::Details { agent } => details(hub, agent, reply),
         PhoneMsg::Restart { agent } => restart(hub, agent, reply),
-        PhoneMsg::CrossReview { agent, kind } => cross_review(hub, agent, kind, reply),
+        PhoneMsg::CrossReview { agent, reviewer } => cross_review(hub, agent, &reviewer, reply),
         PhoneMsg::Tests { agent } => tests(hub, agent, reply),
+        PhoneMsg::Skills { kind, cwd } => list_skills(kind, &cwd, reply),
+        PhoneMsg::Skill { kind, session, cwd, name, args, worktree, bypass } => {
+            run_skill(hub, SkillRun { kind, session, cwd, name, args, worktree, bypass }, reply);
+        }
+        PhoneMsg::Race { session, cwd, race: line, bypass } => race(hub, session, &cwd, &line, bypass, reply),
+        PhoneMsg::Compare { agent } => compare(hub, agent, reply),
+        PhoneMsg::Pick { agent } => pick(hub, agent, reply),
+        PhoneMsg::RenameSession { name, to } => match hub.store().rename_session(&name, &to) {
+            Ok(()) => {
+                hub.nudge();
+                notice(reply, Tone::Success, format!("session {name} is now {}", to.trim()));
+            }
+            Err(err) => notice(reply, Tone::Error, err.to_string()),
+        },
+        PhoneMsg::DeleteSession { name } => match hub.store().delete_session(&name) {
+            Ok(()) => {
+                hub.nudge();
+                notice(reply, Tone::Info, format!("session {name} deleted"));
+            }
+            Err(err) => notice(reply, Tone::Error, err.to_string()),
+        },
+        PhoneMsg::Trust { cwd, command } => trust(hub, &cwd, command, reply),
         PhoneMsg::Sync
         | PhoneMsg::Open { .. }
         | PhoneMsg::Close
@@ -210,15 +239,23 @@ fn folders(path: &str, reply: &Sender<Event>) {
     });
 }
 
-fn cross_review(hub: &Arc<Hub>, agent: AgentId, kind: Option<AgentKind>, reply: &Sender<Event>) {
+fn cross_review(hub: &Arc<Hub>, agent: AgentId, reviewer: &str, reply: &Sender<Event>) {
     let Some(record) = hub.record(agent) else { return };
     let Some(worktree) = record.worktree.as_ref() else {
         return notice(reply, Tone::Error, format!("{} has no worktree to review", record.name));
     };
     let reviewed = hub.live_status(agent).map_or(record.kind, |status| status.running_kind(record.kind));
     let kinds = hub.kinds();
-    let Some(kind) = kind.filter(|kind| kind.is_ai()).or_else(|| reviewer_for(reviewed, &kinds)) else {
-        return notice(reply, Tone::Error, "install an AI agent to review the work");
+    let kind = if reviewer.trim().is_empty() {
+        match reviewer_for(reviewed, &kinds) {
+            Some(kind) => kind,
+            None => return notice(reply, Tone::Error, "install an AI agent to review the work"),
+        }
+    } else {
+        match AgentKind::parse(reviewer).filter(|kind| kind.is_ai()) {
+            Some(kind) => kind,
+            None => return notice(reply, Tone::Error, format!("{reviewer} cannot review: name an AI agent")),
+        }
     };
     start(
         hub,
@@ -232,6 +269,188 @@ fn cross_review(hub: &Arc<Hub>, agent: AgentId, kind: Option<AgentKind>, reply: 
         },
         reply,
     );
+}
+
+struct SkillRun {
+    kind: AgentKind,
+    session: String,
+    cwd: String,
+    name: String,
+    args: String,
+    worktree: bool,
+    bypass: bool,
+}
+
+fn list_skills(kind: AgentKind, cwd: &str, reply: &Sender<Event>) {
+    let (dir, cwd, reply) = (resolve_dir(cwd), cwd.to_string(), reply.clone());
+    spawn("orkai-pwa-skills", move || {
+        let skills = skills::discover(kind, &dir)
+            .into_iter()
+            .map(|skill| SkillView { name: skill.name, owner: skill.owner })
+            .collect();
+        let _ = reply.send(Event::Reply(BridgeMsg::Skills { kind, cwd, skills }));
+    });
+}
+
+fn run_skill(hub: &Arc<Hub>, run: SkillRun, reply: &Sender<Event>) {
+    let found = skills::discover(run.kind, &resolve_dir(&run.cwd))
+        .into_iter()
+        .find(|skill| skill.name.eq_ignore_ascii_case(&run.name));
+    let Some(skill) = found else {
+        return notice(reply, Tone::Error, format!("unknown command /{} — try /help", run.name));
+    };
+    let task = skills::invocation(run.kind, &skill, &run.args);
+    let request = StartRequest {
+        kind: run.kind,
+        session: run.session,
+        cwd: run.cwd,
+        task,
+        worktree: run.worktree,
+        bypass: run.bypass,
+    };
+    start(hub, request, reply);
+}
+
+pub fn race_kinds(kinds: &[AgentKind], installed: &[AgentKind]) -> Result<(), String> {
+    if kinds.len() < 2 || kinds.len() > MAX_RACERS {
+        return Err(format!("a race takes 2 to {MAX_RACERS} agents"));
+    }
+    match kinds.iter().find(|kind| !kind.is_ai() || !installed.contains(kind)) {
+        Some(kind) => Err(format!("{} cannot race here", kind.label())),
+        None => Ok(()),
+    }
+}
+
+fn race(hub: &Arc<Hub>, session: String, cwd: &str, line: &str, bypass: bool, reply: &Sender<Event>) {
+    let Some((kinds, task)) = parse_race(line) else {
+        return notice(reply, Tone::Error, format!("usage: /race <agent,agent…> <task>, 2 to {MAX_RACERS} AI agents"));
+    };
+    if let Err(err) = race_kinds(&kinds, &hub.kinds()) {
+        return notice(reply, Tone::Error, err);
+    }
+    let cwd = resolve_dir(cwd);
+    if let Err(err) = worktree::toplevel(&cwd) {
+        return notice(reply, Tone::Error, format!("{err}; each agent of a race works in its own worktree"));
+    }
+    let race = now_ms();
+    let mut chosen: Vec<String> = Vec::new();
+    let mut drafts = Vec::new();
+    for kind in kinds {
+        let text = format!("{} {task}", kind.label());
+        let name =
+            default_agent_name(kind, &text, |name| hub.name_taken(&session, name) || chosen.iter().any(|c| c == name));
+        chosen.push(name.clone());
+        drafts.push(NewAgent { session: session.clone(), name, kind, cwd: cwd.clone(), task: task.clone() });
+    }
+    notice(reply, Tone::Info, format!("racing {} in their own worktrees…", chosen.join(", ")));
+    let (hub, reply) = (Arc::clone(hub), reply.clone());
+    spawn("orkai-pwa-race", move || {
+        for draft in drafts {
+            let bypass = bypass && draft.kind.is_ai();
+            let name = draft.name.clone();
+            if let Err(err) = hub.launcher().create_in_race(draft, DEFAULT_SIZE, bypass, race) {
+                notice(&reply, Tone::Error, format!("could not start {name}: {err}"));
+            }
+            hub.nudge();
+        }
+    });
+}
+
+fn compare(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
+    let members = hub.race_members(agent);
+    if members.len() < 2 {
+        return notice(reply, Tone::Error, "this agent is not racing others (start a race with /race)");
+    }
+    let title =
+        members.iter().find(|record| record.id == agent).map(|record| first_line(&record.task)).unwrap_or_default();
+    let entries: Vec<(String, crate::model::Worktree)> = members
+        .into_iter()
+        .filter_map(|record| {
+            let status = hub.live_status(record.id);
+            let kind = status.as_ref().map_or(record.kind, |status| status.running_kind(record.kind));
+            let state = hub.state(record.id).unwrap_or(AgentState::Idle);
+            let header =
+                race_header(record.id, &record.name, kind, state, status.as_ref().and_then(|s| s.test.as_deref()));
+            Some((header, record.worktree?))
+        })
+        .collect();
+    let reply = reply.clone();
+    spawn("orkai-pwa-compare", move || {
+        let mut out = Vec::new();
+        for (header, worktree) in entries {
+            out.extend_from_slice(header.as_bytes());
+            match worktree::summary(&worktree) {
+                Ok(summary) if summary.is_empty() => out.extend_from_slice(b" no changes yet\n"),
+                Ok(summary) => out.extend_from_slice(&summary),
+                Err(err) => out.extend_from_slice(format!(" could not read the changes: {err}\n").as_bytes()),
+            }
+            out.extend_from_slice(b"\n");
+        }
+        let (text, _) = clip(&out, MAX_DIFF_BYTES);
+        let _ = reply.send(Event::Reply(BridgeMsg::Compare { agent, title, text }));
+    });
+}
+
+fn pick(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
+    let members = hub.race_members(agent);
+    if members.len() < 2 {
+        return notice(reply, Tone::Error, "this agent is not racing others (start a race with /race)");
+    }
+    let losers: Vec<AgentId> = members.iter().map(|record| record.id).filter(|id| *id != agent).collect();
+    merge_then(hub, agent, reply, move |hub, reply| {
+        for loser in losers {
+            discard(hub, loser, reply);
+        }
+    });
+}
+
+fn discard(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
+    if matches!(hub.state(agent), Some(AgentState::Exited | AgentState::Lost)) {
+        return remove(hub, agent, reply);
+    }
+    let _ = hub.send(agent, &ClientMsg::Kill);
+    let (hub, reply) = (Arc::clone(hub), reply.clone());
+    spawn("orkai-pwa-discard-loser", move || {
+        let deadline = std::time::Instant::now() + DISCARD_WAIT;
+        while std::time::Instant::now() < deadline {
+            if matches!(hub.state(agent), Some(AgentState::Exited | AgentState::Lost)) {
+                return remove(&hub, agent, &reply);
+            }
+            thread::sleep(DISCARD_POLL);
+        }
+        notice(&reply, Tone::Warn, format!("#{agent} did not stop; remove it by hand"));
+    });
+}
+
+fn trust(hub: &Hub, cwd: &str, confirmed: Option<String>, reply: &Sender<Event>) {
+    let repo = match worktree::toplevel(&resolve_dir(cwd)) {
+        Ok(repo) => repo,
+        Err(err) => return notice(reply, Tone::Error, err.to_string()),
+    };
+    let shown = repo.display().to_string();
+    let loaded = match project::load(&repo) {
+        Ok(Some(loaded)) => loaded,
+        Ok(None) => return notice(reply, Tone::Info, format!("{shown} has no {}", project::FILE)),
+        Err(err) => return notice(reply, Tone::Error, err.to_string()),
+    };
+    let Some(command) = loaded.config.test_command().map(str::to_string) else {
+        return notice(reply, Tone::Info, format!("the {} of {shown} has no test command", project::FILE));
+    };
+    if project::is_trusted(hub.store().home(), &loaded) {
+        return notice(reply, Tone::Info, format!("orkai already runs {command} for {shown}"));
+    }
+    match confirmed {
+        None => {
+            let _ = reply.send(Event::Reply(BridgeMsg::TrustAsk { cwd: cwd.to_string(), repo: shown, command }));
+        }
+        Some(asked) if asked != command => {
+            notice(reply, Tone::Error, format!("the test command of {shown} changed; check it again"));
+        }
+        Some(_) => match project::trust(hub.store().home(), &loaded) {
+            Ok(()) => notice(reply, Tone::Success, format!("agents in worktrees now run {command} after each turn")),
+            Err(err) => notice(reply, Tone::Error, format!("could not trust {}: {err}", loaded.path.display())),
+        },
+    }
 }
 
 fn tests(hub: &Hub, agent: AgentId, reply: &Sender<Event>) {
@@ -389,6 +608,15 @@ fn diff(hub: &Hub, agent: AgentId, reply: &Sender<Event>) {
 }
 
 fn merge(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
+    merge_then(hub, agent, reply, |_, _| {});
+}
+
+fn merge_then(
+    hub: &Arc<Hub>,
+    agent: AgentId,
+    reply: &Sender<Event>,
+    after: impl FnOnce(&Arc<Hub>, &Sender<Event>) + Send + 'static,
+) {
     let Some(record) = hub.record(agent) else { return };
     let Some(worktree) = record.worktree.clone() else {
         return notice(reply, Tone::Warn, "this agent does not run in its own worktree");
@@ -419,6 +647,7 @@ fn merge(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
         };
         notice(&reply, Tone::Success, text);
         hub.nudge();
+        after(&hub, &reply);
     });
 }
 
@@ -445,6 +674,20 @@ mod tests {
         assert_eq!(agents.len(), MAX_PEEK_AGENTS);
         assert_eq!(rows, MAX_PEEK_ROWS);
         assert_eq!(peek_bounds(vec![7], 0), (vec![7], 1));
+    }
+
+    #[test]
+    fn a_race_takes_two_to_four_installed_ai_agents() {
+        let installed = [AgentKind::Claude, AgentKind::Codex, AgentKind::Terminal];
+        assert!(race_kinds(&[AgentKind::Claude, AgentKind::Codex], &installed).is_ok());
+        assert!(
+            race_kinds(&[AgentKind::Claude, AgentKind::Claude], &installed).is_ok(),
+            "the same agent can race itself"
+        );
+        assert!(race_kinds(&[AgentKind::Claude], &installed).unwrap_err().contains("2 to 4"));
+        assert!(race_kinds(&[AgentKind::Claude; 5], &installed).is_err());
+        assert!(race_kinds(&[AgentKind::Claude, AgentKind::Terminal], &installed).unwrap_err().contains("terminal"));
+        assert!(race_kinds(&[AgentKind::Claude, AgentKind::Kimi], &installed).unwrap_err().contains("kimi"));
     }
 
     #[test]

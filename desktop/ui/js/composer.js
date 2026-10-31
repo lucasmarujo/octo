@@ -1,4 +1,5 @@
 import { $, h, svg } from './dom.js';
+import { completeCommand, matchingCommands, parseCommand } from './commands.js';
 import { closeMenu, openMenu, pickFolder } from './dialogs.js';
 import { kindColor, label } from './format.js';
 import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_SHIELD } from './icons.js';
@@ -17,6 +18,83 @@ import { toast } from './toast.js';
 import { send } from './transport.js';
 
 const MAX_HEIGHT = 160;
+const MAX_SUGGESTIONS = 8;
+const SKILLS_TTL_MS = 5000;
+
+let runCommand = () => false;
+
+export function setCommandRunner(run) {
+  runCommand = run;
+}
+
+function skillNames() {
+  const skills = state.skills;
+  return skills && skills.kind === currentWho() && skills.cwd === currentWhere() ? skills.names : [];
+}
+
+function askSkills() {
+  const skills = state.skills;
+  const fresh = skills && skills.kind === currentWho() && skills.cwd === currentWhere() && Date.now() - skills.at < SKILLS_TTL_MS;
+  if (fresh || currentWho() === 'terminal') return;
+  state.skills = { kind: currentWho(), cwd: currentWhere(), names: skills && skills.kind === currentWho() ? skills.names : [], at: Date.now() };
+  send({ type: 'skills', kind: currentWho(), cwd: currentWhere() });
+}
+
+function typedWord() {
+  const text = $('task').value;
+  if (!text.startsWith('/') || text.includes('\n')) return null;
+  const space = text.search(/\s/);
+  return space === -1 ? text : null;
+}
+
+export function renderPalette() {
+  const palette = $('palette');
+  const word = typedWord();
+  if (word === null) {
+    palette.hidden = true;
+    return;
+  }
+  askSkills();
+  const commands = matchingCommands(word).map(([usage, about]) => ({ text: usage, about, kind: 'command' }));
+  const skills = skillNames()
+    .filter((skill) => `/${skill}`.startsWith(word))
+    .map((skill) => ({ text: `/${skill}`, about: `skill · ${label(currentWho())}`, kind: 'skill' }));
+  const items = [...commands, ...skills].slice(0, MAX_SUGGESTIONS);
+  palette.hidden = items.length === 0;
+  palette.replaceChildren(
+    ...items.map((item) =>
+      h(
+        'button',
+        {
+          class: `palette-item ${item.kind}`,
+          type: 'button',
+          role: 'option',
+          onmousedown: (event) => event.preventDefault(),
+          onclick: () => {
+            const usage = item.text.split(/\s/)[0];
+            $('task').value = `${usage}${item.text.includes(' ') || item.kind === 'skill' ? ' ' : ''}`;
+            $('task').focus();
+            renderPalette();
+          },
+        },
+        h('span', { class: 'palette-usage' }, item.text),
+        h('span', { class: 'palette-about' }, item.about),
+      ),
+    ),
+  );
+}
+
+function completeTyped() {
+  const word = typedWord();
+  if (word === null) return false;
+  const skills = skillNames().map((skill) => `/${skill}`).filter((skill) => skill.startsWith(word));
+  const completed = completeCommand(word, skills);
+  if (completed) {
+    $('task').value = completed;
+    renderPalette();
+  }
+  return true;
+}
 
 function grow() {
   const task = $('task');
@@ -76,6 +154,14 @@ function submit(event) {
   const task = $('task');
   const raw = task.value;
   const text = raw.trim();
+  if (parseCommand(text) && runCommand(text)) {
+    if (text) state.history.push(raw);
+    state.recall = -1;
+    task.value = '';
+    grow();
+    renderPalette();
+    return;
+  }
   let kind = currentWho();
   let command = raw;
   if (text.startsWith('!')) {
@@ -111,7 +197,11 @@ function onKey(event) {
     grow();
   } else if (event.key === 'Tab') {
     event.preventDefault();
+    if (!event.shiftKey && completeTyped()) return;
     cycleWho(event.shiftKey ? -1 : 1);
+  } else if (event.key === 'Escape' && !$('palette').hidden) {
+    event.preventDefault();
+    $('palette').hidden = true;
   } else if (event.ctrlKey && event.key === 'ArrowUp') {
     event.preventDefault();
     recall(-1);
@@ -144,7 +234,10 @@ export function renderComposer() {
 export function initComposer() {
   $('composer').addEventListener('submit', submit);
   $('task').addEventListener('keydown', onKey);
-  $('task').addEventListener('input', grow);
+  $('task').addEventListener('input', () => {
+    grow();
+    renderPalette();
+  });
   $('who').addEventListener('click', (event) => {
     event.stopPropagation();
     if ($('menu').hidden) openWhoMenu();

@@ -2701,12 +2701,22 @@ pub fn parse_race(arg: &str) -> Option<(Vec<AgentKind>, String)> {
     (kinds.len() >= 2 && kinds.len() <= MAX_RACERS && !task.is_empty()).then(|| (kinds, task.to_string()))
 }
 
-fn first_line(text: &str) -> String {
+pub fn first_line(text: &str) -> String {
     text.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or_default().to_string()
 }
 
 fn compare_header(entry: &AgentEntry) -> String {
-    let tests = match entry.status.as_ref().and_then(|s| s.test.as_deref()) {
+    race_header(
+        entry.record.id,
+        &entry.record.name,
+        entry.kind(),
+        entry.state(),
+        entry.status.as_ref().and_then(|s| s.test.as_deref()),
+    )
+}
+
+pub fn race_header(id: AgentId, name: &str, kind: AgentKind, state: AgentState, test: Option<&TestReport>) -> String {
+    let tests = match test {
         Some(TestReport { state: TestState::Passed, .. }) => "  tests passed".to_string(),
         Some(TestReport { state: TestState::Failed, code: Some(code), .. }) => format!("  tests failed (exit {code})"),
         Some(TestReport { state: TestState::Failed, .. }) => "  tests failed".to_string(),
@@ -2714,13 +2724,7 @@ fn compare_header(entry: &AgentEntry) -> String {
         Some(TestReport { state: TestState::Untrusted, .. }) => "  tests wait for /trust".to_string(),
         None => String::new(),
     };
-    format!(
-        "\x1b[1m#{} {}\x1b[0m  {}  {}{tests}\n",
-        entry.record.id,
-        entry.record.name,
-        entry.kind().label(),
-        entry.state().label()
-    )
+    format!("\x1b[1m#{id} {name}\x1b[0m  {}  {}{tests}\n", kind.label(), state.label())
 }
 
 fn desk_takes_back(status: &StatusReport, desk: TermSize) -> bool {

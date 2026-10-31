@@ -349,3 +349,41 @@ test('paths under the home folder are shown from ~ like in the TUI', async () =>
   state.home = null;
   assert.equal(shortPath('/srv/app'), '/srv/app');
 });
+
+test('the composer knows the same slash commands as the TUI, in the same order', async () => {
+  const { COMMANDS } = await import('../js/commands.js');
+  const complete = rust('src/tui/complete.rs');
+  const list = complete.slice(complete.indexOf('pub const COMMANDS'), complete.indexOf('];', complete.indexOf('pub const COMMANDS')));
+  const usages = [...list.matchAll(/"(\/[^"]+)"/g)].map((match) => match[1]);
+  assert.ok(usages.length >= 20, 'TUI commands not found');
+  assert.deepEqual(COMMANDS.map(([usage]) => usage), usages);
+});
+
+test('tab completes a slash command the way the TUI does', async () => {
+  const { completeCommand } = await import('../js/commands.js');
+  assert.equal(completeCommand('/whe', []), '/where ');
+  assert.equal(completeCommand('/qu', []), '/quit');
+  assert.equal(completeCommand('/wh', []), null);
+  assert.equal(completeCommand('/ren', []), '/rename');
+  assert.equal(completeCommand('/cro', []), '/cross-review ');
+  assert.equal(completeCommand('/rev', ['/review']), '/review ');
+  assert.equal(completeCommand('/mae', ['/maestri', '/maestri-chat', '/maestri-manager']), '/maestri');
+  assert.equal(completeCommand('/maestri', ['/maestri', '/maestri-chat']), null);
+  assert.equal(completeCommand('/s', ['/stripe:docs']), null);
+  assert.equal(completeCommand('/zzz', []), null);
+});
+
+test('a slash command is read with its argument, and agent names take the TUI aliases', async () => {
+  const { parseCommand, parseKind } = await import('../js/commands.js');
+  assert.deepEqual(parseCommand('/race cc,codex fix the login'), { name: 'race', word: 'race', arg: 'cc,codex fix the login' });
+  assert.deepEqual(parseCommand('/cd ~/dev'), { name: 'where', word: 'cd', arg: '~/dev' });
+  assert.equal(parseCommand('/rm').name, 'kill');
+  assert.equal(parseCommand('fix the bug'), null);
+  assert.equal(parseCommand('/review\nsecond line'), null, 'a task with several lines is a task');
+  const model = rust('src/model.rs');
+  for (const [, names, kind] of model.matchAll(/((?:"[a-z]+" \| )*"[a-z]+") => Some\(AgentKind::(\w+)\)/g)) {
+    for (const alias of names.split(' | ').map((name) => name.replaceAll('"', ''))) {
+      assert.equal(parseKind(alias), kind.toLowerCase(), alias);
+    }
+  }
+});

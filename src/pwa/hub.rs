@@ -245,6 +245,20 @@ impl Hub {
         self.inner().agents.get(&id).map(Tracked::state)
     }
 
+    pub fn race_members(&self, id: AgentId) -> Vec<AgentRecord> {
+        let inner = self.inner();
+        let Some(record) = inner.agents.get(&id).map(|tracked| &tracked.record) else { return Vec::new() };
+        let Some(race) = record.race else { return Vec::new() };
+        let session = record.session.clone();
+        inner
+            .agents
+            .values()
+            .map(|tracked| &tracked.record)
+            .filter(|other| other.race == Some(race) && other.session == session && other.worktree.is_some())
+            .cloned()
+            .collect()
+    }
+
     pub fn live_status(&self, id: AgentId) -> Option<StatusReport> {
         self.inner().agents.get(&id).filter(|tracked| !tracked.is_dead()).and_then(|tracked| tracked.status.clone())
     }

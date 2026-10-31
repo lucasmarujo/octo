@@ -90,7 +90,7 @@ pub enum PhoneMsg {
     CrossReview {
         agent: AgentId,
         #[serde(default)]
-        kind: Option<AgentKind>,
+        reviewer: String,
     },
     Tests {
         agent: AgentId,
@@ -98,6 +98,47 @@ pub enum PhoneMsg {
     LinkAt {
         row: u16,
         col: u16,
+    },
+    Skills {
+        kind: AgentKind,
+        cwd: String,
+    },
+    Skill {
+        kind: AgentKind,
+        session: String,
+        cwd: String,
+        name: String,
+        #[serde(default)]
+        args: String,
+        #[serde(default)]
+        worktree: bool,
+        #[serde(default)]
+        bypass: bool,
+    },
+    Race {
+        session: String,
+        cwd: String,
+        race: String,
+        #[serde(default)]
+        bypass: bool,
+    },
+    Compare {
+        agent: AgentId,
+    },
+    Pick {
+        agent: AgentId,
+    },
+    RenameSession {
+        name: String,
+        to: String,
+    },
+    DeleteSession {
+        name: String,
+    },
+    Trust {
+        cwd: String,
+        #[serde(default)]
+        command: Option<String>,
     },
 }
 
@@ -127,6 +168,16 @@ pub enum BridgeMsg {
     Details(Details),
     Tests { agent: AgentId, command: String, state: TestState, text: String, truncated: bool },
     Link { url: String },
+    Skills { kind: AgentKind, cwd: String, skills: Vec<SkillView> },
+    Compare { agent: AgentId, title: String, text: String },
+    TrustAsk { cwd: String, repo: String, command: String },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillView {
+    pub name: String,
+    pub owner: AgentKind,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -290,10 +341,19 @@ mod tests {
             (r#"{"type":"scroll","lines":-3}"#, PhoneMsg::Scroll { lines: -3 }),
             (r#"{"type":"peek","agents":[2,5],"rows":6}"#, PhoneMsg::Peek { agents: vec![2, 5], rows: 6 }),
             (r#"{"type":"details","agent":4}"#, PhoneMsg::Details { agent: 4 }),
-            (r#"{"type":"crossReview","agent":4}"#, PhoneMsg::CrossReview { agent: 4, kind: None }),
             (
-                r#"{"type":"crossReview","agent":4,"kind":"codex"}"#,
-                PhoneMsg::CrossReview { agent: 4, kind: Some(AgentKind::Codex) },
+                r#"{"type":"race","session":"s","cwd":"/w","race":"cc,codex fix"}"#,
+                PhoneMsg::Race { session: "s".into(), cwd: "/w".into(), race: "cc,codex fix".into(), bypass: false },
+            ),
+            (r#"{"type":"trust","cwd":"/w"}"#, PhoneMsg::Trust { cwd: "/w".into(), command: None }),
+            (
+                r#"{"type":"renameSession","name":"a","to":"b"}"#,
+                PhoneMsg::RenameSession { name: "a".into(), to: "b".into() },
+            ),
+            (r#"{"type":"crossReview","agent":4}"#, PhoneMsg::CrossReview { agent: 4, reviewer: String::new() }),
+            (
+                r#"{"type":"crossReview","agent":4,"reviewer":"cc"}"#,
+                PhoneMsg::CrossReview { agent: 4, reviewer: "cc".into() },
             ),
             (
                 r#"{"type":"start","kind":"claude","session":"default","cwd":"/w","task":"t","worktree":true}"#,

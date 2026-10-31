@@ -1,8 +1,9 @@
 import { nextAttention, rename, renderAgent, renderAgentHead, renderStatus, restartWhenStopped } from './agent.js';
 import { detectAlerts, notice, windowTitle } from './alerts.js';
 import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tickBoard } from './board.js';
-import { initComposer, renderComposer } from './composer.js';
-import { closeMenu, showDiff, showFolders, showTests } from './dialogs.js';
+import { initComposer, renderComposer, renderPalette, setCommandRunner } from './composer.js';
+import { runCommand } from './commands.js';
+import { closeMenu, confirm, showCompare, showDiff, showFolders, showTests } from './dialogs.js';
 import { $, h, svg } from './dom.js';
 import { SPINNER, glyph } from './format.js';
 import { peekRequest, renderGrid, tickGrid } from './grid.js';
@@ -222,6 +223,7 @@ function openAgent(agent) {
   }
   const switching = state.active !== agent.id;
   state.active = agent.id;
+  state.selected = agent.id;
   show('agent-view');
   render();
   if (switching) {
@@ -279,6 +281,34 @@ function raiseAlerts(agents) {
   }
 }
 
+async function confirmTrust(message) {
+  const sure = await confirm({
+    title: `Run the tests of ${message.repo}?`,
+    text: `After each turn of an agent in a worktree of this repository, orkai runs: ${message.command}`,
+    action: 'Trust',
+  });
+  if (sure) send({ type: 'trust', cwd: message.cwd, command: message.command });
+}
+
+function phone(arg) {
+  if (arg === 'off') {
+    invoke('set_phone', { on: false })
+      .then(() => toast('The orkai pwa is off · ctrl+p turns it on again', 'info'))
+      .catch((err) => toast(String(err), 'error'));
+  } else openPairing();
+}
+
+const commands = {
+  refresh: () => render(),
+  focused: () => focusedAgent(),
+  selectSession: (name) => onSelect(name),
+  newSession: () => promptNewSession(onSelect),
+  openAgent: (agent) => openAgent(agent),
+  phone,
+  help: () => openPage('help'),
+  quit: () => currentWindow().close(),
+};
+
 function onMessage(message) {
   switch (message.type) {
     case 'welcome':
@@ -317,6 +347,16 @@ function onMessage(message) {
       break;
     case 'details':
       onDetails(message);
+      break;
+    case 'skills':
+      state.skills = { kind: message.kind, cwd: message.cwd, names: message.skills.map((skill) => skill.name), at: Date.now() };
+      renderPalette();
+      break;
+    case 'compare':
+      showCompare(message);
+      break;
+    case 'trustAsk':
+      confirmTrust(message);
       break;
     case 'tests':
       showTests(message);
@@ -452,6 +492,7 @@ function start() {
   initWindow();
   initTerminal();
   initComposer();
+  setCommandRunner((text) => runCommand(text, commands));
   $('recover').addEventListener('click', () => send({ type: 'recover', session: state.session }));
   $('project').addEventListener('click', (event) => {
     event.stopPropagation();
