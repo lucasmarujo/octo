@@ -6,7 +6,7 @@ import { runCommand } from './commands.js';
 import { closeMenu, confirm, showCompare, showDiff, showFolders, showTests } from './dialogs.js';
 import { $, h, svg } from './dom.js';
 import { SPINNER, alive, glyph } from './format.js';
-import { peekRequest, renderGrid, tickGrid } from './grid.js';
+import { peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
 import { renderHelp } from './help.js';
 import { ICON_HELP, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
@@ -14,7 +14,7 @@ import { renderList, tickList } from './list.js';
 import { openPairing } from './pair.js';
 import { applyTheme, renderSettings } from './settings.js';
 import { promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
-import { findAgent, inSession, saveTabs, selectSession, setView, state, visible } from './state.js';
+import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
 import { channel, connect, currentWindow, invoke, send } from './transport.js';
@@ -22,7 +22,7 @@ import { channel, connect, currentWindow, invoke, send } from './transport.js';
 const SPIN_MS = 100;
 const TICK_MS = 1000;
 const MAX_TAB_KEY = 9;
-const PEEK_MS = 2000;
+const PEEK_MS = 1000;
 const PEEK_STALE_MS = 10_000;
 const DETAILS_MS = 3000;
 const RENDERERS = { board: [renderBoard, tickBoard], list: [renderList, tickList], grid: [renderGrid, tickGrid] };
@@ -139,7 +139,7 @@ function renderView() {
 function peek() {
   if (!state.overview || state.active !== null || shownView() !== 'grid') return;
   if (state.peekAt && Date.now() - state.peekAt < PEEK_STALE_MS) return;
-  const request = peekRequest(visible());
+  const request = peekRequest(visible(), rowsOnScreen());
   if (!request) return;
   state.peekAt = Date.now();
   send(request);
@@ -513,6 +513,12 @@ function start() {
   for (const button of $('views').children) {
     button.addEventListener('click', () => {
       setView(button.dataset.view);
+      onFilter();
+    });
+  }
+  for (const button of $('grid-size').children) {
+    button.addEventListener('click', () => {
+      setGridSize(button.dataset.size);
       onFilter();
     });
   }

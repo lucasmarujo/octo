@@ -246,11 +246,11 @@ test('the project filter shows one project and falls back to all of them when it
 });
 
 test('the grid asks for the screens of the running agents, as many as the core answers', async () => {
-  const { MAX_PEEK_AGENTS, PREVIEW_ROWS, peekRequest } = await import('../js/grid.js');
+  const { MAX_PEEK_AGENTS, peekRequest } = await import('../js/grid.js');
+  const { MAX_PREVIEW_ROWS } = await import('../js/format.js');
   const actions = rust('src/pwa/actions.rs');
   assert.ok(actions.includes(`MAX_PEEK_AGENTS: usize = ${MAX_PEEK_AGENTS};`), 'same agent limit as the core');
-  const maxRows = Number(actions.match(/MAX_PEEK_ROWS: u16 = (\d+);/)[1]);
-  assert.ok(PREVIEW_ROWS > 0 && PREVIEW_ROWS <= maxRows);
+  assert.equal(MAX_PREVIEW_ROWS, Number(actions.match(/MAX_PEEK_ROWS: u16 = (\d+);/)[1]), 'same row limit as the core');
   const list = [
     agent({ id: 1, state: 'working' }),
     agent({ id: 2, state: 'exited' }),
@@ -258,10 +258,34 @@ test('the grid asks for the screens of the running agents, as many as the core a
     agent({ id: 4, state: 'idle', starting: true }),
     agent({ id: 5, state: 'paused' }),
   ];
-  assert.deepEqual(peekRequest(list), { type: 'peek', agents: [1, 5], rows: PREVIEW_ROWS });
-  assert.equal(peekRequest(list.slice(1, 4)), null, 'nothing running, nothing to ask');
+  assert.deepEqual(peekRequest(list, 18), { type: 'peek', agents: [1, 5], rows: 18 });
+  assert.equal(peekRequest(list.slice(1, 4), 18), null, 'nothing running, nothing to ask');
   const many = Array.from({ length: MAX_PEEK_AGENTS + 6 }, (_, index) => agent({ id: index + 1, state: 'idle' }));
-  assert.equal(peekRequest(many).agents.length, MAX_PEEK_AGENTS);
+  assert.equal(peekRequest(many, 18).agents.length, MAX_PEEK_AGENTS);
+});
+
+test('the grid shows as many agents per screen as the user picks, each with as many lines as fit', async () => {
+  const { DEFAULT_GRID_SIZE, GRID_SIZES, MAX_PREVIEW_ROWS, gridShape, previewRows } = await import('../js/format.js');
+  assert.deepEqual(GRID_SIZES, ['4', '6', '8', '10', '12', 'all']);
+  assert.ok(GRID_SIZES.includes(DEFAULT_GRID_SIZE));
+  for (const size of GRID_SIZES.filter((size) => size !== 'all')) {
+    const { cols, rows } = gridShape(size);
+    assert.equal(cols * rows, Number(size), size);
+    assert.ok(cols >= rows, `${size} is laid out wider than tall`);
+  }
+  assert.equal(gridShape('all'), null, 'all lets the tiles flow');
+  assert.equal(gridShape('7'), null);
+  assert.equal(previewRows(300, 15), 20);
+  assert.equal(previewRows(9000, 15), MAX_PREVIEW_ROWS, 'never more than the core sends');
+  assert.equal(previewRows(4, 15), 1);
+  assert.equal(previewRows(0, 15), MAX_PREVIEW_ROWS, 'before the first layout it asks for the most');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  const picker = [...html.match(/<div id="grid-size"[\s\S]*?<\/div>/)[0].matchAll(/data-size="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(picker, GRID_SIZES);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.grid \{[^}]*grid-template-columns: repeat\(var\(--grid-cols\)/);
+  assert.match(css, /\.grid \{[^}]*grid-auto-rows: calc\(/, 'the picked rows fill the height of the screen');
+  assert.doesNotMatch(css, /\.tile-foot/, 'a tile is the terminal with a single line on top');
 });
 
 test('arguments typed in the settings become the list the config keeps', async () => {

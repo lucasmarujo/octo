@@ -22,6 +22,21 @@ export const COLUMNS = [
   { key: 'idle', title: 'Idle', empty: 'No idle agents.' },
 ];
 
+export const GRID_SIZES = ['4', '6', '8', '10', '12', 'all'];
+export const DEFAULT_GRID_SIZE = '6';
+export const MAX_PREVIEW_ROWS = 40;
+const GRID_SHAPES = { 4: [2, 2], 6: [3, 2], 8: [4, 2], 10: [5, 2], 12: [4, 3] };
+
+export function gridShape(size) {
+  const shape = GRID_SHAPES[size];
+  return shape ? { cols: shape[0], rows: shape[1] } : null;
+}
+
+export function previewRows(height, lineHeight) {
+  if (!height || !lineHeight) return MAX_PREVIEW_ROWS;
+  return Math.min(MAX_PREVIEW_ROWS, Math.max(1, Math.floor(height / lineHeight)));
+}
+
 export const label = (kind) => LABELS[kind] || kind;
 export const kindHex = (kind) => KIND_COLORS[kind] || '#9a9aa8';
 export const kindColor = (kind) => `var(--kind-${Object.hasOwn(KIND_COLORS, kind) ? kind : 'other'})`;

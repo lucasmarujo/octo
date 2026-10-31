@@ -1,21 +1,26 @@
 import { $, h, keep, place, svg } from './dom.js';
 import { tools } from './board.js';
-import { activity, alive, elapsed, glyph, kindColor, label, nameTone } from './format.js';
+import { activity, alive, elapsed, glyph, gridShape, kindColor, label, nameTone, previewRows } from './format.js';
 import { ICON_PLUS } from './icons.js';
 import { now, state, visible } from './state.js';
 import { run } from './terminal.js';
 
 export const MAX_PEEK_AGENTS = 24;
-export const PREVIEW_ROWS = 7;
+const LINE_HEIGHT = 15;
 
 const tiles = new Map();
 const shownPreviews = new Map();
 let addTile = null;
 
-export function peekRequest(list) {
+export function rowsOnScreen() {
+  const screen = $('grid').querySelector('.tile-screen');
+  return previewRows(screen ? screen.clientHeight : 0, LINE_HEIGHT);
+}
+
+export function peekRequest(list, rows) {
   const running = list.filter((agent) => alive(agent) && !agent.starting);
   if (!running.length) return null;
-  return { type: 'peek', agents: running.slice(0, MAX_PEEK_AGENTS).map((agent) => agent.id), rows: PREVIEW_ROWS };
+  return { type: 'peek', agents: running.slice(0, MAX_PEEK_AGENTS).map((agent) => agent.id), rows };
 }
 
 function tile(agent, handlers) {
@@ -25,24 +30,17 @@ function tile(agent, handlers) {
   const classes = ['tile', waiting ? 'waiting' : '', agent.state === 'lost' ? 'lost' : ''].filter(Boolean).join(' ');
   return h(
     'article',
-    { class: classes, tabindex: '0', dataset: { agent: String(agent.id) }, onclick: () => handlers.open(agent) },
+    { class: classes, tabindex: '0', title: `${agent.name} · ${agent.project}`, dataset: { agent: String(agent.id) }, onclick: () => handlers.open(agent) },
     tools(agent),
     h(
       'div',
       { class: 'tile-head' },
       h('span', { class: `glyph ${mark.tone}`, dataset: mark.spin ? { spin: '1' } : {} }, mark.text),
-      h('span', { class: `tile-name ${waiting ? 't-yellow' : nameTone(agent)}`, title: agent.name }, agent.name),
+      h('span', { class: `tile-name ${waiting ? 't-yellow' : nameTone(agent)}` }, agent.name),
+      h('span', { class: 'tile-kind', style: `color:${kindColor(agent.kind)}` }, label(agent.kind)),
       h('span', { class: `tile-time ${time ? time.tone : ''}` }, time ? time.text : ''),
     ),
     h('div', { class: 'tile-screen' }),
-    h(
-      'div',
-      { class: 'tile-foot' },
-      h('span', { class: 'swatch', style: `background:${agent.color}` }),
-      h('span', { class: 'project' }, agent.project),
-      h('span', { class: 't-faint' }, '·'),
-      h('span', { style: `color:${kindColor(agent.kind)}` }, label(agent.kind)),
-    ),
   );
 }
 
@@ -66,7 +64,7 @@ function showScreen(node, agent) {
 }
 
 function tileSignature(agent, handlers) {
-  return JSON.stringify([agent.name, agent.kind, agent.state, agent.starting, agent.project, agent.color, Boolean(handlers.open)]);
+  return JSON.stringify([agent.name, agent.kind, agent.state, agent.starting, agent.project, Boolean(handlers.open)]);
 }
 
 function newAgentTile() {
@@ -74,14 +72,23 @@ function newAgentTile() {
   return addTile;
 }
 
+function shape(grid) {
+  const fixed = gridShape(state.gridSize);
+  grid.classList.toggle('all', !fixed);
+  grid.style.setProperty('--grid-cols', fixed ? String(fixed.cols) : '');
+  grid.style.setProperty('--grid-rows', fixed ? String(fixed.rows) : '');
+}
+
 export function renderGrid(handlers) {
+  const grid = $('grid');
+  shape(grid);
   const list = visible();
   const nodes = list.map((agent) => {
     const node = keep(tiles, agent.id, tileSignature(agent, handlers), () => tile(agent, handlers));
     showScreen(node, agent);
     return node;
   });
-  place($('grid'), [...nodes, newAgentTile()]);
+  place(grid, nodes.length ? nodes : [newAgentTile()]);
   const ids = new Set(list.map((agent) => agent.id));
   for (const id of tiles.keys()) {
     if (ids.has(id)) continue;

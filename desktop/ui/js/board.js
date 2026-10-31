@@ -201,6 +201,8 @@ export function renderHead() {
   recover.textContent = `Recover ${plural(lost, 'interrupted agent', 'interrupted agents')}`;
   renderFilter(list);
   for (const button of $('views').children) button.setAttribute('aria-pressed', String(button.dataset.view === state.view));
+  $('grid-size').hidden = state.view !== 'grid' || list.length === 0;
+  for (const button of $('grid-size').children) button.setAttribute('aria-pressed', String(button.dataset.size === state.gridSize));
 }
 
 function renderFilter(list) {

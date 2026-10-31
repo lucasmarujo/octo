@@ -1,4 +1,5 @@
 import { storage } from './dom.js';
+import { DEFAULT_GRID_SIZE, GRID_SIZES } from './format.js';
 
 const SESSION_KEY = 'orkai.session';
 const EXPANDED_KEY = 'orkai.expanded';
@@ -8,6 +9,7 @@ const WORKTREE_KEY = 'orkai.worktree';
 const BYPASS_KEY = 'orkai.bypass';
 const TABS_KEY = 'orkai.tabs';
 const VIEW_KEY = 'orkai.view';
+const GRID_KEY = 'orkai.grid';
 const PROJECT_KEY = 'orkai.project';
 
 export const VIEWS = ['board', 'list', 'grid'];
@@ -33,6 +35,7 @@ export const state = {
   tabs: storage.json(TABS_KEY, []),
   active: null,
   view: VIEWS.includes(storage.get(VIEW_KEY)) ? storage.get(VIEW_KEY) : 'board',
+  gridSize: GRID_SIZES.includes(storage.get(GRID_KEY)) ? storage.get(GRID_KEY) : DEFAULT_GRID_SIZE,
   projects: storage.json(PROJECT_KEY, {}),
   previews: new Map(),
   peekAt: 0,
@@ -85,6 +88,11 @@ export function visible() {
 export function setView(view) {
   state.view = view;
   storage.set(VIEW_KEY, view);
+}
+
+export function setGridSize(size) {
+  state.gridSize = size;
+  storage.set(GRID_KEY, size);
 }
 
 export function selectSession(name) {
