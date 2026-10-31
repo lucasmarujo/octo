@@ -16,16 +16,21 @@ use crate::model::{
 };
 use crate::paths::Home;
 use crate::protocol::{ClientMsg, HolderMsg};
-use crate::pwa::protocol::{AgentView, BridgeMsg, Overview, PhoneMsg, SessionView, UsageEntry, UsageWindow};
+use crate::pwa::protocol::{
+    AgentView, BridgeMsg, ChangeCount, Overview, PhoneMsg, SessionView, SubagentView, UsageEntry, UsageWindow,
+};
 use crate::store::Store;
+use crate::subagents::{self, Subagent, SubagentWatcher};
 use crate::tui::format::{display_path, project_label};
 use crate::tui::render::{USAGE_MONTHLY_LABEL, USAGE_SESSION_LABEL, USAGE_WEEKLY_LABEL};
 use crate::tui::theme;
 use crate::usage::{self, Limits, Problem};
 use crate::util::{lock, now_ms};
+use crate::worktree::{ChangeWatcher, Changes};
 
 pub const WATCH_EVERY: Duration = Duration::from_millis(500);
 const RESCAN_EVERY: Duration = Duration::from_secs(1);
+const SCAN_EVERY: Duration = Duration::from_secs(2);
 const FRESH_RECORD_MS: u64 = 15_000;
 const STARTING: &str = "starting…";
 const INTERRUPTED: &str = "interrupted";
@@ -51,6 +56,8 @@ struct Tracked {
     link: Link,
     status: Option<StatusReport>,
     generation: u64,
+    changes: Option<Changes>,
+    subagents: Vec<Subagent>,
 }
 
 impl Tracked {
@@ -100,8 +107,35 @@ impl Tracked {
                 Link::Exited(info) => Some(info.describe()),
                 _ => None,
             },
+            changes: self.record.worktree.as_ref().and(self.changes.as_ref()).map(|changes| ChangeCount {
+                files: changes.files,
+                insertions: changes.insertions,
+                deletions: changes.deletions,
+            }),
+            test: live.and_then(|status| status.test.as_ref()).map(|test| test.state),
+            subagents: self
+                .subagents
+                .iter()
+                .map(|sub| SubagentView {
+                    role: sub.role.clone(),
+                    description: sub.description.clone(),
+                    activity: sub.activity.clone(),
+                    started_at: sub.started_at_ms,
+                })
+                .collect(),
         }
     }
+
+    fn parent(&self) -> Option<subagents::Parent> {
+        let live = self.status.as_ref().filter(|_| !self.is_dead())?;
+        let kind = live.running_kind(self.record.kind);
+        subagents::parent_of(&self.record, kind, live.nested.as_ref(), self.state())
+    }
+}
+
+struct Scanners {
+    changes: ChangeWatcher,
+    subagents: SubagentWatcher,
 }
 
 pub fn hex(color: Color) -> String {
@@ -122,12 +156,15 @@ struct Inner {
     usage: Option<Vec<UsageEntry>>,
     usage_at: Option<Instant>,
     usage_busy: bool,
+    scan_at: Option<Instant>,
+    scan_busy: bool,
     watching: bool,
     due: bool,
 }
 
 pub struct Hub {
     store: Store,
+    scanners: Mutex<Scanners>,
     tools: Mutex<Tools>,
     host: String,
     inner: Mutex<Inner>,
@@ -156,6 +193,10 @@ impl Hub {
     pub fn new(launcher: Launcher, host: String) -> Arc<Self> {
         Arc::new(Self {
             store: launcher.store().clone(),
+            scanners: Mutex::new(Scanners {
+                changes: ChangeWatcher::default(),
+                subagents: SubagentWatcher::new(launch::claude_home(), launch::codex_home()),
+            }),
             tools: Mutex::new(Tools::new(launcher)),
             host,
             inner: Mutex::new(Inner::default()),
@@ -331,6 +372,7 @@ impl Hub {
             }
             self.publish();
             self.refresh_usage();
+            self.refresh_scan();
             let inner = self.inner();
             let _ = self.wake.wait_timeout_while(inner, WATCH_EVERY, |inner| !inner.due && !inner.phones.is_empty());
         }
@@ -377,6 +419,8 @@ impl Hub {
                     link: Link::Pending,
                     status: None,
                     generation: 0,
+                    changes: None,
+                    subagents: Vec::new(),
                 });
                 tracked.record = record;
                 match checks.get(&id) {
@@ -508,6 +552,47 @@ impl Hub {
             overview
         };
         self.broadcast(&stamped(overview));
+    }
+
+    fn refresh_scan(self: &Arc<Self>) {
+        let (targets, parents) = {
+            let mut inner = self.inner();
+            if inner.scan_busy || inner.scan_at.is_some_and(|at| at.elapsed() < SCAN_EVERY) {
+                return;
+            }
+            inner.scan_busy = true;
+            let targets: Vec<(AgentId, Worktree)> = inner
+                .agents
+                .values()
+                .filter_map(|tracked| tracked.record.worktree.clone().map(|worktree| (tracked.record.id, worktree)))
+                .collect();
+            let parents: Vec<subagents::Parent> = inner.agents.values().filter_map(Tracked::parent).collect();
+            (targets, parents)
+        };
+        let hub = Arc::clone(self);
+        let spawned = thread::Builder::new().name("orkai-pwa-scan".into()).spawn(move || {
+            let (changes, mut found) = {
+                let mut scanners = lock(&hub.scanners);
+                let now = now_ms();
+                (scanners.changes.scan(&targets, now), scanners.subagents.scan(&parents, now))
+            };
+            let mut inner = hub.inner();
+            for tracked in inner.agents.values_mut() {
+                let id = tracked.record.id;
+                if let Some(changed) = changes.get(&id) {
+                    tracked.changes = Some(changed.clone());
+                }
+                tracked.subagents = found.remove(&id).unwrap_or_default();
+            }
+            inner.scan_busy = false;
+            inner.scan_at = Some(Instant::now());
+            inner.due = true;
+            drop(inner);
+            hub.wake.notify_all();
+        });
+        if spawned.is_err() {
+            self.inner().scan_busy = false;
+        }
     }
 
     fn refresh_usage(self: &Arc<Self>) {

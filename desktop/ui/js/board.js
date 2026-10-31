@@ -1,6 +1,22 @@
 import { $, h, keep, place, svg } from './dom.js';
+import { merge } from './agent.js';
 import { closeMenu, confirm, openMenu } from './dialogs.js';
-import { COLUMNS, SPINNER, activity, alive, column, elapsed, glyph, kindColor, label, nameTone, plural } from './format.js';
+import {
+  COLUMNS,
+  SPINNER,
+  activity,
+  alive,
+  changeParts,
+  column,
+  elapsed,
+  glyph,
+  kindColor,
+  label,
+  nameTone,
+  plural,
+  subagentLine,
+  testMark,
+} from './format.js';
 import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_STOP, ICON_TRASH } from './icons.js';
 import { sleeping } from './kai.js';
 import { currentProject, inSession, now, projectsInSession, setProject, state, visible } from './state.js';
@@ -59,8 +75,33 @@ function card(agent, handlers) {
         h('span', { class: 'kbd' }, 'alt N'),
       )
     : null;
+  const subagents = (agent.subagents || []).slice(0, 2).map((sub) => {
+    const line = subagentLine(sub, now());
+    return h('div', { class: 'card-sub' }, h('span', { class: 'card-sub-role' }, `↳ ${line.role}`), h('span', { class: 'card-sub-time' }, line.time), sub.activity ? h('span', { class: 't-faint' }, `· ${sub.activity}`) : null);
+  });
+  const parts = changeParts(agent.changes);
+  const test = testMark(agent.test);
+  const settled = agent.state === 'done' || agent.state === 'idle' || !alive(agent);
+  const act = (work) => (event) => {
+    event.stopPropagation();
+    work();
+  };
   const branch = agent.branch
-    ? h('div', { class: 'card-foot' }, h('span', { class: 'branch' }, svg(ICON_BRANCH), agent.branch))
+    ? h(
+        'div',
+        { class: 'card-foot' },
+        h('span', { class: `branch${parts ? ' counts' : ''}`, title: agent.branch }, svg(ICON_BRANCH), parts ? parts.map((part) => h('span', { class: part.tone }, part.text)) : agent.branch),
+        h('span', { class: 'grow' }),
+        test ? h('span', { class: test.tone }, test.text) : null,
+        parts && settled && handlers.open
+          ? h(
+              'span',
+              { class: 'card-foot-actions' },
+              h('button', { class: 'button tiny', type: 'button', onclick: act(() => send({ type: 'diff', agent: agent.id })) }, 'Diff'),
+              h('button', { class: 'button tiny primary', type: 'button', onclick: act(() => merge(agent)) }, 'Merge'),
+            )
+          : null,
+      )
     : null;
   return h(
     'article',
@@ -82,6 +123,7 @@ function card(agent, handlers) {
       h('span', { style: `color:${kindColor(agent.kind)}` }, label(agent.kind)),
     ),
     text,
+    subagents.length ? h('div', { class: 'card-subs' }, subagents) : null,
     waiting ? open : null,
     branch,
   );
@@ -111,7 +153,7 @@ const cards = new Map();
 const columns = new Map();
 
 function cardSignature(agent, handlers) {
-  return JSON.stringify([agent.name, agent.kind, agent.state, agent.starting, agent.activity, agent.project, agent.color, agent.branch, agent.exit, Boolean(handlers.open)]);
+  return JSON.stringify([agent.name, agent.kind, agent.state, agent.starting, agent.activity, agent.project, agent.color, agent.branch, agent.exit, agent.changes, agent.test, agent.subagents, Boolean(handlers.open)]);
 }
 
 export function renderBoard(handlers) {

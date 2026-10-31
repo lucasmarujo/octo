@@ -91,6 +91,28 @@ export function groupByProject(agents) {
   return [...groups.values()];
 }
 
+export function changeParts(changes) {
+  if (!changes || !changes.files) return null;
+  return [
+    { text: `${changes.files} file${changes.files === 1 ? '' : 's'}`, tone: 't-muted' },
+    { text: `+${changes.insertions}`, tone: 't-green' },
+    { text: `−${changes.deletions}`, tone: 't-red' },
+  ];
+}
+
+export function testMark(test) {
+  return {
+    passed: { text: '✓ test', tone: 't-green' },
+    failed: { text: '✗ test', tone: 't-red' },
+    running: { text: '⠋ test', tone: 't-yellow' },
+    untrusted: { text: '! test', tone: 't-yellow' },
+  }[test] || null;
+}
+
+export function subagentLine(sub, now) {
+  return { role: sub.role, time: duration(now - sub.startedAt), text: [sub.description, sub.activity].filter(Boolean).join(' · ') };
+}
+
 export function usageColor(used) {
   if (used >= USAGE_ALERT) return 'var(--color-lost)';
   if (used >= USAGE_WARN) return 'var(--color-waiting)';

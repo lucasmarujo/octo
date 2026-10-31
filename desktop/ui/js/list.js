@@ -1,6 +1,6 @@
 import { $, h, keep, place, svg } from './dom.js';
 import { tools } from './board.js';
-import { activity, alive, duration, elapsed, glyph, groupByProject, kindColor, label, nameTone } from './format.js';
+import { activity, alive, changeParts, duration, elapsed, glyph, groupByProject, kindColor, label, nameTone, subagentLine, testMark } from './format.js';
 import { ICON_BRANCH } from './icons.js';
 import { now, state, visible } from './state.js';
 
@@ -38,8 +38,32 @@ function row(agent, index, handlers) {
     h('span', { class: `cell-state ${time ? time.tone : ''}` }, time ? time.text : ''),
     h('span', { class: 'cell-alive' }, aliveTime(agent)),
     doing(agent),
-    h('div', { class: 'cell-worktree' }, agent.branch ? h('span', { class: 'branch', title: agent.branch }, svg(ICON_BRANCH), agent.branch) : null),
+    worktreeCell(agent),
     tools(agent),
+  );
+}
+
+function worktreeCell(agent) {
+  const parts = changeParts(agent.changes);
+  const test = testMark(agent.test);
+  if (!agent.branch) return h('div', { class: 'cell-worktree' });
+  if (!parts) return h('div', { class: 'cell-worktree' }, h('span', { class: 'branch', title: agent.branch }, svg(ICON_BRANCH), agent.branch), test ? h('span', { class: test.tone }, test.text) : null);
+  return h('div', { class: 'cell-worktree', title: agent.branch }, ...parts.map((part) => h('span', { class: part.tone }, part.text)), test ? h('span', { class: test.tone }, test.text) : null);
+}
+
+function subRow(sub) {
+  const line = subagentLine(sub, now());
+  return h(
+    'div',
+    { class: 'row sub' },
+    h('span', { class: 'cell-index' }),
+    h('span', { class: 'cell-glyph t-faint' }, '↳'),
+    h('span', { class: 'cell-name t-muted' }, line.role),
+    h('span', { class: 'cell-kind' }),
+    h('span', { class: 'cell-state t-faint' }, line.time),
+    h('span', { class: 'cell-alive' }),
+    h('div', { class: 'cell-doing t-muted' }, sub.description || '', sub.activity ? h('span', { class: 't-faint mono-inline' }, ` · ${sub.activity}`) : null),
+    h('div', { class: 'cell-worktree' }),
   );
 }
 
@@ -54,7 +78,7 @@ function groupHead(group) {
 }
 
 function rowSignature(agent, index) {
-  return JSON.stringify([index, agent.name, agent.kind, agent.state, agent.starting, agent.activity, agent.branch, agent.exit]);
+  return JSON.stringify([index, agent.name, agent.kind, agent.state, agent.starting, agent.activity, agent.branch, agent.exit, agent.changes, agent.test]);
 }
 
 export function renderList(handlers) {
@@ -66,6 +90,7 @@ export function renderList(handlers) {
     for (const agent of group.agents) {
       const at = index;
       nodes.push(keep(rows, agent.id, rowSignature(agent, at), () => row(agent, at, handlers)));
+      for (const sub of agent.subagents || []) nodes.push(subRow(sub));
       index += 1;
     }
   }

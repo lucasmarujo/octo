@@ -230,6 +230,20 @@ pub struct AgentView {
     pub last_turn: Option<u64>,
     pub branch: Option<String>,
     pub exit: Option<String>,
+    #[serde(default)]
+    pub changes: Option<ChangeCount>,
+    #[serde(default)]
+    pub test: Option<TestState>,
+    #[serde(default)]
+    pub subagents: Vec<SubagentView>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeCount {
+    pub files: usize,
+    pub insertions: usize,
+    pub deletions: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

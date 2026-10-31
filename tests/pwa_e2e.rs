@@ -674,3 +674,49 @@ fn sessions_are_renamed_and_deleted_and_trust_needs_a_repository() {
         _ => None,
     });
 }
+
+fn git(dir: &Path, args: &[&str]) {
+    let status = std::process::Command::new("git").args(args).current_dir(dir).status().unwrap();
+    assert!(status.success(), "git {args:?}");
+}
+
+#[test]
+fn the_overview_counts_the_changes_of_each_worktree() {
+    let fx = fixture();
+    let repo = fx.dir.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q"]);
+    git(&repo, &["config", "user.email", "test@orkai.dev"]);
+    git(&repo, &["config", "user.name", "orkai test"]);
+    std::fs::write(repo.join("cart.js"), "one\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "start"]);
+    let config = Config { claude_command: env!("CARGO_BIN_EXE_orkai").to_string(), ..Config::default() };
+    let launcher = Launcher::new(fx.store.clone(), config, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let hub = Hub::new(launcher, HOST.to_string());
+    let mut peer = Peer::join(&hub);
+    let mut window = Window(Vec::new());
+    let start = PhoneMsg::Start(StartRequest {
+        kind: AgentKind::Claude,
+        session: "default".into(),
+        cwd: repo.to_string_lossy().into_owned(),
+        task: "count the changes".into(),
+        worktree: true,
+        bypass: false,
+    });
+    peer.inbox().send(Event::Inbound(start)).unwrap();
+    let id = pump_until(&mut peer, &mut window, |message| match message {
+        BridgeMsg::State(overview) => overview.agents.iter().find(|agent| agent.branch.is_some()).map(|agent| agent.id),
+        _ => None,
+    });
+    let worktree = fx.store.load_agent(id).unwrap().worktree.unwrap();
+    std::fs::write(worktree.path.join("cart.js"), "one\ntwo\nthree\n").unwrap();
+    std::fs::write(worktree.path.join("tax.js"), "tax\n").unwrap();
+    let changes = pump_until(&mut peer, &mut window, |message| match message {
+        BridgeMsg::State(overview) => {
+            agent(overview, id).and_then(|agent| agent.changes).filter(|changes| changes.files == 2)
+        }
+        _ => None,
+    });
+    assert_eq!((changes.insertions, changes.deletions), (3, 0));
+}

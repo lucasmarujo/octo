@@ -387,3 +387,15 @@ test('a slash command is read with its argument, and agent names take the TUI al
     }
   }
 });
+
+test('a card sums up its worktree and its tests like the overview of the TUI', async () => {
+  const { changeParts, subagentLine, testMark } = await import('../js/format.js');
+  assert.equal(changeParts(null), null);
+  assert.equal(changeParts({ files: 0, insertions: 0, deletions: 0 }), null, 'nothing changed yet shows the branch');
+  assert.deepEqual(changeParts({ files: 4, insertions: 12, deletions: 3 }).map((part) => part.text), ['4 files', '+12', '−3']);
+  assert.equal(changeParts({ files: 1, insertions: 2, deletions: 0 })[0].text, '1 file');
+  assert.deepEqual(testMark('passed'), { text: '✓ test', tone: 't-green' });
+  assert.equal(testMark('failed').tone, 't-red');
+  assert.equal(testMark(null), null);
+  assert.deepEqual(subagentLine({ role: 'Explore', description: 'Find callers', activity: 'Grep', startedAt: NOW - 12_000 }, NOW), { role: 'Explore', time: '12s', text: 'Find callers · Grep' });
+});
