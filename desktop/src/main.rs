@@ -2,6 +2,7 @@
 
 mod alerts;
 mod link;
+mod login_path;
 mod pair;
 mod settings;
 mod updates;
@@ -27,7 +28,10 @@ fn main() -> ExitCode {
     };
     let result = match internal {
         Some(internal) => internal.run(),
-        None => link::run(),
+        None => {
+            login_path::adopt();
+            link::run()
+        }
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
