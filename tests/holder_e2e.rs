@@ -869,3 +869,33 @@ fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
     assert!(git(&repo, &["branch", "--list", "orkai/*"]).is_empty());
     assert!(fx.store.list_agents().unwrap().is_empty());
 }
+
+#[test]
+fn a_peek_shows_the_screen_without_attaching_or_resizing_the_agent() {
+    let fx = fixture("peek");
+    let (_id, runtime) = start_terminal(&fx, Some("echo orkai-peek-marker"));
+    let deadline = Instant::now() + TIMEOUT;
+    let snapshot = loop {
+        let snapshot = client::peek(&runtime).unwrap();
+        let mut parser = vt100::Parser::new(snapshot.size.rows, snapshot.size.cols, 0);
+        parser.process(&snapshot.data);
+        if parser.screen().contents().contains("orkai-peek-marker") {
+            break snapshot;
+        }
+        assert!(Instant::now() < deadline, "the peek never showed the marker:\n{}", parser.screen().contents());
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert_eq!((snapshot.size.rows, snapshot.size.cols), (24, 100), "a peek never resizes the agent");
+    let (conn, rx) = open(&runtime);
+    let deadline = Instant::now() + TIMEOUT;
+    let status = loop {
+        match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(Some(HolderMsg::Status(status))) => break status,
+            Ok(Some(_)) => {}
+            other => panic!("no status received: {other:?}"),
+        }
+    };
+    assert_eq!(status.viewers, Some(0), "a peek is not a viewer");
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
+}

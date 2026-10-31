@@ -570,3 +570,26 @@ fn keys_named_by_the_browser_are_typed_into_the_agent() {
     }
     phone.screen_where(|_, text| text.lines().any(|line| line.trim() == "orkai-keys"));
 }
+
+#[test]
+fn a_peek_shows_the_last_lines_of_each_running_agent() {
+    let fx = fixture();
+    let id = start_terminal(&fx, "peek");
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.overview_where(|overview| agent(overview, id).is_some_and(running));
+    phone.send(&PhoneMsg::Open { agent: id, rows: 30, cols: 70 });
+    phone.screen_where(|screen, _| screen.full && screen.agent == id);
+    phone.send(&PhoneMsg::Keys { data: "echo orkai-peek\r".into() });
+    phone.screen_where(|_, text| text.lines().filter(|line| line.contains("orkai-peek")).count() >= 2);
+    phone.send(&PhoneMsg::Close);
+    phone.send(&PhoneMsg::Peek { agents: vec![id, id + 100], rows: 4 });
+    let previews = phone.until(|message| match message {
+        BridgeMsg::Peek { previews } => Some(previews),
+        _ => None,
+    });
+    assert_eq!(previews.len(), 1, "an agent that is not running has no preview");
+    assert_eq!(previews[0].agent, id);
+    assert!(previews[0].lines.len() <= 4);
+    let text: String = previews[0].lines.iter().flatten().map(|run| run.0.as_str()).collect();
+    assert!(text.contains("orkai-peek"), "{text}");
+}

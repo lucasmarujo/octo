@@ -1,13 +1,15 @@
 import { nextAttention, renderAgent, renderAgentHead, renderStatus } from './agent.js';
-import { renderBoard, renderHead, spinBoard, tickBoard } from './board.js';
+import { openProjectMenu, renderBoard, renderHead, spinBoard, tickBoard } from './board.js';
 import { initComposer, renderComposer } from './composer.js';
-import { showDiff, showFolders } from './dialogs.js';
+import { closeMenu, showDiff, showFolders } from './dialogs.js';
 import { $, h, svg } from './dom.js';
 import { SPINNER, glyph } from './format.js';
 import { ICON_OVERVIEW } from './icons.js';
+import { peekRequest, renderGrid, tickGrid } from './grid.js';
 import { glyph as kai, moodOf } from './kai.js';
+import { renderList, tickList } from './list.js';
 import { promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
-import { findAgent, saveTabs, selectSession, state } from './state.js';
+import { findAgent, inSession, saveTabs, selectSession, setView, state, visible } from './state.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
 import { connect, currentWindow, send } from './transport.js';
@@ -15,6 +17,9 @@ import { connect, currentWindow, send } from './transport.js';
 const SPIN_MS = 100;
 const TICK_MS = 1000;
 const MAX_TAB_KEY = 9;
+const PEEK_MS = 2000;
+const PEEK_STALE_MS = 10_000;
+const RENDERERS = { board: [renderBoard, tickBoard], list: [renderList, tickList], grid: [renderGrid, tickGrid] };
 
 const handlers = { open: (agent) => openAgent(agent) };
 let terminal = null;
@@ -47,7 +52,7 @@ function settleTabs() {
 function onSelect(name) {
   selectSession(name);
   if (state.active !== null) showOverview();
-  else render();
+  else onFilter();
 }
 
 function tabButton(id) {
@@ -95,6 +100,36 @@ function renderMascot() {
   if (mascot && mascot.dataset.mood !== mood) mascot.dataset.mood = mood;
 }
 
+function shownView() {
+  return inSession().length ? state.view : 'board';
+}
+
+function renderView() {
+  const view = shownView();
+  for (const name of Object.keys(RENDERERS)) $(name).hidden = name !== view;
+  RENDERERS[view][0](handlers);
+}
+
+function peek() {
+  if (!state.overview || state.active !== null || shownView() !== 'grid') return;
+  if (state.peekAt && Date.now() - state.peekAt < PEEK_STALE_MS) return;
+  const request = peekRequest(visible());
+  if (!request) return;
+  state.peekAt = Date.now();
+  send(request);
+}
+
+function onPreviews(previews) {
+  state.peekAt = 0;
+  state.previews = new Map(previews.map((preview) => [preview.agent, preview.lines]));
+  if (state.active === null && shownView() === 'grid') renderGrid(handlers);
+}
+
+function onFilter() {
+  render();
+  peek();
+}
+
 function render() {
   if (!state.overview) return;
   renderTabs();
@@ -102,7 +137,7 @@ function render() {
   renderSidebar(onSelect, openAgent);
   if (state.active === null) {
     renderHead();
-    renderBoard(handlers);
+    renderView();
     renderComposer();
   } else {
     const agent = findAgent(state.active);
@@ -141,7 +176,7 @@ function showOverview() {
   watchedState = null;
   terminal.close();
   show('overview');
-  render();
+  onFilter();
   $('task').focus();
 }
 
@@ -196,6 +231,9 @@ function onMessage(message) {
       break;
     case 'diff':
       showDiff(message);
+      break;
+    case 'peek':
+      onPreviews(message.previews);
       break;
     default:
       break;
@@ -271,7 +309,7 @@ function initWindow() {
 function spin() {
   state.frame += 1;
   const text = SPINNER[state.frame % SPINNER.length];
-  for (const node of document.querySelectorAll('.tabs [data-spin], .agent-title [data-spin]')) node.textContent = text;
+  for (const node of document.querySelectorAll('.tabs [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin]')) node.textContent = text;
   spinBoard();
   spinSidebar();
 }
@@ -280,7 +318,7 @@ function tick() {
   if (!state.overview) return;
   renderSidebar(onSelect, openAgent);
   if (state.active === null) {
-    tickBoard();
+    RENDERERS[shownView()][1]();
     return;
   }
   const agent = findAgent(state.active);
@@ -295,10 +333,22 @@ function start() {
   initTerminal();
   initComposer();
   $('recover').addEventListener('click', () => send({ type: 'recover', session: state.session }));
+  $('project').addEventListener('click', (event) => {
+    event.stopPropagation();
+    if ($('menu').hidden) openProjectMenu(onFilter);
+    else closeMenu();
+  });
+  for (const button of $('views').children) {
+    button.addEventListener('click', () => {
+      setView(button.dataset.view);
+      onFilter();
+    });
+  }
   document.addEventListener('keydown', onShortcut);
   window.addEventListener('orkai:error', (event) => toast(event.detail, 'error'));
   setInterval(spin, SPIN_MS);
   setInterval(tick, TICK_MS);
+  setInterval(peek, PEEK_MS);
   connect(onMessage).catch((err) => toast(`could not reach orkai: ${err}`, 'error'));
   $('task').focus();
 }

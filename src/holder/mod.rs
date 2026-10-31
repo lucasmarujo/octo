@@ -250,6 +250,13 @@ impl Shared {
                     self.broadcast_status();
                 }
             }
+            ClientMsg::Peek => {
+                let frame = {
+                    let mut term = lock(&self.term);
+                    Arc::new(HolderMsg::Snapshot(Snapshot { size: term.size(), data: term.snapshot() }).to_frame())
+                };
+                lock(&self.clients).send_to(client, frame);
+            }
         }
     }
 }

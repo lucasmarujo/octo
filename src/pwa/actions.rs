@@ -4,17 +4,22 @@ use std::sync::mpsc::Sender;
 use std::thread;
 
 use crate::cli::DEFAULT_SIZE;
+use crate::client;
 use crate::launch::LaunchMode;
 use crate::model::{AgentId, AgentState, NewAgent, validate_agent_name};
 use crate::paths::{expand_tilde, matching_directories, user_home};
 use crate::protocol::ClientMsg;
 use crate::pwa::hub::{Event, Hub};
-use crate::pwa::protocol::{BridgeMsg, Dir, PhoneMsg, StartRequest, Tone};
+use crate::pwa::protocol::{BridgeMsg, Dir, PhoneMsg, Preview, Run, StartRequest, Tone};
+use crate::pwa::screen;
+use crate::store::Store;
 use crate::tui::app::merge_message;
 use crate::tui::format::default_agent_name;
 use crate::worktree;
 
 pub const MAX_DIFF_BYTES: usize = 512 * 1024;
+pub const MAX_PEEK_AGENTS: usize = 24;
+pub const MAX_PEEK_ROWS: u16 = 40;
 
 fn notice(reply: &Sender<Event>, tone: Tone, text: impl Into<String>) {
     let _ = reply.send(Event::Reply(BridgeMsg::Notice { text: text.into(), tone }));
@@ -44,6 +49,7 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         PhoneMsg::Folders { path } => folders(&path, reply),
         PhoneMsg::Diff { agent } => diff(hub, agent, reply),
         PhoneMsg::Merge { agent } => merge(hub, agent, reply),
+        PhoneMsg::Peek { agents, rows } => peek(hub, agents, rows, reply),
         PhoneMsg::Sync
         | PhoneMsg::Open { .. }
         | PhoneMsg::Close
@@ -181,6 +187,37 @@ fn folders(path: &str, reply: &Sender<Event>) {
     });
 }
 
+pub fn peek_bounds(agents: Vec<AgentId>, rows: u16) -> (Vec<AgentId>, u16) {
+    (agents.into_iter().take(MAX_PEEK_AGENTS).collect(), rows.clamp(1, MAX_PEEK_ROWS))
+}
+
+pub fn tail(screen: &vt100::Screen, rows: u16) -> Vec<Vec<Run>> {
+    let (height, _) = screen.size();
+    let lines: Vec<Vec<Run>> = (0..height).map(|row| screen::row(screen, row)).collect();
+    let end = lines.iter().rposition(|runs| !runs.is_empty()).map_or(0, |last| last + 1);
+    lines[end.saturating_sub(usize::from(rows))..end].to_vec()
+}
+
+fn preview(store: &Store, agent: AgentId, rows: u16) -> Option<Preview> {
+    let runtime = store.read_runtime(agent).ok().flatten()?;
+    let snapshot = client::peek(&runtime).ok()?;
+    let mut parser = vt100::Parser::new(snapshot.size.rows, snapshot.size.cols, 0);
+    parser.process(&snapshot.data);
+    Some(Preview { agent, lines: tail(parser.screen(), rows) })
+}
+
+fn peek(hub: &Hub, agents: Vec<AgentId>, rows: u16, reply: &Sender<Event>) {
+    let (agents, rows) = peek_bounds(agents, rows);
+    let (store, reply) = (hub.store().clone(), reply.clone());
+    spawn("orkai-pwa-peek", move || {
+        let previews = thread::scope(|scope| {
+            let jobs: Vec<_> = agents.iter().map(|agent| scope.spawn(|| preview(&store, *agent, rows))).collect();
+            jobs.into_iter().filter_map(|job| job.join().ok().flatten()).collect()
+        });
+        let _ = reply.send(Event::Reply(BridgeMsg::Peek { previews }));
+    });
+}
+
 pub fn clip(text: &[u8], limit: usize) -> (String, bool) {
     if text.len() <= limit {
         return (String::from_utf8_lossy(text).into_owned(), false);
@@ -243,6 +280,27 @@ fn merge(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn texts(lines: &[Vec<Run>]) -> Vec<String> {
+        lines.iter().map(|runs| runs.iter().map(|run| run.0.as_str()).collect()).collect()
+    }
+
+    #[test]
+    fn a_preview_keeps_the_last_lines_and_drops_the_blank_rows_below_them() {
+        let mut parser = vt100::Parser::new(10, 40, 0);
+        parser.process(b"one\r\ntwo\r\n\r\nfour\r\nfive");
+        assert_eq!(texts(&tail(parser.screen(), 3)), ["", "four", "five"]);
+        assert_eq!(texts(&tail(parser.screen(), 9)), ["one", "two", "", "four", "five"]);
+        assert!(tail(vt100::Parser::new(10, 40, 0).screen(), 4).is_empty());
+    }
+
+    #[test]
+    fn a_peek_asks_for_a_bounded_number_of_agents_and_lines() {
+        let (agents, rows) = peek_bounds((1..=100).collect(), 500);
+        assert_eq!(agents.len(), MAX_PEEK_AGENTS);
+        assert_eq!(rows, MAX_PEEK_ROWS);
+        assert_eq!(peek_bounds(vec![7], 0), (vec![7], 1));
+    }
 
     #[test]
     fn a_long_diff_is_cut_on_a_character_boundary() {

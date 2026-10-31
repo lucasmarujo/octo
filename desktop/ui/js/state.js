@@ -7,6 +7,10 @@ const WHERE_KEY = 'orkai.where';
 const WORKTREE_KEY = 'orkai.worktree';
 const BYPASS_KEY = 'orkai.bypass';
 const TABS_KEY = 'orkai.tabs';
+const VIEW_KEY = 'orkai.view';
+const PROJECT_KEY = 'orkai.project';
+
+export const VIEWS = ['board', 'list', 'grid'];
 
 export const state = {
   host: '',
@@ -28,6 +32,10 @@ export const state = {
   folders: null,
   tabs: storage.json(TABS_KEY, []),
   active: null,
+  view: VIEWS.includes(storage.get(VIEW_KEY)) ? storage.get(VIEW_KEY) : 'board',
+  projects: storage.json(PROJECT_KEY, {}),
+  previews: new Map(),
+  peekAt: 0,
 };
 
 export function findAgent(id) {
@@ -46,6 +54,31 @@ export function agents() {
 
 export function inSession(name = state.session) {
   return agents().filter((agent) => agent.session === name);
+}
+
+export function projectsInSession() {
+  return [...new Set(inSession().map((agent) => agent.project))];
+}
+
+export function currentProject() {
+  const chosen = state.projects[state.session];
+  return chosen && projectsInSession().includes(chosen) ? chosen : null;
+}
+
+export function setProject(project) {
+  if (project) state.projects[state.session] = project;
+  else delete state.projects[state.session];
+  storage.set(PROJECT_KEY, JSON.stringify(state.projects));
+}
+
+export function visible() {
+  const project = currentProject();
+  return project ? inSession().filter((agent) => agent.project === project) : inSession();
+}
+
+export function setView(view) {
+  state.view = view;
+  storage.set(VIEW_KEY, view);
 }
 
 export function selectSession(name) {

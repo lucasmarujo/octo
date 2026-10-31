@@ -81,6 +81,15 @@ export function activity(agent) {
   return { text: agent.activity, tone: agent.state === 'idle' ? 't-muted' : 't-text' };
 }
 
+export function groupByProject(agents) {
+  const groups = new Map();
+  for (const agent of agents) {
+    if (!groups.has(agent.project)) groups.set(agent.project, { project: agent.project, color: agent.color, agents: [] });
+    groups.get(agent.project).agents.push(agent);
+  }
+  return [...groups.values()];
+}
+
 export function usageColor(used) {
   if (used >= USAGE_ALERT) return 'var(--color-lost)';
   if (used >= USAGE_WARN) return 'var(--color-waiting)';

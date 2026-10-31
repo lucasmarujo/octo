@@ -4,9 +4,10 @@ use std::thread;
 use std::time::Duration;
 
 use crate::model::RuntimeInfo;
-use crate::protocol::{ClientMsg, Hello, HolderMsg, PROTOCOL_VERSION, Welcome};
+use crate::protocol::{ClientMsg, Hello, HolderMsg, PROTOCOL_VERSION, Snapshot, Welcome};
 
 pub const CONNECT_TIMEOUT: Duration = Duration::from_millis(1_500);
+const PEEK_TIMEOUT: Duration = Duration::from_secs(2);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub struct Connection {
@@ -51,6 +52,17 @@ pub fn connect(runtime: &RuntimeInfo) -> io::Result<(Connection, TcpStream, Welc
     stream.set_read_timeout(None)?;
     let reader = stream.try_clone()?;
     Ok((Connection { stream }, reader, welcome))
+}
+
+pub fn peek(runtime: &RuntimeInfo) -> io::Result<Snapshot> {
+    let (conn, mut reader, _) = connect(runtime)?;
+    reader.set_read_timeout(Some(PEEK_TIMEOUT))?;
+    conn.send(&ClientMsg::Peek)?;
+    loop {
+        if let HolderMsg::Snapshot(snapshot) = HolderMsg::read(&mut reader)? {
+            return Ok(snapshot);
+        }
+    }
 }
 
 pub fn spawn_reader<F>(mut reader: TcpStream, mut on_message: F) -> io::Result<()>

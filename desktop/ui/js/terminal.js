@@ -25,7 +25,7 @@ function color(value) {
   return palette(value);
 }
 
-function run([text, fg, bg, flags]) {
+export function run([text, fg, bg, flags]) {
   if (fg === DEFAULT && bg === DEFAULT && !flags) return document.createTextNode(text);
   const node = document.createElement('span');
   node.textContent = text;

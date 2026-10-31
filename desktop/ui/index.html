@@ -48,9 +48,29 @@
               </div>
               <div class="head-actions">
                 <button id="recover" class="button warn" type="button" hidden></button>
+                <button id="project" class="filter" type="button" aria-haspopup="menu"></button>
+                <div id="views" class="segmented" role="group" aria-label="View">
+                  <button type="button" data-view="board">Board</button>
+                  <button type="button" data-view="list">List</button>
+                  <button type="button" data-view="grid">Grid</button>
+                </div>
               </div>
             </header>
             <div id="board" class="board"></div>
+            <div id="list" class="list" hidden>
+              <div class="list-head">
+                <span class="cell-index caps">#</span>
+                <span class="cell-glyph"></span>
+                <span class="cell-name caps">Agent</span>
+                <span class="cell-kind caps">Type</span>
+                <span class="cell-state caps">State</span>
+                <span class="cell-alive caps">Alive</span>
+                <span class="cell-doing caps">Doing</span>
+                <span class="cell-worktree caps">Worktree</span>
+              </div>
+              <div id="list-body" class="list-body"></div>
+            </div>
+            <div id="grid" class="grid" hidden></div>
             <form id="composer" class="composer" autocomplete="off">
               <div class="composer-line">
                 <span class="caret"></span>

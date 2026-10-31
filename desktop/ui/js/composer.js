@@ -1,5 +1,5 @@
 import { $, h, svg } from './dom.js';
-import { pickFolder } from './dialogs.js';
+import { closeMenu, openMenu, pickFolder } from './dialogs.js';
 import { kindColor, label } from './format.js';
 import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_SHIELD } from './icons.js';
 import {
@@ -26,13 +26,7 @@ function grow() {
   task.style.overflowY = task.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
 }
 
-function closeMenu() {
-  $('menu').hidden = true;
-}
-
 function openWhoMenu() {
-  const menu = $('menu');
-  const chip = $('who');
   const current = currentWho();
   const items = installedKinds().map((kind) =>
     h(
@@ -52,11 +46,7 @@ function openWhoMenu() {
       kind === current ? h('span', { class: 'check' }, '✓') : null,
     ),
   );
-  menu.replaceChildren(...items);
-  menu.hidden = false;
-  const box = chip.getBoundingClientRect();
-  menu.style.left = `${box.left}px`;
-  menu.style.top = `${Math.max(8, box.top - menu.offsetHeight - 6)}px`;
+  openMenu($('who'), items, true);
 }
 
 function cycleWho(step) {

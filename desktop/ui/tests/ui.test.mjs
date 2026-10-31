@@ -142,3 +142,61 @@ test('alt N opens the agent waiting the longest, then the ones that are done', a
   state.overview.agents = [agent({ id: 5, state: 'idle' })];
   assert.equal(nextAttention(null), null);
 });
+
+test('the list groups agents by project in the order the core sends them', async () => {
+  const { groupByProject } = await import('../js/format.js');
+  const groups = groupByProject([
+    agent({ id: 1, project: 'studio/game', color: '#baa6ff' }),
+    agent({ id: 2, project: 'acme/web', color: '#8ce2d6' }),
+    agent({ id: 3, project: 'studio/game', color: '#baa6ff' }),
+  ]);
+  assert.deepEqual(
+    groups.map((group) => [group.project, group.color, group.agents.map((member) => member.id)]),
+    [
+      ['studio/game', '#baa6ff', [1, 3]],
+      ['acme/web', '#8ce2d6', [2]],
+    ],
+  );
+  assert.deepEqual(groupByProject([]), []);
+});
+
+test('the project filter shows one project and falls back to all of them when it is gone', async () => {
+  const { state, visible, currentProject, setProject, projectsInSession } = await import('../js/state.js');
+  state.session = 'default';
+  state.overview = {
+    agents: [
+      agent({ id: 1, project: 'acme/web' }),
+      agent({ id: 2, project: 'studio/game' }),
+      agent({ id: 3, project: 'acme/web' }),
+      agent({ id: 4, project: 'lab/infra', session: 'weekend' }),
+    ],
+  };
+  assert.deepEqual(projectsInSession(), ['acme/web', 'studio/game']);
+  assert.deepEqual(visible().map((a) => a.id), [1, 2, 3]);
+  setProject('acme/web');
+  assert.equal(currentProject(), 'acme/web');
+  assert.deepEqual(visible().map((a) => a.id), [1, 3]);
+  state.overview.agents = state.overview.agents.filter((a) => a.project !== 'acme/web');
+  assert.equal(currentProject(), null, 'a project without agents is no longer a filter');
+  assert.deepEqual(visible().map((a) => a.id), [2]);
+  setProject(null);
+});
+
+test('the grid asks for the screens of the running agents, as many as the core answers', async () => {
+  const { MAX_PEEK_AGENTS, PREVIEW_ROWS, peekRequest } = await import('../js/grid.js');
+  const actions = rust('src/pwa/actions.rs');
+  assert.ok(actions.includes(`MAX_PEEK_AGENTS: usize = ${MAX_PEEK_AGENTS};`), 'same agent limit as the core');
+  const maxRows = Number(actions.match(/MAX_PEEK_ROWS: u16 = (\d+);/)[1]);
+  assert.ok(PREVIEW_ROWS > 0 && PREVIEW_ROWS <= maxRows);
+  const list = [
+    agent({ id: 1, state: 'working' }),
+    agent({ id: 2, state: 'exited' }),
+    agent({ id: 3, state: 'lost' }),
+    agent({ id: 4, state: 'idle', starting: true }),
+    agent({ id: 5, state: 'paused' }),
+  ];
+  assert.deepEqual(peekRequest(list), { type: 'peek', agents: [1, 5], rows: PREVIEW_ROWS });
+  assert.equal(peekRequest(list.slice(1, 4)), null, 'nothing running, nothing to ask');
+  const many = Array.from({ length: MAX_PEEK_AGENTS + 6 }, (_, index) => agent({ id: index + 1, state: 'idle' }));
+  assert.equal(peekRequest(many).agents.length, MAX_PEEK_AGENTS);
+});

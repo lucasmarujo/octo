@@ -1,9 +1,9 @@
 import { $, h, keep, place, svg } from './dom.js';
-import { confirm } from './dialogs.js';
+import { closeMenu, confirm, openMenu } from './dialogs.js';
 import { COLUMNS, SPINNER, activity, alive, column, elapsed, glyph, kindColor, label, nameTone, plural } from './format.js';
-import { ICON_BRANCH, ICON_STOP, ICON_TRASH } from './icons.js';
+import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_STOP, ICON_TRASH } from './icons.js';
 import { sleeping } from './kai.js';
-import { inSession, now, state } from './state.js';
+import { currentProject, inSession, now, projectsInSession, setProject, state, visible } from './state.js';
 import { send } from './transport.js';
 
 async function stopAgent(agent) {
@@ -27,7 +27,7 @@ async function removeAgent(agent) {
   if (sure) send({ type: 'remove', agent: agent.id });
 }
 
-function tools(agent) {
+export function tools(agent) {
   const act = (work) => (event) => {
     event.stopPropagation();
     work(agent);
@@ -67,7 +67,7 @@ function card(agent, handlers) {
       { class: 'card-top' },
       h('span', { class: `glyph ${mark.tone}`, dataset: mark.spin ? { spin: '1' } : {} }, mark.text),
       h('span', { class: `card-name ${nameTone(agent)}` }, agent.name),
-      time ? h('span', { class: `card-time ${time.tone}` }, time.text) : null,
+      h('span', { class: `card-time ${time ? time.tone : ''}` }, time ? time.text : ''),
     ),
     h(
       'div',
@@ -112,7 +112,7 @@ function cardSignature(agent, handlers) {
 
 export function renderBoard(handlers) {
   const board = $('board');
-  const list = inSession();
+  const list = visible();
   if (!list.length) {
     const signature = `empty:${state.session}`;
     if (board.dataset.signature !== signature) {
@@ -153,16 +153,55 @@ export function renderHead() {
   const recover = $('recover');
   recover.hidden = lost === 0;
   recover.textContent = `Recover ${plural(lost, 'interrupted agent', 'interrupted agents')}`;
+  renderFilter(list);
+  for (const button of $('views').children) button.setAttribute('aria-pressed', String(button.dataset.view === state.view));
+}
+
+function renderFilter(list) {
+  const filter = $('project');
+  const project = currentProject();
+  const signature = JSON.stringify([project, list.length > 0]);
+  if (filter.dataset.signature === signature) return;
+  filter.dataset.signature = signature;
+  filter.hidden = list.length === 0;
+  filter.classList.toggle('active', project !== null);
+  filter.replaceChildren(project || 'All projects', svg(ICON_CHEVRON_DOWN));
+}
+
+export function openProjectMenu(onPick) {
+  const list = inSession();
+  const current = currentProject();
+  const item = (project, text, count, color) =>
+    h(
+      'button',
+      {
+        class: `menu-item${project === current ? ' active' : ''}`,
+        type: 'button',
+        role: 'menuitem',
+        onclick: () => {
+          setProject(project);
+          closeMenu();
+          onPick();
+        },
+      },
+      color ? h('span', { class: 'swatch', style: `background:${color}` }) : null,
+      h('span', null, text),
+      h('span', { class: 'check' }, project === current ? '✓' : String(count)),
+    );
+  const items = projectsInSession().map((project) => {
+    const members = list.filter((agent) => agent.project === project);
+    return item(project, project, members.length, members[0].color);
+  });
+  openMenu($('project'), [item(null, 'All projects', list.length, null), ...items], false);
 }
 
 export function tickBoard() {
-  const byId = new Map(inSession().map((agent) => [String(agent.id), agent]));
+  const byId = new Map(visible().map((agent) => [String(agent.id), agent]));
   for (const node of $('board').querySelectorAll('[data-agent]')) {
     const agent = byId.get(node.dataset.agent);
-    const target = node.querySelector('.card-time');
-    if (!agent || !target) continue;
+    if (!agent) continue;
     const time = elapsed(agent, now());
-    if (time) target.textContent = time.text;
+    node.querySelector('.card-time').textContent = time ? time.text : '';
   }
 }
 

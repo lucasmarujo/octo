@@ -15,6 +15,7 @@ const KIND_INPUT: u8 = 4;
 const KIND_RESIZE: u8 = 5;
 const KIND_KILL: u8 = 6;
 const KIND_SEEN: u8 = 7;
+const KIND_PEEK: u8 = 8;
 const KIND_WELCOME: u8 = 64;
 const KIND_STATUS: u8 = 65;
 const KIND_SNAPSHOT: u8 = 66;
@@ -65,6 +66,7 @@ pub enum ClientMsg {
     Resize(TermSize),
     Kill,
     Seen,
+    Peek,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,6 +124,7 @@ impl ClientMsg {
             ClientMsg::Resize(size) => json(KIND_RESIZE, size),
             ClientMsg::Kill => encode_frame(KIND_KILL, &[]),
             ClientMsg::Seen => encode_frame(KIND_SEEN, &[]),
+            ClientMsg::Peek => encode_frame(KIND_PEEK, &[]),
         }
     }
 
@@ -134,6 +137,7 @@ impl ClientMsg {
             KIND_RESIZE => ClientMsg::Resize(parse(&payload)?),
             KIND_KILL => ClientMsg::Kill,
             KIND_SEEN => ClientMsg::Seen,
+            KIND_PEEK => ClientMsg::Peek,
             other => return Err(unknown(other)),
         })
     }
@@ -216,6 +220,7 @@ mod tests {
         round_trip_client(ClientMsg::Resize(TermSize { rows: 10, cols: 20 }));
         round_trip_client(ClientMsg::Kill);
         round_trip_client(ClientMsg::Seen);
+        round_trip_client(ClientMsg::Peek);
     }
 
     #[test]

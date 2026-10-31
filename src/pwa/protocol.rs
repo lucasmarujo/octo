@@ -77,6 +77,10 @@ pub enum PhoneMsg {
     Merge {
         agent: AgentId,
     },
+    Peek {
+        agents: Vec<AgentId>,
+        rows: u16,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -101,6 +105,7 @@ pub enum BridgeMsg {
     Notice { text: String, tone: Tone },
     Folders { path: String, parent: Option<String>, dirs: Vec<Dir> },
     Diff { agent: AgentId, branch: String, text: String, truncated: bool },
+    Peek { previews: Vec<Preview> },
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -187,6 +192,13 @@ pub struct Screen {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Preview {
+    pub agent: AgentId,
+    pub lines: Vec<Vec<Run>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Dir {
     pub name: String,
     pub path: String,
@@ -210,6 +222,7 @@ mod tests {
             (r#"{"type":"keys","data":"\u001b[A"}"#, PhoneMsg::Keys { data: "\x1b[A".into() }),
             (r#"{"type":"send","text":"fix it"}"#, PhoneMsg::Send { text: "fix it".into() }),
             (r#"{"type":"scroll","lines":-3}"#, PhoneMsg::Scroll { lines: -3 }),
+            (r#"{"type":"peek","agents":[2,5],"rows":6}"#, PhoneMsg::Peek { agents: vec![2, 5], rows: 6 }),
             (
                 r#"{"type":"start","kind":"claude","session":"default","cwd":"/w","task":"t","worktree":true}"#,
                 PhoneMsg::Start(StartRequest {
@@ -266,5 +279,12 @@ mod tests {
         let text = serde_json::to_string(&screen).unwrap();
         assert!(text.contains(r#""lines":[[0,[["hi",-1,4,1]]]]"#), "{text}");
         assert!(text.contains(r#""cursor":[1,4]"#), "{text}");
+    }
+
+    #[test]
+    fn previews_carry_the_last_lines_of_each_agent() {
+        let peek = BridgeMsg::Peek { previews: vec![Preview { agent: 3, lines: vec![vec![("ok".into(), 2, -1, 0)]] }] };
+        let text = serde_json::to_string(&peek).unwrap();
+        assert_eq!(text, r#"{"type":"peek","previews":[{"agent":3,"lines":[[["ok",2,-1,0]]]}]}"#);
     }
 }

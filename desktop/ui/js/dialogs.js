@@ -20,6 +20,23 @@ function close() {
   if (dialog.open) dialog.close();
 }
 
+const MENU_GAP = 6;
+const MENU_MARGIN = 8;
+
+export function closeMenu() {
+  $('menu').hidden = true;
+}
+
+export function openMenu(anchor, items, above) {
+  const menu = $('menu');
+  menu.replaceChildren(...items);
+  menu.hidden = false;
+  const box = anchor.getBoundingClientRect();
+  const left = Math.min(box.left, window.innerWidth - menu.offsetWidth - MENU_MARGIN);
+  menu.style.left = `${Math.max(MENU_MARGIN, left)}px`;
+  menu.style.top = above ? `${Math.max(MENU_MARGIN, box.top - menu.offsetHeight - MENU_GAP)}px` : `${box.bottom + MENU_GAP}px`;
+}
+
 export function confirm({ title, text, action, danger }) {
   return new Promise((resolve) => {
     const dialog = $('dialog');
