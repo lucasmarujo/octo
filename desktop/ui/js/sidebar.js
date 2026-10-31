@@ -1,6 +1,7 @@
 import { $, h, svg } from './dom.js';
 import { ask } from './dialogs.js';
 import { SPINNER, duration, kindColor, label, usageColor } from './format.js';
+import { t } from './i18n.js';
 import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_PLUS } from './icons.js';
 import { inSession, now, selectSession, state, toggleExpanded } from './state.js';
 import { send } from './transport.js';
@@ -33,7 +34,7 @@ function sessionItem(session, onSelect, onOpen) {
     {
       class: 'chevron',
       role: 'button',
-      'aria-label': expanded ? 'Collapse' : 'Expand',
+      'aria-label': expanded ? t('Collapse') : t('Expand'),
       onclick: (event) => {
         event.stopPropagation();
         toggleExpanded(session.name);
@@ -60,7 +61,7 @@ function sessionItem(session, onSelect, onOpen) {
 }
 
 async function newSession(onSelect) {
-  const name = await ask({ title: 'New session', text: 'A session groups agents you work on together.', action: 'Create', placeholder: 'session name' });
+  const name = await ask({ title: t('New session'), text: t('A session groups agents you work on together.'), action: t('Create'), placeholder: t('session name') });
   if (!name) return;
   state.pendingSession = name;
   send({ type: 'session', name });
@@ -73,7 +74,7 @@ function usageRow(window) {
   return h(
     'div',
     { class: 'usage-row' },
-    h('span', { class: 'usage-label' }, window.label),
+    h('span', { class: 'usage-label' }, t(window.label)),
     h('div', { class: 'usage-bar' }, h('div', { class: 'usage-fill', style: `width:${used}%;background:${usageColor(window.used)}` })),
     h('span', { class: 'usage-pct', style: `color:${window.used >= 70 ? usageColor(window.used) : 'var(--color-text)'}` }, `${Math.round(window.used)}%`),
     h('span', { class: 'usage-reset' }, reset),
@@ -88,13 +89,13 @@ function renderUsage() {
     return;
   }
   host.hidden = false;
-  const ago = state.usageAt ? `${duration(Date.now() - state.usageAt)} ago` : '';
+  const ago = state.usageAt ? t('{time} ago', { time: duration(Date.now() - state.usageAt) }) : '';
   const blocks = entries.map((entry) => {
     const rows = entry.windows.map(usageRow);
     if (entry.credits !== null && entry.credits !== undefined) {
-      rows.push(h('span', { class: 'usage-note' }, `funds $${entry.credits.toFixed(2)}`));
+      rows.push(h('span', { class: 'usage-note' }, t('funds {amount}', { amount: `$${entry.credits.toFixed(2)}` })));
     }
-    if (entry.problem) rows.push(h('span', { class: 'usage-note' }, entry.problem));
+    if (entry.problem) rows.push(h('span', { class: 'usage-note' }, t(entry.problem)));
     return h(
       'div',
       { class: 'usage-agent' },
@@ -103,7 +104,7 @@ function renderUsage() {
     );
   });
   host.replaceChildren(
-    h('div', { class: 'usage-head' }, h('span', { class: 'caps' }, 'Plan usage'), h('span', { class: 'usage-note' }, ago)),
+    h('div', { class: 'usage-head' }, h('span', { class: 'caps' }, t('Plan usage')), h('span', { class: 'usage-note' }, ago)),
     ...blocks,
   );
 }
@@ -126,7 +127,7 @@ export function renderSidebar(onSelect, onOpen) {
       'button',
       { class: 'session-row new-session', type: 'button', onclick: () => newSession(onSelect) },
       h('span', { class: 'chevron' }, svg(ICON_PLUS)),
-      h('span', { class: 'session-name' }, 'New session'),
+      h('span', { class: 'session-name' }, t('New session')),
       h('span', { class: 'kbd' }, 'ctrl N'),
     );
     host.replaceChildren(...items, create);

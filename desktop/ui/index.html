@@ -18,13 +18,13 @@
       <header class="titlebar" data-tauri-drag-region>
         <nav id="tabs" class="tabs" data-tauri-drag-region></nav>
         <div class="window-controls">
-          <button id="win-min" class="win-button" type="button" aria-label="Minimize">
+          <button id="win-min" class="win-button" type="button" aria-label="Minimize" data-i18n-label="Minimize">
             <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg>
           </button>
-          <button id="win-max" class="win-button" type="button" aria-label="Maximize">
+          <button id="win-max" class="win-button" type="button" aria-label="Maximize" data-i18n-label="Maximize">
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor" stroke-width="1"/></svg>
           </button>
-          <button id="win-close" class="win-button close" type="button" aria-label="Close">
+          <button id="win-close" class="win-button close" type="button" aria-label="Close" data-i18n-label="Close">
             <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"/></svg>
           </button>
         </div>
@@ -39,15 +39,15 @@
             </div>
           </div>
           <section class="sessions">
-            <span class="caps">Sessions</span>
+            <span class="caps" data-i18n="Sessions">Sessions</span>
             <div id="sessions" class="session-list"></div>
           </section>
           <div class="spacer"></div>
           <section id="usage" class="usage" hidden></section>
           <footer class="sidebar-footer">
-            <button id="pair" class="footer-pair" type="button" title="Pair your phone (ctrl P)"></button>
-            <button id="open-help" class="footer-icon" type="button" aria-label="How to use" title="How to use (F1)"></button>
-            <button id="open-settings" class="footer-icon" type="button" aria-label="Settings" title="Settings"></button>
+            <button id="pair" class="footer-pair" type="button" title="Pair your phone (ctrl P)" data-i18n-title="Pair your phone (ctrl P)"></button>
+            <button id="open-help" class="footer-icon" type="button" aria-label="How to use" title="How to use (F1)" data-i18n-label="How to use" data-i18n-title="How to use (F1)"></button>
+            <button id="open-settings" class="footer-icon" type="button" aria-label="Settings" title="Settings" data-i18n-label="Settings" data-i18n-title="Settings"></button>
           </footer>
         </aside>
         <main class="main">
@@ -60,18 +60,18 @@
               <div class="head-actions">
                 <button id="recover" class="button warn" type="button" hidden></button>
                 <button id="project" class="filter" type="button" aria-haspopup="menu"></button>
-                <div id="grid-size" class="segmented" role="group" aria-label="Agents on screen" hidden>
+                <div id="grid-size" class="segmented" role="group" aria-label="Agents on screen" data-i18n-label="Agents on screen" hidden>
                   <button type="button" data-size="4">4</button>
                   <button type="button" data-size="6">6</button>
                   <button type="button" data-size="8">8</button>
                   <button type="button" data-size="10">10</button>
                   <button type="button" data-size="12">12</button>
-                  <button type="button" data-size="all">All</button>
+                  <button type="button" data-size="all" data-i18n="All">All</button>
                 </div>
-                <div id="views" class="segmented" role="group" aria-label="View">
-                  <button type="button" data-view="board">Board</button>
-                  <button type="button" data-view="list">List</button>
-                  <button type="button" data-view="grid">Grid</button>
+                <div id="views" class="segmented" role="group" aria-label="View" data-i18n-label="View">
+                  <button type="button" data-view="board" data-i18n="Board">Board</button>
+                  <button type="button" data-view="list" data-i18n="List">List</button>
+                  <button type="button" data-view="grid" data-i18n="Grid">Grid</button>
                 </div>
               </div>
             </header>
@@ -80,12 +80,12 @@
               <div class="list-head">
                 <span class="cell-index caps">#</span>
                 <span class="cell-glyph"></span>
-                <span class="cell-name caps">Agent</span>
-                <span class="cell-kind caps">Type</span>
-                <span class="cell-state caps">State</span>
-                <span class="cell-alive caps">Alive</span>
-                <span class="cell-doing caps">Doing</span>
-                <span class="cell-worktree caps">Worktree</span>
+                <span class="cell-name caps" data-i18n="Agent">Agent</span>
+                <span class="cell-kind caps" data-i18n="Type">Type</span>
+                <span class="cell-state caps" data-i18n="State">State</span>
+                <span class="cell-alive caps" data-i18n="Alive">Alive</span>
+                <span class="cell-doing caps" data-i18n="Doing">Doing</span>
+                <span class="cell-worktree caps" data-i18n="Worktree">Worktree</span>
               </div>
               <div id="list-body" class="list-body"></div>
             </div>
@@ -94,11 +94,11 @@
               <div id="palette" class="palette" role="listbox" hidden></div>
               <div class="composer-line">
                 <span class="caret"></span>
-                <textarea id="task" class="task" rows="1" placeholder="Write a task…" spellcheck="false"></textarea>
+                <textarea id="task" class="task" rows="1" placeholder="Write a task…" data-i18n-placeholder="Write a task…" spellcheck="false"></textarea>
                 <div class="composer-hints">
-                  <span><b>/</b> commands &amp; skills</span>
-                  <span><b>!</b> run in a terminal</span>
-                  <span><b>ctrl ↑</b> history</span>
+                  <span><b>/</b> <span data-i18n="commands &amp; skills">commands &amp; skills</span></span>
+                  <span><b>!</b> <span data-i18n="run in a terminal">run in a terminal</span></span>
+                  <span><b>ctrl ↑</b> <span data-i18n="history">history</span></span>
                 </div>
               </div>
               <div class="composer-options">
@@ -107,8 +107,8 @@
                 <button id="worktree" class="toggle" type="button" aria-pressed="false"></button>
                 <button id="bypass" class="toggle" type="button" aria-pressed="false"></button>
                 <div class="grow"></div>
-                <span class="hint">⇧↵ new line</span>
-                <button id="launch" class="button primary" type="submit">Launch <span class="mono">↵</span></button>
+                <span class="hint">⇧↵ <span data-i18n="new line">new line</span></span>
+                <button id="launch" class="button primary" type="submit"><span data-i18n="Launch">Launch</span> <span class="mono">↵</span></button>
               </div>
             </form>
           </section>

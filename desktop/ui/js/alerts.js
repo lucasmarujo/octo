@@ -1,3 +1,5 @@
+import { t } from './i18n.js';
+
 export const ALERT_REPEAT_MS = 15_000;
 export const APP_TITLE = 'Octo';
 
@@ -38,6 +40,6 @@ export function windowTitle(agents) {
 
 export function notice(alert) {
   return alert.state === 'paused'
-    ? { text: `${alert.name} is waiting for you · alt+n opens it`, tone: 'warn' }
-    : { text: `${alert.name} finished · alt+n opens it`, tone: 'success' };
+    ? { text: t('{name} is waiting for you · alt+n opens it', { name: alert.name }), tone: 'warn' }
+    : { text: t('{name} finished · alt+n opens it', { name: alert.name }), tone: 'success' };
 }

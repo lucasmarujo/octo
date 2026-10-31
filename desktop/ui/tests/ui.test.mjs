@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { COLUMNS, USAGE_ALERT, USAGE_WARN, column, duration, elapsed, glyph, kindColor, kindHex, label, usageColor } from '../js/format.js';
@@ -302,7 +302,8 @@ test('arguments typed in the settings become the list the config keeps', async (
 });
 
 test('the help says the same in English and in Portuguese, and English comes first', async () => {
-  const { HELP, LANGUAGES, language } = await import('../js/help.js');
+  const { HELP } = await import('../js/help.js');
+  const { LANGUAGES, language } = await import('../js/i18n.js');
   assert.equal(LANGUAGES[0].code, 'en');
   assert.equal(language(), 'en', 'English unless the person picks Portuguese');
   const [en, pt] = [HELP.en, HELP['pt-BR']];
@@ -565,4 +566,71 @@ test('the idle column stops at once only the idle agents that are still running'
   assert.match(board, /def\.key === 'idle' \? h\('button'/);
   assert.match(board, /const sure = await confirm\(\{[\s\S]*?danger: true/, 'it asks before stopping');
   assert.match(board, /for \(const agent of targets\) send\(\{ type: 'stop', agent: agent\.id \}\)/);
+});
+
+test('every text the app shows has a Portuguese version', async () => {
+  const { PT } = await import('../js/i18n.js');
+  const ui = join(REPO, 'desktop/ui');
+  const sources = readdirSync(join(ui, 'js')).filter((file) => file.endsWith('.js')).map((file) => readFileSync(join(ui, 'js', file), 'utf8'));
+  const keys = new Set();
+  for (const source of sources) {
+    assert.doesNotMatch(source, /\bt\(\s*`/, 'a translated text is a literal, never a template');
+    for (const [, key] of source.matchAll(/\bt\(\s*'((?:[^'\\]|\\.)*)'/g)) keys.add(key);
+    for (const [, key] of source.matchAll(/\bt\(\s*"((?:[^"\\]|\\.)*)"/g)) keys.add(key);
+  }
+  const html = readFileSync(join(ui, 'index.html'), 'utf8');
+  for (const [, key] of html.matchAll(/data-i18n(?:-placeholder|-title|-label)?="([^"]*)"/g)) keys.add(key.replaceAll('&amp;', '&'));
+  assert.ok(keys.size > 200, `only ${keys.size} texts found`);
+  for (const key of keys) assert.ok(Object.hasOwn(PT, key), `no Portuguese for: ${key}`);
+  const shown = [
+    ...['Appearance', 'Agents', 'Alerts', 'Phone', 'Updates'],
+    ...['running', 'passed', 'failed', 'untrusted'],
+    ...[...rust('src/tui/render.rs').matchAll(/USAGE_(?:WEEKLY|MONTHLY)_LABEL: &str = "([^"]+)"/g)].map((match) => match[1]),
+    ...[...rust('src/usage.rs').matchAll(/Problem::\w+ => "([^"]+)"/g)].map((match) => match[1]),
+    ...[...rust('desktop/src/settings.rs').match(/SHELL_RULE: &str = if cfg!\(windows\) \{ "([^"]+)" \} else \{ "([^"]+)" \}/).slice(1)],
+  ];
+  for (const text of shown) assert.ok(Object.hasOwn(PT, text), `no Portuguese for the backend text: ${text}`);
+});
+
+test('a Portuguese text keeps every placeholder of the English one', async () => {
+  const { PT, translate } = await import('../js/i18n.js');
+  const names = (text) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort();
+  for (const [en, pt] of Object.entries(PT)) {
+    assert.deepEqual(names(pt), names(en), en);
+    assert.notEqual(pt.trim(), '', en);
+  }
+  assert.equal(translate('pt-BR', 'Stop {name}?', { name: 'kai-1' }), 'Parar kai-1?');
+  assert.equal(translate('en', 'Stop {name}?', { name: 'kai-1' }), 'Stop kai-1?');
+  assert.equal(translate('pt-BR', 'Nothing translated here'), 'Nothing translated here');
+  assert.equal(translate('pt-BR', 'Done {time} ago', {}), 'Terminou há {time}');
+});
+
+test('every notice the hub sends reads in Portuguese and stays as is in English', async () => {
+  const { translateHub } = await import('../js/i18n.js');
+  const sources = ['src/pwa/actions.rs', 'src/pwa/server.rs'].map(rust).join('\n');
+  const notices = [...sources.matchAll(/notice\([^;]*?Tone::\w+,\s*(?:format!\()?"((?:[^"\\]|\\.)*)"/g)].map((match) => match[1].replace(/\{[^}]*\}/g, 'alpha'));
+  assert.ok(notices.length >= 40, `only ${notices.length} notices found`);
+  const outcomes = ['alpha had nothing new for main', 'alpha merged into main', 'exited with code 1', 'exited', 'failed: boom'];
+  for (const text of [...notices, ...outcomes]) {
+    assert.notEqual(translateHub('pt-BR', text), text, `no Portuguese for the notice: ${text}`);
+    assert.equal(translateHub('en', text), text);
+  }
+  assert.equal(translateHub('pt-BR', 'starting claude fix-login in a new worktree with permissions bypassed…'), 'iniciando claude fix-login num worktree novo sem pedir permissões…');
+  assert.equal(translateHub('pt-BR', 'starting terminal npm-dev…'), 'iniciando terminal npm-dev…');
+  assert.equal(translateHub('pt-BR', 'session work is now home'), 'a sessão work agora se chama home');
+  assert.equal(translateHub('pt-BR', 'fix-login is now login'), 'fix-login agora se chama login');
+  assert.equal(translateHub('pt-BR', 'exited with code 3'), 'encerrado com código 3');
+  assert.equal(translateHub('pt-BR', 'a text the hub never sends'), 'a text the hub never sends');
+});
+
+test('Portuguese is chosen once, kept, and reopens the page where it was picked', () => {
+  const i18n = readFileSync(join(REPO, 'desktop/ui/js/i18n.js'), 'utf8');
+  assert.match(i18n, /storage\.set\(LANGUAGE_KEY, code === 'en' \? null : code\)/, 'English is the default and is not stored');
+  assert.match(i18n, /window\.location\.reload\(\)/);
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /setLanguage\(code, 'settings'\)/, 'settings has the language picker');
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /applyStatic\(\);\n\s*pageAfterReload = pageToReopen\(\);/);
+  assert.match(main, /invoke\('alert', \{ alerts, language: language\(\) \}\)/, 'desktop notifications follow the language');
+  assert.match(main, /toast\(hubText\(message\.text\), message\.tone\)/);
 });

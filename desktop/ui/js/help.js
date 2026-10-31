@@ -1,11 +1,5 @@
-import { $, h, storage } from './dom.js';
-
-const LANGUAGE_KEY = 'orkai.help.language';
-
-export const LANGUAGES = [
-  { code: 'en', name: 'English' },
-  { code: 'pt-BR', name: 'Português (Brasil)' },
-];
+import { $, h } from './dom.js';
+import { LANGUAGES, language, setLanguage } from './i18n.js';
 
 const key = (text) => h('span', { class: 'help-key' }, text);
 
@@ -41,7 +35,7 @@ export const HELP = {
     lead: 'Rode vários agentes de IA nos seus projetos a partir de uma janela. Fechar o Octo não para nenhum agente: eles continuam trabalhando e o Octo se reconecta quando você volta.',
     language: 'Idioma',
     steps: [
-      ['Escolha a pasta', () => ['Clique em ', key('where'), ' ou aperte ', key('ctrl L'), '. Cada sessão lembra a própria pasta.']],
+      ['Escolha a pasta', () => ['Clique em ', key('onde'), ' ou aperte ', key('ctrl L'), '. Cada sessão lembra a própria pasta.']],
       ['Escolha quem roda', () => ['Qualquer agente instalado ou um terminal. ', key('tab'), ' alterna entre eles.']],
       ['Escreva a tarefa', () => ['Aperte ', key('enter'), ' e o agente já começa trabalhando nela.']],
       ['Responda quando ele precisar', () => ['O Octo toca um aviso e ', key('alt N'), ' abre o agente que espera há mais tempo.']],
@@ -56,23 +50,13 @@ export const HELP = {
       ['⠹', 't-yellow', 'Trabalhando'],
       ['‖', 't-yellow strong', 'Esperando sua resposta', 't-yellow'],
       ['✓', 't-green strong', 'Terminou, ainda não visto'],
-      ['●', 't-faint', 'Parado'],
+      ['●', 't-faint', 'Ocioso'],
       ['$', 't-text strong', 'Terminal'],
       ['↻', 't-red', () => ['Interrompido — ', key('ctrl R'), ' recupera']],
       ['✗', 't-faint', 'Encerrado'],
     ],
   },
 };
-
-export function language() {
-  const chosen = storage.get(LANGUAGE_KEY);
-  return HELP[chosen] ? chosen : 'en';
-}
-
-function setLanguage(code) {
-  storage.set(LANGUAGE_KEY, code === 'en' ? null : code);
-  renderHelp();
-}
 
 const text = (value) => (typeof value === 'function' ? value() : value);
 
@@ -100,7 +84,7 @@ export function renderHelp() {
           'div',
           { class: 'segmented', role: 'group', 'aria-label': copy.language },
           ...LANGUAGES.map((entry) =>
-            h('button', { type: 'button', 'aria-pressed': String(entry.code === code), onclick: () => setLanguage(entry.code) }, entry.name),
+            h('button', { type: 'button', 'aria-pressed': String(entry.code === code), onclick: () => setLanguage(entry.code, 'help') }, entry.name),
           ),
         ),
       ),

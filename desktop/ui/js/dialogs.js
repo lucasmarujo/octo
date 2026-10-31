@@ -1,4 +1,5 @@
 import { $, h } from './dom.js';
+import { t } from './i18n.js';
 import { sgrRuns } from './palette.js';
 import { send } from './transport.js';
 
@@ -48,7 +49,7 @@ export function confirm({ title, text, action, danger }) {
     const cancel = () => done(false);
     const yes = h('button', { class: danger ? 'button warn' : 'button primary', type: 'button', onclick: () => done(true) }, action);
     open(title, h('p', { class: 'dialog-text' }, text), [
-      h('button', { class: 'button', type: 'button', onclick: cancel }, 'Cancel'),
+      h('button', { class: 'button', type: 'button', onclick: cancel }, t('Cancel')),
       yes,
     ]);
     dialog.addEventListener('close', cancel, { once: true });
@@ -77,7 +78,7 @@ export function ask({ title, text, value, action, placeholder }) {
       }
     });
     open(title, [text ? h('p', { class: 'dialog-text' }, text) : null, field], [
-      h('button', { class: 'button', type: 'button', onclick: cancel }, 'Cancel'),
+      h('button', { class: 'button', type: 'button', onclick: cancel }, t('Cancel')),
       h('button', { class: 'button primary', type: 'button', onclick: submit }, action),
     ]);
     dialog.addEventListener('close', cancel, { once: true });
@@ -103,12 +104,12 @@ export function showDiff(message) {
   const style = { color: null, bold: false, dim: false };
   const shown = lines.slice(0, DIFF_LINES).map((line) => diffLine(line, style));
   const notes = [];
-  if (message.truncated || lines.length > DIFF_LINES) notes.push(h('span', { class: 'detail-note' }, 'The diff is too long to show whole; the rest is on the branch.'));
+  if (message.truncated || lines.length > DIFF_LINES) notes.push(h('span', { class: 'detail-note' }, t('The diff is too long to show whole; the rest is on the branch.')));
   const body = message.text.trim()
     ? h('pre', { class: 'diff selectable' }, shown)
-    : h('p', { class: 'dialog-text' }, 'No changes on this branch yet.');
+    : h('p', { class: 'dialog-text' }, t('No changes on this branch yet.'));
   dialog.classList.add('wide');
-  open(`Changes on ${message.branch}`, [body, notes], [h('button', { class: 'button primary', type: 'button', onclick: close }, 'Close')]);
+  open(t('Changes on {branch}', { branch: message.branch }), [body, notes], [h('button', { class: 'button primary', type: 'button', onclick: close }, t('Close'))]);
   dialog.addEventListener('close', () => dialog.classList.remove('wide'), { once: true });
 }
 
@@ -118,26 +119,26 @@ function report(title, text, empty, notes) {
   const shown = text.split('\n').slice(-DIFF_LINES).map((line) => diffLine(line, style));
   const body = text.trim() ? h('pre', { class: 'diff selectable' }, shown) : h('p', { class: 'dialog-text' }, empty);
   dialog.classList.add('wide');
-  open(title, [body, notes], [h('button', { class: 'button primary', type: 'button', onclick: close }, 'Close')]);
+  open(title, [body, notes], [h('button', { class: 'button primary', type: 'button', onclick: close }, t('Close'))]);
   dialog.addEventListener('close', () => dialog.classList.remove('wide'), { once: true });
 }
 
 export function showTests(message) {
-  const notes = message.truncated ? [h('span', { class: 'detail-note' }, 'Only the end of the output is shown.')] : [];
-  report(`${message.command} · ${message.state}`, message.text, 'The test printed nothing.', notes);
+  const notes = message.truncated ? [h('span', { class: 'detail-note' }, t('Only the end of the output is shown.'))] : [];
+  report(`${message.command} · ${t(message.state)}`, message.text, t('The test printed nothing.'), notes);
 }
 
 export function showCompare(message) {
-  report(`Race · ${message.title}`, message.text, 'No agent of the race changed anything yet.', []);
+  report(t('Race · {title}', { title: message.title }), message.text, t('No agent of the race changed anything yet.'), []);
 }
 
 export function pickFolder(start, onPick) {
   const dialog = $('dialog');
   folderPick = { onPick, path: start };
-  const list = h('div', { class: 'folders', id: 'folder-list' }, h('div', { class: 'folder up' }, 'Loading…'));
+  const list = h('div', { class: 'folders', id: 'folder-list' }, h('div', { class: 'folder up' }, t('Loading…')));
   const path = h('span', { class: 'folder-path', id: 'folder-path' }, start);
-  open('Where should the agents run?', [path, list], [
-    h('button', { class: 'button', type: 'button', onclick: close }, 'Cancel'),
+  open(t('Where should the agents run?'), [path, list], [
+    h('button', { class: 'button', type: 'button', onclick: close }, t('Cancel')),
     h('button', {
       class: 'button primary',
       type: 'button',
@@ -146,7 +147,7 @@ export function pickFolder(start, onPick) {
         close();
         if (pick) pick.onPick(pick.path);
       },
-    }, 'Use this folder'),
+    }, t('Use this folder')),
   ]);
   dialog.addEventListener('close', () => {
     folderPick = null;
@@ -165,7 +166,7 @@ export function showFolders(message) {
   const rows = [];
   if (message.parent) rows.push(h('button', { class: 'folder up', type: 'button', onclick: go(message.parent) }, '..'));
   for (const dir of message.dirs) rows.push(h('button', { class: 'folder', type: 'button', onclick: go(dir.path) }, `${dir.name}/`));
-  if (!message.dirs.length) rows.push(h('div', { class: 'folder up' }, 'No folders inside'));
+  if (!message.dirs.length) rows.push(h('div', { class: 'folder up' }, t('No folders inside')));
   list.replaceChildren(...rows);
 }
 

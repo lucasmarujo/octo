@@ -2,6 +2,7 @@ import { merge, rename, restart } from './agent.js';
 import { stopOrRemove } from './board.js';
 import { ask, confirm, pickFolder } from './dialogs.js';
 import { label } from './format.js';
+import { t } from './i18n.js';
 import {
   currentWhere,
   currentWho,
@@ -18,31 +19,31 @@ import { toast } from './toast.js';
 import { send } from './transport.js';
 
 export const COMMANDS = [
-  ['/where <path>', 'Folder where new tasks run'],
-  ['/cd <path>', 'Same as /where'],
-  ['/who <agent>', 'Who runs new tasks'],
-  ['/session <name>', 'Switch to a session'],
-  ['/new-session [name]', 'Create a session'],
-  ['/rename-session <name>', 'Rename this session'],
-  ['/delete-session', 'Delete an empty session'],
-  ['/rename <name>', 'Rename the agent'],
-  ['/kill', 'Stop the agent, or remove it once stopped'],
-  ['/restart', 'Start the agent again'],
-  ['/recover', 'Bring back interrupted agents'],
-  ['/open <n>', 'Open agent number n'],
-  ['/worktree [on|off]', 'One worktree per new agent'],
-  ['/bypass [on|off]', 'New agents skip permission prompts'],
-  ['/diff', 'Changes on the agent branch'],
-  ['/merge', 'Merge the agent branch'],
-  ['/cross-review [agent]', 'Another agent reviews the work'],
-  ['/tests', 'Output of the last test run'],
-  ['/trust', 'Run the tests of .orkai.json after each turn'],
-  ['/race <agents> <task>', 'Agents race the same task in worktrees'],
-  ['/compare', 'Compare the agents of a race'],
-  ['/pick', 'Merge the winner, delete the others'],
-  ['/pwa [off|new]', 'Pair your phone'],
-  ['/help', 'How to use orkai'],
-  ['/quit', 'Close the window, agents keep going'],
+  ['/where <path>', t('Folder where new tasks run')],
+  ['/cd <path>', t('Same as /where')],
+  ['/who <agent>', t('Who runs new tasks')],
+  ['/session <name>', t('Switch to a session')],
+  ['/new-session [name]', t('Create a session')],
+  ['/rename-session <name>', t('Rename this session')],
+  ['/delete-session', t('Delete an empty session')],
+  ['/rename <name>', t('Rename the agent')],
+  ['/kill', t('Stop the agent, or remove it once stopped')],
+  ['/restart', t('Start the agent again')],
+  ['/recover', t('Bring back interrupted agents')],
+  ['/open <n>', t('Open agent number n')],
+  ['/worktree [on|off]', t('One worktree per new agent')],
+  ['/bypass [on|off]', t('New agents skip permission prompts')],
+  ['/diff', t('Changes on the agent branch')],
+  ['/merge', t('Merge the agent branch')],
+  ['/cross-review [agent]', t('Another agent reviews the work')],
+  ['/tests', t('Output of the last test run')],
+  ['/trust', t('Run the tests of .orkai.json after each turn')],
+  ['/race <agents> <task>', t('Agents race the same task in worktrees')],
+  ['/compare', t('Compare the agents of a race')],
+  ['/pick', t('Merge the winner, delete the others')],
+  ['/pwa [off|new]', t('Pair your phone')],
+  ['/help', t('How to use orkai')],
+  ['/quit', t('Close the window, agents keep going')],
 ];
 
 const ALIASES = { cd: 'where', s: 'session', ns: 'new-session', rm: 'kill', remove: 'kill', wt: 'worktree', phone: 'pwa', 'cross-review': 'cross-review' };
@@ -88,19 +89,19 @@ export function parseKind(value) {
 
 function selected(ctx) {
   const agent = ctx.focused() || findAgent(state.selected);
-  if (!agent) toast('Open or focus an agent first.', 'warn');
+  if (!agent) toast(t('Open or focus an agent first.'), 'warn');
   return agent;
 }
 
 function toggle(arg, current, apply, title) {
   const on = { '': !current, on: true, off: false }[arg];
-  if (on === undefined) return toast(`usage: /${title} [on|off]`, 'error');
+  if (on === undefined) return toast(t('usage: {usage}', { usage: `/${title} [on|off]` }), 'error');
   apply(on);
   return on;
 }
 
 async function renameSession(arg, ctx) {
-  const to = arg || (await ask({ title: 'Rename the session', value: state.session, action: 'Rename' }));
+  const to = arg || (await ask({ title: t('Rename the session'), value: state.session, action: t('Rename') }));
   if (!to || to === state.session) return;
   state.pendingSession = to.trim();
   send({ type: 'renameSession', name: state.session, to });
@@ -109,15 +110,15 @@ async function renameSession(arg, ctx) {
 
 async function deleteSession(arg) {
   const target = arg || state.session;
-  const sure = await confirm({ title: `Delete the session ${target}?`, text: 'Only a session without agents can be deleted.', action: 'Delete', danger: true });
+  const sure = await confirm({ title: t('Delete the session {name}?', { name: target }), text: t('Only a session without agents can be deleted.'), action: t('Delete'), danger: true });
   if (sure) send({ type: 'deleteSession', name: target });
 }
 
 async function pick(agent) {
   const sure = await confirm({
-    title: `Pick ${agent.name}?`,
-    text: `${agent.branch} is merged into the repository and the other agents of the race are stopped and deleted with their worktrees.`,
-    action: 'Pick',
+    title: t('Pick {name}?', { name: agent.name }),
+    text: t('{branch} is merged into the repository and the other agents of the race are stopped and deleted with their worktrees.', { branch: agent.branch }),
+    action: t('Pick'),
     danger: true,
   });
   if (sure) send({ type: 'pick', agent: agent.id });
@@ -136,7 +137,7 @@ export function runCommand(text, ctx) {
       if (!arg) pickFolder(currentWhere(), (path) => (setWhere(path), ctx.refresh()));
       else {
         setWhere(arg);
-        toast(`New tasks in ${state.session} will run in ${arg}`, 'info');
+        toast(t('New tasks in {session} will run in {path}', { session: state.session, path: arg }), 'info');
         ctx.refresh();
       }
       break;
@@ -145,12 +146,12 @@ export function runCommand(text, ctx) {
       if (installedKinds().includes(kind)) {
         setWho(kind);
         ctx.refresh();
-      } else toast(`usage: /who ${installedKinds().map(label).join('|')}`, 'error');
+      } else toast(t('usage: {usage}', { usage: `/who ${installedKinds().map(label).join('|')}` }), 'error');
       break;
     }
     case 'session':
       if (state.overview.sessions.some((session) => session.name === arg)) ctx.selectSession(arg);
-      else toast(arg ? `there is no session ${arg}` : 'usage: /session <name>', 'error');
+      else toast(arg ? t('there is no session {name}', { name: arg }) : t('usage: {usage}', { usage: '/session <name>' }), 'error');
       break;
     case 'new-session':
       if (arg) {
@@ -179,7 +180,7 @@ export function runCommand(text, ctx) {
     case 'open': {
       const agent = findAgent(Number(arg));
       if (agent) ctx.openAgent(agent);
-      else toast('usage: /open <agent number>', 'error');
+      else toast(t('usage: /open <agent number>'), 'error');
       break;
     }
     case 'worktree':

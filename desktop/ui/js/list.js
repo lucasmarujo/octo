@@ -1,6 +1,7 @@
 import { $, h, keep, place, svg } from './dom.js';
 import { tools } from './board.js';
 import { activity, alive, changeParts, duration, elapsed, glyph, groupByProject, kindColor, label, nameTone, subagentLine, testMark } from './format.js';
+import { t } from './i18n.js';
 import { ICON_BRANCH } from './icons.js';
 import { now, state, visible } from './state.js';
 
@@ -17,7 +18,7 @@ function aliveTime(agent) {
 
 function doing(agent) {
   if (agent.state === 'paused' && !agent.starting) {
-    return h('div', { class: 'cell-doing t-yellow' }, 'Waiting for you · ', h('span', { class: 't-text' }, agent.activity));
+    return h('div', { class: 'cell-doing t-yellow' }, `${t('Waiting for you')} · `, h('span', { class: 't-text' }, agent.activity));
   }
   const text = activity(agent);
   return h('div', { class: `cell-doing ${text.tone}${agent.kind === 'terminal' ? ' mono' : ''}`, title: text.text }, text.text);

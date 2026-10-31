@@ -8,6 +8,7 @@ import { $, h, svg } from './dom.js';
 import { SPINNER, alive, glyph } from './format.js';
 import { deactivateGrid, peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
 import { renderHelp } from './help.js';
+import { applyStatic, hubText, language, pageToReopen, t } from './i18n.js';
 import { ICON_HELP, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
 import { renderList, tickList } from './list.js';
@@ -27,14 +28,15 @@ const PEEK_STALE_MS = 10_000;
 const DETAILS_MS = 3000;
 const RENDERERS = { board: [renderBoard, tickBoard], list: [renderList, tickList], grid: [renderGrid, tickGrid] };
 const PAGES = {
-  help: { label: 'How to use', icon: ICON_HELP, render: renderHelp },
-  settings: { label: 'Settings', icon: ICON_SETTINGS, render: renderSettings },
+  help: { label: t('How to use'), icon: ICON_HELP, render: renderHelp },
+  settings: { label: t('Settings'), icon: ICON_SETTINGS, render: renderSettings },
 };
 const VIEWS = ['overview', 'agent-view', 'help-view', 'settings-view'];
 
 const handlers = { open: (agent) => openAgent(agent), term: terminalHandlers(gridShortcut) };
 let terminal = null;
 let watchedState = null;
+let pageAfterReload = null;
 const alerting = { previous: new Map(), last: new Map(), title: null };
 
 function sessionNames() {
@@ -76,7 +78,7 @@ function closer(id, name) {
     {
       class: 'tab-close',
       role: 'button',
-      'aria-label': `Close ${name}`,
+      'aria-label': t('Close {name}', { name }),
       onclick: (event) => {
         event.stopPropagation();
         closeTab(id);
@@ -115,7 +117,7 @@ function renderTabs() {
   host.dataset.signature = signature;
   for (const page of Object.keys(PAGES)) $(`open-${page}`).setAttribute('aria-current', String(state.active === page));
   host.replaceChildren(
-    h('button', { class: `tab fixed${state.active === null ? ' active' : ''}`, type: 'button', onclick: showOverview }, svg(ICON_OVERVIEW), 'Overview'),
+    h('button', { class: `tab fixed${state.active === null ? ' active' : ''}`, type: 'button', onclick: showOverview }, svg(ICON_OVERVIEW), t('Overview')),
     ...state.tabs.map(tabButton).filter(Boolean),
   );
 }
@@ -232,7 +234,7 @@ function openAgent(agent) {
     state.details = null;
     state.detailsAt = 0;
     askDetails();
-    terminal.open(agent.id).catch((err) => toast(`could not open the terminal: ${err}`, 'error'));
+    terminal.open(agent.id).catch((err) => toast(t('could not open the terminal: {error}', { error: err }), 'error'));
     watchedState = agent.state;
     if (agent.state === 'done') send({ type: 'seen', agent: agent.id });
   }
@@ -257,7 +259,7 @@ function closeTab(id) {
 function openNextAttention() {
   const next = nextAttention(state.active);
   if (next) openAgent(next);
-  else toast('No agent is waiting for you.', 'info');
+  else toast(t('No agent is waiting for you.'), 'info');
 }
 
 function markSeenWhileWatching() {
@@ -273,7 +275,7 @@ function raiseAlerts(agents) {
   alerting.previous = states;
   if (alerts.length) {
     for (const alert of alerts) toast(notice(alert).text, notice(alert).tone);
-    invoke('alert', { alerts }).catch((err) => toast(`could not alert: ${err}`, 'warn'));
+    invoke('alert', { alerts, language: language() }).catch((err) => toast(t('could not alert: {error}', { error: err }), 'warn'));
   }
   const title = windowTitle(agents);
   if (title !== alerting.title) {
@@ -285,14 +287,14 @@ function raiseAlerts(agents) {
 function announceUpdate(version) {
   if (state.updateReady === version) return;
   state.updateReady = version;
-  toast(`Octo ${version} is ready · restart the app to use it, your agents keep running`, 'success');
+  toast(t('Octo {version} is ready · restart the app to use it, your agents keep running', { version }), 'success');
 }
 
 async function confirmTrust(message) {
   const sure = await confirm({
-    title: `Run the tests of ${message.repo}?`,
-    text: `After each turn of an agent in a worktree of this repository, Octo runs: ${message.command}`,
-    action: 'Trust',
+    title: t('Run the tests of {repo}?', { repo: message.repo }),
+    text: t('After each turn of an agent in a worktree of this repository, Octo runs: {command}', { command: message.command }),
+    action: t('Trust'),
   });
   if (sure) send({ type: 'trust', cwd: message.cwd, command: message.command });
 }
@@ -300,7 +302,7 @@ async function confirmTrust(message) {
 function phone(arg) {
   if (arg === 'off') {
     invoke('set_phone', { on: false })
-      .then(() => toast('Octo is off on your phone · ctrl+p turns it on again', 'info'))
+      .then(() => toast(t('Octo is off on your phone · ctrl+p turns it on again'), 'info'))
       .catch((err) => toast(String(err), 'error'));
   } else openPairing();
 }
@@ -332,6 +334,10 @@ function onMessage(message) {
       raiseAlerts(message.agents);
       render();
       reopenTerminal();
+      if (pageAfterReload) {
+        openPage(pageAfterReload);
+        pageAfterReload = null;
+      }
       break;
     case 'usage':
       state.usage = message.entries;
@@ -339,7 +345,7 @@ function onMessage(message) {
       renderSidebar(onSelect, openAgent);
       break;
     case 'notice':
-      toast(message.text, message.tone);
+      toast(hubText(message.text), message.tone);
       break;
     case 'folders':
       showFolders(message);
@@ -437,7 +443,7 @@ function onShortcut(event) {
 }
 
 function copy(text) {
-  navigator.clipboard.writeText(text).catch(() => toast('Could not copy the selection.', 'warn'));
+  navigator.clipboard.writeText(text).catch(() => toast(t('Could not copy the selection.'), 'warn'));
 }
 
 function openLink(url) {
@@ -473,7 +479,7 @@ function reopenTerminal() {
   if (!watching()) return;
   const agent = findAgent(state.active);
   if (agent && alive(agent) && !agent.starting && terminal.stale(agent.id)) {
-    terminal.open(agent.id).catch((err) => toast(`could not open the terminal: ${err}`, 'error'));
+    terminal.open(agent.id).catch((err) => toast(t('could not open the terminal: {error}', { error: err }), 'error'));
   }
 }
 
@@ -485,7 +491,7 @@ function initWindow() {
   $('brand-mascot').replaceChildren(kai('idle'));
   $('open-help').replaceChildren(svg(ICON_HELP));
   $('open-settings').replaceChildren(svg(ICON_SETTINGS));
-  $('pair').replaceChildren(svg(ICON_PAIR), 'Pair phone');
+  $('pair').replaceChildren(svg(ICON_PAIR), t('Pair phone'));
   $('pair').addEventListener('click', openPairing);
   $('open-help').addEventListener('click', () => openPage('help'));
   $('open-settings').addEventListener('click', () => openPage('settings'));
@@ -515,6 +521,8 @@ function tick() {
 }
 
 function start() {
+  applyStatic();
+  pageAfterReload = pageToReopen();
   applyTheme();
   window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
   initWindow();
@@ -550,7 +558,7 @@ function start() {
   }).catch(() => {});
   invoke('update_ready').then((version) => version && announceUpdate(version)).catch(() => {});
   window.__TAURI__.event.listen('update-ready', (event) => announceUpdate(event.payload));
-  connect(onMessage).catch((err) => toast(`could not reach Octo: ${err}`, 'error'));
+  connect(onMessage).catch((err) => toast(t('could not reach Octo: {error}', { error: err }), 'error'));
   $('task').focus();
 }
 

@@ -1,3 +1,5 @@
+import { hubText, t } from './i18n.js';
+
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 export const USAGE_WARN = 70;
 export const USAGE_ALERT = 90;
@@ -16,10 +18,10 @@ const KIND_COLORS = {
 };
 
 export const COLUMNS = [
-  { key: 'needs', title: 'Needs you', empty: 'No agent is waiting for you.' },
-  { key: 'working', title: 'Working', empty: 'Nothing is running.' },
-  { key: 'done', title: 'Done', empty: 'Finished agents land here.' },
-  { key: 'idle', title: 'Idle', empty: 'No idle agents.' },
+  { key: 'needs', title: t('Needs you'), empty: t('No agent is waiting for you.') },
+  { key: 'working', title: t('Working'), empty: t('Nothing is running.') },
+  { key: 'done', title: t('Done'), empty: t('Finished agents land here.') },
+  { key: 'idle', title: t('Idle'), empty: t('No idle agents.') },
 ];
 
 export const GRID_SIZES = ['4', '6', '8', '10', '12', 'all'];
@@ -95,9 +97,9 @@ export function elapsed(agent, now) {
 }
 
 export function activity(agent) {
-  if (agent.starting) return { text: 'starting…', tone: 't-faint' };
-  if (agent.state === 'lost') return { text: 'Interrupted by a crash or a reboot', tone: 't-red' };
-  if (agent.state === 'exited') return { text: agent.exit || 'ended', tone: 't-faint' };
+  if (agent.starting) return { text: t('starting…'), tone: 't-faint' };
+  if (agent.state === 'lost') return { text: t('Interrupted by a crash or a reboot'), tone: 't-red' };
+  if (agent.state === 'exited') return { text: agent.exit ? hubText(agent.exit) : t('ended'), tone: 't-faint' };
   return { text: agent.activity, tone: agent.state === 'idle' ? 't-muted' : 't-text' };
 }
 
@@ -113,7 +115,7 @@ export function groupByProject(agents) {
 export function changeParts(changes) {
   if (!changes || !changes.files) return null;
   return [
-    { text: `${changes.files} file${changes.files === 1 ? '' : 's'}`, tone: 't-muted' },
+    { text: plural(changes.files, t('file'), t('files')), tone: 't-muted' },
     { text: `+${changes.insertions}`, tone: 't-green' },
     { text: `−${changes.deletions}`, tone: 't-red' },
   ];
@@ -121,10 +123,10 @@ export function changeParts(changes) {
 
 export function testMark(test) {
   return {
-    passed: { text: '✓ test', tone: 't-green' },
-    failed: { text: '✗ test', tone: 't-red' },
-    running: { text: '⠋ test', tone: 't-yellow' },
-    untrusted: { text: '! test', tone: 't-yellow' },
+    passed: { text: `✓ ${t('test')}`, tone: 't-green' },
+    failed: { text: `✗ ${t('test')}`, tone: 't-red' },
+    running: { text: `⠋ ${t('test')}`, tone: 't-yellow' },
+    untrusted: { text: `! ${t('test')}`, tone: 't-yellow' },
   }[test] || null;
 }
 

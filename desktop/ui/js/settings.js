@@ -1,14 +1,15 @@
 import { $, h, storage } from './dom.js';
 import { joinArgs, kindColor, label, splitArgs } from './format.js';
+import { LANGUAGES, language, setLanguage, t } from './i18n.js';
 import { state } from './state.js';
 import { toast } from './toast.js';
 import { invoke } from './transport.js';
 
 const THEME_KEY = 'orkai.theme';
 const THEMES = [
-  ['dark', 'Dark'],
-  ['light', 'Light'],
-  ['system', 'System'],
+  ['dark', t('Dark')],
+  ['light', t('Light')],
+  ['system', t('System')],
 ];
 const TUNNELS = [
   ['cloudflare', 'Cloudflare'],
@@ -89,14 +90,14 @@ async function save(changes) {
 function agentRow(agent) {
   const { config } = current;
   const status = agent.installed
-    ? h('span', { class: 'agent-status' }, h('span', { class: 'status-dot on' }), 'On PATH')
-    : h('span', { class: 'agent-status t-faint' }, h('span', { class: 'status-dot' }), 'Not found');
+    ? h('span', { class: 'agent-status' }, h('span', { class: 'status-dot on' }), t('On PATH'))
+    : h('span', { class: 'agent-status t-faint' }, h('span', { class: 'status-dot' }), t('Not found'));
   return h(
     'div',
     { class: 'agents-row' },
     h('span', { class: 'agents-name', style: `color:${kindColor(agent.kind)}` }, label(agent.kind)),
     field(config[commandKey(agent.kind)], label(agent.kind), (value) => save({ [commandKey(agent.kind)]: value }), 'agents-command'),
-    field(joinArgs(config[argsKey(agent.kind)]), 'No extra arguments', (value) => save({ [argsKey(agent.kind)]: splitArgs(value) }), 'agents-args'),
+    field(joinArgs(config[argsKey(agent.kind)]), t('No extra arguments'), (value) => save({ [argsKey(agent.kind)]: splitArgs(value) }), 'agents-args'),
     status,
   );
 }
@@ -108,7 +109,7 @@ function agentsSection() {
     ? h(
         'div',
         { class: 'agents-more' },
-        h('button', { class: 'link-button', type: 'button', onclick: () => ((showAll = !showAll), render()) }, showAll ? 'Show fewer' : `Show ${hidden.length} more`),
+        h('button', { class: 'link-button', type: 'button', onclick: () => ((showAll = !showAll), render()) }, showAll ? t('Show fewer') : t('Show {count} more', { count: hidden.length })),
         showAll ? null : h('span', { class: 'agents-hidden' }, hidden.map((agent) => label(agent.kind)).join(' · ')),
       )
     : null;
@@ -117,10 +118,10 @@ function agentsSection() {
     h(
       'div',
       { class: 'settings-heading with-text' },
-      h('h2', null, 'Agents'),
-      h('p', null, 'The program Octo runs for each agent and the extra arguments it passes. Only installed agents show up in ', mono('who'), '.'),
+      h('h2', null, t('Agents')),
+      h('p', null, t('The program Octo runs for each agent and the extra arguments it passes. Only installed agents show up in'), ' ', mono(t('who')), '.'),
     ),
-    h('div', { class: 'agents-head' }, h('span', { class: 'caps agents-name' }, 'Agent'), h('span', { class: 'caps agents-command' }, 'Command'), h('span', { class: 'caps agents-args' }, 'Arguments'), h('span', { class: 'caps agent-status' }, 'Status')),
+    h('div', { class: 'agents-head' }, h('span', { class: 'caps agents-name' }, t('Agent')), h('span', { class: 'caps agents-command' }, t('Command')), h('span', { class: 'caps agents-args' }, t('Arguments')), h('span', { class: 'caps agent-status' }, t('Status'))),
     ...agents.map(agentRow),
     more,
   );
@@ -130,7 +131,7 @@ async function playChimes() {
   try {
     const played = await invoke('play_chime', { sound: 'waiting' });
     if (!played) {
-      toast('This computer cannot play the chime here.', 'warn');
+      toast(t('This computer cannot play the chime here.'), 'warn');
       return;
     }
     setTimeout(() => invoke('play_chime', { sound: 'done' }), CHIME_GAP_MS);
@@ -147,19 +148,19 @@ async function checkUpdate() {
     if (update.ready) state.updateReady = update.latest;
   } catch (err) {
     update = { failed: true };
-    toast(`Could not check for updates: ${err}`, 'warn');
+    toast(t('Could not check for updates: {error}', { error: err }), 'warn');
   }
   render();
 }
 
 function updateLine() {
   const version = `Octo ${state.version || ''}`.trim();
-  if (state.updateReady) return [version, h('span', { class: 'update-note t-green' }, ` · ${state.updateReady} is ready, restart to use it`)];
+  if (state.updateReady) return [version, h('span', { class: 'update-note t-green' }, ` · ${t('{version} is ready, restart to use it', { version: state.updateReady })}`)];
   if (!update) return [version];
-  if (update.checking) return [version, h('span', { class: 'update-note t-muted' }, ' · checking…')];
-  if (update.failed) return [version, h('span', { class: 'update-note t-muted' }, ' · could not check')];
-  if (update.newer) return [version, h('span', { class: 'update-note t-yellow' }, ` · ${update.latest} available`)];
-  return [version, h('span', { class: 'update-note t-green' }, ' · up to date')];
+  if (update.checking) return [version, h('span', { class: 'update-note t-muted' }, ` · ${t('checking…')}`)];
+  if (update.failed) return [version, h('span', { class: 'update-note t-muted' }, ` · ${t('could not check')}`)];
+  if (update.newer) return [version, h('span', { class: 'update-note t-yellow' }, ` · ${t('{version} available', { version: update.latest })}`)];
+  return [version, h('span', { class: 'update-note t-green' }, ` · ${t('up to date')}`)];
 }
 
 function content() {
@@ -169,23 +170,24 @@ function content() {
     { class: 'settings-content' },
     section(
       'Appearance',
-      h('div', { class: 'settings-heading' }, h('h2', null, 'Appearance')),
-      row('Theme', 'The agent terminals follow the theme too.', segmented(THEMES, themeChoice(), setTheme, 'Theme')),
+      h('div', { class: 'settings-heading' }, h('h2', null, t('Appearance'))),
+      row(t('Theme'), t('The agent terminals follow the theme too.'), segmented(THEMES, themeChoice(), setTheme, t('Theme'))),
+      row(t('Language'), t('English by default. Applies to the whole app.'), segmented(LANGUAGES.map((entry) => [entry.code, entry.name]), language(), (code) => setLanguage(code, 'settings'), t('Language'))),
       row(
-        'Terminal shell',
-        ['Used by terminals and ', mono('!command'), `. Empty uses ${current.shellRule}.`],
+        t('Terminal shell'),
+        [t('Used by terminals and'), ' ', mono('!command'), '. ', t('Empty uses {rule}.', { rule: t(current.shellRule) })],
         field(config.shell || '', current.defaultShell, (value) => save({ shell: value.trim() || null }), 'wide'),
       ),
     ),
     agentsSection(),
     section(
       'Alerts',
-      h('div', { class: 'settings-heading' }, h('h2', null, 'Alerts')),
-      row('Alert when an agent needs you or finishes', 'Sound, desktop notification and the count in the taskbar title.', toggle(config.notify, (on) => save({ notify: on }), 'Alerts')),
+      h('div', { class: 'settings-heading' }, h('h2', null, t('Alerts'))),
+      row(t('Alert when an agent needs you or finishes'), t('Sound, desktop notification and the count in the taskbar title.'), toggle(config.notify, (on) => save({ notify: on }), t('Alerts'))),
       row(
-        'Octo chime',
-        'Falling tone when an agent waits for you, rising when it finishes. Off uses the system bell.',
-        h('div', { class: 'setting-controls' }, h('button', { class: 'link-button', type: 'button', onclick: playChimes }, 'Play'), toggle(config.notify_sound, (on) => save({ notify_sound: on }), 'Octo chime')),
+        t('Octo chime'),
+        t('Falling tone when an agent waits for you, rising when it finishes. Off uses the system bell.'),
+        h('div', { class: 'setting-controls' }, h('button', { class: 'link-button', type: 'button', onclick: playChimes }, t('Play')), toggle(config.notify_sound, (on) => save({ notify_sound: on }), t('Octo chime'))),
       ),
       h(
         'div',
@@ -193,32 +195,32 @@ function content() {
         h(
           'div',
           { class: 'setting-text' },
-          h('span', { class: 'setting-title' }, 'Notify command'),
-          h('span', { class: 'setting-description' }, 'Runs on every alert, without a shell, with ', mono('ORKAI_MESSAGE'), ', ', mono('ORKAI_AGENT_NAME'), ' and more. Killed after 30 s.'),
+          h('span', { class: 'setting-title' }, t('Notify command')),
+          h('span', { class: 'setting-description' }, t('Runs on every alert, without a shell, with'), ' ', mono('ORKAI_MESSAGE'), ', ', mono('ORKAI_AGENT_NAME'), ' ', t('and more. Killed after 30 s.')),
         ),
         h(
           'div',
           { class: 'setting-fields' },
-          field(config.notify_command || '', 'Program', (value) => save({ notify_command: value.trim() || null }), 'narrow'),
-          field(joinArgs(config.notify_args), 'Arguments', (value) => save({ notify_args: splitArgs(value) }), 'grow'),
+          field(config.notify_command || '', t('Program'), (value) => save({ notify_command: value.trim() || null }), 'narrow'),
+          field(joinArgs(config.notify_args), t('Arguments'), (value) => save({ notify_args: splitArgs(value) }), 'grow'),
         ),
       ),
     ),
     section(
       'Phone',
-      h('div', { class: 'settings-heading' }, h('h2', null, 'Phone')),
-      row('Tunnel', 'How the phone reaches this computer. End-to-end encrypted either way.', segmented(TUNNELS, config.pwa_tunnel, (tunnel) => save({ pwa_tunnel: tunnel }), 'Tunnel')),
-      row('Local port', 'The bridge only listens on 127.0.0.1.', field(String(config.pwa_port), '7470', (value) => save({ pwa_port: Number(value) || 0 }), 'narrow')),
+      h('div', { class: 'settings-heading' }, h('h2', null, t('Phone'))),
+      row(t('Tunnel'), t('How the phone reaches this computer. End-to-end encrypted either way.'), segmented(TUNNELS, config.pwa_tunnel, (tunnel) => save({ pwa_tunnel: tunnel }), t('Tunnel'))),
+      row(t('Local port'), t('The bridge only listens on 127.0.0.1.'), field(String(config.pwa_port), '7470', (value) => save({ pwa_port: Number(value) || 0 }), 'narrow')),
     ),
     section(
       'Updates',
-      h('div', { class: 'settings-heading' }, h('h2', null, 'Updates')),
+      h('div', { class: 'settings-heading' }, h('h2', null, t('Updates'))),
       row(
         h('span', null, ...updateLine()),
-        'Updates install on their own, checked by size and SHA-256. Running agents are never stopped.',
+        t('Updates install on their own, checked by size and SHA-256. Running agents are never stopped.'),
         state.updateReady
-          ? h('button', { class: 'button primary', type: 'button', onclick: () => invoke('restart_app') }, 'Restart now')
-          : h('button', { class: 'button', type: 'button', disabled: Boolean(update && update.checking), onclick: checkUpdate }, 'Check now'),
+          ? h('button', { class: 'button primary', type: 'button', onclick: () => invoke('restart_app') }, t('Restart now'))
+          : h('button', { class: 'button', type: 'button', disabled: Boolean(update && update.checking), onclick: checkUpdate }, t('Check now')),
       ),
     ),
   );
@@ -245,9 +247,9 @@ function nav() {
   return h(
     'nav',
     { class: 'settings-nav' },
-    h('h1', { class: 'settings-title' }, 'Settings'),
-    ...SECTIONS.map((name) => h('button', { class: 'settings-nav-item', type: 'button', dataset: { section: name }, onclick: () => scrollTo(name) }, name)),
-    h('div', { class: 'settings-saved' }, h('span', null, 'Saved to'), h('span', { class: 'settings-path' }, current.path.replace(/([\\/])/g, '$1\u200b'))),
+    h('h1', { class: 'settings-title' }, t('Settings')),
+    ...SECTIONS.map((name) => h('button', { class: 'settings-nav-item', type: 'button', dataset: { section: name }, onclick: () => scrollTo(name) }, t(name))),
+    h('div', { class: 'settings-saved' }, h('span', null, t('Saved to')), h('span', { class: 'settings-path' }, current.path.replace(/([\\/])/g, '$1\u200b'))),
   );
 }
 
@@ -270,6 +272,6 @@ export async function renderSettings() {
     current = await invoke('settings');
     render();
   } catch (err) {
-    toast(`Could not read the settings: ${err}`, 'error');
+    toast(t('Could not read the settings: {error}', { error: err }), 'error');
   }
 }

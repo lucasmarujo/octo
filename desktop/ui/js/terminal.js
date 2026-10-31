@@ -1,4 +1,5 @@
 import { h } from './dom.js';
+import { t } from './i18n.js';
 import { palette } from './palette.js';
 import { LINK_RECORD_OSC, decodeFrame, findLinks, keyRoute, parseLinkRecord, terminalTheme } from './termwire.js';
 
@@ -53,8 +54,8 @@ export class Terminal {
     this.handlers = handlers;
     this.session = null;
     this.screen = h('div', { class: 'term-screen' });
-    this.live = h('button', { class: 'term-live', type: 'button', hidden: true, onclick: () => this.xterm.scrollToBottom() }, 'Back to live ↓');
-    this.status = h('div', { class: 'term-status' }, 'Connecting…');
+    this.live = h('button', { class: 'term-live', type: 'button', hidden: true, onclick: () => this.xterm.scrollToBottom() }, t('Back to live ↓'));
+    this.status = h('div', { class: 'term-status' }, t('Connecting…'));
     host.replaceChildren(this.screen, this.status, this.live);
     host.dataset.status = 'closed';
     this.agent = null;

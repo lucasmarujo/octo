@@ -18,6 +18,7 @@ import {
   subagentLine,
   testMark,
 } from './format.js';
+import { t } from './i18n.js';
 import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_STOP, ICON_TRASH } from './icons.js';
 import { sleeping } from './kai.js';
 import { currentProject, inSession, now, projectsInSession, setProject, state, visible } from './state.js';
@@ -25,20 +26,20 @@ import { send } from './transport.js';
 
 async function stopAgent(agent) {
   const sure = await confirm({
-    title: `Stop ${agent.name}?`,
-    text: 'The agent process ends. Its card stays here until you remove it.',
-    action: 'Stop',
+    title: t('Stop {name}?', { name: agent.name }),
+    text: t('The agent process ends. Its card stays here until you remove it.'),
+    action: t('Stop'),
     danger: true,
   });
   if (sure) send({ type: 'stop', agent: agent.id });
 }
 
 async function removeAgent(agent) {
-  const worktree = agent.branch ? ` Its worktree and the ${agent.branch} branch are deleted too.` : '';
+  const worktree = agent.branch ? ` ${t('Its worktree and the {branch} branch are deleted too.', { branch: agent.branch })}` : '';
   const sure = await confirm({
-    title: `Remove ${agent.name}?`,
-    text: `The agent and its recorded output are deleted.${worktree}`,
-    action: 'Remove',
+    title: t('Remove {name}?', { name: agent.name }),
+    text: `${t('The agent and its recorded output are deleted.')}${worktree}`,
+    action: t('Remove'),
     danger: true,
   });
   if (sure) send({ type: 'remove', agent: agent.id });
@@ -54,8 +55,8 @@ export function tools(agent) {
     work(agent);
   };
   const button = alive(agent)
-    ? h('button', { class: 'icon-button danger', type: 'button', title: 'Stop', onclick: act(stopAgent) }, svg(ICON_STOP))
-    : h('button', { class: 'icon-button danger', type: 'button', title: 'Remove', onclick: act(removeAgent) }, svg(ICON_TRASH));
+    ? h('button', { class: 'icon-button danger', type: 'button', title: t('Stop'), onclick: act(stopAgent) }, svg(ICON_STOP))
+    : h('button', { class: 'icon-button danger', type: 'button', title: t('Remove'), onclick: act(removeAgent) }, svg(ICON_TRASH));
   return h('div', { class: 'card-tools' }, button);
 }
 
@@ -66,13 +67,13 @@ function card(agent, handlers) {
   const waiting = agent.state === 'paused' && !agent.starting;
   const classes = ['card', waiting ? 'waiting' : '', agent.state === 'lost' ? 'lost' : ''].filter(Boolean).join(' ');
   const text = waiting
-    ? h('div', { class: 'card-text' }, h('span', { class: 'card-strong' }, 'Waiting for your answer'), h('span', { class: 't-muted' }, agent.activity))
+    ? h('div', { class: 'card-text' }, h('span', { class: 'card-strong' }, t('Waiting for your answer')), h('span', { class: 't-muted' }, agent.activity))
     : h('div', { class: `card-text ${doing.tone}${agent.kind === 'terminal' ? ' mono' : ''}` }, doing.text);
   const open = handlers.open
     ? h(
         'div',
         { class: 'card-actions' },
-        h('button', { class: 'button waiting', type: 'button', onclick: () => handlers.open(agent) }, 'Open agent'),
+        h('button', { class: 'button waiting', type: 'button', onclick: () => handlers.open(agent) }, t('Open agent')),
         h('span', { class: 'kbd' }, 'alt N'),
       )
     : null;
@@ -98,8 +99,8 @@ function card(agent, handlers) {
           ? h(
               'span',
               { class: 'card-foot-actions' },
-              h('button', { class: 'button tiny', type: 'button', onclick: act(() => send({ type: 'diff', agent: agent.id })) }, 'Diff'),
-              h('button', { class: 'button tiny primary', type: 'button', onclick: act(() => merge(agent)) }, 'Merge'),
+              h('button', { class: 'button tiny', type: 'button', onclick: act(() => send({ type: 'diff', agent: agent.id })) }, t('Diff')),
+              h('button', { class: 'button tiny primary', type: 'button', onclick: act(() => merge(agent)) }, t('Merge')),
             )
           : null,
       )
@@ -137,7 +138,7 @@ function columnHead(def, count) {
     done: h('span', { class: 'glyph t-green' }, '✓'),
     idle: h('span', { class: 'glyph t-faint' }, '●'),
   }[def.key];
-  const action = def.key === 'idle' ? h('button', { class: 'button tiny column-action', type: 'button', hidden: true, onclick: stopIdle }, 'Stop all') : null;
+  const action = def.key === 'idle' ? h('button', { class: 'button tiny column-action', type: 'button', hidden: true, onclick: stopIdle }, t('Stop all')) : null;
   return h('div', { class: 'column-head' }, mark, h('span', { class: 'name' }, def.title), action, h('span', { class: 'count' }, String(count)));
 }
 
@@ -145,9 +146,9 @@ async function stopIdle() {
   const targets = idleRunning(visible());
   if (!targets.length) return;
   const sure = await confirm({
-    title: `Stop ${plural(targets.length, 'idle agent', 'idle agents')}?`,
-    text: 'Their processes end. The cards stay in Idle until you remove them.',
-    action: 'Stop all',
+    title: t('Stop {agents}?', { agents: plural(targets.length, t('idle agent'), t('idle agents')) }),
+    text: t('Their processes end. The cards stay in Idle until you remove them.'),
+    action: t('Stop all'),
     danger: true,
   });
   if (!sure) return;
@@ -159,8 +160,8 @@ function empty(session) {
     'div',
     { class: 'empty' },
     sleeping(),
-    h('span', { class: 'empty-title' }, `No agents in ${session} yet`),
-    h('span', null, 'Write a task below and press enter: the agent starts already working on it.'),
+    h('span', { class: 'empty-title' }, t('No agents in {session} yet', { session })),
+    h('span', null, t('Write a task below and press enter: the agent starts already working on it.')),
   );
 }
 
@@ -210,12 +211,13 @@ export function renderHead() {
   const lost = list.filter((agent) => agent.state === 'lost').length;
   $('session-title').textContent = state.session || '';
   const summary = $('session-summary');
-  const parts = [list.length ? `${plural(list.length, 'agent', 'agents')} across ${plural(projects, 'project', 'projects')}` : 'No agents yet'];
-  if (waiting) parts.push(h('span', { class: 't-yellow' }, ` · ${waiting} need${waiting === 1 ? 's' : ''} you`));
+  const across = { agents: plural(list.length, t('agent'), t('agents')), projects: plural(projects, t('project'), t('projects')) };
+  const parts = [list.length ? t('{agents} across {projects}', across) : t('No agents yet')];
+  if (waiting) parts.push(h('span', { class: 't-yellow' }, ` · ${waiting === 1 ? t('{count} needs you', { count: waiting }) : t('{count} need you', { count: waiting })}`));
   summary.replaceChildren(...parts);
   const recover = $('recover');
   recover.hidden = lost === 0;
-  recover.textContent = `Recover ${plural(lost, 'interrupted agent', 'interrupted agents')}`;
+  recover.textContent = t('Recover {agents}', { agents: plural(lost, t('interrupted agent'), t('interrupted agents')) });
   renderFilter(list);
   for (const button of $('views').children) button.setAttribute('aria-pressed', String(button.dataset.view === state.view));
   $('grid-size').hidden = state.view !== 'grid' || list.length === 0;
@@ -230,7 +232,7 @@ function renderFilter(list) {
   filter.dataset.signature = signature;
   filter.hidden = list.length === 0;
   filter.classList.toggle('active', project !== null);
-  filter.replaceChildren(project || 'All projects', svg(ICON_CHEVRON_DOWN));
+  filter.replaceChildren(project || t('All projects'), svg(ICON_CHEVRON_DOWN));
 }
 
 export function openProjectMenu(onPick) {
@@ -257,7 +259,7 @@ export function openProjectMenu(onPick) {
     const members = list.filter((agent) => agent.project === project);
     return item(project, project, members.length, members[0].color);
   });
-  openMenu($('project'), [item(null, 'All projects', list.length, null), ...items], false);
+  openMenu($('project'), [item(null, t('All projects'), list.length, null), ...items], false);
 }
 
 export function tickBoard() {

@@ -1,6 +1,7 @@
 import { $, h, keep, place, svg } from './dom.js';
 import { tools } from './board.js';
 import { activity, alive, elapsed, glyph, gridShape, kindColor, label, nameTone, previewRows } from './format.js';
+import { t } from './i18n.js';
 import { ICON_EXPAND, ICON_PLUS } from './icons.js';
 import { now, state, visible } from './state.js';
 import { Terminal, run } from './terminal.js';
@@ -32,7 +33,7 @@ function openInTab(agent, handlers) {
     {
       class: 'icon-button',
       type: 'button',
-      title: 'Open in a tab',
+      title: t('Open in a tab'),
       onclick: (event) => {
         event.stopPropagation();
         handlers.open(agent);
@@ -104,7 +105,7 @@ function activate(agent, handlers) {
   shownPreviews.delete(agent.id);
   showLive(cached.node);
   live.terminal = live.terminal || new Terminal(live.host, handlers.term, { fontSize: LIVE_FONT_SIZE });
-  live.terminal.open(agent.id).catch((err) => toast(`could not open the terminal: ${err}`, 'error'));
+  live.terminal.open(agent.id).catch((err) => toast(t('could not open the terminal: {error}', { error: err }), 'error'));
   live.terminal.focus();
 }
 
@@ -123,7 +124,7 @@ function tileSignature(agent, handlers) {
 }
 
 function newAgentTile() {
-  addTile = addTile || h('button', { class: 'tile-new', type: 'button', onclick: () => $('task').focus() }, svg(ICON_PLUS), 'Write a task below to add an agent');
+  addTile = addTile || h('button', { class: 'tile-new', type: 'button', onclick: () => $('task').focus() }, svg(ICON_PLUS), t('Write a task below to add an agent'));
   return addTile;
 }
 
@@ -150,7 +151,7 @@ export function renderGrid(handlers) {
   if (focused && live.agent !== null) live.terminal.focus();
   const current = list.find((agent) => agent.id === live.agent);
   if (current && alive(current) && !current.starting && live.terminal.stale(current.id)) {
-    live.terminal.open(current.id).catch((err) => toast(`could not open the terminal: ${err}`, 'error'));
+    live.terminal.open(current.id).catch((err) => toast(t('could not open the terminal: {error}', { error: err }), 'error'));
   }
   const ids = new Set(list.map((agent) => agent.id));
   for (const id of tiles.keys()) {

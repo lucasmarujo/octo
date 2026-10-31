@@ -2,6 +2,7 @@ import { $, h, svg } from './dom.js';
 import { completeCommand, matchingCommands, parseCommand } from './commands.js';
 import { closeMenu, openMenu, pickFolder } from './dialogs.js';
 import { kindColor, label } from './format.js';
+import { t } from './i18n.js';
 import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_SHIELD } from './icons.js';
 import {
   currentWhere,
@@ -168,7 +169,7 @@ function submit(event) {
     kind = 'terminal';
     command = text.slice(1).trim();
   } else if (kind !== 'terminal' && !text) {
-    toast('Write the task first.', 'warn');
+    toast(t('Write the task first.'), 'warn');
     return;
   }
   const ai = kind !== 'terminal';
@@ -214,21 +215,21 @@ function onKey(event) {
 export function renderComposer() {
   const who = currentWho();
   $('who').replaceChildren(
-    h('span', { class: 'key' }, 'who'),
+    h('span', { class: 'key' }, t('who')),
     h('span', { class: 'value', style: `color:${kindColor(who)}` }, label(who)),
     svg(ICON_CHEVRON_DOWN),
   );
-  $('where').replaceChildren(h('span', { class: 'key' }, 'where'), h('span', { class: 'value path' }, currentWhere()));
+  $('where').replaceChildren(h('span', { class: 'key' }, t('where')), h('span', { class: 'value path' }, currentWhere()));
   $('where').title = currentWhere();
   const worktree = $('worktree');
   worktree.setAttribute('aria-pressed', String(worktreeOn()));
-  worktree.replaceChildren(svg(ICON_BRANCH), 'Worktree');
-  worktree.title = 'Each new AI agent runs in its own git worktree and orkai/<name> branch';
+  worktree.replaceChildren(svg(ICON_BRANCH), t('Worktree'));
+  worktree.title = t('Each new AI agent runs in its own git worktree and orkai/<name> branch');
   const bypass = $('bypass');
   bypass.classList.add('danger');
   bypass.setAttribute('aria-pressed', String(state.bypass));
-  bypass.replaceChildren(svg(ICON_SHIELD), 'Bypass');
-  bypass.title = 'New AI agents run tools, commands and edits without asking. Only in folders you trust.';
+  bypass.replaceChildren(svg(ICON_SHIELD), t('Bypass'));
+  bypass.title = t('New AI agents run tools, commands and edits without asking. Only in folders you trust.');
 }
 
 export function initComposer() {
