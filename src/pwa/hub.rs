@@ -158,8 +158,21 @@ struct Inner {
     usage_busy: bool,
     scan_at: Option<Instant>,
     scan_busy: bool,
+    relaunching: HashSet<AgentId>,
     watching: bool,
     due: bool,
+}
+
+pub struct Relaunch {
+    hub: Arc<Hub>,
+    id: AgentId,
+}
+
+impl Drop for Relaunch {
+    fn drop(&mut self) {
+        self.hub.inner().relaunching.remove(&self.id);
+        self.hub.nudge();
+    }
 }
 
 pub struct Hub {
@@ -284,6 +297,10 @@ impl Hub {
 
     pub fn state(&self, id: AgentId) -> Option<AgentState> {
         self.inner().agents.get(&id).map(Tracked::state)
+    }
+
+    pub fn try_relaunch(self: &Arc<Self>, id: AgentId) -> Option<Relaunch> {
+        self.inner().relaunching.insert(id).then(|| Relaunch { hub: Arc::clone(self), id })
     }
 
     pub fn race_members(&self, id: AgentId) -> Vec<AgentRecord> {

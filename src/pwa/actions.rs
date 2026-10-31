@@ -208,9 +208,16 @@ fn restart(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
 }
 
 fn relaunch(hub: &Arc<Hub>, records: Vec<AgentRecord>, reply: &Sender<Event>) {
+    let mut claimed = Vec::new();
+    for record in records {
+        match hub.try_relaunch(record.id) {
+            Some(guard) => claimed.push((record, guard)),
+            None => notice(reply, Tone::Info, format!("{} is already starting", record.name)),
+        }
+    }
     let (hub, reply) = (Arc::clone(hub), reply.clone());
     spawn("orkai-pwa-recover", move || {
-        for mut record in records {
+        for (mut record, _guard) in claimed {
             if let Err(err) = hub.launcher().start(&mut record, LaunchMode::Resume, DEFAULT_SIZE) {
                 notice(&reply, Tone::Error, format!("could not recover {}: {err}", record.name));
             }

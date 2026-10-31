@@ -720,3 +720,15 @@ fn the_overview_counts_the_changes_of_each_worktree() {
     });
     assert_eq!((changes.insertions, changes.deletions), (3, 0));
 }
+
+#[test]
+fn an_agent_is_never_started_twice_at_the_same_time() {
+    let fx = fixture();
+    let launcher = Launcher::new(fx.store.clone(), Config::default(), Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let hub = Hub::new(launcher, HOST.to_string());
+    let first = hub.try_relaunch(7).expect("nothing is starting agent 7 yet");
+    assert!(hub.try_relaunch(7).is_none(), "a second start waits for the first");
+    assert!(hub.try_relaunch(8).is_some(), "other agents are not held back");
+    drop(first);
+    assert!(hub.try_relaunch(7).is_some(), "once the first start ends, the agent can start again");
+}
