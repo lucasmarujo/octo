@@ -1,6 +1,6 @@
 import { $, h, svg } from './dom.js';
 import { ask, confirm } from './dialogs.js';
-import { SPINNER, activity, alive, duration, glyph, kindColor, label } from './format.js';
+import { SPINNER, alive, duration, glyph, kindColor, label } from './format.js';
 import { ICON_BRANCH } from './icons.js';
 import { agents, now, state } from './state.js';
 import { send } from './transport.js';
@@ -249,7 +249,7 @@ export function renderStatus(agent) {
     ? other.state === 'paused'
       ? h('span', { class: 'status-alert' }, h('span', { class: 'dot' }), `${other.name} is waiting for you`, h('span', { class: 'kbd' }, 'alt N opens it'))
       : h('span', { class: 'status-done' }, `✓ ${other.name} is done`, h('span', { class: 'kbd' }, 'alt N opens it'))
-    : h('span', { class: 't-faint' }, activity(agent || { state: 'idle', activity: '' }).text);
+    : h('span', null);
   $('tab-status').replaceChildren(
     left,
     h('span', { class: 'grow' }),

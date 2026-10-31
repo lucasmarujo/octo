@@ -72,6 +72,13 @@ test('the dark theme keeps the colors of the TUI and the light theme redefines e
   for (const token of ['--color-bg', '--color-text', '--term-bg', '--term-fg']) assert.ok(light.includes(`${token}:`), token);
 });
 
+test('the agent screen leaves the agent title to the cards and keeps its status bar for alerts', () => {
+  const source = readFileSync(join(REPO, 'desktop/ui/js/agent.js'), 'utf8');
+  const status = source.slice(source.indexOf('export function renderStatus'), source.indexOf('\n}\n', source.indexOf('export function renderStatus')));
+  assert.match(status, /is waiting for you/);
+  assert.doesNotMatch(status, /activity/, 'the session title the agent gave itself is not repeated under its terminal');
+});
+
 test('Octo draws its own thin scrollbar in both themes, pink while it is dragged', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   const [dark, light] = [css.split(':root {')[1].split('}')[0], css.split(':root[data-theme="light"] {')[1].split('}')[0]];
