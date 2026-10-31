@@ -4,6 +4,7 @@ mod alerts;
 mod link;
 mod login_path;
 mod pair;
+mod recover;
 mod settings;
 mod term;
 mod updates;

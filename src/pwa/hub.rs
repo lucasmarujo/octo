@@ -335,13 +335,23 @@ impl Hub {
             .collect()
     }
 
-    pub fn lost_in(&self, session: &str) -> Vec<AgentRecord> {
+    pub fn lost(&self) -> Vec<AgentRecord> {
         self.inner()
             .agents
             .values()
-            .filter(|tracked| tracked.record.session == session && matches!(tracked.link, Link::Lost(_)))
+            .filter(|tracked| matches!(tracked.link, Link::Lost(_)))
             .map(|tracked| tracked.record.clone())
             .collect()
+    }
+
+    pub fn lost_in(&self, session: &str) -> Vec<AgentRecord> {
+        self.lost().into_iter().filter(|record| record.session == session).collect()
+    }
+
+    pub fn settled(&self) -> bool {
+        let inner = self.inner();
+        inner.published.is_some()
+            && inner.agents.values().all(|tracked| !matches!(tracked.link, Link::Pending | Link::Connecting))
     }
 
     pub fn name_taken(&self, session: &str, name: &str) -> bool {
@@ -680,6 +690,59 @@ pub fn usage_entry(kind: AgentKind, result: Result<Limits, Problem>) -> Option<U
 mod tests {
     use super::*;
     use crate::usage::Window;
+
+    #[test]
+    fn after_a_reboot_the_hub_settles_with_the_interrupted_agents_and_not_the_finished_ones() {
+        use crate::model::{ExitInfo, NewAgent, RuntimeInfo};
+        use crate::protocol::PROTOCOL_VERSION;
+
+        let dir = std::env::temp_dir().join(format!("orkai-hub-settle-{}-{}", std::process::id(), now_ms()));
+        let store = Store::open(Home::at(dir.join("home"))).unwrap();
+        let agent = |name: &str, session: &str| {
+            let draft = NewAgent {
+                session: session.into(),
+                name: name.into(),
+                kind: AgentKind::Terminal,
+                cwd: dir.clone(),
+                task: String::new(),
+            };
+            store.create_session(session).ok();
+            store.create_agent(draft).unwrap()
+        };
+        let interrupted = agent("interrupted", "default");
+        let finished = agent("finished", "other");
+        let dead_port =
+            std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port();
+        let runtime = RuntimeInfo {
+            holder_pid: 1,
+            child_pid: None,
+            port: dead_port,
+            token: "gone".into(),
+            started_at_ms: now_ms(),
+            protocol: PROTOCOL_VERSION,
+            version: "test".into(),
+            exe: None,
+        };
+        crate::fsutil::write_json_atomic(&store.home().runtime_file(interrupted.id), &runtime).unwrap();
+        let exit = ExitInfo { code: Some(0), error: None, at_ms: now_ms() };
+        crate::fsutil::write_json_atomic(&store.home().exit_file(finished.id), &exit).unwrap();
+
+        let launcher = Launcher::new(store, Config::default(), &std::env::current_exe().unwrap()).unwrap();
+        let hub = Hub::new(launcher, "host".into());
+        assert!(!hub.settled(), "nothing is settled before the first scan");
+        let (tx, _rx) = std::sync::mpsc::channel();
+        hub.join(tx);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !hub.settled() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(hub.settled());
+        let lost: Vec<AgentId> = hub.lost().iter().map(|record| record.id).collect();
+        assert_eq!(lost, [interrupted.id]);
+        assert_eq!(hub.lost_in("default").len(), 1);
+        assert!(hub.lost_in("other").is_empty(), "a finished agent is not recovered");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn colors_become_css_hex() {

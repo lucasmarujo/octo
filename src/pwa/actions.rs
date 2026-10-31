@@ -198,6 +198,16 @@ fn recover(hub: &Arc<Hub>, session: &str, reply: &Sender<Event>) {
     relaunch(hub, records, reply);
 }
 
+pub fn recover_all(hub: &Arc<Hub>, reply: &Sender<Event>) -> usize {
+    let records = hub.lost();
+    let count = records.len();
+    if count > 0 {
+        notice(reply, Tone::Info, format!("recovering {count} interrupted agent(s)…"));
+        relaunch(hub, records, reply);
+    }
+    count
+}
+
 fn restart(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
     let Some(record) = hub.record(agent) else { return };
     if !matches!(hub.state(agent), Some(AgentState::Exited | AgentState::Lost)) {

@@ -13,7 +13,7 @@ use tauri::State;
 
 use crate::term::{self, Console};
 use crate::updates::{self, Updates};
-use crate::{alerts, pair, settings};
+use crate::{alerts, pair, recover, settings};
 use tauri::ipc::{Channel, InvokeResponseBody};
 
 pub struct Link {
@@ -98,6 +98,7 @@ fn open_link(url: String) -> Result<(), String> {
 pub fn run() -> io::Result<()> {
     let hub = Hub::open(&Home::resolve()?)?;
     pair::keep_alive(Arc::clone(&hub));
+    recover::on_launch(Arc::clone(&hub));
     let link = Link::new(hub);
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
