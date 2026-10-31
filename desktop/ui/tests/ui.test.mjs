@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { COLUMNS, USAGE_ALERT, USAGE_WARN, column, duration, elapsed, glyph, kindColor, kindHex, label, usageColor } from '../js/format.js';
@@ -420,4 +420,72 @@ test('a card sums up its worktree and its tests like the overview of the TUI', a
   assert.equal(testMark('failed').tone, 't-red');
   assert.equal(testMark(null), null);
   assert.deepEqual(subagentLine({ role: 'Explore', description: 'Find callers', activity: 'Grep', startedAt: NOW - 12_000 }, NOW), { role: 'Explore', time: '12s', text: 'Find callers · Grep' });
+});
+
+test('the agent terminal reads the raw frames the holder bridge sends, in the same tags as the Rust side', async () => {
+  const { ENDED, OUTPUT, SNAPSHOT, decodeFrame } = await import('../js/termwire.js');
+  const source = rust('desktop/src/term.rs');
+  for (const [name, value] of Object.entries({ OUTPUT, SNAPSHOT, ENDED })) assert.match(source, new RegExp(`pub const ${name}: u8 = ${value};`), name);
+  const output = decodeFrame(new Uint8Array([OUTPUT, 0x68, 0x69]).buffer);
+  assert.equal(output.kind, 'output');
+  assert.deepEqual([...output.data], [0x68, 0x69]);
+  const snapshot = decodeFrame([SNAPSHOT, 30, 0, 44, 1, 0x61]);
+  assert.deepEqual({ ...snapshot, data: [...snapshot.data] }, { kind: 'snapshot', rows: 30, cols: 300, data: [0x61] });
+  assert.deepEqual(decodeFrame(new Uint8Array([ENDED])), { kind: 'ended' });
+  assert.equal(decodeFrame(new Uint8Array([SNAPSHOT, 1])), null, 'a cut snapshot is ignored');
+  assert.equal(decodeFrame(new Uint8Array([])), null);
+  assert.equal(decodeFrame('text'), null);
+});
+
+test('links the agent shows by their title survive in the snapshot and are found on screen', async () => {
+  const { LINK_RECORD_OSC, findLinks, parseLinkRecord } = await import('../js/termwire.js');
+  assert.match(rust('src/termlink.rs'), new RegExp(`pub const LINK_RECORD_OSC: &str = "${LINK_RECORD_OSC}";`));
+  const encode = (text) => Buffer.from(text, 'utf8').toString('base64');
+  const record = parseLinkRecord(`${encode('https://example.com/ünï')};${encode('the guide ✓')}`);
+  assert.deepEqual(record, { url: 'https://example.com/ünï', text: 'the guide ✓' });
+  assert.equal(parseLinkRecord('only-one-part'), null);
+  assert.equal(parseLinkRecord('%%%;%%%'), null);
+  assert.deepEqual(findLinks('read the guide ✓ and the guide ✓ again', [record]), [
+    { start: 5, end: 16, url: 'https://example.com/ünï' },
+    { start: 21, end: 32, url: 'https://example.com/ünï' },
+  ]);
+  assert.deepEqual(findLinks('nothing here', [record]), []);
+});
+
+test('keys in the agent terminal copy a selection, paste through the browser and reach the agent otherwise', async () => {
+  const { keyRoute } = await import('../js/termwire.js');
+  const key = (key, mods = {}) => ({ key, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
+  assert.equal(keyRoute(key('c', { ctrlKey: true }), true), 'copy');
+  assert.equal(keyRoute(key('c', { ctrlKey: true }), false), 'terminal', 'without a selection ctrl+c interrupts the agent');
+  assert.equal(keyRoute(key('C', { ctrlKey: true, shiftKey: true }), true), 'terminal');
+  assert.equal(keyRoute(key('v', { ctrlKey: true }), false), 'paste');
+  assert.equal(keyRoute(key('Insert', { shiftKey: true }), false), 'paste');
+  assert.equal(keyRoute(key('a'), true), 'terminal');
+});
+
+test('the agent terminal takes its colors from the theme tokens', async () => {
+  const { terminalTheme } = await import('../js/termwire.js');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const dark = css.split(':root {')[1].split('}')[0];
+  const read = (name) => dark.match(new RegExp(`${name}: (#[0-9a-f]{6});`))[1];
+  const theme = terminalTheme(read);
+  assert.equal(theme.background, read('--term-bg'));
+  assert.equal(theme.foreground, read('--term-fg'));
+  assert.equal(theme.red, read('--ansi-1'));
+  assert.equal(theme.brightWhite, read('--ansi-15'));
+  assert.match(theme.selectionBackground, /^#[0-9a-f]{8}$/);
+  assert.equal(Object.keys(theme).filter((name) => /^(bright)?[A-Za-z]+$/.test(name) && !['background', 'foreground', 'cursor', 'cursorAccent', 'selectionBackground'].includes(name)).length, 16);
+});
+
+test('the real terminal ships inside the app, licensed, and loads before the interface', () => {
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  const scripts = [...html.matchAll(/<script(?: type="module")? src="([^"]+)"><\/script>/g)].map((match) => match[1]);
+  assert.deepEqual(scripts.slice(0, -1), ['vendor/xterm/xterm.js', 'vendor/xterm/addon-fit.js', 'vendor/xterm/addon-webgl.js', 'vendor/xterm/addon-web-links.js', 'vendor/xterm/addon-unicode11.js']);
+  assert.equal(scripts.at(-1), 'js/main.js');
+  assert.match(html, /<link rel="stylesheet" href="vendor\/xterm\/xterm.css">\s*<link rel="stylesheet" href="styles.css">/);
+  for (const file of [...scripts, 'vendor/xterm/xterm.css', 'vendor/xterm/LICENSE']) assert.ok(existsSync(join(REPO, 'desktop/ui', file)), file);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/vendor/xterm/LICENSE'), 'utf8'), /@xterm\/xterm 5\.5\.0[\s\S]*MIT License/);
+  const csp = JSON.parse(rust('desktop/tauri.conf.json')).app.security.csp;
+  assert.match(csp, /script-src 'self'(;|$)/, 'the terminal scripts are local files, allowed by the CSP');
+  assert.doesNotMatch(html, /class="terminal"/, 'xterm names its own root .terminal, so the frame uses another class');
 });

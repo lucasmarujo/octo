@@ -1,9 +1,13 @@
 const core = () => window.__TAURI__.core;
 
+export function channel(onMessage) {
+  const created = new (core().Channel)();
+  created.onmessage = onMessage;
+  return created;
+}
+
 export async function connect(onMessage) {
-  const channel = new (core().Channel)();
-  channel.onmessage = onMessage;
-  await core().invoke('attach', { channel });
+  await core().invoke('attach', { channel: channel(onMessage) });
 }
 
 export function send(message) {

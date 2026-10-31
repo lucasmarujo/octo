@@ -11,6 +11,7 @@ use orkai::pwa::server::{Outbox, Peer, welcome};
 use orkai::util::lock;
 use tauri::State;
 
+use crate::term::{self, Console};
 use crate::updates::{self, Updates};
 use crate::{alerts, pair, settings};
 use tauri::ipc::{Channel, InvokeResponseBody};
@@ -33,7 +34,7 @@ impl Outbox for Webview {
 }
 
 impl Link {
-    fn new(hub: Arc<Hub>) -> Self {
+    pub(crate) fn new(hub: Arc<Hub>) -> Self {
         Self { hub, generation: Arc::new(AtomicU64::new(0)), inbox: Mutex::new(None) }
     }
 
@@ -102,6 +103,7 @@ pub fn run() -> io::Result<()> {
         .plugin(tauri_plugin_notification::init())
         .manage(link)
         .manage(Updates::default())
+        .manage(Console::default())
         .setup(|app| {
             updates::on_launch(app.handle());
             Ok(())
@@ -120,7 +122,11 @@ pub fn run() -> io::Result<()> {
             pair::set_phone,
             pair::renew_phone,
             updates::update_ready,
-            updates::restart_app
+            updates::restart_app,
+            term::term_open,
+            term::term_input,
+            term::term_resize,
+            term::term_close
         ])
         .run(tauri::generate_context!())
         .map_err(io::Error::other)

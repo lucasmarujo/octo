@@ -1,5 +1,6 @@
 import { h } from './dom.js';
 import { palette } from './palette.js';
+import { LINK_RECORD_OSC, decodeFrame, findLinks, keyRoute, parseLinkRecord, terminalTheme } from './termwire.js';
 
 const DEFAULT = -1;
 const TRUECOLOR = 256;
@@ -8,14 +9,18 @@ const DIM = 2;
 const ITALIC = 4;
 const UNDERLINE = 8;
 const INVERSE = 16;
-const PAD = 16;
-const MIN_ROWS = 8;
-const MIN_COLS = 20;
-const RESIZE_MS = 120;
-const WHEEL_STEP = 40;
 const INK = 'var(--term-bg)';
 const TEXT = 'var(--term-fg)';
-const APP_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'Process', 'Dead', 'Unidentified']);
+const FONT = '"JetBrains Mono", ui-monospace, monospace';
+const FONT_SIZE = 13;
+const LINE_HEIGHT = 1.05;
+const SCROLLBACK = 5000;
+const MIN_ROWS = 8;
+const MIN_COLS = 20;
+const FALLBACK_SIZE = { rows: 24, cols: 80 };
+const RESIZE_MS = 60;
+const REOPEN_MS = 2000;
+const encoder = new TextEncoder();
 
 function color(value) {
   if (value >= TRUECOLOR) {
@@ -45,151 +50,176 @@ export class Terminal {
   constructor(host, handlers) {
     this.host = host;
     this.handlers = handlers;
-    this.rows = h('div', { class: 'term-rows' });
-    this.cursor = h('div', { class: 'term-cursor', hidden: true });
-    this.sink = h('textarea', { class: 'term-sink', 'aria-label': 'Type into the agent', spellcheck: 'false', autocapitalize: 'off' });
-    this.live = h('button', { class: 'term-live', type: 'button', hidden: true, onclick: () => handlers.scroll(0) }, 'Back to live ↓');
-    this.probe = h('span', { class: 'term-probe' }, 'MMMMMMMMMM');
-    host.replaceChildren(this.rows, this.cursor, this.sink, this.live, this.probe);
-    this.screen = null;
+    this.screen = h('div', { class: 'term-screen' });
+    this.live = h('button', { class: 'term-live', type: 'button', hidden: true, onclick: () => this.xterm.scrollToBottom() }, 'Back to live ↓');
+    host.replaceChildren(this.screen, this.live);
     this.agent = null;
-    this.wheel = 0;
-    this.resizeTimer = 0;
     this.size = null;
-    this.bind();
+    this.ended = true;
+    this.openedAt = 0;
+    this.generation = 0;
+    this.records = [];
+    this.resizeTimer = 0;
+    this.xterm = new window.Terminal({
+      fontFamily: FONT,
+      fontSize: FONT_SIZE,
+      lineHeight: LINE_HEIGHT,
+      cursorBlink: true,
+      scrollback: SCROLLBACK,
+      allowProposedApi: true,
+      macOptionIsMeta: true,
+      linkHandler: { activate: (event, uri) => this.follow(event, uri) },
+    });
+    this.fit = new window.FitAddon.FitAddon();
+    this.xterm.loadAddon(this.fit);
+    this.xterm.loadAddon(new window.Unicode11Addon.Unicode11Addon());
+    this.xterm.unicode.activeVersion = '11';
+    this.xterm.loadAddon(new window.WebLinksAddon.WebLinksAddon((event, uri) => this.follow(event, uri)));
+    this.ready = document.fonts
+      .load(`${FONT_SIZE}px ${FONT}`)
+      .catch(() => [])
+      .then(() => this.mount());
   }
 
-  bind() {
-    this.host.addEventListener('mouseup', () => {
-      if (!window.getSelection().toString()) this.focus();
+  mount() {
+    this.xterm.open(this.screen);
+    this.host.dataset.renderer = 'dom';
+    try {
+      const webgl = new window.WebglAddon.WebglAddon();
+      webgl.onContextLoss(() => {
+        webgl.dispose();
+        this.host.dataset.renderer = 'dom';
+      });
+      this.xterm.loadAddon(webgl);
+      this.host.dataset.renderer = 'webgl';
+    } catch {
+      this.host.dataset.renderer = 'dom';
+    }
+    this.xterm.parser.registerOscHandler(LINK_RECORD_OSC, (payload) => {
+      const record = parseLinkRecord(payload);
+      if (record) this.records.push(record);
+      return true;
     });
-    this.host.addEventListener('click', (event) => {
-      if (!event.ctrlKey || !this.screen) return;
-      const cell = this.cellAt(event);
-      if (cell) this.handlers.link(cell);
-    });
-    this.sink.addEventListener('keydown', (event) => this.onKey(event));
-    this.sink.addEventListener('paste', (event) => {
-      event.preventDefault();
-      const text = event.clipboardData.getData('text/plain');
-      if (text) this.handlers.paste(text);
-    });
-    this.sink.addEventListener('compositionend', (event) => {
-      if (event.data) this.handlers.paste(event.data);
-      this.sink.value = '';
-    });
-    this.sink.addEventListener('focus', () => this.host.classList.add('focused'));
-    this.sink.addEventListener('blur', () => this.host.classList.remove('focused'));
-    this.host.addEventListener('wheel', (event) => {
-      event.preventDefault();
-      this.wheel += event.deltaY;
-      const lines = Math.trunc(this.wheel / WHEEL_STEP);
-      if (!lines) return;
-      this.wheel -= lines * WHEEL_STEP;
-      this.handlers.scroll(-lines * 3);
-    }, { passive: false });
+    this.xterm.registerLinkProvider({ provideLinks: (y, callback) => callback(this.titledLinks(y)) });
+    this.xterm.attachCustomKeyEventHandler((event) => this.onKey(event));
+    this.xterm.onData((data) => this.send(encoder.encode(data)));
+    this.xterm.onBinary((data) => this.send(Uint8Array.from(data, (char) => char.charCodeAt(0) & 255)));
+    this.xterm.onScroll(() => this.showLive());
+    this.xterm.onWriteParsed(() => this.showLive());
+    this.xterm.textarea.addEventListener('focus', () => this.host.classList.add('focused'));
+    this.xterm.textarea.addEventListener('blur', () => this.host.classList.remove('focused'));
     new ResizeObserver(() => {
       clearTimeout(this.resizeTimer);
       this.resizeTimer = setTimeout(() => this.refit(), RESIZE_MS);
     }).observe(this.host);
+    new MutationObserver(() => this.retheme()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    this.retheme();
   }
 
-  focus() {
-    this.sink.focus({ preventScroll: true });
+  retheme() {
+    const style = getComputedStyle(document.documentElement);
+    this.xterm.options.theme = terminalTheme((name) => style.getPropertyValue(name).trim());
   }
 
   onKey(event) {
-    if (event.isComposing || APP_KEYS.has(event.key)) return;
+    if (event.type !== 'keydown') return true;
     if (this.handlers.shortcut(event)) {
       event.preventDefault();
-      return;
+      return false;
     }
-    const selection = window.getSelection().toString();
-    if (event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'c' && selection) {
+    const route = keyRoute(event, this.xterm.hasSelection());
+    if (route === 'copy') {
+      this.handlers.copy(this.xterm.getSelection());
+      this.xterm.clearSelection();
       event.preventDefault();
-      this.handlers.copy(selection);
-      window.getSelection().removeAllRanges();
-      return;
+      return false;
     }
-    if ((event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'v') || (event.shiftKey && event.key === 'Insert')) {
-      return;
-    }
-    event.preventDefault();
-    this.handlers.key({ key: event.key, ctrl: event.ctrlKey, alt: event.altKey, shift: event.shiftKey });
+    return route !== 'paste';
   }
 
-  metrics() {
-    const box = this.probe.getBoundingClientRect();
-    const style = getComputedStyle(this.rows);
-    return { width: box.width / 10 || 8, height: parseFloat(style.lineHeight) || 18 };
+  follow(event, url) {
+    if (event.ctrlKey || event.metaKey) this.handlers.link(url);
   }
 
-  cellAt(event) {
-    const { width, height } = this.metrics();
-    const box = this.host.getBoundingClientRect();
-    const row = Math.floor((event.clientY - box.top - PAD) / height);
-    const col = Math.floor((event.clientX - box.left - PAD) / width);
-    if (row < 0 || col < 0 || (this.size && (row >= this.size.rows || col >= this.size.cols))) return null;
-    return { row, col };
+  titledLinks(y) {
+    const line = this.records.length ? this.xterm.buffer.active.getLine(y - 1) : null;
+    if (!line) return undefined;
+    const links = findLinks(line.translateToString(true), this.records).map(({ start, end, url }) => ({
+      range: { start: { x: start + 1, y }, end: { x: end, y } },
+      text: url,
+      activate: (event) => this.follow(event, url),
+    }));
+    return links.length ? links : undefined;
+  }
+
+  showLive() {
+    const buffer = this.xterm.buffer.active;
+    this.live.hidden = buffer.viewportY >= buffer.baseY;
   }
 
   measure() {
-    const { width, height } = this.metrics();
-    const rows = Math.max(MIN_ROWS, Math.floor((this.host.clientHeight - PAD * 2) / height));
-    const cols = Math.max(MIN_COLS, Math.floor((this.host.clientWidth - PAD * 2) / width));
-    return { rows, cols };
+    const dims = this.fit.proposeDimensions();
+    if (!dims || !Number.isFinite(dims.rows) || !Number.isFinite(dims.cols)) return FALLBACK_SIZE;
+    return { rows: Math.max(MIN_ROWS, dims.rows), cols: Math.max(MIN_COLS, dims.cols) };
   }
 
-  open(agent) {
+  async open(agent) {
+    await this.ready;
+    this.generation += 1;
+    const generation = this.generation;
     this.agent = agent;
-    this.screen = null;
-    this.rows.replaceChildren();
-    this.cursor.hidden = true;
-    this.live.hidden = true;
+    this.ended = false;
+    this.openedAt = Date.now();
+    this.records = [];
+    this.xterm.reset();
     this.size = this.measure();
-    return this.size;
+    this.xterm.resize(this.size.cols, this.size.rows);
+    await this.handlers.open(agent, this.size, (payload) => {
+      if (generation === this.generation) this.receive(payload);
+    });
   }
 
-  close() {
-    this.agent = null;
-    this.screen = null;
-    this.rows.replaceChildren();
-    this.cursor.hidden = true;
+  receive(payload) {
+    const frame = decodeFrame(payload);
+    if (!frame) return;
+    if (frame.kind === 'output') {
+      this.xterm.write(frame.data);
+    } else if (frame.kind === 'snapshot') {
+      this.records = [];
+      this.xterm.reset();
+      if (frame.rows !== this.xterm.rows || frame.cols !== this.xterm.cols) this.xterm.resize(frame.cols, frame.rows);
+      this.xterm.write(frame.data);
+    } else {
+      this.ended = true;
+    }
+  }
+
+  stale(agent) {
+    return this.agent === agent && this.ended && Date.now() - this.openedAt > REOPEN_MS;
+  }
+
+  send(bytes) {
+    if (this.agent !== null && !this.ended) this.handlers.input(bytes);
   }
 
   refit() {
-    if (this.agent === null || !this.host.clientWidth) return;
+    if (this.agent === null || !this.screen.clientWidth) return;
     const next = this.measure();
     if (this.size && next.rows === this.size.rows && next.cols === this.size.cols) return;
     this.size = next;
-    this.handlers.resize(next);
+    this.xterm.resize(next.cols, next.rows);
+    if (!this.ended) this.handlers.resize(next);
   }
 
-  apply(message) {
-    if (message.agent !== this.agent) return;
-    if (message.full || !this.screen || this.rows.children.length !== message.rows) {
-      this.rows.replaceChildren(...Array.from({ length: message.rows }, () => h('div', { class: 'term-row' })));
-    }
-    this.screen = { rows: message.rows, cols: message.cols, cursor: message.cursor, scroll: message.scroll };
-    for (const [index, runs] of message.lines) {
-      const row = this.rows.children[index];
-      if (row) row.replaceChildren(...runs.map(run));
-    }
-    this.placeCursor();
-    this.live.hidden = message.scroll === 0;
+  focus() {
+    this.ready.then(() => this.xterm.focus());
   }
 
-  placeCursor() {
-    const screen = this.screen;
-    if (!screen || !screen.cursor || screen.scroll !== 0) {
-      this.cursor.hidden = true;
-      return;
-    }
-    const [row, col] = screen.cursor;
-    const { width, height } = this.metrics();
-    this.cursor.hidden = false;
-    this.cursor.style.width = `${width}px`;
-    this.cursor.style.height = `${height}px`;
-    this.cursor.style.transform = `translate(${PAD + col * width}px, ${PAD + row * height}px)`;
+  close() {
+    this.generation += 1;
+    if (this.agent !== null) this.handlers.close();
+    this.agent = null;
+    this.ended = true;
+    this.live.hidden = true;
   }
 }

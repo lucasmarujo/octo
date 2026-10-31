@@ -5,7 +5,7 @@ import { initComposer, renderComposer, renderPalette, setCommandRunner } from '.
 import { runCommand } from './commands.js';
 import { closeMenu, confirm, showCompare, showDiff, showFolders, showTests } from './dialogs.js';
 import { $, h, svg } from './dom.js';
-import { SPINNER, glyph } from './format.js';
+import { SPINNER, alive, glyph } from './format.js';
 import { peekRequest, renderGrid, tickGrid } from './grid.js';
 import { renderHelp } from './help.js';
 import { ICON_HELP, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS } from './icons.js';
@@ -17,7 +17,7 @@ import { promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setView, state, visible } from './state.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
-import { connect, currentWindow, invoke, send } from './transport.js';
+import { channel, connect, currentWindow, invoke, send } from './transport.js';
 
 const SPIN_MS = 100;
 const TICK_MS = 1000;
@@ -191,7 +191,6 @@ function show(view) {
 }
 
 function leaveAgent() {
-  if (watching()) send({ type: 'close' });
   watchedState = null;
   terminal.close();
 }
@@ -230,8 +229,7 @@ function openAgent(agent) {
     state.details = null;
     state.detailsAt = 0;
     askDetails();
-    const size = terminal.open(agent.id);
-    send({ type: 'open', agent: agent.id, rows: size.rows, cols: size.cols });
+    terminal.open(agent.id).catch((err) => toast(`could not open the terminal: ${err}`, 'error'));
     watchedState = agent.state;
     if (agent.state === 'done') send({ type: 'seen', agent: agent.id });
   }
@@ -330,14 +328,12 @@ function onMessage(message) {
       restartWhenStopped(message.agents);
       raiseAlerts(message.agents);
       render();
+      reopenTerminal();
       break;
     case 'usage':
       state.usage = message.entries;
       state.usageAt = Date.now();
       renderSidebar(onSelect, openAgent);
-      break;
-    case 'screen':
-      terminal.apply(message);
       break;
     case 'notice':
       toast(message.text, message.tone);
@@ -366,9 +362,6 @@ function onMessage(message) {
       break;
     case 'tests':
       showTests(message);
-      break;
-    case 'link':
-      invoke('open_link', { url: message.url }).catch((err) => toast(String(err), 'warn'));
       break;
     default:
       break;
@@ -443,16 +436,28 @@ function copy(text) {
   navigator.clipboard.writeText(text).catch(() => toast('Could not copy the selection.', 'warn'));
 }
 
+function openLink(url) {
+  invoke('open_link', { url }).catch((err) => toast(String(err), 'warn'));
+}
+
 function initTerminal() {
   terminal = new Terminal($('terminal'), {
-    key: (key) => send({ type: 'key', ...key }),
-    paste: (text) => send({ type: 'paste', text }),
-    scroll: (lines) => send({ type: 'scroll', lines }),
-    link: (cell) => send({ type: 'linkAt', row: cell.row, col: cell.col }),
-    resize: (size) => send({ type: 'size', rows: size.rows, cols: size.cols }),
+    open: (agent, size, onFrame) => invoke('term_open', { agent, rows: size.rows, cols: size.cols, channel: channel(onFrame) }),
+    input: (bytes) => invoke('term_input', { data: Array.from(bytes) }).catch(() => {}),
+    resize: (size) => invoke('term_resize', { rows: size.rows, cols: size.cols }).catch(() => {}),
+    close: () => invoke('term_close').catch(() => {}),
+    link: openLink,
     copy,
     shortcut: appShortcut,
   });
+}
+
+function reopenTerminal() {
+  if (!watching()) return;
+  const agent = findAgent(state.active);
+  if (agent && alive(agent) && !agent.starting && terminal.stale(agent.id)) {
+    terminal.open(agent.id).catch((err) => toast(`could not open the terminal: ${err}`, 'error'));
+  }
 }
 
 function initWindow() {

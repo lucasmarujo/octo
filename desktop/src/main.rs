@@ -5,6 +5,7 @@ mod link;
 mod login_path;
 mod pair;
 mod settings;
+mod term;
 mod updates;
 
 use std::process::ExitCode;
