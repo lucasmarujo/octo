@@ -316,7 +316,7 @@
     el.lost.textContent = `↻ ${lost} interrupted · tap to recover`;
     el.mascot.classList.toggle('busy', list.some((agent) => agent.state === 'working'));
     const waiting = agents().filter((agent) => agent.state === 'paused').length;
-    document.title = waiting ? `(${waiting}) Orkai` : 'Orkai';
+    document.title = waiting ? `(${waiting}) Octo` : 'Octo';
     renderHeader();
   }
 
@@ -333,7 +333,7 @@
       }
       return;
     }
-    el.host.textContent = state.overview ? state.overview.host : 'orkai';
+    el.host.textContent = state.overview ? state.overview.host : 'Octo';
     el.where.textContent = state.overview ? `${state.filter} · ${currentWhere()}` : '';
   }
 
@@ -822,7 +822,7 @@
       reloaded = '1';
     }
     if (reloaded) {
-      showPair('this orkai speaks another version of the app. update orkai on the computer.', true);
+      showPair('this Octo speaks another version of the app. update Octo on the computer.', true);
       return;
     }
     window.location.reload();
@@ -831,7 +831,7 @@
   function onClose(code) {
     if (code === Wire.UNPAIRED) {
       setLink('unpaired');
-      showPair('this phone is not paired with this orkai anymore. scan the new code or paste its link to pair it again.', true);
+      showPair('this phone is not paired with this Octo anymore. scan the new code or paste its link to pair it again.', true);
       return;
     }
     if (code === Wire.OUTDATED) {
@@ -885,7 +885,7 @@
     const value = Wire.linkKey(el.pairLink.value);
     const secret = Wire.secretFrom(value);
     if (!secret) {
-      toast('this is not the whole pairing link. copy it again from orkai, with the part after #k=', 'error');
+      toast('this is not the whole pairing link. copy it again from Octo, with the part after #k=', 'error');
       return;
     }
     storage.set(SECRET_KEY, value);
@@ -994,7 +994,7 @@
     if (!Wire.supported) {
       setLink('offline');
       el.pairForm.hidden = true;
-      showPair('this browser cannot run the orkai encryption. open the link in safari or chrome.', false);
+      showPair('this browser cannot run the Octo encryption. open the link in safari or chrome.', false);
       return;
     }
     state.secret = readLink() || Wire.secretFrom(storage.get(SECRET_KEY));

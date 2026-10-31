@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Orkai",
-  "short_name": "Orkai",
-  "description": "Your orkai workspace on the phone, from anywhere",
+  "name": "Octo",
+  "short_name": "Octo",
+  "description": "Your Octo workspace on the phone, from anywhere",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

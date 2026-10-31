@@ -137,11 +137,11 @@ mod tests {
     }
 
     #[test]
-    fn the_manifest_is_a_standalone_app_in_the_orkai_colors() {
+    fn the_manifest_is_a_standalone_octo_app_in_the_brand_colors() {
         let manifest: serde_json::Value =
             serde_json::from_slice(lookup("/manifest.webmanifest").unwrap().body).unwrap();
         assert_eq!(manifest["display"], "standalone");
-        assert_eq!(manifest["name"], "Orkai");
+        assert_eq!(manifest["name"], "Octo");
         assert_eq!(manifest["background_color"], "#121218");
         assert_eq!(manifest["start_url"], "/");
     }

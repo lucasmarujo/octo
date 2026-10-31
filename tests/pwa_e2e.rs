@@ -220,7 +220,7 @@ fn the_bridge_serves_the_app_and_a_health_check() {
     let fx = fixture();
     let index = http_get(fx.port, "/");
     assert!(index.starts_with("HTTP/1.1 200 OK"), "{index}");
-    assert!(index.contains("<title>Orkai</title>"));
+    assert!(index.contains("<title>Octo</title>"));
     assert!(index.contains("Content-Security-Policy: default-src 'self'"));
     assert!(http_get(fx.port, "/health").ends_with("\r\n\r\norkai"));
     assert!(http_get(fx.port, "/../home/pwa.key").starts_with("HTTP/1.1 404"));
