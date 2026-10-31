@@ -1,4 +1,5 @@
 import { nextAttention, rename, renderAgent, renderAgentHead, renderStatus } from './agent.js';
+import { detectAlerts, notice, windowTitle } from './alerts.js';
 import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tickBoard } from './board.js';
 import { initComposer, renderComposer } from './composer.js';
 import { closeMenu, showDiff, showFolders } from './dialogs.js';
@@ -14,7 +15,7 @@ import { promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setView, state, visible } from './state.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
-import { connect, currentWindow, send } from './transport.js';
+import { connect, currentWindow, invoke, send } from './transport.js';
 
 const SPIN_MS = 100;
 const TICK_MS = 1000;
@@ -31,6 +32,7 @@ const VIEWS = ['overview', 'agent-view', 'help-view', 'settings-view'];
 const handlers = { open: (agent) => openAgent(agent) };
 let terminal = null;
 let watchedState = null;
+const alerting = { previous: new Map(), last: new Map(), title: null };
 
 function sessionNames() {
   return state.overview ? state.overview.sessions.map((session) => session.name) : [];
@@ -243,6 +245,20 @@ function markSeenWhileWatching() {
   watchedState = agent.state;
 }
 
+function raiseAlerts(agents) {
+  const { alerts, states } = detectAlerts(alerting.previous, agents, watching() ? state.active : null, Date.now(), alerting.last);
+  alerting.previous = states;
+  if (alerts.length) {
+    for (const alert of alerts) toast(notice(alert).text, notice(alert).tone);
+    invoke('alert', { alerts }).catch((err) => toast(`could not alert: ${err}`, 'warn'));
+  }
+  const title = windowTitle(agents);
+  if (title !== alerting.title) {
+    alerting.title = title;
+    currentWindow().setTitle(title).catch(() => {});
+  }
+}
+
 function onMessage(message) {
   switch (message.type) {
     case 'welcome':
@@ -255,6 +271,7 @@ function onMessage(message) {
       settleSession();
       settleTabs();
       markSeenWhileWatching();
+      raiseAlerts(message.agents);
       render();
       break;
     case 'usage':

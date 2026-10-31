@@ -270,3 +270,41 @@ test('the help says the same in English and in Portuguese, and English comes fir
     assert.deepEqual(keys, rows.map(([key]) => translated[key] || key));
   });
 });
+
+test('an agent that starts waiting or finishes raises one alert, like in the TUI', async () => {
+  const { ALERT_REPEAT_MS, detectAlerts } = await import('../js/alerts.js');
+  const app = rust('src/tui/app.rs');
+  assert.ok(app.includes(`const ALERT_REPEAT_MS: u64 = ${ALERT_REPEAT_MS.toLocaleString('en').replaceAll(',', '_')};`), 'same repeat window as the TUI');
+  const last = new Map();
+  const first = detectAlerts(new Map(), [agent({ id: 1, state: 'working' })], null, NOW, last);
+  assert.deepEqual(first.alerts, [], 'nothing to compare with yet');
+  const agents = [
+    agent({ id: 1, state: 'paused' }),
+    agent({ id: 2, state: 'done' }),
+    agent({ id: 3, state: 'done', kind: 'terminal' }),
+    agent({ id: 4, state: 'done' }),
+    agent({ id: 5, state: 'done' }),
+  ];
+  const before = new Map([[1, 'working'], [2, 'working'], [3, 'working'], [4, 'working'], [5, 'done']]);
+  const { alerts, states } = detectAlerts(before, agents, 4, NOW, last);
+  assert.deepEqual(alerts.map((alert) => [alert.id, alert.state]), [[1, 'paused'], [2, 'done']], 'terminals, the open agent and agents already done stay quiet');
+  assert.equal(states.get(5), 'done');
+  const again = detectAlerts(new Map([[1, 'working']]), [agent({ id: 1, state: 'paused' })], null, NOW + 1000, last);
+  assert.deepEqual(again.alerts, [], 'the same alert is not repeated right away');
+  const later = detectAlerts(new Map([[1, 'working']]), [agent({ id: 1, state: 'paused' })], null, NOW + ALERT_REPEAT_MS, last);
+  assert.equal(later.alerts.length, 1);
+});
+
+test('the window title counts who waits and who finished, like the terminal title of the TUI', async () => {
+  const { windowTitle } = await import('../js/alerts.js');
+  assert.equal(windowTitle([]), 'orkai');
+  const agents = [
+    agent({ id: 1, state: 'paused' }),
+    agent({ id: 2, state: 'paused' }),
+    agent({ id: 3, state: 'done' }),
+    agent({ id: 4, state: 'done', kind: 'terminal' }),
+    agent({ id: 5, state: 'working' }),
+  ];
+  assert.equal(windowTitle(agents), '‖2 ✔1 · orkai');
+  assert.equal(windowTitle([agent({ state: 'done' })]), '✔1 · orkai');
+});

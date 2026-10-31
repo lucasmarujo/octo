@@ -22,3 +22,4 @@ orkai = { path = ".." }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
+tauri-plugin-notification = "2"

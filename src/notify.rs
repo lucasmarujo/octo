@@ -52,12 +52,16 @@ fn printable(text: &str) -> String {
     text.chars().filter(|c| !c.is_control()).collect()
 }
 
+pub fn summary(alerts: &[Alert]) -> Option<String> {
+    match alerts {
+        [] => None,
+        [alert] => Some(alert.message()),
+        many => Some(format!("{} agents need you", many.len())),
+    }
+}
+
 pub fn terminal_sequence(alerts: &[Alert], bell: bool) -> Vec<u8> {
-    let body = match alerts {
-        [] => return Vec::new(),
-        [alert] => alert.message(),
-        many => format!("{} agents need you", many.len()),
-    };
+    let Some(body) = summary(alerts) else { return Vec::new() };
     let mut out = if bell { vec![BELL] } else { Vec::new() };
     out.extend_from_slice(format!("\x1b]9;{NOTIFICATION_TITLE}: {}\x07", printable(&body)).as_bytes());
     out
