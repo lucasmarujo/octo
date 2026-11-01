@@ -661,14 +661,22 @@ fn sessions_are_renamed_and_deleted_and_trust_needs_a_repository() {
         overview.sessions.iter().any(|session| session.name == "weekly")
             && !overview.sessions.iter().any(|session| session.name == "nightly")
     });
-    phone.send(&PhoneMsg::DeleteSession { name: "default".into() });
-    let refused = phone.until(|message| match message {
-        BridgeMsg::Notice { text, tone: Tone::Error } => Some(text),
-        _ => None,
+    phone.send(&PhoneMsg::RenameSession { name: "default".into(), to: "home".into() });
+    phone.overview_where(|overview| {
+        overview.sessions.iter().any(|session| session.name == "home")
+            && !overview.sessions.iter().any(|session| session.name == "default")
+            && overview.session == "home"
     });
-    assert!(refused.contains("default session"), "{refused}");
+    phone.send(&PhoneMsg::DeleteSession { name: "home".into() });
+    phone.overview_where(|overview| {
+        overview.sessions.iter().map(|session| session.name.as_str()).collect::<Vec<_>>() == ["weekly"]
+            && overview.session == "weekly"
+    });
     phone.send(&PhoneMsg::DeleteSession { name: "weekly".into() });
-    phone.overview_where(|overview| !overview.sessions.iter().any(|session| session.name == "weekly"));
+    phone.overview_where(|overview| {
+        overview.sessions.iter().map(|session| session.name.as_str()).collect::<Vec<_>>() == ["default"]
+            && overview.session == "default"
+    });
     let plain = fx.dir.join("plain");
     std::fs::create_dir_all(&plain).unwrap();
     phone.send(&PhoneMsg::Trust { cwd: plain.to_string_lossy().into_owned(), command: None });

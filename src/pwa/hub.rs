@@ -550,18 +550,23 @@ impl Hub {
         let home = crate::paths::user_home();
         let shown = |path: &std::path::Path| display_path(path, home.as_deref());
         let ui = &inner.ui;
+        let session = if inner.sessions.iter().any(|session| session.name == ui.session) {
+            ui.session.clone()
+        } else {
+            inner.sessions.first().map_or_else(|| ui.session.clone(), |session| session.name.clone())
+        };
         Overview {
             host: self.host.clone(),
             now: 0,
-            session: ui.session.clone(),
-            sessions,
-            agents,
             where_dir: ui
                 .session_dirs
-                .get(&ui.session)
+                .get(&session)
                 .or(ui.where_dir.as_ref())
                 .map(|dir| shown(dir))
                 .unwrap_or_default(),
+            session,
+            sessions,
+            agents,
             dirs: ui.session_dirs.iter().map(|(session, dir)| (session.clone(), shown(dir))).collect(),
             worktree: ui.worktree,
             kinds: self.kinds(),

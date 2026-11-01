@@ -767,3 +767,9 @@ test('the settings button shows a gear, not the sun of the light theme', async (
   assert.match(ICON_SETTINGS, /Z" stroke="currentColor"/, 'one closed outline');
   assert.doesNotMatch(ICON_SETTINGS, /stroke-linecap="round"/, 'no loose rays, like the ones of a sun');
 });
+
+test('when the session on screen is gone the app moves to one that exists, even if default was deleted', () => {
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /selectSession\(names\.includes\(state\.overview\.session\) \? state\.overview\.session : names\[0\] \|\| null\);/);
+  assert.doesNotMatch(rust('src/store.rs'), /default session cannot be deleted/);
+});

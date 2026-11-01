@@ -50,7 +50,7 @@ function settleSession() {
     state.pendingSession = null;
   }
   if (!state.session || (!names.includes(state.session) && state.session !== state.pendingSession)) {
-    selectSession(state.overview.session || names[0] || null);
+    selectSession(names.includes(state.overview.session) ? state.overview.session : names[0] || null);
   }
 }
 

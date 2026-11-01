@@ -18,6 +18,10 @@ fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message.into())
 }
 
+fn default_session() -> Session {
+    Session { name: DEFAULT_SESSION.to_string(), created_at_ms: now_ms() }
+}
+
 impl Store {
     pub fn open(home: Home) -> io::Result<Self> {
         home.ensure()?;
@@ -42,17 +46,18 @@ impl Store {
     }
 
     pub fn peek_sessions_with(&self, records: &[AgentRecord]) -> io::Result<(Vec<Session>, bool)> {
-        let mut list = fsutil::read_json_opt::<SessionList>(&self.home.sessions_file())?.unwrap_or_default();
-        let mut changed = false;
-        if !list.sessions.iter().any(|s| s.name == DEFAULT_SESSION) {
-            list.sessions.insert(0, Session { name: DEFAULT_SESSION.to_string(), created_at_ms: now_ms() });
-            changed = true;
-        }
+        let saved = fsutil::read_json_opt::<SessionList>(&self.home.sessions_file())?;
+        let mut changed = saved.is_none();
+        let mut list = saved.unwrap_or_else(|| SessionList { sessions: vec![default_session()] });
         for record in records {
             if !list.sessions.iter().any(|s| s.name == record.session) {
                 list.sessions.push(Session { name: record.session.clone(), created_at_ms: record.created_at_ms });
                 changed = true;
             }
+        }
+        if list.sessions.is_empty() {
+            list.sessions.push(default_session());
+            changed = true;
         }
         Ok((list.sessions, changed))
     }
@@ -100,9 +105,6 @@ impl Store {
     }
 
     pub fn delete_session(&self, name: &str) -> io::Result<()> {
-        if name == DEFAULT_SESSION {
-            return Err(invalid("the default session cannot be deleted"));
-        }
         if self.list_agents()?.iter().any(|r| r.session == name) {
             return Err(invalid(format!("session '{name}' still has agents")));
         }
@@ -262,7 +264,36 @@ mod tests {
         assert!(store.delete_session("work").is_err());
         store.remove_agent(agent.id).unwrap();
         store.delete_session("work").unwrap();
-        assert!(store.delete_session(DEFAULT_SESSION).is_err());
+        let names: Vec<_> = store.load_sessions().unwrap().into_iter().map(|s| s.name).collect();
+        assert_eq!(names, vec![DEFAULT_SESSION]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_default_session_is_renamed_and_deleted_like_any_other_and_stays_gone() {
+        let (store, dir) = temp_store("default-gone");
+        let agent = store.create_agent(draft(DEFAULT_SESSION, "a")).unwrap();
+        store.rename_session(DEFAULT_SESSION, "home").unwrap();
+        assert_eq!(store.load_agent(agent.id).unwrap().session, "home");
+        let names: Vec<_> = store.load_sessions().unwrap().into_iter().map(|s| s.name).collect();
+        assert_eq!(names, vec!["home"], "a renamed default session does not come back");
+        store.remove_agent(agent.id).unwrap();
+        store.create_session("work").unwrap();
+        store.delete_session("home").unwrap();
+        let names: Vec<_> = store.load_sessions().unwrap().into_iter().map(|s| s.name).collect();
+        assert_eq!(names, vec!["work"]);
+        store.create_session(DEFAULT_SESSION).unwrap();
+        store.delete_session(DEFAULT_SESSION).unwrap();
+        let names: Vec<_> = store.load_sessions().unwrap().into_iter().map(|s| s.name).collect();
+        assert_eq!(names, vec!["work"], "a deleted default session does not come back");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn deleting_the_last_session_leaves_a_default_one_to_work_in() {
+        let (store, dir) = temp_store("last");
+        store.rename_session(DEFAULT_SESSION, "only").unwrap();
+        store.delete_session("only").unwrap();
         let names: Vec<_> = store.load_sessions().unwrap().into_iter().map(|s| s.name).collect();
         assert_eq!(names, vec![DEFAULT_SESSION]);
         fs::remove_dir_all(dir).unwrap();

@@ -379,11 +379,8 @@ impl App {
         let records = store.list_agents()?;
         let sessions = store.load_sessions_with(&records)?;
         let ui = store.load_ui();
-        let session = if sessions.iter().any(|s| s.name == ui.session) {
-            ui.session.clone()
-        } else {
-            DEFAULT_SESSION.to_string()
-        };
+        let session =
+            if sessions.iter().any(|s| s.name == ui.session) { ui.session.clone() } else { first_session(&sessions) };
         let where_dir = ui
             .session_dirs
             .get(&session)
@@ -1096,7 +1093,7 @@ impl App {
         {
             self.sessions = sessions;
             if !self.sessions.iter().any(|s| s.name == self.session) {
-                self.session = DEFAULT_SESSION.to_string();
+                self.session = first_session(&self.sessions);
             }
             self.dirty = true;
         }
@@ -1932,7 +1929,7 @@ impl App {
             Ok(()) => {
                 self.sessions = store.load_sessions().unwrap_or_else(|_| self.sessions.clone());
                 self.session_dirs.remove(name);
-                self.switch_session(DEFAULT_SESSION);
+                self.switch_session(&first_session(&self.sessions));
                 self.set_notice(Tone::Info, format!("session {name} deleted"));
             }
             Err(err) => self.set_notice(Tone::Error, err.to_string()),
@@ -2703,6 +2700,10 @@ pub fn parse_race(arg: &str) -> Option<(Vec<AgentKind>, String)> {
 
 pub fn first_line(text: &str) -> String {
     text.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or_default().to_string()
+}
+
+fn first_session(sessions: &[Session]) -> String {
+    sessions.first().map_or_else(|| DEFAULT_SESSION.to_string(), |session| session.name.clone())
 }
 
 fn compare_header(entry: &AgentEntry) -> String {
