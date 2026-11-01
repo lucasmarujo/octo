@@ -2825,7 +2825,7 @@ dependencies = [
 
 [[package]]
 name = "orkai"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -2850,7 +2850,7 @@ dependencies = [
 
 [[package]]
 name = "orkai-desktop"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "clap",
  "gethostname",
