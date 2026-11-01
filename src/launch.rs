@@ -16,6 +16,7 @@ use crate::model::{AgentId, AgentKind, AgentRecord, LaunchSpec, NewAgent, Runtim
 use crate::paths::{HOME_ENV, Home, normalize_for_compare, user_home};
 use crate::protocol::TermSize;
 use crate::store::Store;
+use crate::update;
 use crate::util::{civil_date_from_ms, fnv1a64, is_uuid, new_uuid_v4};
 use crate::worktree;
 
@@ -713,32 +714,87 @@ pub fn holder_executable(home: &Home, source: &Path) -> io::Result<PathBuf> {
     let mut guard = crate::util::lock(cache);
     if let Some((cached_source, target)) = guard.as_ref()
         && cached_source == source
-        && target.parent() == Some(home.bin_dir().as_path())
+        && staged_entry(target).parent() == Some(home.bin_dir().as_path())
         && target.exists()
     {
         return Ok(target.clone());
     }
     let data = fs::read(source)?;
-    let name =
-        format!("{HOLDER_PREFIX}{}-{:016x}{}", env!("CARGO_PKG_VERSION"), fnv1a64(&data), std::env::consts::EXE_SUFFIX);
-    let target = home.bin_dir().join(name);
-    if !target.exists() {
-        let tmp = target.with_file_name(format!(".staging-{}-{}", std::process::id(), crate::util::now_ms()));
-        fs::write(&tmp, &data)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o700))?;
+    let name = format!("{HOLDER_PREFIX}{}-{:016x}", env!("CARGO_PKG_VERSION"), fnv1a64(&data));
+    let target = match update::app_bundle(source) {
+        Some(bundle) => {
+            let staged = home.bin_dir().join(format!("{name}.{}", update::BUNDLE_EXTENSION));
+            stage(&staged, |tmp| copy_bundle(bundle, tmp))?;
+            staged.join(source.strip_prefix(bundle).map_err(io::Error::other)?)
         }
-        if let Err(err) = fs::rename(&tmp, &target) {
-            let _ = fs::remove_file(&tmp);
-            if !target.exists() {
-                return Err(err);
-            }
+        None => {
+            let staged = home.bin_dir().join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+            stage(&staged, |tmp| write_executable(tmp, &data))?;
+            staged
         }
-    }
+    };
     *guard = Some((source.to_path_buf(), target.clone()));
     Ok(target)
+}
+
+fn staged_entry(exe: &Path) -> &Path {
+    update::app_bundle(exe).unwrap_or(exe)
+}
+
+fn stage(target: &Path, write: impl FnOnce(&Path) -> io::Result<()>) -> io::Result<()> {
+    if target.exists() {
+        return Ok(());
+    }
+    let tmp = target.with_file_name(format!(".staging-{}-{}", std::process::id(), crate::util::now_ms()));
+    if let Err(err) = write(&tmp).and_then(|()| fs::rename(&tmp, target)) {
+        remove_staged(&tmp);
+        if !target.exists() {
+            return Err(err);
+        }
+    }
+    Ok(())
+}
+
+fn write_executable(path: &Path, data: &[u8]) -> io::Result<()> {
+    fs::write(path, data)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+fn copy_bundle(from: &Path, to: &Path) -> io::Result<()> {
+    fs::create_dir(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let (source, target) = (entry.path(), to.join(entry.file_name()));
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            copy_bundle(&source, &target)?;
+        } else if kind.is_symlink() {
+            copy_symlink(&source, &target)?;
+        } else {
+            fs::write(&target, fs::read(&source)?)?;
+            fs::set_permissions(&target, entry.metadata()?.permissions())?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn copy_symlink(from: &Path, to: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(fs::read_link(from)?, to)
+}
+
+#[cfg(not(unix))]
+fn copy_symlink(from: &Path, _to: &Path) -> io::Result<()> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, format!("{} is a link inside an app bundle", from.display())))
+}
+
+fn remove_staged(path: &Path) {
+    let _ = if path.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) };
 }
 
 fn holder_binaries_in_use(home: &Home) -> HashSet<String> {
@@ -750,12 +806,13 @@ fn holder_binaries_in_use(home: &Home) -> HashSet<String> {
         .filter_map(|id| fsutil::read_json_opt::<RuntimeInfo>(&home.runtime_file(id)).ok().flatten())
         .filter_map(|runtime| runtime.exe)
         .chain(bridge)
-        .map(|exe| normalize_for_compare(&exe))
+        .map(|exe| normalize_for_compare(staged_entry(&exe)))
         .collect()
 }
 
 pub fn prune_holder_binaries(home: &Home, keep: &Path) {
     let Ok(entries) = fs::read_dir(home.bin_dir()) else { return };
+    let keep = staged_entry(keep);
     let in_use = holder_binaries_in_use(home);
     for entry in entries.flatten() {
         let path = entry.path();
@@ -764,7 +821,7 @@ pub fn prune_holder_binaries(home: &Home, keep: &Path) {
             && path != keep
             && !in_use.contains(&normalize_for_compare(&path))
         {
-            let _ = fs::remove_file(path);
+            remove_staged(&path);
         }
     }
 }
@@ -1363,6 +1420,69 @@ mod tests {
         assert!(!stale.exists());
         assert!(staged.exists());
         assert!(running.exists(), "agents call their holder binary from hooks, so it must stay while they run");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn fake_bundle(bundle: &Path, executable: &[u8]) -> PathBuf {
+        let exe = bundle.join("Contents/MacOS/octo");
+        fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        fs::create_dir_all(bundle.join("Contents/_CodeSignature")).unwrap();
+        fs::write(&exe, executable).unwrap();
+        fs::write(bundle.join("Contents/Info.plist"), b"<plist/>").unwrap();
+        fs::write(bundle.join("Contents/_CodeSignature/CodeResources"), b"seal").unwrap();
+        exe
+    }
+
+    #[test]
+    fn a_holder_inside_an_app_bundle_is_staged_with_its_whole_bundle_and_pruned_like_a_binary() {
+        let dir = temp_dir("stage-bundle");
+        let home = Home::at(dir.join("home"));
+        home.ensure().unwrap();
+        let source = fake_bundle(&dir.join("Octo.app"), b"signed-binary");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&source, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let staged = holder_executable(&home, &source).unwrap();
+        let bundle = update::app_bundle(&staged).expect("the holder runs inside a copy of the bundle");
+        assert_eq!(bundle.parent(), Some(home.bin_dir().as_path()));
+        assert!(
+            bundle.file_name().unwrap().to_string_lossy().starts_with(HOLDER_PREFIX),
+            "ps finds the holder by its path"
+        );
+        assert_eq!(fs::read(&staged).unwrap(), b"signed-binary");
+        assert_eq!(
+            fs::read(bundle.join("Contents/Info.plist")).unwrap(),
+            b"<plist/>",
+            "macOS kills a signed executable copied away from the Info.plist its signature seals"
+        );
+        assert_eq!(fs::read(bundle.join("Contents/_CodeSignature/CodeResources")).unwrap(), b"seal");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(&staged).unwrap().permissions().mode() & 0o777, 0o755);
+        }
+        assert_eq!(holder_executable(&home, &source).unwrap(), staged);
+        let stale = home.bin_dir().join(format!("{HOLDER_PREFIX}old.app"));
+        fake_bundle(&stale, b"old");
+        let running = fake_bundle(&home.bin_dir().join(format!("{HOLDER_PREFIX}running.app")), b"running");
+        fs::create_dir_all(home.agent_dir(7)).unwrap();
+        let runtime = RuntimeInfo {
+            holder_pid: 1,
+            child_pid: None,
+            port: 1,
+            token: String::new(),
+            started_at_ms: 1,
+            protocol: 1,
+            version: String::new(),
+            exe: Some(running.clone()),
+        };
+        fsutil::write_json_atomic(&home.runtime_file(7), &runtime).unwrap();
+        prune_holder_binaries(&home, &staged);
+        assert!(!stale.exists());
+        assert!(staged.exists());
+        assert!(running.exists(), "a running agent keeps the bundle its hooks call");
         fs::remove_dir_all(dir).unwrap();
     }
 

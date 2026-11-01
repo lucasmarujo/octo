@@ -218,6 +218,11 @@ jobs:
           fi
           cp "$app/Contents/MacOS/octo" "dist/$UPDATE"
           ditto -c -k --keepParent "$app" "dist/$DOWNLOAD"
+      - name: Start an agent from the signed app
+        if: matrix.target == 'aarch64-apple-darwin'
+        env:
+          OCTO_SIGNED_APP: ${{ github.workspace }}/target/bundle/Octo.app
+        run: cargo test --release --locked -p orkai-desktop --target ${{ matrix.target }} --test macos_app_e2e
       - name: Warn that the app is unsigned
         if: runner.os == 'Windows'
         run: echo "::warning::Octo is published unsigned"
