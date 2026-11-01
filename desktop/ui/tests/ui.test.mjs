@@ -563,6 +563,24 @@ test('every terminal names its session, so a late close never ends the terminal 
   assert.match(rust('desktop/src/term.rs'), /pub fn term_close\(console: State<'_, Console>, session: SessionId\)/);
 });
 
+test('a terminal lets go of its own session when it opens another and never of one it does not own', () => {
+  const terminal = readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8');
+  const open = terminal.slice(terminal.indexOf('async open('), terminal.indexOf('\n  }\n', terminal.indexOf('async open(')));
+  assert.match(open, /const previous = this\.session;[\s\S]*?if \(previous !== null\) this\.handlers\.close\(previous\);/);
+  assert.match(open, /this\.live\.hidden = true;/, 'the back to live button of the last screen does not stay');
+  const console = rust('desktop/src/term.rs');
+  assert.doesNotMatch(console, /close_current/, 'opening a terminal never ends the one another terminal holds');
+  assert.match(console, /sessions: Sessions/);
+  assert.match(rust('desktop/src/link.rs'), /PageLoadEvent::Started[\s\S]*?close_all\(\)/, 'a reloaded page lets go of the terminals it left open');
+});
+
+test('a terminal whose session ends before any screen arrives opens it again at once', () => {
+  const terminal = readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8');
+  assert.match(terminal, /if \(this\.received\) return;\n\s*this\.host\.dataset\.status = 'ended';\n\s*if \(this\.retry\) \{[\s\S]*?this\.unstick\(this\.generation\);/);
+  assert.match(terminal, /unstick\(generation\) \{\n\s*if \(generation !== this\.generation \|\| this\.received\) return;\n\s*this\.open\(this\.agent, false\)/, 'only once, and never over a screen it already shows');
+  assert.equal(terminal.match(/this\.received = true;/g).length, 2, 'a snapshot or any output counts as a screen');
+});
+
 test('an agent terminal says it is connecting instead of staying black, retries once and redraws once shown', () => {
   const terminal = readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');

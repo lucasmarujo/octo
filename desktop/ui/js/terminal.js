@@ -61,6 +61,8 @@ export class Terminal {
     this.agent = null;
     this.size = null;
     this.ended = true;
+    this.received = false;
+    this.retry = false;
     this.openedAt = 0;
     this.generation = 0;
     this.records = [];
@@ -178,12 +180,17 @@ export class Terminal {
     clearTimeout(this.watchdog);
     this.generation += 1;
     const generation = this.generation;
+    const previous = this.session;
     this.agent = agent;
     this.session = null;
+    if (previous !== null) this.handlers.close(previous);
     this.ended = false;
+    this.received = false;
+    this.retry = retry;
     this.openedAt = Date.now();
     this.records = [];
     this.host.dataset.status = 'connecting';
+    this.live.hidden = true;
     this.xterm.reset();
     this.size = this.measure();
     this.xterm.resize(this.size.cols, this.size.rows);
@@ -199,7 +206,7 @@ export class Terminal {
   }
 
   unstick(generation) {
-    if (generation !== this.generation || this.host.dataset.status !== 'connecting') return;
+    if (generation !== this.generation || this.received) return;
     this.open(this.agent, false).catch(() => {});
   }
 
@@ -207,15 +214,22 @@ export class Terminal {
     const frame = decodeFrame(payload);
     if (!frame) return;
     if (frame.kind === 'output') {
+      this.received = true;
       this.xterm.write(frame.data, () => this.shown());
     } else if (frame.kind === 'snapshot') {
+      this.received = true;
       this.records = [];
       this.xterm.reset();
       if (frame.rows !== this.xterm.rows || frame.cols !== this.xterm.cols) this.xterm.resize(frame.cols, frame.rows);
       this.xterm.write(frame.data, () => this.shown());
     } else {
       this.ended = true;
-      if (this.host.dataset.status === 'connecting') this.host.dataset.status = 'ended';
+      if (this.received) return;
+      this.host.dataset.status = 'ended';
+      if (this.retry) {
+        clearTimeout(this.watchdog);
+        this.unstick(this.generation);
+      }
     }
   }
 

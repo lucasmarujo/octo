@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -20,9 +21,11 @@ const NOTHING_RECORDED: &[u8] = b"(no output was recorded)";
 
 pub type SessionId = u64;
 
+type Sessions = Arc<Mutex<HashMap<SessionId, Arc<Connection>>>>;
+
 #[derive(Default)]
 pub struct Console {
-    session: Mutex<Option<(SessionId, Arc<Connection>)>>,
+    sessions: Sessions,
     next: AtomicU64,
 }
 
@@ -58,9 +61,20 @@ fn push(channel: &Channel, bytes: Vec<u8>) -> bool {
     channel.send(InvokeResponseBody::Raw(bytes)).is_ok()
 }
 
+fn forget(sessions: &Sessions, session: SessionId) {
+    let conn = lock(sessions).remove(&session);
+    if let Some(conn) = conn {
+        detach(&conn);
+    }
+}
+
+fn detach(conn: &Connection) {
+    let _ = conn.send(&ClientMsg::Detach);
+    conn.close();
+}
+
 impl Console {
     pub fn open(&self, link: &Link, agent: AgentId, size: TermSize, channel: Channel) -> Result<SessionId, String> {
-        self.close_current();
         let id = self.next.fetch_add(1, Ordering::SeqCst) + 1;
         let store = link.hub().store();
         let connected = store.read_runtime(agent).ok().flatten().and_then(|runtime| client::connect(&runtime).ok());
@@ -70,23 +84,33 @@ impl Console {
             return Ok(id);
         };
         conn.send(&ClientMsg::Attach(size)).map_err(|err| err.to_string())?;
-        client::spawn_reader(reader, move |message| match message {
-            Some(message) => frame(&message).is_none_or(|bytes| push(&channel, bytes)),
-            None => {
-                push(&channel, vec![ENDED]);
-                false
+        lock(&self.sessions).insert(id, Arc::new(conn));
+        let sessions = Arc::clone(&self.sessions);
+        let reading = client::spawn_reader(reader, move |message| {
+            let delivered = match message {
+                Some(message) => frame(&message).is_none_or(|bytes| push(&channel, bytes)),
+                None => {
+                    forget(&sessions, id);
+                    push(&channel, vec![ENDED]);
+                    return false;
+                }
+            };
+            if !delivered {
+                forget(&sessions, id);
             }
-        })
-        .map_err(|err| err.to_string())?;
-        *lock(&self.session) = Some((id, Arc::new(conn)));
+            delivered
+        });
+        if let Err(err) = reading {
+            forget(&self.sessions, id);
+            return Err(err.to_string());
+        }
         Ok(id)
     }
 
     fn deliver(&self, session: SessionId, message: ClientMsg) -> Result<(), String> {
-        let conn = lock(&self.session)
-            .as_ref()
-            .filter(|(current, _)| *current == session)
-            .map(|(_, conn)| Arc::clone(conn))
+        let conn = lock(&self.sessions)
+            .get(&session)
+            .map(Arc::clone)
             .ok_or_else(|| "this agent terminal is not open anymore".to_string())?;
         conn.send(&message).map_err(|err| err.to_string())
     }
@@ -100,20 +124,13 @@ impl Console {
     }
 
     pub fn close(&self, session: SessionId) {
-        let mut current = lock(&self.session);
-        if current.as_ref().is_some_and(|(id, _)| *id == session) {
-            Self::detach(current.take());
-        }
+        forget(&self.sessions, session);
     }
 
-    fn close_current(&self) {
-        Self::detach(lock(&self.session).take());
-    }
-
-    fn detach(session: Option<(SessionId, Arc<Connection>)>) {
-        if let Some((_, conn)) = session {
-            let _ = conn.send(&ClientMsg::Detach);
-            conn.close();
+    pub fn close_all(&self) {
+        let open: Vec<Arc<Connection>> = lock(&self.sessions).drain().map(|(_, conn)| conn).collect();
+        for conn in open {
+            detach(&conn);
         }
     }
 }
@@ -164,7 +181,9 @@ mod tests {
     use super::*;
 
     const AGENT: AgentId = 7;
+    const OTHER: AgentId = 8;
     const WAIT: Duration = Duration::from_secs(10);
+    const QUIET: Duration = Duration::from_millis(300);
 
     struct Fixture {
         dir: std::path::PathBuf,
@@ -203,6 +222,10 @@ mod tests {
     }
 
     fn fake_holder(home: &Home) -> Receiver<TcpStream> {
+        slow_holder(home, AGENT, Duration::ZERO)
+    }
+
+    fn slow_holder(home: &Home, agent: AgentId, welcome_after: Duration) -> Receiver<TcpStream> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let runtime = RuntimeInfo {
             holder_pid: std::process::id(),
@@ -214,7 +237,7 @@ mod tests {
             version: "test".into(),
             exe: None,
         };
-        let path = home.runtime_file(AGENT);
+        let path = home.runtime_file(agent);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         orkai::fsutil::write_json_atomic(&path, &runtime).unwrap();
         let (tx, rx) = mpsc::channel();
@@ -222,8 +245,9 @@ mod tests {
             let (mut stream, _) = listener.accept().unwrap();
             let ClientMsg::Hello(hello) = ClientMsg::read(&mut stream).unwrap() else { panic!("no hello") };
             assert_eq!(hello.token, "secret");
+            thread::sleep(welcome_after);
             let welcome =
-                Welcome { agent_id: AGENT, protocol: PROTOCOL_VERSION, version: "test".into(), holder_pid: 1 };
+                Welcome { agent_id: agent, protocol: PROTOCOL_VERSION, version: "test".into(), holder_pid: 1 };
             reply(&mut stream, HolderMsg::Welcome(welcome));
             tx.send(stream).unwrap();
         });
@@ -266,36 +290,114 @@ mod tests {
 
         drop(stream);
         assert_eq!(frames.recv_timeout(WAIT).unwrap(), vec![ENDED], "the window learns the holder is gone");
-        console.close(session);
         assert!(console.input(session, b"x".to_vec()).unwrap_err().contains("not open anymore"));
+        console.close(session);
+    }
+
+    fn assert_still_attached(stream: &mut TcpStream) {
+        stream.set_read_timeout(Some(QUIET)).unwrap();
+        let err = ClientMsg::read(stream).expect_err("nothing reaches a terminal nobody closed");
+        assert!(matches!(err.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut), "{err}");
+        stream.set_read_timeout(Some(WAIT)).unwrap();
+    }
+
+    fn attached(holder: &Receiver<TcpStream>) -> TcpStream {
+        let mut stream = holder.recv_timeout(WAIT).unwrap();
+        stream.set_read_timeout(Some(WAIT)).unwrap();
+        assert!(matches!(ClientMsg::read(&mut stream).unwrap(), ClientMsg::Attach(_)));
+        stream
     }
 
     #[test]
-    fn a_terminal_that_was_replaced_cannot_close_or_type_into_the_new_one() {
-        let fx = fixture("replaced");
-        let holder = fake_holder(&fx.home);
+    fn opening_a_terminal_never_ends_another_one() {
+        let fx = fixture("two");
         let console = Console::default();
+        let grid_holder = slow_holder(&fx.home, AGENT, Duration::ZERO);
         let (grid, _grid_frames) = window();
         let first = console.open(&fx.link, AGENT, TermSize::new(20, 60), grid).unwrap();
-        let mut first_stream = holder.recv_timeout(WAIT).unwrap();
-        assert!(matches!(ClientMsg::read(&mut first_stream).unwrap(), ClientMsg::Attach(_)));
+        let mut first_stream = attached(&grid_holder);
 
-        let holder = fake_holder(&fx.home);
+        let tab_holder = slow_holder(&fx.home, OTHER, Duration::ZERO);
         let (tab, _tab_frames) = window();
-        let second = console.open(&fx.link, AGENT, TermSize::new(40, 120), tab).unwrap();
+        let second = console.open(&fx.link, OTHER, TermSize::new(40, 120), tab).unwrap();
+        let mut second_stream = attached(&tab_holder);
         assert_ne!(first, second);
-        assert_eq!(ClientMsg::read(&mut first_stream).unwrap(), ClientMsg::Detach, "opening the tab lets the grid go");
-        let mut second_stream = holder.recv_timeout(WAIT).unwrap();
-        assert!(matches!(ClientMsg::read(&mut second_stream).unwrap(), ClientMsg::Attach(_)));
+        assert_still_attached(&mut first_stream);
+
+        console.input(first, b"grid".to_vec()).unwrap();
+        assert_eq!(ClientMsg::read(&mut first_stream).unwrap(), ClientMsg::Input(b"grid".to_vec()));
+        console.input(second, b"tab".to_vec()).unwrap();
+        assert_eq!(ClientMsg::read(&mut second_stream).unwrap(), ClientMsg::Input(b"tab".to_vec()));
 
         console.close(first);
+        assert_eq!(ClientMsg::read(&mut first_stream).unwrap(), ClientMsg::Detach);
         assert!(console.input(first, b"stale".to_vec()).is_err());
+        assert_still_attached(&mut second_stream);
         console.input(second, b"live".to_vec()).unwrap();
         assert_eq!(
             ClientMsg::read(&mut second_stream).unwrap(),
             ClientMsg::Input(b"live".to_vec()),
             "the tab is still open"
         );
+    }
+
+    #[test]
+    fn a_slow_open_that_finishes_after_a_newer_one_never_takes_its_place() {
+        let fx = fixture("race");
+        let console = Console::default();
+        let busy_holder = slow_holder(&fx.home, AGENT, Duration::from_millis(600));
+        let shown_holder = slow_holder(&fx.home, OTHER, Duration::ZERO);
+        let (busy_window, _busy_frames) = window();
+        let (shown_window, shown_frames) = window();
+        let (stale, shown, mut shown_stream) = thread::scope(|scope| {
+            let opening = scope.spawn(|| console.open(&fx.link, AGENT, TermSize::new(40, 120), busy_window).unwrap());
+            thread::sleep(Duration::from_millis(150));
+            let shown = console.open(&fx.link, OTHER, TermSize::new(40, 120), shown_window).unwrap();
+            let shown_stream = attached(&shown_holder);
+            (opening.join().unwrap(), shown, shown_stream)
+        });
+        let mut stale_stream = attached(&busy_holder);
+        console.close(stale);
+        assert_eq!(ClientMsg::read(&mut stale_stream).unwrap(), ClientMsg::Detach, "the window let the stale one go");
+
+        assert_still_attached(&mut shown_stream);
+        console.input(shown, b"typed".to_vec()).unwrap();
+        assert_eq!(ClientMsg::read(&mut shown_stream).unwrap(), ClientMsg::Input(b"typed".to_vec()));
+        reply(&mut shown_stream, HolderMsg::Output(b"still here".to_vec()));
+        assert_eq!(shown_frames.recv_timeout(WAIT).unwrap(), [&[OUTPUT][..], b"still here"].concat());
+    }
+
+    #[test]
+    fn a_terminal_whose_window_is_gone_lets_the_holder_go() {
+        let fx = fixture("gone");
+        let holder = fake_holder(&fx.home);
+        let console = Console::default();
+        let dead = Channel::new(|_| Err(tauri::Error::WebviewNotFound));
+        let session = console.open(&fx.link, AGENT, TermSize::new(24, 80), dead).unwrap();
+        let mut stream = attached(&holder);
+        reply(&mut stream, HolderMsg::Output(b"nobody reads this".to_vec()));
+        assert_eq!(ClientMsg::read(&mut stream).unwrap(), ClientMsg::Detach);
+        assert!(console.input(session, b"x".to_vec()).is_err());
+    }
+
+    #[test]
+    fn a_reloaded_page_lets_every_terminal_go() {
+        let fx = fixture("reload");
+        let console = Console::default();
+        let first_holder = slow_holder(&fx.home, AGENT, Duration::ZERO);
+        let (first_window, _first_frames) = window();
+        let first = console.open(&fx.link, AGENT, TermSize::new(20, 60), first_window).unwrap();
+        let mut first_stream = attached(&first_holder);
+        let second_holder = slow_holder(&fx.home, OTHER, Duration::ZERO);
+        let (second_window, _second_frames) = window();
+        let second = console.open(&fx.link, OTHER, TermSize::new(40, 120), second_window).unwrap();
+        let mut second_stream = attached(&second_holder);
+
+        console.close_all();
+        assert_eq!(ClientMsg::read(&mut first_stream).unwrap(), ClientMsg::Detach);
+        assert_eq!(ClientMsg::read(&mut second_stream).unwrap(), ClientMsg::Detach);
+        assert!(console.input(first, b"x".to_vec()).is_err());
+        assert!(console.input(second, b"x".to_vec()).is_err());
     }
 
     #[test]

@@ -9,7 +9,8 @@ use orkai::pwa::hub::{Event, Hub};
 use orkai::pwa::protocol::PhoneMsg;
 use orkai::pwa::server::{Outbox, Peer, welcome};
 use orkai::util::lock;
-use tauri::State;
+use tauri::webview::PageLoadEvent;
+use tauri::{Manager, State};
 
 use crate::term::{self, Console};
 use crate::updates::{self, Updates};
@@ -105,6 +106,11 @@ pub fn run() -> io::Result<()> {
         .manage(link)
         .manage(Updates::default())
         .manage(Console::default())
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Started {
+                webview.state::<Console>().close_all();
+            }
+        })
         .setup(|app| {
             #[cfg(target_os = "macos")]
             crate::window::open(app)?;
