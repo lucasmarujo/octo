@@ -3,7 +3,7 @@ import { detectAlerts, notice, windowTitle } from './alerts.js';
 import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tickBoard } from './board.js';
 import { initComposer, renderComposer, renderPalette, setCommandRunner } from './composer.js';
 import { runCommand } from './commands.js';
-import { closeMenu, confirm, showCompare, showDiff, showFolders, showTests } from './dialogs.js';
+import { closeMenu, confirm, menuShown, showCompare, showDiff, showFolders, showTests } from './dialogs.js';
 import { $, h, svg } from './dom.js';
 import { SPINNER, alive, glyph } from './format.js';
 import { deactivateGrid, peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
@@ -11,6 +11,7 @@ import { renderHelp } from './help.js';
 import { applyStatic, hubText, language, pageToReopen, t } from './i18n.js';
 import { ICON_HELP, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
+import { initTooltips } from './motion.js';
 import { renderList, tickList } from './list.js';
 import { openPairing } from './pair.js';
 import { applyTheme, renderSettings } from './settings.js';
@@ -531,11 +532,12 @@ function start() {
   initWindow();
   initTerminal();
   initComposer();
+  initTooltips();
   setCommandRunner((text) => runCommand(text, commands));
   $('recover').addEventListener('click', () => send({ type: 'recover', session: state.session }));
   $('project').addEventListener('click', (event) => {
     event.stopPropagation();
-    if ($('menu').hidden) openProjectMenu(onFilter);
+    if (!menuShown()) openProjectMenu(onFilter);
     else closeMenu();
   });
   for (const button of $('views').children) {

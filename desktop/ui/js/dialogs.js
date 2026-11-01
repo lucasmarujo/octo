@@ -1,9 +1,11 @@
 import { $, h } from './dom.js';
 import { t } from './i18n.js';
+import { motionMs } from './motion.js';
 import { sgrRuns } from './palette.js';
 import { send } from './transport.js';
 
 let folderPick = null;
+let menuClosing = null;
 
 function open(title, body, actions) {
   const dialog = $('dialog');
@@ -24,12 +26,27 @@ function close() {
 const MENU_GAP = 6;
 const MENU_MARGIN = 8;
 
+export function menuShown() {
+  return !$('menu').hidden && menuClosing === null;
+}
+
 export function closeMenu() {
-  $('menu').hidden = true;
+  const menu = $('menu');
+  if (menu.hidden || menuClosing !== null) return;
+  menu.classList.add('closing');
+  menuClosing = setTimeout(() => {
+    menuClosing = null;
+    menu.classList.remove('closing');
+    menu.hidden = true;
+  }, motionMs('--motion-fast'));
 }
 
 export function openMenu(anchor, items, above) {
   const menu = $('menu');
+  clearTimeout(menuClosing);
+  menuClosing = null;
+  menu.classList.remove('closing');
+  menu.dataset.side = above ? 'above' : 'below';
   menu.replaceChildren(...items);
   menu.hidden = false;
   const box = anchor.getBoundingClientRect();

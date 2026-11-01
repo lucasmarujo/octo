@@ -1,6 +1,7 @@
 import { $, h, storage } from './dom.js';
 import { joinArgs, kindColor, label, splitArgs } from './format.js';
 import { LANGUAGES, language, setLanguage, t } from './i18n.js';
+import { choose, settle, slideThumb } from './motion.js';
 import { state } from './state.js';
 import { toast } from './toast.js';
 import { invoke } from './transport.js';
@@ -49,13 +50,17 @@ function segmented(options, value, onPick, label) {
     'div',
     { class: 'segmented', role: 'group', 'aria-label': label },
     ...options.map(([option, text]) =>
-      h('button', { type: 'button', 'aria-pressed': String(option === value), onclick: () => option !== value && onPick(option) }, text),
+      h('button', { type: 'button', 'aria-pressed': String(option === value), onclick: (event) => option !== value && choose(event.currentTarget, () => onPick(option)) }, text),
     ),
   );
 }
 
 function toggle(on, onFlip, label) {
-  return h('button', { class: 'switch', type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': label, onclick: () => onFlip(!on) }, h('span', { class: 'switch-knob' }));
+  const flip = (event) => {
+    event.currentTarget.setAttribute('aria-checked', String(!on));
+    settle(() => onFlip(!on));
+  };
+  return h('button', { class: 'switch', type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': label, onclick: flip }, h('span', { class: 'switch-knob' }));
 }
 
 function field(value, placeholder, onSave, classes) {
@@ -259,6 +264,7 @@ function render() {
   const scroll = host.scrollTop;
   host.replaceChildren(h('div', { class: 'settings' }, nav(), content()));
   host.scrollTop = scroll;
+  for (const group of host.querySelectorAll('.segmented')) slideThumb(group);
   markSection();
 }
 

@@ -824,6 +824,57 @@ test('when the session on screen is gone the app moves to one that exists, even 
   assert.doesNotMatch(rust('src/store.rs'), /default session cannot be deleted/);
 });
 
+test('every control, overlay and view moves with the same motion tokens, and reduced motion turns it all off', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  for (const name of ['--ease-out', '--ease-in', '--ease-spring', '--motion-fast', '--motion-base', '--motion-slow']) assert.match(css, new RegExp(`${name}: `), name);
+  const animated = css.match(/^\.button, \.toggle, \.chip, [^{]+\{/m)[0];
+  for (const control of ['.button', '.toggle', '.chip', '.filter', '.segmented button', '.tab', '.session-row', '.menu-item', '.palette-item', '.card', '.tile', '.icon-button', '.footer-pair', '.field']) {
+    assert.ok(animated.includes(`${control},`) || animated.includes(`${control} {`), `${control} has transitions`);
+  }
+  assert.match(css, /\.button:active:not\(:disabled\)[^{]*\{ transform: scale\(0\.96\)/, 'buttons sink when pressed');
+  for (const overlay of [/\.menu:not\(\[hidden\]\) \{ animation: pop-in/, /\.menu\.closing \{ animation: pop-out/, /\.palette:not\(\[hidden\]\) \{[^}]*animation: pop-in/, /\.dialog\[open\] \{ animation: dialog-in/, /\.dialog\[open\]::backdrop \{ animation: fade-in/, /\.toast \{ animation: toast-in/, /\.toast\.leaving \{ animation: toast-out/, /\.tip\.shown \{ opacity: 1;/]) {
+    assert.match(css, overlay);
+  }
+  assert.match(css, /\.overview:not\(\[hidden\]\), \.help:not\(\[hidden\]\), \.settings-view:not\(\[hidden\]\) \{ animation: view-in/);
+  assert.match(css, /\.agent-view:not\(\[hidden\]\) \{ animation: fade-in/, 'the terminal only fades, so xterm never measures a moving box');
+  assert.match(css, /\.card-tools \{[^}]*opacity: 0; visibility: hidden;/, 'hover tools fade instead of popping');
+  assert.match(css, /\.switch\[aria-checked="true"\] \.switch-knob \{ transform: translateX\(16px\); \}/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\n\s*\*, \*::before, \*::after \{ animation-duration: 1ms !important;[^}]*transition-duration: 1ms !important;/);
+});
+
+test('menus close with an animation, toasts slide out, and tooltips replace the native title', () => {
+  const dialogs = readFileSync(join(REPO, 'desktop/ui/js/dialogs.js'), 'utf8');
+  assert.match(dialogs, /export function menuShown\(\) \{\n\s*return !\$\('menu'\)\.hidden && menuClosing === null;/);
+  assert.match(dialogs, /menu\.classList\.add\('closing'\);\n\s*menuClosing = setTimeout/);
+  assert.match(dialogs, /clearTimeout\(menuClosing\);\n\s*menuClosing = null;\n\s*menu\.classList\.remove\('closing'\);/, 'a menu opened while closing comes back');
+  for (const file of ['composer.js', 'main.js']) {
+    const source = readFileSync(join(REPO, 'desktop/ui/js', file), 'utf8');
+    assert.doesNotMatch(source, /\$\('menu'\)\.hidden/, `${file} asks menuShown, so a click during the close reopens`);
+  }
+  const toast = readFileSync(join(REPO, 'desktop/ui/js/toast.js'), 'utf8');
+  assert.match(toast, /node\.classList\.add\('leaving'\);\n\s*setTimeout\(\(\) => node\.remove\(\), motionMs\('--motion-base'\)\);/);
+  const motion = readFileSync(join(REPO, 'desktop/ui/js/motion.js'), 'utf8');
+  assert.match(motion, /node\.dataset\.tip = title;\n\s*node\.removeAttribute\('title'\);/, 'the native tooltip never shows on top');
+  assert.match(motion, /target\.closest\('dialog\[open\]'\) \|\| document\.body/, 'tooltips inside a dialog stay above it');
+  assert.match(motion, /return reducedMotion\(\) \? 0 :/);
+  assert.doesNotMatch(motion.split('\nexport function reducedMotion')[0], /window\.|document\./, 'importing motion.js touches nothing until used');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initTooltips\(\);/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8'), /<div id="tip" class="tip" role="tooltip"><\/div>/);
+});
+
+test('board cards glide only when the columns change, and settings controls finish moving before the page redraws', () => {
+  const board = readFileSync(join(REPO, 'desktop/ui/js/board.js'), 'utf8');
+  assert.match(board, /const moved = shownLayout !== '' && layout !== shownLayout && shownSession === state\.session && !reducedMotion\(\);/, 'no measuring on every tick, on the first paint or on a session switch');
+  assert.match(board, /if \(!was \|\| was\.column !== node\.closest\('\.column'\)\.dataset\.column\) rise\(node, options\);\n\s*else glide\(node, was\.box, options\);/);
+  assert.match(board, /slideThumb\(\$\('views'\)\);\n\s*slideThumb\(\$\('grid-size'\)\);/);
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /choose\(event\.currentTarget, \(\) => onPick\(option\)\)/);
+  assert.match(settings, /event\.currentTarget\.setAttribute\('aria-checked', String\(!on\)\);\n\s*settle\(\(\) => onFlip\(!on\)\);/);
+  assert.match(settings, /for \(const group of host\.querySelectorAll\('\.segmented'\)\) slideThumb\(group\);/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.segmented\.sliding::before \{[^}]*transform: translateX\(var\(--thumb-x\)\);[^}]*\}/);
+});
+
 test('a right click on a session in the sidebar offers to rename or delete that session', () => {
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebar, /oncontextmenu: \(event\) => sessionMenu\(event, session\.name\)/);

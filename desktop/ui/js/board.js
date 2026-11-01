@@ -22,6 +22,7 @@ import {
 import { t } from './i18n.js';
 import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_STOP, ICON_TRASH } from './icons.js';
 import { sleeping } from './kai.js';
+import { glide, motion, reducedMotion, rise, slideThumb } from './motion.js';
 import { currentProject, inSession, now, projectsInSession, setProject, state, visible } from './state.js';
 import { send } from './transport.js';
 
@@ -187,6 +188,26 @@ function empty(session) {
 
 const cards = new Map();
 const columns = new Map();
+let shownLayout = '';
+let shownSession = null;
+
+function cardPlaces(board) {
+  const places = new Map();
+  for (const node of board.querySelectorAll('.card[data-agent]')) {
+    const box = node.getBoundingClientRect();
+    if (box.width) places.set(node.dataset.agent, { box, column: node.closest('.column').dataset.column });
+  }
+  return places;
+}
+
+function settleCards(board, before) {
+  const options = motion('--motion-slow');
+  for (const node of board.querySelectorAll('.card[data-agent]')) {
+    const was = before.get(node.dataset.agent);
+    if (!was || was.column !== node.closest('.column').dataset.column) rise(node, options);
+    else glide(node, was.box, options);
+  }
+}
 
 function cardSignature(agent, handlers) {
   return JSON.stringify([agent.name, agent.kind, agent.state, agent.starting, agent.activity, agent.project, agent.color, agent.branch, agent.exit, agent.changes, agent.test, agent.subagents, Boolean(handlers.open)]);
@@ -202,8 +223,12 @@ export function renderBoard(handlers) {
       board.dataset.signature = signature;
     }
     cards.clear();
+    shownLayout = '';
     return;
   }
+  const layout = JSON.stringify(COLUMNS.map((def) => list.filter((agent) => column(agent) === def.key).map((agent) => agent.id)));
+  const moved = shownLayout !== '' && layout !== shownLayout && shownSession === state.session && !reducedMotion();
+  const before = moved ? cardPlaces(board) : null;
   const sections = COLUMNS.map((def) => {
     const members = list.filter((agent) => column(agent) === def.key);
     const nodes = members.length
@@ -222,6 +247,9 @@ export function renderBoard(handlers) {
   });
   place(board, sections);
   board.dataset.signature = 'columns';
+  if (before && before.size) settleCards(board, before);
+  shownLayout = layout;
+  shownSession = state.session;
   const ids = new Set(list.map((agent) => agent.id));
   for (const id of cards.keys()) if (!ids.has(id)) cards.delete(id);
 }
@@ -244,6 +272,8 @@ export function renderHead() {
   for (const button of $('views').children) button.setAttribute('aria-pressed', String(button.dataset.view === state.view));
   $('grid-size').hidden = state.view !== 'grid' || list.length === 0;
   for (const button of $('grid-size').children) button.setAttribute('aria-pressed', String(button.dataset.size === state.gridSize));
+  slideThumb($('views'));
+  slideThumb($('grid-size'));
 }
 
 function renderFilter(list) {
