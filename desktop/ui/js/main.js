@@ -13,7 +13,7 @@ import { ICON_HELP, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
 import { initTooltips } from './motion.js';
 import { renderList, tickList } from './list.js';
-import { openPairing } from './pair.js';
+import { openPairing, watchPhone } from './pair.js';
 import { applyTheme, renderSettings } from './settings.js';
 import { promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
@@ -497,6 +497,7 @@ function initWindow() {
   $('open-settings').replaceChildren(svg(ICON_SETTINGS));
   $('pair').replaceChildren(svg(ICON_PAIR), t('Pair phone'));
   $('pair').addEventListener('click', openPairing);
+  watchPhone();
   $('open-help').addEventListener('click', () => openPage('help'));
   $('open-settings').addEventListener('click', () => openPage('settings'));
 }

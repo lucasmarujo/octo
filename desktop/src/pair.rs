@@ -92,7 +92,7 @@ pub fn keep_alive(hub: Arc<Hub>) {
     });
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pairing(link: State<'_, Link>) -> Pairing {
     read(link.hub())
 }

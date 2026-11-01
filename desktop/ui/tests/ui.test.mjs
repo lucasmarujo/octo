@@ -888,6 +888,25 @@ test('the worktree toggle turns blue when on, and bypass stays red', () => {
   assert.doesNotMatch(composer, /worktree\.classList\.add/);
 });
 
+test('the phone button shows a phone and a green outline while a phone is connected', async () => {
+  const { phoneConnected } = await import('../js/pair.js');
+  assert.equal(phoneConnected({ enabled: true, phase: 'ready', phones: 1 }), true);
+  assert.equal(phoneConnected({ enabled: true, phase: 'ready', phones: 0 }), false, 'paired but not open on the phone');
+  assert.equal(phoneConnected({ enabled: false, phase: 'ready', phones: 1 }), false, 'turned off');
+  assert.equal(phoneConnected({ enabled: true, phase: 'connecting', phones: 1 }), false, 'the tunnel is down');
+  assert.equal(phoneConnected({ enabled: true, phase: null, phones: 0 }), false);
+  const { ICON_PAIR } = await import('../js/icons.js');
+  assert.match(ICON_PAIR, /<rect x="3\.4" y="1" width="7\.2" height="12" rx="1\.8"/, 'a phone, not a QR code');
+  const pair = readFileSync(join(REPO, 'desktop/ui/js/pair.js'), 'utf8');
+  assert.match(pair, /\$\('pair'\)\.classList\.toggle\('connected', phoneConnected\(pairing\)\)/);
+  assert.match(pair, /function render\(pairing\) \{\n\s*markPhone\(pairing\);/, 'the open pairing dialog keeps the outline fresh too');
+  assert.match(pair, /setInterval\(check, PHONE_POLL_MS\)/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /watchPhone\(\);/);
+  assert.match(rust('desktop/src/pair.rs'), /#\[tauri::command\(async\)\]\npub fn pairing\(/, 'polled from the sidebar, so it stays off the window thread');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.footer-pair\.connected \{ box-shadow: inset 0 0 0 1px color-mix\(in srgb, var\(--color-done\) 70%, transparent\); \}/, 'an inset outline, so the footer does not move');
+});
+
 test('every control, overlay and view moves with the same motion tokens, and reduced motion turns it all off', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   for (const name of ['--ease-out', '--ease-in', '--ease-spring', '--motion-fast', '--motion-base', '--motion-slow']) assert.match(css, new RegExp(`${name}: `), name);

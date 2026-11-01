@@ -7,6 +7,7 @@ import { toast } from './toast.js';
 import { invoke } from './transport.js';
 
 const POLL_MS = 1000;
+const PHONE_POLL_MS = 3000;
 const QUIET_ZONE = 2;
 const QR_DARK = '#121218';
 const QR_LIGHT = '#ececf0';
@@ -34,10 +35,14 @@ export function qrPath(rows) {
   return parts.join('');
 }
 
+export function phoneConnected(pairing) {
+  return Boolean(pairing.enabled) && pairing.phase === 'ready' && pairing.phones > 0;
+}
+
 export function badge(pairing) {
   if (!pairing.enabled) return { text: t('off'), tone: 't-faint' };
   if (pairing.phase === 'failed') return { text: t('error'), tone: 't-red' };
-  if (pairing.phase === 'ready' && pairing.phones > 0) return { text: `● ${pairing.phones}`, tone: 't-green' };
+  if (phoneConnected(pairing)) return { text: `● ${pairing.phones}`, tone: 't-green' };
   if (pairing.phase === 'ready') return { text: t('on'), tone: 't-green' };
   return { text: '…', tone: 't-yellow' };
 }
@@ -126,7 +131,12 @@ function actions(pairing) {
   ];
 }
 
+function markPhone(pairing) {
+  $('pair').classList.toggle('connected', phoneConnected(pairing));
+}
+
 function render(pairing) {
+  markPhone(pairing);
   const signature = JSON.stringify(pairing);
   if (signature === shown && $('dialog').open) return;
   shown = signature;
@@ -142,6 +152,12 @@ function stop() {
   timer = null;
   shown = '';
   $('dialog').classList.remove('pairing');
+}
+
+export function watchPhone() {
+  const check = () => invoke('pairing').then(markPhone).catch(() => {});
+  check();
+  setInterval(check, PHONE_POLL_MS);
 }
 
 export async function openPairing() {
