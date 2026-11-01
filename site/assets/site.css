@@ -35,6 +35,7 @@
   --grok: #e8e8f0;
   --qwen: #ba8cff;
   --kimi: #ec80dc;
+  --pi: #aadc5a;
   --terminal: #5ad2d2;
   --p0: #baa6ff;
   --p1: #96e2aa;
@@ -149,6 +150,7 @@ kbd + kbd { margin-left: 0.25em; }
 .k-grok { color: var(--grok); }
 .k-qwen { color: var(--qwen); }
 .k-kimi { color: var(--kimi); }
+.k-pi { color: var(--pi); }
 .k-terminal { color: var(--terminal); }
 .p0 { color: var(--p0); } .p1 { color: var(--p1); } .p2 { color: var(--p2); } .p3 { color: var(--p3); }
 .p4 { color: var(--p4); } .p5 { color: var(--p5); } .p6 { color: var(--p6); } .p7 { color: var(--p7); }
@@ -430,7 +432,7 @@ kbd + kbd { margin-left: 0.25em; }
 .agents-table td:first-child .k-claude { color: var(--claude); } .agents-table td:first-child .k-codex { color: var(--codex); }
 .agents-table td:first-child .k-kilo { color: var(--kilo); } .agents-table td:first-child .k-opencode { color: var(--opencode); }
 .agents-table td:first-child .k-agy { color: var(--agy); } .agents-table td:first-child .k-grok { color: var(--grok); }
-.agents-table td:first-child .k-qwen { color: var(--qwen); } .agents-table td:first-child .k-kimi { color: var(--kimi); }
+.agents-table td:first-child .k-qwen { color: var(--qwen); } .agents-table td:first-child .k-kimi { color: var(--kimi); } .agents-table td:first-child .k-pi { color: var(--pi); }
 .agents-table td:first-child .k-terminal { color: var(--terminal); }
 .agents-table tbody tr { transition: background-color 0.15s ease; }
 .agents-table tbody tr:hover { background: var(--ink-2); }

@@ -183,6 +183,7 @@ impl SubagentWatcher {
                 | AgentKind::Grok
                 | AgentKind::Qwen
                 | AgentKind::Kimi
+                | AgentKind::Pi
                 | AgentKind::Terminal => Vec::new(),
             };
             if subagents.is_empty() {

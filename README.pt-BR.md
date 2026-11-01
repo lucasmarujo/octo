@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>Orquestre vários agentes de IA em vários projetos, de um terminal só.</b><br>
-  Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi Code e terminais comuns lado a lado, organizados em sessões.<br>
+  Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi Code, Pi e terminais comuns lado a lado, organizados em sessões.<br>
   Binário único, nativo e sem runtime, para Windows, Linux e macOS.
 </p>
 
@@ -68,7 +68,7 @@ https://github.com/user-attachments/assets/b3e62649-f203-4ac6-8e52-9e83a3fa6c3c
 ## Destaques
 
 - **Todos os agentes numa tela.** Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi
-  Code e terminais agrupados por pasta, com estado, tempo, tipo, a frase do que cada um está fazendo e os
+  Code, Pi e terminais agrupados por pasta, com estado, tempo, tipo, a frase do que cada um está fazendo e os
   subagents que o Claude Code e o Codex disparam.
 - **Estado exato, na hora.** Hooks, plugins e os protocolos de cada agente dizem quando ele está
   trabalhando, esperando você ou terminou, sem depender do texto da tela (veja
@@ -102,11 +102,12 @@ https://github.com/user-attachments/assets/b3e62649-f203-4ac6-8e52-9e83a3fa6c3c
 | `grok` | Grok Build | `grok` | título da janela | semana ou mês | `--resume=<id>` |
 | `qwen` | Qwen Code | `qwen` | hooks (system defaults) | sem API de consumo | `--resume <id>` |
 | `kimi` | Kimi Code | `kimi` | tela | 5h, semana ou mês | `--session <id>` |
+| `pi` | Pi | `pi` | OSC 7501 | sem API de uso | `--session-id <id>` |
 | `terminal` | PowerShell, bash… | `shell` | atividade da saída | — | reexecuta o comando |
 
 - **Lançamento.** A tarefa entra no agente assim que ele fica pronto. No OpenCode e no Kilo ela vai pelo
   `--prompt`, que eles mesmos enviam quando terminam de carregar; nos outros, o orkai digita a tarefa e
-  aperta `enter`. O Claude Code, o Grok e o Qwen Code nascem com um id de sessão escolhido pelo orkai. Nos
+  aperta `enter`. O Claude Code, o Grok, o Qwen Code e o Pi nascem com um id de sessão escolhido pelo orkai. Nos
   outros, o orkai descobre a sessão na hora de retomar: pelo `session list` do OpenCode/Kilo, pelo
   `session_index.jsonl` do Kimi Code (`~/.kimi-code`) ou pelo `last_conversations.json` do Antigravity. Em
   cada caso, é a sessão daquela pasta criada depois do agente e que nenhum outro agente já usa.
@@ -116,8 +117,8 @@ https://github.com/user-attachments/assets/b3e62649-f203-4ac6-8e52-9e83a3fa6c3c
     ociosa;
   - o Qwen Code recebe hooks no formato do Claude Code por um arquivo de system defaults próprio do agente
     (`QWEN_CODE_SYSTEM_DEFAULTS_PATH`), que soma aos seus hooks;
-  - o Antigravity é iniciado com `AGY_CLI_OSC7501=on` e informa trabalhando, bloqueado e terminado pelo
-    protocolo OSC 7501;
+  - o Antigravity é iniciado com `AGY_CLI_OSC7501=on` e o Pi com `PI_PROGRAM_STATUS=1`, e os dois informam
+    trabalhando, bloqueado e terminado pelo protocolo OSC 7501;
   - o Grok Build mostra o estado no título da janela (spinner e `⚠ Action Required`), e o Qwen Code também
     (`◐` e `✳`).
 
@@ -142,7 +143,7 @@ Builds locais aparecem como `dev` e não se atualizam sozinhas.
 
 > [!IMPORTANT]
 > Para usar um agente de IA, o programa dele precisa estar no `PATH`: `claude`, `codex`, `kilo`, `opencode`,
-> `agy`, `grok`, `qwen` ou `kimi` (ou aponte o caminho em [Configuração](#configuração)).
+> `agy`, `grok`, `qwen`, `kimi` ou `pi` (ou aponte o caminho em [Configuração](#configuração)).
 
 ## Primeiros passos
 
@@ -161,7 +162,7 @@ Pode sair quando quiser (`ctrl+q`): os agentes continuam rodando e o orkai recon
 | --- | --- |
 | Lateral | máquina, sessões com o número de agentes ativos em cada uma, `+ new session` |
 | Topo | o homenzinho pixelado, os contadores `agents`, `working`, `paused` e `done` da sessão e, à direita, o consumo dos agentes em que você está logado (veja [abaixo](#consumo-dos-planos)) |
-| Lista | agentes agrupados por pasta (com a contagem de cada uma), a pasta e o agente que você usou por último no topo: número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`, `kimi`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
+| Lista | agentes agrupados por pasta (com a contagem de cada uma), a pasta e o agente que você usou por último no topo: número, estado, nome, tempo no estado atual, tempo de vida, tipo (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`, `kimi`, `pi`, `terminal`) e a frase do que o agente está fazendo; logo abaixo de cada agente, os subagents que ele disparou e ainda estão rodando (`↳`, tipo, há quanto tempo, descrição e a ferramenta em uso) |
 | Rodapé | `write a task`, `pc`, `who`, `worktree`, `bypass` e `where` para lançar novos agentes |
 
 ### Estados
@@ -176,8 +177,8 @@ Pode sair quando quiser (`ctrl+q`): os agentes continuam rodando e o orkai recon
 | `↻` | interrompido (crash/reboot) |
 | `✗` | encerrado |
 
-Um terminal em que você roda um agente (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen` ou
-`kimi`) vira esse agente sozinho: em até 2 segundos o overview passa a mostrar o tipo, o estado
+Um terminal em que você roda um agente (`claude`, `codex`, `kilo`, `opencode`, `agy`, `grok`, `qwen`,
+`kimi` ou `pi`) vira esse agente sozinho: em até 2 segundos o overview passa a mostrar o tipo, o estado
 (trabalhando, esperando você, terminou), os subagents e os contadores como os de um agente lançado pelo
 orkai. Ao sair do agente, volta a ser `terminal`. O Qwen Code roda sobre o Node e é reconhecido pelo registro
 de sessões dele (`~/.qwen/sessions`), como o Claude Code.
@@ -395,6 +396,7 @@ aprovação. Use só em pastas e máquinas em que você confia nisso. Terminais 
 | Grok Build | `--always-approve` |
 | Qwen Code | `--yolo` |
 | Kimi Code | `--auto` (o `--yolo` do Kimi ainda pergunta nas ações arriscadas) |
+| Pi | `--approve` (o Pi nunca pergunta antes de usar uma ferramenta; isto confia nas configurações e extensões `.pi` da pasta) |
 
 - O modo fica gravado no agente: `ctrl+r`, `/restart` e `orkai recover` retomam a conversa ainda em bypass.
 - Se os args do agente no `config.json` já escolhem um modo de permissão (como `-a on-request` no Codex ou
@@ -417,10 +419,11 @@ pasta do `where` até a raiz do repositório:
 - **Antigravity**: `~/.gemini/antigravity-cli/skills` e `.agents/skills` (ou o antigo `.agent/skills`);
 - **Grok Build**: `skills` e `commands` de `~/.grok`, `.grok`, `.agents`, `.claude` e `.cursor`;
 - **Qwen Code**: `~/.qwen/skills`, `~/.qwen/commands`, `.qwen/skills`, `.qwen/commands` e `.agents/skills`;
-- **Kimi Code**: `~/.kimi-code/skills`, `.kimi-code/skills` e `.agents/skills`.
+- **Kimi Code**: `~/.kimi-code/skills`, `.kimi-code/skills` e `.agents/skills`;
+- **Pi**: `~/.pi/agent/skills`, `~/.agents/skills`, `.pi/skills` e `.agents/skills`.
 
 `tab` completa (ou estende o prefixo comum), e `/skill argumentos` + `enter` inicia um agente já
-invocando a skill. No Codex o orkai envia no formato dele (`$skill argumentos`) e no Kimi Code como
+invocando a skill. No Codex o orkai envia no formato dele (`$skill argumentos`) e no Kimi Code e no Pi como
 `/skill:skill argumentos`. Os comandos do próprio orkai têm prioridade quando o nome coincide.
 
 ### Skills de outros agentes
@@ -440,7 +443,7 @@ como qualquer outro arquivo seu.
 
 ```text
 orkai ls [-s sessão] [--json]    lista agentes com o estado ao vivo
-orkai new -k <agente> -C <pasta> [--worktree] <tarefa...>   (claude, codex, kilo, opencode, agy, grok, qwen, kimi, terminal)
+orkai new -k <agente> -C <pasta> [--worktree] <tarefa...>   (claude, codex, kilo, opencode, agy, grok, qwen, kimi, pi, terminal)
 orkai send <id> <texto...>       digita no agente e aperta enter
 orkai wait <id> [--timeout s]    espera o agente terminar o turno, precisar de você ou encerrar
 orkai attach <id>                usa o terminal atual direto no agente (ctrl+] solta)
@@ -650,6 +653,8 @@ A variável `ORKAI_HOME` muda esse local.
   "qwen_args": [],
   "kimi_command": "kimi",
   "kimi_args": [],
+  "pi_command": "pi",
+  "pi_args": [],
   "notify": true,
   "notify_sound": true,
   "notify_command": null,

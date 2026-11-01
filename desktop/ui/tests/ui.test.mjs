@@ -47,20 +47,22 @@ test('usage turns yellow and red at the same percentages as the TUI', () => {
 
 test('every agent kind keeps the color it has in the TUI', () => {
   const theme = rust('src/tui/theme.rs');
-  const names = { claude: 'CLAUDE', codex: 'CODEX', kilo: 'KILO', opencode: 'OPENCODE', antigravity: 'ANTIGRAVITY', grok: 'GROK', qwen: 'QWEN', kimi: 'KIMI', terminal: 'TERMINAL' };
+  const names = { claude: 'CLAUDE', codex: 'CODEX', kilo: 'KILO', opencode: 'OPENCODE', antigravity: 'ANTIGRAVITY', grok: 'GROK', qwen: 'QWEN', kimi: 'KIMI', pi: 'PI', terminal: 'TERMINAL' };
   for (const [kind, constant] of Object.entries(names)) {
     const [, r, g, b] = theme.match(new RegExp(`pub const ${constant}: Color = Color::Rgb\\((\\d+), (\\d+), (\\d+)\\)`));
     const hex = `#${[r, g, b].map((part) => Number(part).toString(16).padStart(2, '0')).join('')}`;
     assert.equal(kindHex(kind), hex, kind);
     assert.equal(kindColor(kind), `var(--kind-${kind})`, kind);
   }
+  const all = rust('src/model.rs').match(/pub const ALL: \[AgentKind; \d+\] = \[([\s\S]*?)\];/)[1].match(/AgentKind::\w+/g).map((name) => name.slice(11).toLowerCase());
+  assert.deepEqual(Object.keys(names), all, 'every kind the core knows has its color');
 });
 
 test('the dark theme keeps the colors of the TUI and the light theme redefines every one', async () => {
   const { BASE16 } = await import('../js/palette.js');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   const [dark, light] = [css.split(':root {')[1].split('}')[0], css.split(':root[data-theme="light"] {')[1].split('}')[0]];
-  const kinds = ['claude', 'codex', 'kilo', 'opencode', 'antigravity', 'grok', 'qwen', 'kimi', 'terminal'];
+  const kinds = ['claude', 'codex', 'kilo', 'opencode', 'antigravity', 'grok', 'qwen', 'kimi', 'pi', 'terminal'];
   for (const kind of kinds) {
     assert.ok(dark.includes(`--kind-${kind}: ${kindHex(kind)};`), kind);
     assert.ok(light.includes(`--kind-${kind}:`), kind);

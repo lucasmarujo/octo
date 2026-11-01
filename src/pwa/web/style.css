@@ -354,6 +354,7 @@ kbd { border: 1px solid var(--rule); border-radius: 4px; padding: 0 5px; backgro
 .k-grok { color: #e8e8f0; }
 .k-qwen { color: #ba8cff; }
 .k-kimi { color: #ec80dc; }
+.k-pi { color: #aadc5a; }
 .k-terminal { color: #5ad2d2; }
 
 @media (prefers-reduced-motion: reduce) {

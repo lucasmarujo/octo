@@ -566,6 +566,7 @@ fn with_agent_programs(app: &mut App, present: &[AgentKind]) {
         grok_command: command(AgentKind::Grok),
         qwen_command: command(AgentKind::Qwen),
         kimi_command: command(AgentKind::Kimi),
+        pi_command: command(AgentKind::Pi),
         ..Config::default()
     };
     let store = app.launcher.store().clone();
@@ -968,7 +969,10 @@ fn tab_cycles_who_through_the_installed_agents_only() {
     assert_eq!(app.who, AgentKind::Antigravity);
     assert!(text(&render(app)).contains("who agy"));
     app.run_command("/who vim");
-    assert_eq!(app.notice.as_ref().unwrap().text, "usage: /who claude|codex|kilo|opencode|agy|grok|qwen|kimi|terminal");
+    assert_eq!(
+        app.notice.as_ref().unwrap().text,
+        "usage: /who claude|codex|kilo|opencode|agy|grok|qwen|kimi|pi|terminal"
+    );
 }
 
 #[test]
@@ -982,6 +986,7 @@ fn every_new_agent_launches_its_own_program() {
         AgentKind::Grok,
         AgentKind::Qwen,
         AgentKind::Kimi,
+        AgentKind::Pi,
     ] {
         scenario.app.who = kind;
         type_text(&mut scenario.app, &format!("check {} wiring", kind.label()));
@@ -1511,7 +1516,7 @@ fn cross_review_starts_another_agent_inside_the_selected_worktree() {
     scenario.app.run_command("/cross-review");
     assert_eq!(notice(&scenario), "install an AI agent to review the work");
     scenario.app.run_command("/cross-review terminal");
-    assert_eq!(notice(&scenario), "usage: /cross-review [claude|codex|kilo|opencode|agy|grok|qwen|kimi]");
+    assert_eq!(notice(&scenario), "usage: /cross-review [claude|codex|kilo|opencode|agy|grok|qwen|kimi|pi]");
     assert_eq!(scenario.app.launching, 0);
 
     type_text(&mut scenario.app, "/cross-review codex");

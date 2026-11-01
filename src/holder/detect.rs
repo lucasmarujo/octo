@@ -41,6 +41,8 @@ const GROK_WAITING_MARKERS: &[&str] = &["tell grok what to do differently", "wai
 const QWEN_WAITING_MARKERS: &[&str] = &["waiting for user confirmation", "yes, allow once"];
 const KIMI_BUSY_MARKERS: &[&str] = &["working…", "🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"];
 const KIMI_WAITING_MARKERS: &[&str] = &["approve once", "trust this folder?", "ready to submit your answers?"];
+const PI_WAITING_MARKERS: &[&str] = &["trust project folder?"];
+const PI_TITLE_PREFIX: &str = "π - ";
 const QWEN_BUSY_GLYPH: char = '◐';
 const QWEN_WAITING_GLYPH: char = '✳';
 const GROK_ATTENTION: &str = "Action Required";
@@ -82,6 +84,7 @@ fn waiting_markers(kind: AgentKind) -> &'static [&'static str] {
         AgentKind::Grok => GROK_WAITING_MARKERS,
         AgentKind::Qwen => QWEN_WAITING_MARKERS,
         AgentKind::Kimi => KIMI_WAITING_MARKERS,
+        AgentKind::Pi => PI_WAITING_MARKERS,
         _ => &[],
     }
 }
@@ -134,6 +137,7 @@ fn generic_titles(kind: AgentKind) -> &'static [&'static str] {
         AgentKind::Grok => &[GROK_NAME],
         AgentKind::Qwen => &["qwen"],
         AgentKind::Kimi => &["kimi code", "kimi"],
+        AgentKind::Pi => &["pi", "π"],
         AgentKind::Terminal => &[],
     }
 }
@@ -150,6 +154,13 @@ fn generic_prefix(kind: AgentKind) -> Option<&'static str> {
     match kind {
         AgentKind::Qwen => Some("Qwen - "),
         _ => None,
+    }
+}
+
+fn pi_title(text: &str) -> String {
+    match text.strip_prefix(PI_TITLE_PREFIX) {
+        Some(rest) => rest.rsplit_once(TITLE_SEPARATOR).map(|(name, _)| name.trim().to_string()).unwrap_or_default(),
+        None => text.trim().to_string(),
     }
 }
 
@@ -178,6 +189,7 @@ pub fn activity_from_title(kind: AgentKind, title: &str) -> Option<String> {
     }
     let text = match kind {
         AgentKind::Grok => grok_title(&text),
+        AgentKind::Pi => pi_title(&text),
         _ => title_prefix(kind).and_then(|prefix| text.strip_prefix(prefix)).unwrap_or(&text).trim().to_string(),
     };
     let generic = text.is_empty() || generic_titles(kind).iter().any(|name| text.eq_ignore_ascii_case(name));
@@ -468,6 +480,22 @@ mod tests {
         assert_eq!(analyze(AgentKind::Kimi, "", approval), Signals { busy: false, waiting: true });
         assert!(analyze(AgentKind::Kimi, "", " Trust this folder?\n Trust and continue").waiting);
         assert_eq!(analyze(AgentKind::Kimi, "Kimi Code", "Interrupted by user\n> "), Signals::default());
+    }
+
+    #[test]
+    fn pi_titles_name_its_session_and_its_trust_question_waits() {
+        assert_eq!(activity_from_title(AgentKind::Pi, "π - work"), None, "the folder alone says nothing");
+        assert_eq!(activity_from_title(AgentKind::Pi, "π - Fix login - work"), Some("Fix login".into()));
+        assert_eq!(activity_from_title(AgentKind::Pi, "π"), None);
+        assert_eq!(
+            activity_from_title(AgentKind::Pi, "Deploying"),
+            Some("Deploying".into()),
+            "a title an extension set"
+        );
+        assert!(
+            analyze(AgentKind::Pi, "π - app", "Trust project folder?\nC:\\work\\app\n\nThis allows pi to load").waiting
+        );
+        assert_eq!(analyze(AgentKind::Pi, "π - app", "> "), Signals::default());
     }
 
     #[test]

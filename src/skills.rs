@@ -9,7 +9,8 @@ use serde_json::Value;
 
 use crate::fsutil;
 use crate::launch::{
-    antigravity_home, claude_home, codex_home, grok_home, kilo_config_dir, kimi_home, opencode_config_dir, qwen_home,
+    antigravity_home, claude_home, codex_home, grok_home, kilo_config_dir, kimi_home, opencode_config_dir,
+    pi_agent_dir, qwen_home,
 };
 use crate::model::AgentKind;
 use crate::paths::user_home;
@@ -23,7 +24,9 @@ const SYNCED_SKILLS_DIR: &str = "synced";
 const CODEX_SYSTEM_SKILLS_DIR: &str = ".system";
 const CODEX_ADMIN_SKILLS_DIR: &str = "/etc/codex/skills";
 const CODEX_SKILL_SIGIL: char = '$';
-const KIMI_SKILL_PREFIX: &str = "/skill:";
+const SKILL_COMMAND_PREFIX: &str = "/skill:";
+const KIMI_PROJECT_DIR: &str = ".kimi-code";
+const PI_PROJECT_DIR: &str = ".pi";
 const PLUGIN_SEPARATOR: char = ':';
 const PATH_SEPARATOR: char = '/';
 const SKILL_DIRS: [&str; 2] = ["skill", "skills"];
@@ -109,6 +112,7 @@ fn own_skills(kind: AgentKind, cwd: &Path) -> SkillFiles {
         AgentKind::Grok => grok_skills(grok_home().as_deref(), user_home().as_deref(), cwd),
         AgentKind::Qwen => qwen_skills(qwen_home().as_deref(), user_home().as_deref(), cwd),
         AgentKind::Kimi => kimi_skills(kimi_home().as_deref(), user_home().as_deref(), cwd),
+        AgentKind::Pi => pi_skills(pi_agent_dir().as_deref(), user_home().as_deref(), cwd),
         AgentKind::Terminal => SkillFiles::new(),
     }
 }
@@ -120,7 +124,7 @@ pub fn invocation(kind: AgentKind, skill: &Skill, arguments: &str) -> String {
     }
     let call = match kind {
         AgentKind::Codex => format!("{CODEX_SKILL_SIGIL}{}", skill.name),
-        AgentKind::Kimi => format!("{KIMI_SKILL_PREFIX}{}", skill.name),
+        AgentKind::Kimi | AgentKind::Pi => format!("{SKILL_COMMAND_PREFIX}{}", skill.name),
         _ => format!("/{}", skill.name),
     };
     if arguments.is_empty() { call } else { format!("{call} {arguments}") }
@@ -217,19 +221,27 @@ pub fn qwen_skills(qwen_home: Option<&Path>, user_home: Option<&Path>, cwd: &Pat
     names
 }
 
-pub fn kimi_skills(kimi_home: Option<&Path>, user_home: Option<&Path>, cwd: &Path) -> SkillFiles {
+fn agent_skills(agent_home: Option<&Path>, project_dir: &str, user_home: Option<&Path>, cwd: &Path) -> SkillFiles {
     let mut names = SkillFiles::new();
-    if let Some(home) = kimi_home {
+    if let Some(home) = agent_home {
         skills_in(&home.join("skills"), "", &mut names);
     }
     if let Some(home) = user_home {
         skills_in(&home.join(".agents").join("skills"), "", &mut names);
     }
     for dir in project_dirs(cwd) {
-        skills_in(&dir.join(".kimi-code").join("skills"), "", &mut names);
+        skills_in(&dir.join(project_dir).join("skills"), "", &mut names);
         skills_in(&dir.join(".agents").join("skills"), "", &mut names);
     }
     names
+}
+
+pub fn kimi_skills(kimi_home: Option<&Path>, user_home: Option<&Path>, cwd: &Path) -> SkillFiles {
+    agent_skills(kimi_home, KIMI_PROJECT_DIR, user_home, cwd)
+}
+
+pub fn pi_skills(pi_agent: Option<&Path>, user_home: Option<&Path>, cwd: &Path) -> SkillFiles {
+    agent_skills(pi_agent, PI_PROJECT_DIR, user_home, cwd)
 }
 
 pub fn claude_skills(claude_home: Option<&Path>, cwd: &Path) -> SkillFiles {
@@ -589,6 +601,11 @@ mod tests {
         skill(&cwd.join(".kimi-code").join("skills"), "kimi-repo", "name: kimi-repo");
         assert_eq!(names(kimi_skills(Some(&kimi), Some(&user), &cwd)), ["kimi-own", "kimi-repo", "repo", "shared"]);
 
+        let pi = user.join(".pi").join("agent");
+        skill(&pi.join("skills"), "pi-own", "name: pi-own");
+        skill(&cwd.join(".pi").join("skills"), "pi-repo", "name: pi-repo");
+        assert_eq!(names(pi_skills(Some(&pi), Some(&user), &cwd)), ["pi-own", "pi-repo", "repo", "shared"]);
+
         let agy = user.join(".gemini").join("antigravity-cli");
         skill(&agy.join("skills"), "agy-own", "name: agy-own");
         skill(&cwd.join(".agent").join("skills"), "legacy", "name: legacy");
@@ -691,6 +708,7 @@ mod tests {
         assert_eq!(invocation(AgentKind::Claude, &owned("review", AgentKind::Claude, file), "12"), "/review 12");
         assert_eq!(invocation(AgentKind::Claude, &owned("review", AgentKind::Claude, file), " "), "/review");
         assert_eq!(invocation(AgentKind::Kimi, &owned("review", AgentKind::Kimi, file), "12"), "/skill:review 12");
+        assert_eq!(invocation(AgentKind::Pi, &owned("review", AgentKind::Pi, file), "12"), "/skill:review 12");
         let commit = owned("git/commit", AgentKind::Opencode, file);
         assert_eq!(invocation(AgentKind::Opencode, &commit, "now"), "/git/commit now");
     }

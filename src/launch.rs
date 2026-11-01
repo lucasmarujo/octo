@@ -43,6 +43,14 @@ const PROMPT_OPTION: &str = "--prompt";
 const AGY_STATUS_ENV: &str = "AGY_CLI_OSC7501";
 const AGY_STATUS_ON: &str = "on";
 const AGY_CONVERSATIONS: [&str; 2] = ["cache", "last_conversations.json"];
+const PI_STATUS_ENV: &str = "PI_PROGRAM_STATUS";
+const PI_STATUS_ON: &str = "1";
+const PI_HOME_ENV: &str = "PI_CODING_AGENT_DIR";
+const PI_SESSION_DIR_ENV: &str = "PI_CODING_AGENT_SESSION_DIR";
+const PI_HOME_DIR: &str = ".pi";
+const PI_AGENT_DIR: &str = "agent";
+const PI_SESSIONS: &str = "sessions";
+const PI_SESSION_SUFFIX: &str = ".jsonl";
 const KIMI_SESSION_INDEX: &str = "session_index.jsonl";
 const KIMI_STATE: &str = "state.json";
 const MAX_INDEX_BYTES: u64 = 8 * 1024 * 1024;
@@ -217,16 +225,25 @@ pub fn kimi_home() -> Option<PathBuf> {
     home_dir("KIMI_CODE_HOME", ".kimi-code")
 }
 
+pub fn pi_agent_dir() -> Option<PathBuf> {
+    env_dir(PI_HOME_ENV).or_else(|| user_home().map(|home| home.join(PI_HOME_DIR).join(PI_AGENT_DIR)))
+}
+
+pub fn pi_sessions_dir() -> Option<PathBuf> {
+    env_dir(PI_SESSION_DIR_ENV).or_else(|| pi_agent_dir().map(|agent| agent.join(PI_SESSIONS)))
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Homes {
     pub claude: Option<PathBuf>,
     pub qwen: Option<PathBuf>,
     pub grok: Option<PathBuf>,
+    pub pi: Option<PathBuf>,
 }
 
 impl Homes {
     pub fn detect() -> Self {
-        Self { claude: claude_home(), qwen: qwen_runtime_dir(), grok: grok_home() }
+        Self { claude: claude_home(), qwen: qwen_runtime_dir(), grok: grok_home(), pi: pi_sessions_dir() }
     }
 }
 
@@ -244,6 +261,16 @@ pub fn qwen_transcript_exists(qwen_runtime: &Path, session_id: &str) -> bool {
 
 pub fn grok_session_exists(grok_home: &Path, session_id: &str) -> bool {
     found_under_any(&grok_home.join("sessions"), Path::new(session_id))
+}
+
+pub fn pi_session_exists(pi_sessions: &Path, session_id: &str) -> bool {
+    let suffix = format!("_{session_id}{PI_SESSION_SUFFIX}");
+    let holds = |folder: &Path| {
+        fs::read_dir(folder)
+            .map(|files| files.flatten().any(|file| file.file_name().to_string_lossy().ends_with(&suffix)))
+            .unwrap_or(false)
+    };
+    fs::read_dir(pi_sessions).map(|folders| folders.flatten().any(|folder| holds(&folder.path()))).unwrap_or(false)
 }
 
 #[cfg(windows)]
@@ -499,6 +526,7 @@ fn hook_launch(config: &Config, record: &AgentRecord, program: &Path, setup: &Ho
             }
         }
         AgentKind::Antigravity if !env_is_set(AGY_STATUS_ENV) => HookLaunch::env(AGY_STATUS_ENV, AGY_STATUS_ON.into()),
+        AgentKind::Pi if !env_is_set(PI_STATUS_ENV) => HookLaunch::env(PI_STATUS_ENV, PI_STATUS_ON.into()),
         AgentKind::Qwen => {
             if env_is_set(hooks::QWEN_SYSTEM_DEFAULTS_ENV) || hooks::qwen_system_defaults().exists() {
                 return HookLaunch::default();
@@ -513,7 +541,9 @@ fn hook_launch(config: &Config, record: &AgentRecord, program: &Path, setup: &Ho
                 Err(_) => HookLaunch::default(),
             }
         }
-        AgentKind::Antigravity | AgentKind::Grok | AgentKind::Kimi | AgentKind::Terminal => HookLaunch::default(),
+        AgentKind::Antigravity | AgentKind::Grok | AgentKind::Kimi | AgentKind::Pi | AgentKind::Terminal => {
+            HookLaunch::default()
+        }
     }
 }
 
@@ -533,6 +563,7 @@ fn chosen_session_exists(kind: AgentKind, homes: &Homes, session_id: &str) -> bo
         AgentKind::Claude => homes.claude.as_deref().is_some_and(|dir| claude_transcript_exists(dir, session_id)),
         AgentKind::Qwen => homes.qwen.as_deref().is_some_and(|dir| qwen_transcript_exists(dir, session_id)),
         AgentKind::Grok => homes.grok.as_deref().is_some_and(|dir| grok_session_exists(dir, session_id)),
+        AgentKind::Pi => homes.pi.as_deref().is_some_and(|dir| pi_session_exists(dir, session_id)),
         _ => false,
     }
 }
@@ -559,6 +590,7 @@ fn bypass_flag(kind: AgentKind) -> Option<&'static str> {
         AgentKind::Kilo | AgentKind::Opencode | AgentKind::Kimi => Some("--auto"),
         AgentKind::Grok => Some("--always-approve"),
         AgentKind::Qwen => Some("--yolo"),
+        AgentKind::Pi => Some("--approve"),
         AgentKind::Terminal => None,
     }
 }
@@ -573,6 +605,7 @@ fn permission_options(kind: AgentKind) -> &'static [&'static str] {
         AgentKind::Grok => &["--always-approve", "--yolo", "--dangerously-skip-permissions"],
         AgentKind::Qwen => &["--yolo", "-y", "--approval-mode"],
         AgentKind::Kimi => &["--auto", "--yolo", "-y", "--yes", "--auto-approve"],
+        AgentKind::Pi => &["--approve", "-a", "--no-approve", "-na"],
         AgentKind::Terminal => &[],
     }
 }
@@ -620,7 +653,7 @@ pub fn build_spec(
                 None => (config.codex_command.clone(), config.codex_args.clone(), non_empty(&record.task)),
             }
         }
-        AgentKind::Grok | AgentKind::Qwen => {
+        AgentKind::Grok | AgentKind::Qwen | AgentKind::Pi => {
             let session_id = chosen_session_id(record)?;
             let resume = mode == LaunchMode::Resume && chosen_session_exists(record.kind, homes, &session_id);
             let (command, mut args) = agent_command(config, record.kind);
@@ -1684,7 +1717,8 @@ mod tests {
             agy_command: command.clone(),
             grok_command: command.clone(),
             qwen_command: command.clone(),
-            kimi_command: command,
+            kimi_command: command.clone(),
+            pi_command: command,
             ..config_with(program)
         }
     }
@@ -1724,6 +1758,45 @@ mod tests {
         let resumed = spec_for(&config, &mut qwen, LaunchMode::Resume, &homes);
         assert_eq!(resumed.args, vec!["--resume".to_string(), id]);
         assert_eq!(resumed.initial_input, None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pi_starts_on_a_chosen_session_reopens_it_without_the_task_and_reports_its_status() {
+        let dir = temp_dir("pi-session");
+        let config = Config { pi_args: vec!["--model".into(), "sonnet".into()], ..every_agent(&fake_program(&dir)) };
+        let sessions = dir.join("pi-sessions");
+        let homes = Homes { pi: Some(sessions.clone()), ..Homes::default() };
+
+        let mut pi = record(AgentKind::Pi, dir.clone(), " explain the parser ");
+        let fresh = spec_for(&config, &mut pi, LaunchMode::Fresh, &homes);
+        let id = pi.conversation_id.clone().unwrap();
+        assert!(is_uuid(&id));
+        assert_eq!(fresh.args, ["--model", "sonnet", "--session-id", &id]);
+        assert_eq!(fresh.initial_input.as_deref(), Some("explain the parser"));
+        let not_saved = spec_for(&config, &mut pi, LaunchMode::Resume, &homes);
+        assert_eq!(
+            not_saved.initial_input.as_deref(),
+            Some("explain the parser"),
+            "a session never saved starts again"
+        );
+
+        let folder = sessions.join("--C--work-app--");
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join(format!("2026-11-01T19-17-14-856Z_{id}.jsonl")), b"{}\n").unwrap();
+        assert!(pi_session_exists(&sessions, &id));
+        assert!(!pi_session_exists(&sessions, "123e4567-e89b-42d3-a456-426614174000"));
+        assert!(!pi_session_exists(&dir.join("nowhere"), &id));
+        let resumed = spec_for(&config, &mut pi, LaunchMode::Resume, &homes);
+        assert_eq!(resumed.args, ["--model", "sonnet", "--session-id", &id], "the same id reopens the session");
+        assert_eq!(resumed.initial_input, None, "the task is not typed again");
+
+        let hooks = setup(&dir);
+        let reported =
+            build_spec(&config, &mut pi, LaunchMode::Fresh, TermSize::new(24, 80), &homes, Some(&hooks)).unwrap();
+        let expected = if env_is_set(PI_STATUS_ENV) { None } else { Some(PI_STATUS_ON) };
+        assert_eq!(env_of(&reported, PI_STATUS_ENV), expected, "Pi reports over OSC 7501 unless the user chose");
+        assert_eq!(env_of(&resumed, PI_STATUS_ENV), None, "only a real launch sets it up");
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -1874,6 +1947,7 @@ mod tests {
             (AgentKind::Grok, Some("--always-approve")),
             (AgentKind::Qwen, Some("--yolo")),
             (AgentKind::Kimi, Some("--auto")),
+            (AgentKind::Pi, Some("--approve")),
             (AgentKind::Terminal, None),
         ];
         assert_eq!(cases.len(), AgentKind::ALL.len(), "every agent kind is covered");

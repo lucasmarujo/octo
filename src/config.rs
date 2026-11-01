@@ -29,6 +29,8 @@ pub struct Config {
     pub qwen_args: Vec<String>,
     pub kimi_command: String,
     pub kimi_args: Vec<String>,
+    pub pi_command: String,
+    pub pi_args: Vec<String>,
     pub notify: bool,
     pub notify_sound: bool,
     pub notify_command: Option<String>,
@@ -58,6 +60,8 @@ impl Default for Config {
             qwen_args: Vec::new(),
             kimi_command: "kimi".to_string(),
             kimi_args: Vec::new(),
+            pi_command: "pi".to_string(),
+            pi_args: Vec::new(),
             notify: true,
             notify_sound: true,
             notify_command: None,
@@ -79,6 +83,7 @@ impl Config {
             AgentKind::Grok => (&self.grok_command, &self.grok_args),
             AgentKind::Qwen => (&self.qwen_command, &self.qwen_args),
             AgentKind::Kimi => (&self.kimi_command, &self.kimi_args),
+            AgentKind::Pi => (&self.pi_command, &self.pi_args),
             AgentKind::Terminal => return None,
         };
         Some((command.as_str(), args.as_slice()))
@@ -108,6 +113,8 @@ mod tests {
         assert_eq!(config.claude_args, vec!["--model", "opus"]);
         assert_eq!(config.codex_command, "codex");
         assert_eq!(config.kimi_command, "kimi");
+        assert_eq!(config.pi_command, "pi");
+        assert!(config.pi_args.is_empty(), "a config written before Pi still loads");
         assert!(config.kilo_args.is_empty());
         assert!(config.shell.is_none());
         assert!(config.notify);

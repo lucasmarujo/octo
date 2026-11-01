@@ -20,11 +20,12 @@ pub enum AgentKind {
     Grok,
     Qwen,
     Kimi,
+    Pi,
     Terminal,
 }
 
 impl AgentKind {
-    pub const ALL: [AgentKind; 9] = [
+    pub const ALL: [AgentKind; 10] = [
         AgentKind::Claude,
         AgentKind::Codex,
         AgentKind::Kilo,
@@ -33,6 +34,7 @@ impl AgentKind {
         AgentKind::Grok,
         AgentKind::Qwen,
         AgentKind::Kimi,
+        AgentKind::Pi,
         AgentKind::Terminal,
     ];
 
@@ -46,6 +48,7 @@ impl AgentKind {
             AgentKind::Grok => "grok",
             AgentKind::Qwen => "qwen",
             AgentKind::Kimi => "kimi",
+            AgentKind::Pi => "pi",
             AgentKind::Terminal => "terminal",
         }
     }
@@ -80,6 +83,7 @@ impl AgentKind {
             "grok" => Some(AgentKind::Grok),
             "qwen" => Some(AgentKind::Qwen),
             "kimi" => Some(AgentKind::Kimi),
+            "pi" => Some(AgentKind::Pi),
             "terminal" | "term" | "shell" => Some(AgentKind::Terminal),
             _ => None,
         }
@@ -388,7 +392,8 @@ mod tests {
         assert_eq!(AgentKind::Claude.prev(), AgentKind::Terminal);
         assert_eq!(AgentKind::Terminal.next(), AgentKind::Claude);
         assert_eq!(AgentKind::Codex.next(), AgentKind::Kilo);
-        assert_eq!(AgentKind::Kimi.next(), AgentKind::Terminal);
+        assert_eq!(AgentKind::Kimi.next(), AgentKind::Pi);
+        assert_eq!(AgentKind::Pi.next(), AgentKind::Terminal);
         for kind in AgentKind::ALL {
             assert_eq!(kind.next().prev(), kind);
         }
@@ -407,7 +412,8 @@ mod tests {
         assert_eq!(AgentKind::parse("oc"), Some(AgentKind::Opencode));
         assert_eq!(AgentKind::parse("gemini"), Some(AgentKind::Antigravity));
         assert_eq!(AgentKind::parse("Antigravity"), Some(AgentKind::Antigravity));
-        assert_eq!(AgentKind::names(), "claude|codex|kilo|opencode|agy|grok|qwen|kimi|terminal");
+        assert_eq!(AgentKind::parse("Pi"), Some(AgentKind::Pi));
+        assert_eq!(AgentKind::names(), "claude|codex|kilo|opencode|agy|grok|qwen|kimi|pi|terminal");
     }
 
     #[test]

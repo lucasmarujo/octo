@@ -14,6 +14,7 @@ const KIND_COLORS = {
   grok: '#e8e8f0',
   qwen: '#ba8cff',
   kimi: '#ec80dc',
+  pi: '#aadc5a',
   terminal: '#5ad2d2',
 };
 

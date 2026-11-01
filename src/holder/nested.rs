@@ -11,7 +11,7 @@ pub const CHECK_EVERY_TICKS: u32 = 10;
 pub const MAX_PROCESSES: usize = 256;
 const CLAUDE_SESSIONS_DIR: &str = "sessions";
 const QWEN_SESSIONS_DIR: &str = "sessions";
-const PROGRAMS: [(&str, AgentKind); 9] = [
+const PROGRAMS: [(&str, AgentKind); 10] = [
     ("claude", AgentKind::Claude),
     ("codex", AgentKind::Codex),
     ("kilo", AgentKind::Kilo),
@@ -21,6 +21,7 @@ const PROGRAMS: [(&str, AgentKind); 9] = [
     ("grok", AgentKind::Grok),
     ("qwen", AgentKind::Qwen),
     ("kimi", AgentKind::Kimi),
+    ("pi", AgentKind::Pi),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -298,6 +299,7 @@ mod tests {
             ("/home/me/.grok/bin/grok", AgentKind::Grok),
             ("qwen", AgentKind::Qwen),
             ("kimi.exe", AgentKind::Kimi),
+            ("/home/me/.local/bin/pi", AgentKind::Pi),
         ] {
             assert_eq!(
                 detect(&[process(3, "pwsh.exe"), process(4, name)], None, None, 1).unwrap().kind,

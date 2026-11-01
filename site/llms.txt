@@ -1,6 +1,6 @@
 # Octo by OctoAI
 
-> Desktop app, written in Rust, that runs and monitors multiple AI coding agents (Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok Build, Qwen Code and Kimi Code) and plain terminals across multiple projects at once, organized into sessions, in one window. For Windows, Linux and macOS.
+> Desktop app, written in Rust, that runs and monitors multiple AI coding agents (Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok Build, Qwen Code, Kimi Code and Pi) and plain terminals across multiple projects at once, organized into sessions, in one window. For Windows, Linux and macOS.
 
 Octo shows every agent on a board by status (needs you, working, done, idle), with its project, time, type, a line saying what the agent is doing and the subagents that Claude Code and Codex spawn. The status comes from each agent's hooks, plugins and protocols, without relying on screen text.
 

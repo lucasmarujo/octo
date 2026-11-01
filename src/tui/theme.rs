@@ -24,6 +24,7 @@ pub const ANTIGRAVITY: Color = Color::Rgb(150, 150, 255);
 pub const GROK: Color = Color::Rgb(232, 232, 240);
 pub const QWEN: Color = Color::Rgb(186, 140, 255);
 pub const KIMI: Color = Color::Rgb(236, 128, 220);
+pub const PI: Color = Color::Rgb(170, 220, 90);
 pub const TERMINAL: Color = Color::Rgb(90, 210, 210);
 pub const TAB_ACTIVE_BG: Color = Color::Rgb(44, 44, 58);
 pub const USAGE_WARN_PERCENT: f64 = 70.0;
@@ -55,6 +56,7 @@ pub fn kind_color(kind: AgentKind) -> Color {
         AgentKind::Grok => GROK,
         AgentKind::Qwen => QWEN,
         AgentKind::Kimi => KIMI,
+        AgentKind::Pi => PI,
         AgentKind::Terminal => TERMINAL,
     }
 }

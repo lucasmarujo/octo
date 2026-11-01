@@ -236,7 +236,7 @@ pub fn fetch(kind: AgentKind, config: &Config) -> Result<Limits, Problem> {
         AgentKind::Antigravity => fetch_antigravity(&config.agy_command, launch::antigravity_home().as_deref()),
         AgentKind::Grok => fetch_grok(grok_auth_file().as_deref(), GROK_BILLING_URL, now_ms()),
         AgentKind::Kimi => fetch_kimi(launch::kimi_home().as_deref(), KIMI_BASE_URL, now_ms()),
-        AgentKind::Qwen | AgentKind::Terminal => Err(Problem::Unavailable),
+        AgentKind::Qwen | AgentKind::Pi | AgentKind::Terminal => Err(Problem::Unavailable),
     }
 }
 
