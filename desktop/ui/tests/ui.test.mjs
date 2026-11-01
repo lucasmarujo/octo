@@ -760,3 +760,10 @@ test('a right click never opens the menu of the webview, with its inspect, save 
   const windows = ['desktop/tauri.conf.json', 'desktop/tauri.macos.conf.json'].flatMap((file) => JSON.parse(rust(file)).app.windows);
   assert.ok(windows.every((window) => window.devtools !== true), 'no window turns the inspector on');
 });
+
+test('the settings button shows a gear, not the sun of the light theme', async () => {
+  const { ICON_SETTINGS } = await import('../js/icons.js');
+  assert.equal(ICON_SETTINGS.match(/A5 5 0 0 1/g).length, 8, 'eight teeth around the gear');
+  assert.match(ICON_SETTINGS, /Z" stroke="currentColor"/, 'one closed outline');
+  assert.doesNotMatch(ICON_SETTINGS, /stroke-linecap="round"/, 'no loose rays, like the ones of a sun');
+});
