@@ -35,6 +35,10 @@ mesma máquina; o CI roda no runner Windows, que é descartável. `ORKAI_ISCC` a
 
 ## orkai (legado)
 
+Depois da 0.2.8 as releases trazem só o Octo: o CI não gera nem publica mais o `orkai.exe` e o
+`orkai-setup.exe`, e o job `build` com a assinatura da SignPath saiu do workflow. O `orkai.iss` e os testes dele
+ficam no repositório até o CLI sair; o que vem abaixo descreve como ele era publicado.
+
 `orkai.iss` gera o `orkai-setup.exe` com o Inno Setup 6, o mesmo que vem nos runners Windows do GitHub. Ele
 instala o orkai só para o usuário, em `%LOCALAPPDATA%\Programs\orkai`, sem pedir administrador, e a pasta
 continua gravável para a atualização automática. A opção "Adicionar o orkai ao PATH" mexe só no `PATH` do
