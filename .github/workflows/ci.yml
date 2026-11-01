@@ -216,12 +216,12 @@ jobs:
             codesign --verify --strict --verbose=2 "$app"
             echo "::warning::Octo for macOS is published without a Developer ID signature or notarization"
           fi
-          cp "$app/Contents/MacOS/octo" "dist/$UPDATE"
           ditto -c -k --keepParent "$app" "dist/$DOWNLOAD"
-      - name: Start an agent from the signed app
+      - name: Start an agent from the signed app and an ad hoc app updated with this release
         if: matrix.target == 'aarch64-apple-darwin'
         env:
           OCTO_SIGNED_APP: ${{ github.workspace }}/target/bundle/Octo.app
+          OCTO_LEGACY_UPDATE: ${{ github.workspace }}/dist/${{ matrix.update }}
         run: cargo test --release --locked -p orkai-desktop --target ${{ matrix.target }} --test macos_app_e2e
       - name: Warn that the app is unsigned
         if: runner.os == 'Windows'
