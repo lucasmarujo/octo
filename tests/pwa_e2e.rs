@@ -708,9 +708,9 @@ fn an_agent_outside_a_worktree_shows_diffs_and_commits_what_is_pending_in_its_fo
     std::fs::write(repo.join("cart.js"), "one\n").unwrap();
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-q", "-m", "start"]);
-    let id = start_terminal(&fx, "folder");
+    let id = add_agent(&fx.store, "folder", repo.clone());
     let mut phone = Phone::pair(fx.port, &fx.secret);
-    phone.overview_where(|overview| agent(overview, id).is_some_and(|a| !a.starting && a.state == AgentState::Idle));
+    phone.overview_where(|overview| agent(overview, id).is_some());
     assert_eq!(details_of(&mut phone, id).changes, Some(Vec::new()), "a clean folder has nothing pending");
 
     std::fs::write(repo.join("cart.js"), "one\ntwo\n").unwrap();
