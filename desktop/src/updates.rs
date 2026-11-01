@@ -7,6 +7,7 @@ use orkai::util::lock;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 pub const ASSET_PREFIX: &str = "desktop-";
+pub const APP_ASSET_PREFIX: &str = "desktop-app-";
 pub const READY_EVENT: &str = "update-ready";
 
 #[derive(Default)]
@@ -42,6 +43,14 @@ pub fn asset_key(target: &str) -> String {
     format!("{ASSET_PREFIX}{target}")
 }
 
+pub fn app_asset_key(target: &str) -> String {
+    format!("{APP_ASSET_PREFIX}{target}")
+}
+
+fn replaces_its_bundle(exe: &Path) -> bool {
+    cfg!(target_os = "macos") && update::app_bundle(exe).is_some()
+}
+
 pub fn updates_itself() -> bool {
     BUILD_COMMIT.is_some() && target().is_some() && std::env::var_os(DISABLE_ENV).is_none()
 }
@@ -50,8 +59,15 @@ pub fn install_newer(source: &Source, exe: &Path) -> Result<Option<String>, Stri
     let commit = BUILD_COMMIT.ok_or("a build made on this computer does not update itself")?;
     let target = target().ok_or("there is no prebuilt Octo app for this platform")?;
     let manifest = source.manifest().map_err(|err| err.to_string())?;
-    let outcome = update::apply(source, &manifest, exe, Some(commit), env!("CARGO_PKG_VERSION"), &asset_key(target))
-        .map_err(|err| err.to_string())?;
+    let version = env!("CARGO_PKG_VERSION");
+    let outcome = if replaces_its_bundle(exe) {
+        update::apply_with(source, &manifest, Some(commit), version, &app_asset_key(target), |archive| {
+            update::install_app(exe, archive)
+        })
+    } else {
+        update::apply(source, &manifest, exe, Some(commit), version, &asset_key(target))
+    }
+    .map_err(|err| err.to_string())?;
     Ok(matches!(outcome, Outcome::Updated { .. }).then_some(manifest.version))
 }
 
@@ -68,6 +84,7 @@ pub fn install_and_announce(app: &AppHandle) -> Result<Option<String>, String> {
 pub fn on_launch(app: &AppHandle) {
     if let Ok(exe) = std::env::current_exe() {
         update::cleanup(&exe);
+        update::cleanup_app(&exe);
     }
     if !updates_itself() {
         return;
@@ -134,6 +151,31 @@ mod tests {
         );
         let same = manifest(env!("CARGO_PKG_VERSION"), &[&key]);
         assert_eq!(plan(&same, Some(RUNNING), env!("CARGO_PKG_VERSION"), &key), Plan::UpToDate);
+    }
+
+    #[test]
+    fn a_mac_app_downloads_its_whole_bundle_while_an_older_one_keeps_its_binary() {
+        let target = "aarch64-apple-darwin";
+        let app = app_asset_key(target);
+        assert_eq!(app, "desktop-app-aarch64-apple-darwin");
+        let both = manifest("9.0.0", &[&asset_key(target), &app]);
+        match plan(&both, Some(RUNNING), env!("CARGO_PKG_VERSION"), &app) {
+            Plan::Install { asset, .. } => assert_eq!(asset.name, "orkai-desktop-app-aarch64-apple-darwin"),
+            other => panic!("expected the bundle, got {other:?}"),
+        }
+        match plan(&both, Some(RUNNING), env!("CARGO_PKG_VERSION"), &asset_key(target)) {
+            Plan::Install { asset, .. } => assert_eq!(asset.name, "orkai-desktop-aarch64-apple-darwin"),
+            other => panic!("expected the binary, got {other:?}"),
+        }
+        let binary_only = manifest("9.0.0", &[&asset_key(target)]);
+        assert_eq!(plan(&binary_only, Some(RUNNING), env!("CARGO_PKG_VERSION"), &app), Plan::NoAsset);
+    }
+
+    #[test]
+    fn only_a_mac_app_replaces_its_whole_bundle() {
+        let in_bundle = Path::new("/Applications/Octo.app/Contents/MacOS/octo");
+        assert_eq!(replaces_its_bundle(in_bundle), cfg!(target_os = "macos"));
+        assert!(!replaces_its_bundle(Path::new("/usr/local/bin/octo")));
     }
 
     #[test]

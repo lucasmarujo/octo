@@ -149,6 +149,12 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then cp target/installer/Octo-setup.exe dist/; fi
       - name: Bundle the macOS app
         if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           version=$(grep -m1 '^version' desktop/Cargo.toml | cut -d'"' -f2)
           app="target/bundle/Octo.app"
@@ -174,8 +180,45 @@ jobs:
           </plist>
           EOF
           plutil -lint "$app/Contents/Info.plist"
-          codesign --force --sign - "$app"
-          codesign --verify --strict --verbose=2 "$app"
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            keychain="$RUNNER_TEMP/octo-signing.keychain-db"
+            keychain_password=$(openssl rand -hex 24)
+            security create-keychain -p "$keychain_password" "$keychain"
+            security set-keychain-settings -lut 21600 "$keychain"
+            security unlock-keychain -p "$keychain_password" "$keychain"
+            printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+            security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            rm "$RUNNER_TEMP/developer-id.p12"
+            curl -fsSL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
+            security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$keychain"
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+            security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+            identity=$(security find-identity -v -p codesigning "$keychain" | awk '/Developer ID Application/ { print $2; exit }')
+            if [ -z "$identity" ]; then
+              echo "::error::APPLE_CERTIFICATE has no Developer ID Application identity"
+              exit 1
+            fi
+            codesign --force --options runtime --timestamp --sign "$identity" "$app"
+            codesign --verify --strict --verbose=2 "$app"
+            printf '%s' "$APPLE_API_KEY" > "$RUNNER_TEMP/notary-key.p8"
+            notary=(--key "$RUNNER_TEMP/notary-key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
+            ditto -c -k --keepParent "$app" "$RUNNER_TEMP/Octo-notarize.zip"
+            xcrun notarytool submit "$RUNNER_TEMP/Octo-notarize.zip" "${notary[@]}" --wait --timeout 30m --output-format json > "$RUNNER_TEMP/notary.json" || true
+            cat "$RUNNER_TEMP/notary.json"
+            if [ "$(plutil -extract status raw -o - "$RUNNER_TEMP/notary.json")" != Accepted ]; then
+              xcrun notarytool log "$(plutil -extract id raw -o - "$RUNNER_TEMP/notary.json")" "${notary[@]}" || true
+              echo "::error::Apple did not notarize Octo"
+              exit 1
+            fi
+            xcrun stapler staple "$app"
+            xcrun stapler validate "$app"
+            spctl --assess --type execute --verbose=4 "$app"
+          else
+            codesign --force --sign - "$app"
+            codesign --verify --strict --verbose=2 "$app"
+            echo "::warning::Octo for macOS is published without a Developer ID signature or notarization"
+          fi
+          cp "$app/Contents/MacOS/octo" "dist/$UPDATE"
           ditto -c -k --keepParent "$app" "dist/$DOWNLOAD"
       - name: Warn that the app is unsigned
         if: runner.os == 'Windows'
@@ -228,6 +271,8 @@ jobs:
               "desktop-x86_64-unknown-linux-gnu": "Octo-linux-x86_64",
               "desktop-aarch64-apple-darwin": "Octo-macos-apple-silicon-update",
               "desktop-x86_64-apple-darwin": "Octo-macos-intel-update",
+              "desktop-app-aarch64-apple-darwin": "Octo-macos-apple-silicon.zip",
+              "desktop-app-x86_64-apple-darwin": "Octo-macos-intel.zip",
           }
           assets = {}
           for key, name in updates.items():

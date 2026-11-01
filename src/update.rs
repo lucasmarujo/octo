@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::sync::LazyLock;
 use std::sync::mpsc;
@@ -28,6 +28,11 @@ const MAX_BINARY_BYTES: u64 = 128 * 1024 * 1024;
 const OLD_MARKER: &str = ".old-";
 const STAGING_MARKER: &str = ".update-";
 const SHORT_COMMIT: usize = 7;
+const BUNDLE_EXTENSION: &str = "app";
+const BUNDLE_CONTENTS: &str = "Contents";
+const BUNDLE_EXECUTABLES: &str = "MacOS";
+const BUNDLE_ARCHIVE: &str = "download.zip";
+const DITTO: &str = "/usr/bin/ditto";
 
 pub static VERSION: LazyLock<String> =
     LazyLock::new(|| format!("{} ({})", env!("CARGO_PKG_VERSION"), BUILD_COMMIT.map_or("dev", short_commit)));
@@ -214,17 +219,83 @@ pub fn install(exe: &Path, bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-pub fn cleanup(exe: &Path) {
-    let (Some(dir), Ok(name)) = (exe.parent(), file_name(exe)) else { return };
+pub fn app_bundle(exe: &Path) -> Option<&Path> {
+    let executables = exe.parent()?;
+    let contents = executables.parent()?;
+    let bundle = contents.parent()?;
+    let inside = executables.file_name()? == BUNDLE_EXECUTABLES
+        && contents.file_name()? == BUNDLE_CONTENTS
+        && bundle.extension()? == BUNDLE_EXTENSION;
+    inside.then_some(bundle)
+}
+
+fn unpack_app(archive: &[u8], staging: &Path) -> io::Result<PathBuf> {
+    let _ = fs::remove_dir_all(staging);
+    fs::create_dir(staging)?;
+    let zip = staging.join(BUNDLE_ARCHIVE);
+    fs::write(&zip, archive)?;
+    let status = Command::new(DITTO).arg("-x").arg("-k").arg(&zip).arg(staging).status()?;
+    fs::remove_file(&zip)?;
+    if !status.success() {
+        return Err(invalid("the downloaded app could not be unpacked"));
+    }
+    fs::read_dir(staging)?
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .map(|entry| entry.path())
+        .find(|path| path.extension().is_some_and(|extension| extension == BUNDLE_EXTENSION))
+        .ok_or_else(|| invalid("the download has no app"))
+}
+
+pub fn install_app(exe: &Path, archive: &[u8]) -> io::Result<()> {
+    let bundle = app_bundle(exe).ok_or_else(|| invalid("the executable is not inside an app bundle"))?;
+    let executable = exe.strip_prefix(bundle).map_err(|_| invalid("the executable is outside its app bundle"))?;
+    let dir = bundle.parent().ok_or_else(|| invalid("the app bundle has no parent"))?;
+    let name = file_name(bundle)?;
+    let pid = std::process::id();
+    let staging = dir.join(format!(".{name}{STAGING_MARKER}{pid}"));
+    let old = dir.join(format!("{name}{OLD_MARKER}{pid}"));
+    let result = unpack_app(archive, &staging).and_then(|unpacked| {
+        if !unpacked.join(executable).is_file() {
+            return Err(invalid("the downloaded app has no executable"));
+        }
+        fs::rename(bundle, &old)?;
+        if let Err(err) = fs::rename(&unpacked, bundle) {
+            let _ = fs::rename(&old, bundle);
+            return Err(err);
+        }
+        let _ = fs::remove_dir_all(&old);
+        Ok(())
+    });
+    let _ = fs::remove_dir_all(&staging);
+    result
+}
+
+fn remove_leftovers(dir: &Path, name: &str) {
     let old_prefix = format!("{name}{OLD_MARKER}");
     let staging_prefix = format!(".{name}{STAGING_MARKER}");
     let Ok(entries) = fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let entry_name = entry.file_name().to_string_lossy().into_owned();
         if entry_name.starts_with(&old_prefix) || entry_name.starts_with(&staging_prefix) {
-            let _ = fs::remove_file(entry.path());
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                let _ = fs::remove_dir_all(entry.path());
+            } else {
+                let _ = fs::remove_file(entry.path());
+            }
         }
     }
+}
+
+pub fn cleanup(exe: &Path) {
+    let (Some(dir), Ok(name)) = (exe.parent(), file_name(exe)) else { return };
+    remove_leftovers(dir, &name);
+}
+
+pub fn cleanup_app(exe: &Path) {
+    let Some(bundle) = app_bundle(exe) else { return };
+    let (Some(dir), Ok(name)) = (bundle.parent(), file_name(bundle)) else { return };
+    remove_leftovers(dir, &name);
 }
 
 pub fn apply(
@@ -235,12 +306,23 @@ pub fn apply(
     version: &str,
     target: &str,
 ) -> io::Result<Outcome> {
+    apply_with(source, manifest, current, version, target, |bytes| install(exe, bytes))
+}
+
+pub fn apply_with(
+    source: &Source,
+    manifest: &Manifest,
+    current: Option<&str>,
+    version: &str,
+    target: &str,
+    installer: impl FnOnce(&[u8]) -> io::Result<()>,
+) -> io::Result<Outcome> {
     match plan(manifest, current, version, target) {
         Plan::UpToDate => Ok(Outcome::UpToDate),
         Plan::NoAsset => Ok(Outcome::NoAsset),
         Plan::Install { to, asset } => {
             let bytes = source.download(&asset)?;
-            install(exe, &bytes)?;
+            installer(&bytes)?;
             Ok(Outcome::Updated { to })
         }
     }
@@ -440,6 +522,103 @@ mod tests {
         names.sort();
         assert_eq!(names, vec!["orkai.exe".to_string(), "other.exe".to_string()]);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn fake_app(bundle: &Path, executable: &[u8]) -> std::path::PathBuf {
+        let exe = bundle.join("Contents").join("MacOS").join("octo");
+        fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        fs::write(&exe, executable).unwrap();
+        fs::write(bundle.join("Contents").join("Info.plist"), executable).unwrap();
+        exe
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> =
+            fs::read_dir(dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn app_bundle_is_the_app_an_executable_runs_from() {
+        let bundle = Path::new("/Applications/Octo.app");
+        assert_eq!(app_bundle(&bundle.join("Contents/MacOS/octo")), Some(bundle));
+        assert_eq!(app_bundle(Path::new("/usr/local/bin/orkai")), None);
+        assert_eq!(app_bundle(Path::new("/Applications/Octo/Contents/MacOS/octo")), None, "not an app");
+        assert_eq!(app_bundle(Path::new("/Applications/Octo.app/Contents/Resources/octo")), None);
+        assert_eq!(app_bundle(Path::new("octo")), None);
+    }
+
+    #[test]
+    fn install_app_refuses_an_executable_outside_an_app_and_leaves_it_alone() {
+        let dir = temp_dir("not-an-app");
+        let exe = dir.join("octo");
+        fs::write(&exe, b"current").unwrap();
+        assert!(install_app(&exe, b"archive").is_err());
+        assert_eq!(fs::read(&exe).unwrap(), b"current");
+        assert_eq!(names_in(&dir), vec!["octo".to_string()]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn cleanup_app_removes_previous_bundles_and_staging_folders_beside_the_app() {
+        let dir = temp_dir("cleanup-app");
+        let exe = fake_app(&dir.join("Octo.app"), b"current");
+        fake_app(&dir.join("Octo.app.old-123"), b"old");
+        fake_app(&dir.join(".Octo.app.update-456"), b"partial");
+        fs::write(dir.join(".Octo.app.update-789"), b"stray file").unwrap();
+        fake_app(&dir.join("Other.app"), b"keep");
+        cleanup_app(&exe);
+        assert_eq!(names_in(&dir), vec!["Octo.app".to_string(), "Other.app".to_string()]);
+        assert_eq!(fs::read(&exe).unwrap(), b"current");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    fn zip_app(bundle: &Path, archive: &Path) -> Vec<u8> {
+        let status = Command::new(DITTO).arg("-c").arg("-k").arg("--keepParent").arg(bundle).arg(archive).status();
+        assert!(status.unwrap().success());
+        fs::read(archive).unwrap()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn install_app_replaces_the_whole_bundle_and_keeps_its_name() {
+        let release = temp_dir("app-release");
+        fake_app(&release.join("Octo.app"), b"new binary");
+        fs::create_dir_all(release.join("Octo.app/Contents/Resources")).unwrap();
+        fs::write(release.join("Octo.app/Contents/Resources/icon.icns"), b"new icon").unwrap();
+        let archive = zip_app(&release.join("Octo.app"), &release.join("Octo-macos.zip"));
+        let installed = temp_dir("app-installed");
+        let exe = fake_app(&installed.join("My Octo.app"), b"old binary");
+        fs::write(installed.join("My Octo.app/Contents/stale"), b"gone").unwrap();
+        install_app(&exe, &archive).unwrap();
+        assert_eq!(fs::read(&exe).unwrap(), b"new binary");
+        assert_eq!(fs::read(installed.join("My Octo.app/Contents/Info.plist")).unwrap(), b"new binary");
+        assert_eq!(fs::read(installed.join("My Octo.app/Contents/Resources/icon.icns")).unwrap(), b"new icon");
+        assert!(!installed.join("My Octo.app/Contents/stale").exists(), "nothing of the old bundle is left inside");
+        assert_eq!(names_in(&installed), vec!["My Octo.app".to_string()]);
+        fs::remove_dir_all(release).unwrap();
+        fs::remove_dir_all(installed).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn install_app_keeps_the_running_bundle_when_the_download_is_not_a_usable_app() {
+        let release = temp_dir("app-broken");
+        let renamed = release.join("Octo.app");
+        fake_app(&renamed, b"new binary");
+        fs::rename(renamed.join("Contents/MacOS/octo"), renamed.join("Contents/MacOS/other")).unwrap();
+        let without_executable = zip_app(&renamed, &release.join("Octo-macos.zip"));
+        let installed = temp_dir("app-kept");
+        let exe = fake_app(&installed.join("Octo.app"), b"old binary");
+        for archive in [b"not a zip".to_vec(), without_executable] {
+            assert!(install_app(&exe, &archive).is_err());
+            assert_eq!(fs::read(&exe).unwrap(), b"old binary");
+            assert_eq!(names_in(&installed), vec!["Octo.app".to_string()]);
+        }
+        fs::remove_dir_all(release).unwrap();
+        fs::remove_dir_all(installed).unwrap();
     }
 
     #[test]
