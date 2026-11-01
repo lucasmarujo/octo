@@ -633,6 +633,35 @@ test('an agent outside a worktree shows what is pending in its folder and commit
   assert.match(source, /disabled: busy, onclick: \(\) => merge\(agent\) \}, t\('Merge'\)/, 'an agent in a worktree still merges its branch');
 });
 
+test('a Mac keeps its own traffic lights and Octo draws window controls only where the system draws none', () => {
+  const TRAFFIC_LIGHTS_WIDTH = 60;
+  const LIGHT_CENTER_BELOW_Y = { tahoe: -2.5, beforeTahoe: 1.5 };
+  const [base] = JSON.parse(rust('desktop/tauri.conf.json')).app.windows;
+  const macWindows = JSON.parse(rust('desktop/tauri.macos.conf.json')).app.windows;
+  assert.equal(macWindows.length, 1);
+  const { decorations, titleBarStyle, hiddenTitle, create, ...macRest } = macWindows[0];
+  const { decorations: baseDecorations, ...baseRest } = base;
+  assert.equal(baseDecorations, false, 'Windows and Linux get the controls Octo draws');
+  assert.deepEqual({ decorations, titleBarStyle, hiddenTitle }, { decorations: true, titleBarStyle: 'Overlay', hiddenTitle: true });
+  assert.equal(create, false, 'the app creates the Mac window itself to place the traffic lights for the running macOS');
+  assert.deepEqual(macRest, baseRest, 'the macOS file replaces the whole window list, so it repeats every other setting');
+  const window = rust('desktop/src/window.rs');
+  const constant = (name) => Number(window.match(new RegExp(`const ${name}: f64 = ([\\d.]+);`))[1]);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const inset = Number(css.match(/:root\[data-window-controls="native"\] \.titlebar \{ padding-left: (\d+)px; \}/)[1]);
+  assert.ok(inset >= constant('TRAFFIC_LIGHTS_X') + TRAFFIC_LIGHTS_WIDTH, 'the tabs start after the traffic lights');
+  const [, height, border] = css.match(/\.titlebar \{[^}]*\bheight: (\d+)px;[^}]*border-bottom: (\d+)px/).map(Number);
+  const middle = (height - border) / 2;
+  assert.equal(constant('TRAFFIC_LIGHTS_Y') + LIGHT_CENTER_BELOW_Y.tahoe, middle, 'centered beside the tabs on macOS 26 and later');
+  assert.equal(constant('TRAFFIC_LIGHTS_Y_BEFORE_TAHOE') + LIGHT_CENTER_BELOW_Y.beforeTahoe, middle, 'centered beside the tabs before macOS 26');
+  assert.match(rust('desktop/src/link.rs'), /#\[cfg\(target_os = "macos"\)\]\n\s*crate::window::open\(app\)\?;/);
+  assert.match(css, /\.window-controls \{ display: none;/, 'no Windows controls flash on a Mac before the answer comes');
+  assert.match(css, /:root\[data-window-controls="app"\] \.window-controls \{ display: flex; \}/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /win\.isDecorated\(\)\.catch\(\(\) => false\)\.then\(\(native\) => \{\n\s*document\.documentElement\.dataset\.windowControls = native \? 'native' : 'app';/);
+  assert.ok(JSON.parse(rust('desktop/capabilities/default.json')).permissions.includes('core:default'), 'core:default lets the window ask whether the system decorates it');
+});
+
 test('every text the app shows has a Portuguese version', async () => {
   const { PT } = await import('../js/i18n.js');
   const ui = join(REPO, 'desktop/ui');

@@ -106,6 +106,8 @@ pub fn run() -> io::Result<()> {
         .manage(Updates::default())
         .manage(Console::default())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            crate::window::open(app)?;
             updates::on_launch(app.handle());
             Ok(())
         })

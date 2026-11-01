@@ -168,7 +168,9 @@ h1, p { margin: 0; }
 .tab:hover { background: var(--color-surface); }
 .tab.active { background: var(--color-surface-raised); color: var(--color-text); font-weight: 600; }
 .tab .label-mono { font-family: var(--font-mono); font-size: var(--text-sm); }
-.window-controls { display: flex; height: 100%; }
+.window-controls { display: none; height: 100%; }
+:root[data-window-controls="app"] .window-controls { display: flex; }
+:root[data-window-controls="native"] .titlebar { padding-left: 88px; }
 .win-button { display: flex; align-items: center; justify-content: center; width: 46px; height: 100%; color: var(--color-text-muted); }
 .win-button:hover { background: var(--color-surface-raised); color: var(--color-text); }
 .win-button.close:hover { background: #c42b3c; color: #fff; }

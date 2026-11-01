@@ -485,6 +485,9 @@ function reopenTerminal() {
 
 function initWindow() {
   const win = currentWindow();
+  win.isDecorated().catch(() => false).then((native) => {
+    document.documentElement.dataset.windowControls = native ? 'native' : 'app';
+  });
   $('win-min').addEventListener('click', () => win.minimize());
   $('win-max').addEventListener('click', () => win.toggleMaximize());
   $('win-close').addEventListener('click', () => win.close());

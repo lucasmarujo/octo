@@ -8,6 +8,8 @@ mod recover;
 mod settings;
 mod term;
 mod updates;
+#[cfg(target_os = "macos")]
+mod window;
 
 use std::process::ExitCode;
 
