@@ -46,24 +46,6 @@ function hex(...channels) {
   return `#${channels.map((c) => Number(c).toString(16).padStart(2, '0')).join('')}`;
 }
 
-function rasterize(svgGroups, keep) {
-  const grid = Array.from({ length: 16 }, () => Array(14).fill(null));
-  for (const [, name, rects] of svgGroups) {
-    if (!keep.includes(name)) continue;
-    for (const [, x, y, w, fill] of rects.matchAll(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="1" fill="(#[0-9a-f]{6})"\/>/g)) {
-      for (let i = 0; i < Number(w); i += 1) {
-        assert.equal(grid[Number(y)][Number(x) + i], null, `pixel ${Number(x) + i},${y} pintado duas vezes`);
-        grid[Number(y)][Number(x) + i] = fill;
-      }
-    }
-  }
-  return grid;
-}
-
-function expectedGrid(frame, palette) {
-  return frame.map((row) => [...row].map((code) => (code === '.' ? null : palette[code])));
-}
-
 function decodePng(png) {
   const width = png.readUInt32BE(16);
   const height = png.readUInt32BE(20);
@@ -100,19 +82,6 @@ function readmeTable(heading) {
   const first = lines.findIndex((line) => line.startsWith('|'));
   const end = lines.findIndex((line, i) => i > first && !line.startsWith('|'));
   return lines.slice(first + 2, end).map((line) => line.split('|').slice(1, -1).map((cell) => cell.trim().replace(/`/g, '')));
-}
-
-function readmeBlock(label) {
-  const start = readme.indexOf(label);
-  assert.ok(start >= 0, `${label} não encontrado no README`);
-  const match = readme.slice(start).match(/```\w*\n([\s\S]*?)\n```/);
-  return match[1];
-}
-
-function installBlock(id) {
-  const match = html.match(new RegExp(`<code data-install="${id}">([\\s\\S]*?)</code>`));
-  assert.ok(match, `bloco ${id} ausente`);
-  return decode(match[1]);
 }
 
 test('title começa com o produto e cabe no SERP', () => {
@@ -192,23 +161,6 @@ test('a página, os metadados e os textos do app.js estão em inglês', () => {
   const text = [stripTags(body), head.match(/<title>([^<]+)<\/title>/)[1], JSON.stringify(jsonLd()), ...attributes, ...strings].join('\n');
   assert.doesNotMatch(text, /[áàâãéêíóôõúç]/i);
   assert.doesNotMatch(text, /\b(?:para|uma|seus|seu|sua|agentes|quem|sem|todos|voce|projetos|tarefa)\b/i);
-});
-
-test('o mascote da TUI simulada é o sprite IDLE/BUSY do src/tui/sprite.rs, pixel a pixel', () => {
-  const sprite = readFileSync(join(REPO, 'src/tui/sprite.rs'), 'utf8');
-  const palette = rustPalette(sprite);
-  const idle = expectedGrid(rustFrame(sprite, 'IDLE'), palette);
-  const busy = expectedGrid(rustFrame(sprite, 'BUSY'), palette);
-  const svgs = [...html.matchAll(/<svg class="mascot[^"]*"[^>]*>([\s\S]*?)<\/svg>/g)].map((m) => m[1]);
-  assert.equal(svgs.length, 1, 'só a TUI simulada mostra o marinheiro, como o CLI');
-  assert.match(html, /<svg class="mascot tui-mascot/);
-  const cli = html.slice(html.indexOf('<section class="section" id="cli"'));
-  assert.match(cli.slice(0, cli.indexOf('</section>')), /<svg class="mascot tui-mascot/, 'a TUI simulada fica na seção do orkai CLI');
-  svgs.forEach((svg, i) => {
-    const groups = [...svg.matchAll(/<g class="m-(base|idle|busy)">([\s\S]*?)<\/g>/g)];
-    assert.deepEqual(rasterize(groups, ['base', 'idle']), idle, `mascote ${i} (idle)`);
-    assert.deepEqual(rasterize(groups, ['base', 'busy']), busy, `mascote ${i} (busy)`);
-  });
 });
 
 test('os outros mascotes da página são o Kai pixel do app, com as mesmas tiras', () => {
@@ -294,12 +246,13 @@ test('ícones e imagens trocados ganham nome novo, porque o nginx guarda png e i
   for (const old of ['og-octo.png', 'octo.ico', 'octo-touch-icon.png']) assert.ok(!existsSync(join(ROOT, old)), `${old} ficou para trás`);
 });
 
-test('a marca é OctoAI, o produto é Octo e o orkai só aparece como o CLI legado', () => {
+test('a marca é OctoAI, o produto é Octo e a página não oferece mais o orkai CLI', () => {
   const wordmarks = [...html.matchAll(/<span class="wordmark">([^<]+)<\/span>/g)].map((m) => m[1]);
   assert.deepEqual(wordmarks, ['OctoAI', 'OctoAI']);
-  const octo = html.slice(html.indexOf('<main'), html.indexOf('<section class="section" id="cli"')).replace(/<pre>[\s\S]*?<\/pre>|<code[^>]*>[\s\S]*?<\/code>/g, '');
-  assert.doesNotMatch(stripTags(octo), /\borkai\b(?! CLI)/i);
-  assert.match(html, /<span class="kicker">orkai cli · legacy<\/span>/);
+  const page = html.slice(html.indexOf('<main')).replace(/<code>orkai\/&lt;name&gt;<\/code>/g, '');
+  assert.doesNotMatch(stripTags(page), /\borkai\b/i, 'só a branch orkai/<name> das worktrees cita o orkai');
+  assert.doesNotMatch(html, /id="cli"|href="#cli"|data-tui\b|data-install=/);
+  assert.doesNotMatch(read('llms.txt'), /orkai CLI|orkai-setup/);
 });
 
 test('o hero mostra a tela real do Octo, com 1x e 2x', () => {
@@ -347,31 +300,25 @@ test('o marquee lista todos os agentes de IA do README', () => {
   readmeTable('## Supported agents').map(([who]) => who).filter((who) => who !== 'terminal').forEach((who) => assert.match(marquee, new RegExp(`class="k-${who}"`), who));
 });
 
-test('os comandos de instalação são os mesmos do README', () => {
-  const unix = readmeBlock('**Linux and macOS**');
-  assert.equal(installBlock('linux'), unix);
-  assert.equal(installBlock('macos'), unix.replace('orkai-x86_64-unknown-linux-musl', 'orkai-aarch64-apple-darwin'));
-  assert.equal(installBlock('windows'), readmeBlock('**Windows**'));
-  assert.equal(installBlock('source'), readmeBlock('**From source**'));
-});
-
-test('os downloads diretos são os arquivos das tabelas do Octo e do CLI no README', () => {
+test('os downloads diretos são os arquivos da tabela do Octo no README', () => {
   const links = (section) => [...section.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/octo\/releases\/(?:download\/latest|latest\/download)\/([^"]+)"/g)].map((m) => m[1]);
   const section = (id) => html.slice(html.indexOf(`<section class="section" id="${id}"`)).split('</section>')[0];
   const octo = readmeTable('| System | Download |').map(([, file]) => file);
-  const cli = readmeTable('| Platform | File |').map(([, file]) => file);
+  assert.ok(octo.includes('Octo-setup.exe'), 'o README lista o instalador do Octo');
   assert.deepEqual(links(section('instalar')).sort(), [...octo].sort());
-  assert.deepEqual(links(section('cli')).sort(), [...cli].sort());
-  assert.deepEqual(links(html).sort(), [...octo, ...cli].sort());
-  assert.match(readmePtBr, /\| Sistema \| Download \|\n\| --- \| --- \|\n\| Windows 10 e 11 x64 \| `Octo\.exe` \|/);
+  assert.deepEqual(links(html).sort(), [...octo].sort());
+  assert.match(readmePtBr, /\| Sistema \| Download \|\n\| --- \| --- \|\n\| Windows 10 e 11 x64 \(instalador\) \| `Octo-setup\.exe` \|\n\| Windows 10 e 11 x64 \(sem instalar\) \| `Octo\.exe` \|/);
 });
 
-test('o instalador do Windows sai da versão mais nova, que nunca muda, e não da build contínua', () => {
-  const versioned = 'https://github.com/lucasmarujo/octo/releases/latest/download/orkai-setup.exe';
-  for (const [name, source] of [['README.md', readme], ['README.pt-BR.md', readmePtBr], ['index.html', html], ['llms.txt', read('llms.txt')]]) {
-    const links = [...source.matchAll(/https:\/\/github\.com\/lucasmarujo\/octo\/releases\/[^\s"()]*orkai-setup\.exe/g)].map((m) => m[0]);
+test('o instalador do Windows é o do Octo e sai da versão mais nova, que nunca muda', () => {
+  const versioned = 'https://github.com/lucasmarujo/octo/releases/latest/download/Octo-setup.exe';
+  for (const [name, source] of [['index.html', html], ['llms.txt', read('llms.txt')]]) {
+    const links = [...source.matchAll(/https:\/\/github\.com\/lucasmarujo\/octo\/releases\/[^\s"()]*-setup\.exe/g)].map((m) => m[0]);
     assert.ok(links.length > 0, `${name} sem link do instalador`);
     assert.deepEqual([...new Set(links)], [versioned], name);
+  }
+  for (const [name, source] of [['README.md', readme], ['README.pt-BR.md', readmePtBr], ['index.html', html], ['llms.txt', read('llms.txt')]]) {
+    assert.doesNotMatch(source, /orkai-setup\.exe|releases\/[^\s"()]*\/orkai-/, `${name} ainda aponta para um download do orkai`);
   }
 });
 
@@ -382,7 +329,7 @@ test('nenhum link aponta para a build contínua, que não existe mais', () => {
 });
 
 test('a página e os dois READMEs mostram a code signing policy, que diz que o Windows ainda sai sem assinatura', () => {
-  const unsigned = { 'README.md': '`orkai.exe` and `orkai-setup.exe` are not code signed yet.', 'README.pt-BR.md': 'O `orkai.exe` e o `orkai-setup.exe` ainda não são assinados.' };
+  const unsigned = { 'README.md': '`Octo.exe` and `Octo-setup.exe` are not code signed yet.', 'README.pt-BR.md': 'O `Octo.exe` e o `Octo-setup.exe` ainda não são assinados.' };
   for (const [name, source] of [['README.md', readme], ['README.pt-BR.md', readmePtBr]]) {
     assert.ok(source.includes(`## Code signing policy\n\n${unsigned[name]}`), `${name}: a seção diz que ainda não há assinatura`);
     assert.doesNotMatch(source, /Free code signing provided by/, `${name}: atribuição da SignPath sem assinatura`);

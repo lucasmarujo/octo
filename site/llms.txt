@@ -2,7 +2,7 @@
 
 > Desktop app, written in Rust, that runs and monitors multiple AI coding agents (Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok Build, Qwen Code and Kimi Code) and plain terminals across multiple projects at once, organized into sessions, in one window. For Windows, Linux and macOS.
 
-Octo shows every agent on a board by status (needs you, working, done, idle), with its project, time, type, a line saying what the agent is doing and the subagents that Claude Code and Codex spawn. The status comes from each agent's hooks, plugins and protocols, without relying on screen text. Octo grew out of orkai, a terminal app that is now legacy.
+Octo shows every agent on a board by status (needs you, working, done, idle), with its project, time, type, a line saying what the agent is doing and the subagents that Claude Code and Codex spawn. The status comes from each agent's hooks, plugins and protocols, without relying on screen text.
 
 ## Highlights
 
@@ -21,17 +21,11 @@ Octo shows every agent on a board by status (needs you, working, done, idle), wi
 
 ## Downloads
 
-- Windows 10 and 11 x64: https://github.com/lucasmarujo/octo/releases/latest/download/Octo.exe
+- Windows 10 and 11 x64 installer: https://github.com/lucasmarujo/octo/releases/latest/download/Octo-setup.exe
+- Windows 10 and 11 x64, without installing: https://github.com/lucasmarujo/octo/releases/latest/download/Octo.exe
 - macOS Apple Silicon: https://github.com/lucasmarujo/octo/releases/latest/download/Octo-macos-apple-silicon.zip
 - macOS Intel: https://github.com/lucasmarujo/octo/releases/latest/download/Octo-macos-intel.zip
 - Linux x64 (WebKitGTK 4.1): https://github.com/lucasmarujo/octo/releases/latest/download/Octo-linux-x86_64
-
-## orkai CLI (legacy)
-
-The terminal app Octo grew out of. It runs the same agents and keeps updating itself, but new features land in Octo.
-
-- Windows installer: https://github.com/lucasmarujo/octo/releases/latest/download/orkai-setup.exe
-- Linux and macOS binaries and documentation: https://github.com/lucasmarujo/octo#installation
 
 ## Links
 

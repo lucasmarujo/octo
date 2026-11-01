@@ -1,12 +1,7 @@
-import {
-  CYCLE, HINT, INTRO, SPINNER, apply, createOverview, durationShort, glyph, lines, refreshUsage, slugify, stats, usageLines, windowTitle,
-} from './tui.js';
+import { HINT, SPINNER, durationShort, glyph, slugify } from './tui.js';
 
 const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const TICK_MS = 100;
-const EVENT_MS = 3_400;
-const TYPE_MS = 55;
-const NOTICE_MS = 6_000;
 const KEY_MS = 1_100;
 const BELL_MS = 1_800;
 const TOUR_TASK = 'fix the flaky login test';
@@ -378,182 +373,6 @@ function mountChaos(section) {
   });
 }
 
-function mountTui(root) {
-  const part = (name) => root.querySelector(`[data-${name}]`);
-  const title = part('title');
-  const bell = part('bell');
-  const sessionCount = part('session-count');
-  const statsBox = part('stats');
-  const usageBox = part('usage');
-  const list = part('list');
-  const input = part('input');
-  const hint = part('hint');
-  const keycap = part('key');
-  const overview = createOverview(Date.now());
-  let visible = false;
-  let started = false;
-  let step = 0;
-  let noticeAt = 0;
-  let lastNotice = null;
-
-  function renderStats() {
-    const s = stats(overview);
-    const rows = [[s.agents, 'agents'], [s.working, 'working'], [s.paused, 'paused'], [s.done, 'done']];
-    syncChildren(statsBox, rows, ([, label]) => label, ([, label]) => {
-      const row = el('div');
-      row.append(el('span', `chip chip-${label}`), el('span', 't-muted', label));
-      return row;
-    }, (row, [value]) => setText(row.firstChild, String(value).padStart(3, ' ')));
-  }
-
-  function renderUsage(now) {
-    const items = [{ type: 'head' }, ...usageLines(overview, now).map((line, index) => ({ type: 'line', index, ...line }))];
-    syncChildren(usageBox, items, (item) => (item.type === 'head' ? 'head' : `u${item.index}`), (item) => {
-      if (item.type === 'head') {
-        const row = el('div', 't-muted', 'usage');
-        row.append(el('span', 't-faint'));
-        return row;
-      }
-      const row = el('div', 'u');
-      const bar = el('span', 'bar');
-      bar.append(el('span'), el('span', 't-rule'));
-      row.append(el('span'), el('span', 't-muted'), bar, el('span'), el('span', 't-dim'));
-      return row;
-    }, (row, item) => {
-      if (item.type === 'head') {
-        setText(row.lastChild, ` · updated ${durationShort(now - overview.usageUpdatedAt)} ago`);
-        return;
-      }
-      const [kind, label, bar, percent, resets] = row.children;
-      setText(kind, item.kind);
-      setClass(kind, item.kind ? `k-${item.kind}` : '');
-      setText(label, item.label);
-      setText(bar.firstChild, '━'.repeat(item.filled));
-      setClass(bar.firstChild, `t-${item.tone}`);
-      setText(bar.lastChild, '─'.repeat(item.empty));
-      setText(percent, item.percent);
-      setClass(percent, `t-${item.tone}`);
-      setText(resets, item.resets);
-    });
-  }
-
-  function createRow(line) {
-    if (line.type === 'header') {
-      const row = el('div', 'r r-head');
-      row.append(el('span', `p${line.color}`, line.label), el('span', 't-dim', ' › '), el('span', 't-faint'));
-      return row;
-    }
-    if (line.type === 'subagent') {
-      const row = el('div', 'r');
-      row.append(el('span', 'c-indent'), el('span', 'c-g t-faint', '↳'), el('span', 'c-g t-yellow'), el('span', 'c-role'), el('span', 'c-t1 t-dim'), el('span', 'c-t2'), el('span', 'c-kind t-faint', 'subagent'), el('span', 'c-act t-muted'));
-      return row;
-    }
-    return agentRow();
-  }
-
-  function updateRow(row, line) {
-    if (line.type === 'header') {
-      setText(row.lastChild, String(line.count));
-      return;
-    }
-    if (line.type === 'subagent') {
-      const [, , mark, role, time, , , activity] = row.children;
-      setText(mark, line.mark);
-      setText(role, line.role);
-      setText(time, line.time);
-      setText(activity, line.activity);
-      return;
-    }
-    const [num, sel, mark, name, time, uptime, kind, activity] = row.children;
-    row.classList.toggle('is-selected', line.selected);
-    setText(num, String(line.id));
-    setText(sel, line.selected ? '▸' : ' ');
-    setText(mark, line.mark);
-    setClass(mark, `c-g t-${line.markTone}`);
-    setText(name, line.name);
-    setClass(name, `c-name t-${line.nameTone}`);
-    setText(time, line.time);
-    setClass(time, `c-t1 t-${line.timeTone}`);
-    setText(uptime, line.uptime);
-    setText(kind, line.kind);
-    setClass(kind, `c-kind k-${line.kind}`);
-    setText(activity, line.activity);
-    setClass(activity, `c-act t-${line.activityTone}`);
-  }
-
-  function renderHint(now) {
-    if (overview.notice !== lastNotice) {
-      lastNotice = overview.notice;
-      noticeAt = now;
-    }
-    const notice = overview.notice && now - noticeAt < NOTICE_MS ? overview.notice : null;
-    setText(hint, notice ? notice.text : HINT);
-    setClass(hint, notice ? `tui-hint is-${notice.tone}` : 'tui-hint t-dim');
-  }
-
-  function render(now) {
-    setText(title, windowTitle(overview));
-    setText(sessionCount, String(overview.agents.length));
-    renderStats();
-    renderUsage(now);
-    syncChildren(list, lines(overview, now, frame), (line) => (line.type === 'header' ? `h:${line.label}` : line.type === 'agent' ? `a:${line.id}` : `s:${line.id}:${line.role}`), createRow, updateRow);
-    renderHint(now);
-  }
-
-  function showInput(text) {
-    input.replaceChildren(text ? el('span', '', text) : el('span', 't-faint', 'write a task'));
-    if (text !== null) input.append(el('span', 'caret'));
-  }
-
-  function run(event) {
-    const now = Date.now();
-    const outcome = apply(overview, event, now);
-    if (outcome.bell) ringBell(bell);
-    if (outcome.key) showKey(keycap, outcome.key);
-    render(now);
-    if (outcome.focus !== null) flash(list.querySelector(`[data-key="a:${outcome.focus}"]`));
-  }
-
-  async function intro() {
-    showInput('');
-    await sleep(700);
-    for (let i = 1; i <= INTRO.text.length; i += 1) {
-      showInput(INTRO.text.slice(0, i));
-      if (!REDUCED_MOTION) await sleep(TYPE_MS);
-    }
-    await sleep(450);
-    showInput(null);
-    run(INTRO);
-  }
-
-  async function loop() {
-    for (;;) {
-      await sleep(EVENT_MS);
-      while (!visible || document.hidden) await sleep(500);
-      run(CYCLE[step % CYCLE.length]);
-      step += 1;
-    }
-  }
-
-  tickers.add((now) => {
-    if (!visible) return;
-    refreshUsage(overview, now);
-    render(now);
-  });
-
-  showInput(null);
-  render(Date.now());
-  root.classList.add('is-ready');
-
-  whenVisible(root, (isVisible) => {
-    visible = isVisible;
-    if (visible && !started) {
-      started = true;
-      intro().then(loop);
-    }
-  });
-}
-
 function mountTour(root) {
   root.classList.add('is-live');
   const screen = root.querySelector('[data-tour-tui]');
@@ -875,68 +694,10 @@ function mountFinale(section) {
   });
 }
 
-function detectOs() {
-  const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent;
-  const text = platform.toLowerCase();
-  if (text.includes('win')) return 'windows';
-  if (text.includes('mac') || /iphone|ipad/.test(text)) return 'macos';
-  return 'linux';
-}
-
-function mountTabs(list) {
-  const tabs = [...list.querySelectorAll('[role="tab"]')];
-  const select = (tab, focus) => {
-    for (const item of tabs) {
-      const on = item === tab;
-      item.setAttribute('aria-selected', String(on));
-      item.tabIndex = on ? 0 : -1;
-      document.getElementById(item.getAttribute('aria-controls')).hidden = !on;
-    }
-    if (focus) tab.focus();
-  };
-  tabs.forEach((tab) => tab.addEventListener('click', () => select(tab, false)));
-  list.addEventListener('keydown', (event) => {
-    const index = tabs.indexOf(document.activeElement);
-    if (index < 0) return;
-    const moves = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: tabs.length - 1 };
-    if (!(event.key in moves)) return;
-    event.preventDefault();
-    select(tabs[(moves[event.key] + tabs.length) % tabs.length], true);
-  });
-  select(tabs.find((tab) => tab.dataset.os === detectOs()) || tabs[0], false);
-}
-
-function mountCopy() {
-  const status = document.querySelector('[data-copy-status]');
-  for (const button of document.querySelectorAll('[data-copy]')) {
-    button.addEventListener('click', async () => {
-      const code = button.parentElement.querySelector('code');
-      try {
-        await navigator.clipboard.writeText(code.textContent);
-        setText(button, 'copied');
-        setText(status, 'Command copied to the clipboard.');
-      } catch {
-        const range = document.createRange();
-        range.selectNodeContents(code);
-        getSelection().removeAllRanges();
-        getSelection().addRange(range);
-        setText(button, 'selected');
-        setText(status, 'Command selected. Copy it with ctrl+c.');
-      }
-      button.classList.add('is-done');
-      setTimeout(() => {
-        setText(button, 'copy');
-        button.classList.remove('is-done');
-      }, 1_800);
-    });
-  }
-}
-
 mountReveal();
 mountHeader(document.querySelector('[data-top]'));
 mountHero(document.querySelector('.hero'));
 mountKai(document.querySelector('[data-kai]'));
-mountTui(document.querySelector('[data-tui]'));
 mountMarquee(document.querySelectorAll('[data-marquee]'));
 mountChaos(document.querySelector('[data-chaos]'));
 mountTour(document.querySelector('[data-tour]'));
@@ -944,7 +705,5 @@ mountPlayer(document.querySelector('[data-player]'));
 mountArch(document.querySelector('[data-arch]'));
 mountKeys(document.querySelector('[data-keys]'));
 mountFinale(document.querySelector('[data-finale]'));
-mountTabs(document.querySelector('[data-tabs]'));
-mountCopy();
 startClock();
 startScroll();

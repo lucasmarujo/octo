@@ -38,12 +38,20 @@ sozinho, e fechá-lo nunca para um agente. Baixe na
 
 | Sistema | Download |
 | --- | --- |
-| Windows 10 e 11 x64 | `Octo.exe` |
+| Windows 10 e 11 x64 (instalador) | `Octo-setup.exe` |
+| Windows 10 e 11 x64 (sem instalar) | `Octo.exe` |
 | macOS Apple Silicon | `Octo-macos-apple-silicon.zip` |
 | macOS Intel | `Octo-macos-intel.zip` |
 | Linux x64 (WebKitGTK 4.1) | `Octo-linux-x86_64` |
 
-O orkai CLI descrito abaixo continua funcionando e se atualizando, mas agora é legado: as novidades chegam no Octo.
+O `Octo-setup.exe` instala o Octo para o seu usuário em `%LOCALAPPDATA%\Programs\Octo`, sem pedir administrador,
+com atalho no Menu Iniciar; rodar de novo atualiza o Octo no lugar, mesmo com ele aberto, e Configurações ›
+Aplicativos desinstala. Nenhum dos dois arquivos é assinado ainda (veja a
+[Code signing policy](#code-signing-policy)), então o SmartScreen pode mostrar "O Windows protegeu o
+computador": clique em **Mais informações** › **Executar assim mesmo**.
+
+O orkai CLI descrito abaixo é legado: as releases não o trazem mais, então ele só se instala
+[pelo código-fonte](#instalação) e não se atualiza mais sozinho. As novidades chegam no Octo.
 
 ## O Octo em 60 segundos
 
@@ -119,64 +127,8 @@ https://github.com/user-attachments/assets/b3e62649-f203-4ac6-8e52-9e83a3fa6c3c
 
 ## Instalação
 
-No Windows, rode o instalador pelo PowerShell. No Linux e no macOS, baixe o binário da sua plataforma na
-[release mais nova](https://github.com/lucasmarujo/octo/releases/latest), renomeie para
-`orkai` e coloque numa pasta do `PATH`:
-
-| Plataforma | Arquivo |
-| --- | --- |
-| Windows x64 (instalador) | `orkai-setup.exe` |
-| Linux x64 (estático, qualquer distro) | `orkai-x86_64-unknown-linux-musl` |
-| macOS Apple Silicon | `orkai-aarch64-apple-darwin` |
-| macOS Intel | `orkai-x86_64-apple-darwin` |
-
-**Linux e macOS** (troque `target` pelo arquivo da sua plataforma):
-
-```sh
-target=orkai-x86_64-unknown-linux-musl
-mkdir -p ~/.local/bin
-curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/octo/releases/latest/download/$target"
-chmod +x ~/.local/bin/orkai
-```
-
-Se `~/.local/bin` ainda não estiver no `PATH`, adicione `export PATH="$HOME/.local/bin:$PATH"` ao
-`~/.bashrc` ou ao `~/.zshrc`.
-
-**Windows**, no PowerShell:
-
-```powershell
-$setup = "$env:TEMP\orkai-setup.exe"
-Invoke-WebRequest "https://github.com/lucasmarujo/octo/releases/latest/download/orkai-setup.exe" -OutFile $setup
-Start-Process $setup -Wait
-```
-
-Ele instala o orkai para o seu usuário em `%LOCALAPPDATA%\Programs\orkai`, sem pedir administrador, e oferece
-colocá-lo no `PATH` para o `orkai` funcionar em qualquer terminal. Rodar de novo atualiza o orkai no lugar,
-mesmo com ele aberto, e Configurações › Aplicativos desinstala.
-
-O instalador ainda não é assinado (veja a [Code signing policy](#code-signing-policy)). Baixado pelo
-PowerShell, ele roda sem o aviso do SmartScreen. Se você baixar o
-[`orkai-setup.exe`](https://github.com/lucasmarujo/octo/releases/latest/download/orkai-setup.exe) pelo
-navegador, o SmartScreen pode mostrar "O Windows protegeu o computador": clique em **Mais informações** ›
-**Executar assim mesmo**. Os dois links baixam o instalador da versão mais nova, cujo arquivo nunca muda; depois
-o orkai se atualiza sozinho a cada versão nova ([atualização automática](#atualização-automática)).
-
-Para instalar sem perguntas, passe `/VERYSILENT` ao instalador (`/MERGETASKS=!addtopath` não mexe no
-`PATH`). A release também traz o `orkai-x86_64-pc-windows-msvc`, o binário puro que a
-[atualização automática](#atualização-automática) baixa; renomeie para `orkai.exe` para usar o orkai sem
-instalar.
-
-Abra um terminal novo e digite `orkai` no PowerShell, Bash ou zsh.
-
-> [!IMPORTANT]
-> Para usar um agente de IA, o programa dele precisa estar no `PATH`: `claude`, `codex`, `kilo`, `opencode`,
-> `agy`, `grok`, `qwen` ou `kimi` (ou aponte o caminho em [Configuração](#configuração)).
-
-> [!TIP]
-> Deixe o `orkai` numa pasta em que o seu usuário possa escrever, como as dos exemplos acima: a
-> [atualização automática](#atualização-automática) substitui o próprio executável.
-
-**Do código-fonte**, com Rust 1.88+ (vai para `~/.cargo/bin`):
+O orkai CLI não sai mais nas releases, que trazem só o [Octo](#octo-o-app-desktop). Para usá-lo, gere pelo
+código-fonte com Rust 1.88+ (vai para `~/.cargo/bin`):
 
 ```sh
 git clone https://github.com/lucasmarujo/octo.git
@@ -184,7 +136,11 @@ cd octo
 cargo install --path .
 ```
 
-Builds locais aparecem como `dev` e não se auto-atualizam; `orkai update` converte uma delas em build oficial.
+Builds locais aparecem como `dev` e não se atualizam sozinhas.
+
+> [!IMPORTANT]
+> Para usar um agente de IA, o programa dele precisa estar no `PATH`: `claude`, `codex`, `kilo`, `opencode`,
+> `agy`, `grok`, `qwen` ou `kimi` (ou aponte o caminho em [Configuração](#configuração)).
 
 ## Primeiros passos
 
@@ -607,22 +563,22 @@ Nenhum servidor seu ou do orkai fica no meio.
 ## Atualização automática
 
 Cada push no `main` passa pelos testes nos três sistemas e não publica nada. Quando um push sobe a
-`version` do `Cargo.toml`, o CI também gera o orkai para todas as plataformas e publica a release
-`v<versão>`, cujos arquivos nunca mudam, com o instalador e um `manifest.json` contendo a versão, o commit e o
-SHA-256 de cada binário.
+`version` do `Cargo.toml`, o CI também gera o Octo para todas as plataformas e publica a release
+`v<versão>`, cujos arquivos nunca mudam, com o instalador do Windows e um `manifest.json` contendo a versão, o
+commit e o SHA-256 de cada binário do app.
 
-Toda vez que você abre `orkai`, ele consulta o manifesto da versão mais nova (timeout curto; sem internet,
-abre direto). Se essa versão for mais nova que a sua, ele baixa o binário da sua plataforma, confere
-tamanho e SHA-256, substitui o próprio executável e abre já atualizado. Os agentes em
-execução não são afetados, porque rodam de cópias próprias do binário.
+Toda vez que você abre o Octo, ele consulta em segundo plano o manifesto da versão mais nova. Se essa versão for
+mais nova que a sua, ele baixa o binário da sua plataforma, confere tamanho e SHA-256, substitui o próprio
+executável e oferece reiniciar nele. Os agentes em execução não são afetados, porque rodam de cópias próprias
+do binário.
 
-O orkai se atualiza de uma versão para a próxima, não a cada push: cada versão é o mesmo arquivo em todas as
+O Octo se atualiza de uma versão para a próxima, não a cada push: cada versão é o mesmo arquivo em todas as
 máquinas, então o Windows Defender e o SmartScreen avaliam um binário por versão em vez de um novo, sem
 assinatura, a cada poucas horas.
 
-- `orkai update` atualiza na hora (também converte uma build local em build oficial);
-- `orkai --version` mostra a versão e o commit (`dev` para builds locais, que não se
-  auto-atualizam);
+As releases não trazem mais o orkai CLI, então um orkai já instalado fica na versão que tem, e o
+`orkai update` não tem o que baixar.
+
 - `ORKAI_NO_UPDATE=1` desliga a verificação; `ORKAI_UPDATE_URL` aponta para outro
   servidor de builds.
 
@@ -766,13 +722,12 @@ e os seus perfis do iTerm2 não são alterados. Builds locais (`dev`) não criam
 
 ## Code signing policy
 
-O `orkai.exe` e o `orkai-setup.exe` ainda não são assinados. Até lá, o SmartScreen do Windows pode avisar sobre
-o `orkai-setup.exe` baixado pelo navegador; o comando do PowerShell em [Instalação](#instalação) não recebe o
-aviso.
+O `Octo.exe` e o `Octo-setup.exe` ainda não são assinados. Até lá, o SmartScreen do Windows pode avisar sobre
+eles quando baixados pelo navegador: clique em **Mais informações** › **Executar assim mesmo**.
 
-O [CI](.github/workflows/ci.yml) já está pronto para assinar os dois arquivos pela
-[SignPath](https://about.signpath.io) quando a [SignPath Foundation](https://signpath.org) aceitar o orkai: só
-as builds deste repositório são assinadas, e cada pedido de assinatura é aprovado à mão.
+A assinatura vai passar pela [SignPath](https://about.signpath.io) quando a
+[SignPath Foundation](https://signpath.org) aceitar o projeto: só as builds deste repositório serão assinadas, e
+cada pedido de assinatura será aprovado à mão.
 
 - Committers e revisores: [Lucas Marujo](https://github.com/lucasmarujo)
 - Aprovadores: [Lucas Marujo](https://github.com/lucasmarujo)
@@ -801,7 +756,7 @@ cargo fmt --check
 O CI roda os três em Windows, Linux e macOS a cada push no `main` e em cada pull request. Um push no
 `main` que sobe a `version` do `Cargo.toml` e passa vira a release
 [`v<versão>`](https://github.com/lucasmarujo/octo/releases/latest); os outros pushes não publicam nada.
-O instalador do Windows sai de [`installer/orkai.iss`](installer/orkai.iss) (veja
+O instalador do Windows sai de [`installer/octo.iss`](installer/octo.iss) (veja
 [`installer/README.md`](installer/README.md)).
 
 ## Licença

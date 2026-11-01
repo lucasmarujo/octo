@@ -78,7 +78,7 @@
       "@type": "VideoObject",
       "@id": "https://octo.marujo.dev/#video",
       "name": "Octo in 60 seconds",
-      "description": "The launch film of Octo, the desktop app that grew out of the orkai CLI: spinning up any agent, the live board, the list and grid views, sessions, pairing your phone and how little memory it takes.",
+      "description": "The launch film of Octo, the desktop app: spinning up any agent, the live board, the list and grid views, sessions, pairing your phone and how little memory it takes.",
       "thumbnailUrl": "https://octo.marujo.dev/assets/octo-launch-poster.webp",
       "contentUrl": "https://octo.marujo.dev/assets/octo-launch.mp4",
       "uploadDate": "2026-10-31T22:00:00-03:00",
@@ -380,7 +380,7 @@
     <ul class="stats3" data-reveal>
       <li class="stat"><span class="stat-value">closed it?</span><p>Closing, restarting or updating Octo takes down no agent. When you open it again, it reconnects to all of them.</p></li>
       <li class="stat"><span class="stat-value"><span class="t-red">↻</span> reboot?</span><p>Agents show up as interrupted and <kbd>ctrl</kbd><kbd>r</kbd> relaunches each one in its folder, resuming the conversation.</p></li>
-      <li class="stat"><span class="stat-value">and the history?</span><p>Every agent's full output is recorded, with rotation, and the orkai CLI prints it with <code>orkai logs &lt;id&gt;</code>.</p></li>
+      <li class="stat"><span class="stat-value">and the history?</span><p>Every agent's full output is recorded, with rotation.</p></li>
     </ul>
   </div>
 </section>
@@ -401,16 +401,6 @@
       <li data-key="!"><span class="keys-k"><kbd>!</kbd><kbd>cmd</kbd></span><span>runs the command in a new terminal</span></li>
       <li data-key="/"><span class="keys-k"><kbd>/</kbd></span><span>Octo commands and agent skills</span></li>
     </ul>
-    <div class="cli panel" data-reveal>
-      <div class="cli-head"><span class="kicker-dim">also on the command line, with the orkai CLI</span></div>
-<pre><code><span class="t-pink">orkai ls</span> <span class="t-dim">[-s session]</span>            <span class="t-muted">lists agents with their live state</span>
-<span class="t-pink">orkai new</span> <span class="t-dim">-k &lt;agent&gt; -C &lt;folder&gt;</span> <span class="t-muted">starts an agent with a task</span>
-<span class="t-pink">orkai send</span> <span class="t-dim">&lt;id&gt; &lt;text...&gt;</span>        <span class="t-muted">types into the agent and presses enter</span>
-<span class="t-pink">orkai attach</span> <span class="t-dim">&lt;id&gt;</span>                <span class="t-muted">attaches this terminal to the agent</span>
-<span class="t-pink">orkai logs</span> <span class="t-dim">&lt;id&gt; [-n lines]</span>       <span class="t-muted">the agent's recorded transcript</span>
-<span class="t-pink">orkai recover</span> <span class="t-dim">[-s session]</span>       <span class="t-muted">relaunches interrupted agents</span>
-<span class="t-pink">orkai update</span>                     <span class="t-muted">downloads and installs the newest version</span></code></pre>
-    </div>
   </div>
 </section>
 
@@ -432,11 +422,11 @@
   <div class="wrap">
     <div class="chrome" data-reveal><span class="kicker">download</span><span class="chrome-num">07</span></div>
     <h2 class="h2" id="instalar-title" data-split>download <span class="pink">Octo.</span></h2>
-    <p class="section-lead" data-reveal>One file for your system, with no installer and no admin rights. Octo updates itself to every new version, checked by size and SHA-256, and closing it never stops an agent.</p>
+    <p class="section-lead" data-reveal>One file for your system, with no admin rights. Octo updates itself to every new version, checked by size and SHA-256, and closing it never stops an agent.</p>
     <ul class="get" data-reveal>
       <li class="get-item">
-        <a class="get-link" href="https://github.com/lucasmarujo/octo/releases/latest/download/Octo.exe"><span class="kicker-dim">windows 10 and 11 · x64</span><span class="get-os">Windows</span><code>Octo.exe</code></a>
-        <p>Not code signed yet: if SmartScreen warns, choose <b>More info</b> › <b>Run anyway</b>. Keep it in a folder your user can write to, so it can update itself.</p>
+        <a class="get-link" href="https://github.com/lucasmarujo/octo/releases/latest/download/Octo-setup.exe"><span class="kicker-dim">windows 10 and 11 · x64</span><span class="get-os">Windows</span><code>Octo-setup.exe</code></a>
+        <p>Installs Octo for your user, with a Start menu shortcut; running it again upgrades Octo, even while it's open. Not code signed yet: if SmartScreen warns, choose <b>More info</b> › <b>Run anyway</b>. Rather not install? <a href="https://github.com/lucasmarujo/octo/releases/latest/download/Octo.exe"><code>Octo.exe</code></a> runs from any folder your user can write to.</p>
       </li>
       <li class="get-item">
         <a class="get-link" href="https://github.com/lucasmarujo/octo/releases/latest/download/Octo-macos-apple-silicon.zip"><span class="kicker-dim">macos 11+ · apple silicon</span><span class="get-os">macOS</span><code>Octo-macos-apple-silicon.zip</code></a>
@@ -470,111 +460,9 @@
   </div>
 </section>
 
-<section class="section" id="cli" aria-labelledby="cli-title">
-  <div class="wrap">
-    <div class="chrome" data-reveal><span class="kicker">orkai cli · legacy</span><span class="chrome-num">08</span></div>
-    <h2 class="h2" id="cli-title" data-split>rather stay in the terminal? <span class="pink">the orkai CLI.</span></h2>
-    <p class="section-lead" data-reveal>orkai is the terminal app Octo grew out of. It runs the same agents and keeps updating itself, but it is now legacy: new features land in Octo.</p>
-  </div>
-  <div class="wrap">
-    <figure class="stage" data-reveal>
-      <div class="tui" data-tui aria-hidden="true">
-        <div class="tui-title"><span class="tui-bell" data-bell></span><span data-title>Orkai</span></div>
-        <div class="tui-body">
-          <div class="tui-side">
-            <div class="t-bold">workstation</div>
-            <div class="tui-sess is-on"><span>› default</span><span data-session-count>0</span></div>
-            <div class="tui-sess"><span>&nbsp;&nbsp;session-2</span><span>0</span></div>
-            <div class="tui-sess"><span>&nbsp;&nbsp;session-3</span><span>0</span></div>
-            <div class="t-link">&nbsp;&nbsp;+ new session</div>
-            <div class="tui-side-foot t-dim">f1 help</div>
-          </div>
-          <div class="tui-main">
-            <div class="tui-head">
-              <svg class="mascot tui-mascot waving" viewBox="0 0 14 16" shape-rendering="crispEdges" focusable="false"><g class="m-base"><rect x="2" y="0" width="1" height="1" fill="#9c6636"/><rect x="3" y="0" width="1" height="1" fill="#40c8d2"/><rect x="2" y="1" width="1" height="1" fill="#9c6636"/><rect x="3" y="1" width="2" height="1" fill="#40c8d2"/><rect x="7" y="1" width="3" height="1" fill="#2c3c78"/><rect x="2" y="2" width="1" height="1" fill="#9c6636"/><rect x="3" y="2" width="2" height="1" fill="#40c8d2"/><rect x="6" y="2" width="5" height="1" fill="#2c3c78"/><rect x="2" y="3" width="1" height="1" fill="#9c6636"/><rect x="5" y="3" width="7" height="1" fill="#ececf2"/><rect x="2" y="4" width="1" height="1" fill="#9c6636"/><rect x="6" y="4" width="5" height="1" fill="#f2c08e"/><rect x="2" y="5" width="1" height="1" fill="#9c6636"/><rect x="6" y="5" width="1" height="1" fill="#f2c08e"/><rect x="7" y="5" width="1" height="1" fill="#1c1c22"/><rect x="8" y="5" width="1" height="1" fill="#f2c08e"/><rect x="9" y="5" width="1" height="1" fill="#1c1c22"/><rect x="10" y="5" width="1" height="1" fill="#f2c08e"/><rect x="2" y="6" width="1" height="1" fill="#9c6636"/><rect x="6" y="6" width="5" height="1" fill="#f2c08e"/><rect x="2" y="7" width="1" height="1" fill="#9c6636"/><rect x="6" y="7" width="1" height="1" fill="#f2c08e"/><rect x="7" y="7" width="3" height="1" fill="#aa6a34"/><rect x="10" y="7" width="1" height="1" fill="#f2c08e"/><rect x="2" y="8" width="1" height="1" fill="#9c6636"/><rect x="5" y="8" width="8" height="1" fill="#3856a8"/><rect x="1" y="9" width="1" height="1" fill="#f2c08e"/><rect x="2" y="9" width="1" height="1" fill="#9c6636"/><rect x="3" y="9" width="1" height="1" fill="#f2c08e"/><rect x="4" y="9" width="1" height="1" fill="#3856a8"/><rect x="5" y="9" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="9" width="1" height="1" fill="#3856a8"/><rect x="2" y="10" width="1" height="1" fill="#9c6636"/><rect x="5" y="10" width="8" height="1" fill="#3856a8"/><rect x="2" y="11" width="1" height="1" fill="#9c6636"/><rect x="5" y="11" width="7" height="1" fill="#f2f2f8"/><rect x="12" y="11" width="1" height="1" fill="#f2c08e"/><rect x="2" y="12" width="1" height="1" fill="#9c6636"/><rect x="5" y="12" width="7" height="1" fill="#404060"/><rect x="2" y="13" width="1" height="1" fill="#9c6636"/><rect x="5" y="13" width="3" height="1" fill="#404060"/><rect x="9" y="13" width="3" height="1" fill="#404060"/><rect x="2" y="14" width="1" height="1" fill="#9c6636"/><rect x="5" y="14" width="3" height="1" fill="#404060"/><rect x="9" y="14" width="3" height="1" fill="#404060"/><rect x="2" y="15" width="1" height="1" fill="#9c6636"/><rect x="4" y="15" width="3" height="1" fill="#744626"/><rect x="9" y="15" width="3" height="1" fill="#744626"/></g><g class="m-idle"><rect x="5" y="2" width="1" height="1" fill="#40c8d2"/><rect x="3" y="3" width="1" height="1" fill="#40c8d2"/></g><g class="m-busy"><rect x="4" y="0" width="1" height="1" fill="#40c8d2"/><rect x="5" y="1" width="1" height="1" fill="#40c8d2"/></g></svg>
-              <div class="tui-stats" data-stats></div>
-              <div class="tui-usage" data-usage></div>
-            </div>
-            <div class="tui-list" data-list></div>
-          </div>
-        </div>
-        <div class="tui-foot">
-          <div class="tui-input" data-input><span class="t-faint">write a task</span></div>
-          <div class="tui-status"><span class="t-muted">pc</span> <span class="t-link">workstation</span><span class="gap"></span><span class="t-muted">who</span> <span class="k-claude">claude</span><span class="gap"></span><span class="t-muted">worktree</span> <span class="t-dim">off</span><span class="gap"></span><span class="t-muted hide-sm">where</span> <span class="t-link hide-sm">~/dev/acme/web</span></div>
-          <div class="tui-hint t-dim" data-hint></div>
-        </div>
-        <div class="tui-key" data-key></div>
-      </div>
-      <noscript><img class="stage-fallback" src="/assets/overview.webp" width="1500" height="840" alt="orkai overview: sessions in the sidebar, counters and usage at the top, agents grouped by project."></noscript>
-      <figcaption class="stage-cap"><span class="kicker-dim">live simulation of the orkai CLI</span><span class="hide-sm">agents grouped by project, with status, time and what each one is doing</span></figcaption>
-    </figure>
-  </div>
-  <div class="wrap">
-    <div class="install" data-reveal>
-      <div class="install-main">
-        <div class="tabs" role="tablist" aria-label="Operating system" data-tabs>
-          <button type="button" role="tab" id="tab-linux" aria-controls="pane-linux" aria-selected="true" data-os="linux">linux</button>
-          <button type="button" role="tab" id="tab-macos" aria-controls="pane-macos" aria-selected="false" tabindex="-1" data-os="macos">macos</button>
-          <button type="button" role="tab" id="tab-windows" aria-controls="pane-windows" aria-selected="false" tabindex="-1" data-os="windows">windows</button>
-          <button type="button" role="tab" id="tab-source" aria-controls="pane-source" aria-selected="false" tabindex="-1" data-os="source">source</button>
-        </div>
-        <div class="pane" role="tabpanel" id="pane-linux" aria-labelledby="tab-linux" tabindex="0">
-          <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="linux">target=orkai-x86_64-unknown-linux-musl
-mkdir -p ~/.local/bin
-curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/octo/releases/latest/download/$target"
-chmod +x ~/.local/bin/orkai</code></pre></div>
-          <p class="pane-note">If <code>~/.local/bin</code> isn't on your <code>PATH</code> yet, add <code>export PATH="$HOME/.local/bin:$PATH"</code> to your <code>~/.bashrc</code> or <code>~/.zshrc</code>. The binary is static and runs on any distro.</p>
-        </div>
-        <div class="pane" role="tabpanel" id="pane-macos" aria-labelledby="tab-macos" tabindex="0" hidden>
-          <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="macos">target=orkai-aarch64-apple-darwin
-mkdir -p ~/.local/bin
-curl -fL -o ~/.local/bin/orkai "https://github.com/lucasmarujo/octo/releases/latest/download/$target"
-chmod +x ~/.local/bin/orkai</code></pre></div>
-          <p class="pane-note">Intel Mac: change the <code>target</code> to <code>orkai-x86_64-apple-darwin</code>. If <code>~/.local/bin</code> isn't on your <code>PATH</code> yet, add <code>export PATH="$HOME/.local/bin:$PATH"</code> to your <code>~/.zshrc</code>.</p>
-        </div>
-        <div class="pane" role="tabpanel" id="pane-windows" aria-labelledby="tab-windows" tabindex="0" hidden>
-          <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="windows">$setup = "$env:TEMP\orkai-setup.exe"
-Invoke-WebRequest "https://github.com/lucasmarujo/octo/releases/latest/download/orkai-setup.exe" -OutFile $setup
-Start-Process $setup -Wait</code></pre></div>
-          <p class="pane-note">Run it in PowerShell: it installs orkai for your user, without admin rights and without a SmartScreen prompt, and offers to add it to your <code>PATH</code>. The installer isn't code signed yet, so an <code>orkai-setup.exe</code> downloaded with a browser may get the prompt: <b>More info</b> › <b>Run anyway</b>. Then open a new terminal and type <code>orkai</code> in PowerShell, Bash or zsh.</p>
-        </div>
-        <div class="pane" role="tabpanel" id="pane-source" aria-labelledby="tab-source" tabindex="0" hidden>
-          <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="source">git clone https://github.com/lucasmarujo/octo.git
-cd octo
-cargo install --path .</code></pre></div>
-          <p class="pane-note">With Rust 1.88+, it lands in <code>~/.cargo/bin</code>. Local builds show up as <code>dev</code> and don't self-update; <code>orkai update</code> turns one into an official build.</p>
-        </div>
-        <p class="sr-only" role="status" data-copy-status></p>
-        <div class="callout">
-          <span class="kicker-dim">important</span>
-          <p>To use an AI agent, its CLI must be on your <code>PATH</code>: <code>claude</code>, <code>codex</code>, <code>kilo</code>, <code>opencode</code>, <code>agy</code>, <code>grok</code>, <code>qwen</code> or <code>kimi</code>. Keep <code>orkai</code> in a folder your user can write to: auto-update replaces the executable itself.</p>
-        </div>
-      </div>
-      <aside class="install-side">
-        <h3 class="kicker-dim">direct downloads of the CLI</h3>
-        <ul class="downloads">
-          <li><a href="https://github.com/lucasmarujo/octo/releases/latest/download/orkai-setup.exe"><span>Windows x64 installer</span><code>orkai-setup.exe</code></a></li>
-          <li><a href="https://github.com/lucasmarujo/octo/releases/latest/download/orkai-x86_64-unknown-linux-musl"><span>Linux x64</span><code>orkai-x86_64-unknown-linux-musl</code></a></li>
-          <li><a href="https://github.com/lucasmarujo/octo/releases/latest/download/orkai-aarch64-apple-darwin"><span>macOS Apple Silicon</span><code>orkai-aarch64-apple-darwin</code></a></li>
-          <li><a href="https://github.com/lucasmarujo/octo/releases/latest/download/orkai-x86_64-apple-darwin"><span>macOS Intel</span><code>orkai-x86_64-apple-darwin</code></a></li>
-        </ul>
-        <p class="side-note">On Windows, run the installer. On Linux and macOS, rename the file to <code>orkai</code> and put it in a folder on your <code>PATH</code>.</p>
-        <h3 class="kicker-dim steps-title">getting started</h3>
-        <ol class="steps">
-          <li>Open the CLI in any terminal: <code>orkai</code>.</li>
-          <li>Pick the project folder with <kbd>ctrl</kbd><kbd>l</kbd>.</li>
-          <li>Pick who runs it with <kbd>tab</kbd>.</li>
-          <li>Type the task and press <kbd>enter</kbd>: the agent spawns already working on it.</li>
-          <li><kbd>enter</kbd> opens the agent in a tab; <kbd>ctrl</kbd><kbd>]</kbd> goes back to the overview.</li>
-        </ol>
-      </aside>
-    </div>
-  </div>
-</section>
-
 <section class="section" id="video" aria-labelledby="video-title">
   <div class="wrap">
-    <div class="chrome" data-reveal><span class="kicker">in 60 seconds</span><span class="chrome-num">09</span></div>
+    <div class="chrome" data-reveal><span class="kicker">in 60 seconds</span><span class="chrome-num">08</span></div>
     <h2 class="h2" id="video-title" data-split>Octo <span class="pink">at work.</span></h2>
     <div class="player" data-player data-zoom>
       <video src="/assets/octo-launch.mp4" poster="/assets/octo-launch-poster.webp" preload="none" playsinline width="1920" height="1080" data-video aria-label="60-second video showing Octo: spinning up agents, the live board, the list and grid views, sessions, the phone app and its memory footprint."></video>
@@ -618,7 +506,6 @@ cargo install --path .</code></pre></div>
         <a href="#recursos">features</a>
         <a href="#agentes">agents</a>
         <a href="#instalar">download</a>
-        <a href="#cli">orkai CLI</a>
       </div>
       <div>
         <h2 class="kicker-dim">project</h2>
