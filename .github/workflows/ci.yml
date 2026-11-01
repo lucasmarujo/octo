@@ -189,8 +189,6 @@ jobs:
             printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
             security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
             rm "$RUNNER_TEMP/developer-id.p12"
-            curl -fsSL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
-            security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$keychain"
             security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
             security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
             identity=$(security find-identity -v -p codesigning "$keychain" | awk '/Developer ID Application/ { print $2; exit }')
@@ -300,5 +298,5 @@ jobs:
             --title "Octo $TAG" \
             --notes "Octo $TAG, by OctoAI, built from $GITHUB_SHA. Its files never change, so the releases/latest/download links always get the same files, and older versions update themselves to it.
 
-          Download Octo: Octo-setup.exe on Windows (Octo.exe runs without installing), Octo-macos-apple-silicon.zip or Octo-macos-intel.zip on macOS (the first time, right-click Octo.app and choose Open, since it is not notarized) and Octo-linux-x86_64 on Linux, which needs WebKitGTK 4.1. Octo updates itself to every new version, and closing it never stops an agent; the Octo-macos-*-update files are what it downloads to do so on a Mac. Code signing policy: https://github.com/lucasmarujo/octo#code-signing-policy" \
+          Download Octo: Octo-setup.exe on Windows (Octo.exe runs without installing), Octo-macos-apple-silicon.zip or Octo-macos-intel.zip on macOS (signed and notarized by Apple: unzip it and drag Octo to Applications) and Octo-linux-x86_64 on Linux, which needs WebKitGTK 4.1. Octo updates itself to every new version, and closing it never stops an agent; the Octo-macos-*-update files are what it downloads to do so on a Mac. Code signing policy: https://github.com/lucasmarujo/octo#code-signing-policy" \
             --latest
