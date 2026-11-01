@@ -329,6 +329,21 @@ test('the grid shows as many agents per screen as the user picks, each with as m
   assert.doesNotMatch(css, /\.tile-foot/, 'a tile is the terminal with a single line on top');
 });
 
+test('grid tiles sit edge to edge and only the title bar carries the status color', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const grid = readFileSync(join(REPO, 'desktop/ui/js/grid.js'), 'utf8');
+  assert.match(css, /\.grid \{[^}]*--grid-gap: 1px;/, 'a hairline between tiles instead of a margin');
+  assert.doesNotMatch(css.match(/\n\.tile \{[^}]*\}/)[0], /border-radius|border:/, 'a tile is no longer a framed card');
+  assert.match(css, /\.tile \{ --tile-tone: var\(--color-text-muted\);/, 'idle and stopped agents stay gray');
+  assert.match(css, /\.tile\[data-column="working"\], \.tile\[data-column="needs"\] \{ --tile-tone: var\(--color-waiting\); \}/);
+  assert.match(css, /\.tile\[data-column="done"\] \{ --tile-tone: var\(--color-done\); \}/);
+  assert.match(css, /\.tile-head \{[^}]*background: color-mix\(in srgb, var\(--tile-tone\)/);
+  assert.match(css, /\.tile-name \{[^}]*color: var\(--tile-tone\)/);
+  assert.match(css, /\.tile\.live \{[^}]*outline: 1px solid var\(--color-accent\); outline-offset: -1px;/, 'the live ring stays visible on the edge of the grid');
+  assert.match(grid, /dataset: \{ agent: String\(agent\.id\), column: column\(agent\) \}/);
+  assert.match(grid, /function tileSignature[\s\S]*?agent\.state, agent\.starting/, 'a new status rebuilds the tile with its color');
+});
+
 test('arguments typed in the settings become the list the config keeps', async () => {
   const { joinArgs, splitArgs } = await import('../js/format.js');
   assert.deepEqual(splitArgs('--model opus'), ['--model', 'opus']);

@@ -1,6 +1,6 @@
 import { $, h, keep, place, svg } from './dom.js';
 import { tools } from './board.js';
-import { activity, alive, elapsed, glyph, gridShape, kindColor, label, nameTone, previewRows } from './format.js';
+import { activity, alive, column, elapsed, glyph, gridShape, kindColor, label, previewRows } from './format.js';
 import { t } from './i18n.js';
 import { ICON_EXPAND, ICON_PLUS } from './icons.js';
 import { now, state, visible } from './state.js';
@@ -46,19 +46,18 @@ function openInTab(agent, handlers) {
 function tile(agent, handlers) {
   const mark = glyph(agent, state.frame);
   const time = elapsed(agent, now());
-  const waiting = agent.state === 'paused' && !agent.starting;
-  const classes = ['tile', waiting ? 'waiting' : '', agent.state === 'lost' ? 'lost' : ''].filter(Boolean).join(' ');
+  const classes = agent.state === 'lost' ? 'tile lost' : 'tile';
   const toolbar = tools(agent);
   toolbar.prepend(openInTab(agent, handlers));
   return h(
     'article',
-    { class: classes, tabindex: '0', title: `${agent.name} · ${agent.project}`, dataset: { agent: String(agent.id) }, onclick: () => activate(agent, handlers) },
+    { class: classes, tabindex: '0', title: `${agent.name} · ${agent.project}`, dataset: { agent: String(agent.id), column: column(agent) }, onclick: () => activate(agent, handlers) },
     toolbar,
     h(
       'div',
       { class: 'tile-head' },
       h('span', { class: `glyph ${mark.tone}`, dataset: mark.spin ? { spin: '1' } : {} }, mark.text),
-      h('span', { class: `tile-name ${waiting ? 't-yellow' : nameTone(agent)}` }, agent.name),
+      h('span', { class: 'tile-name' }, agent.name),
       h('span', { class: 'tile-kind', style: `color:${kindColor(agent.kind)}` }, label(agent.kind)),
       h('span', { class: `tile-time ${time ? time.tone : ''}` }, time ? time.text : ''),
     ),
