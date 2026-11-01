@@ -1,4 +1,39 @@
-# Instalador do Windows
+# Instaladores do Windows
+
+## Octo
+
+`octo.iss` gera o `Octo-setup.exe` com o Inno Setup 6, o mesmo que vem nos runners Windows do GitHub. Ele
+instala o Octo só para o usuário, em `%LOCALAPPDATA%\Programs\Octo`, sem pedir administrador, com atalho no Menu
+Iniciar (e na área de trabalho, se marcado) e entrada em Aplicativos instalados. A pasta continua gravável para a
+atualização automática do Octo.
+
+Rodar o instalador com o Octo aberto não fecha nada: o `Octo.exe` em uso é renomeado para
+`Octo.exe.old-setup-*` antes da cópia, e o próprio Octo apaga esse arquivo na próxima abertura (o mesmo prefixo
+`Octo.exe.old-` da atualização automática). Se a instalação falhar ou for cancelada, o binário antigo volta para
+o lugar. A versão do instalador vem do `ProductVersion` do `Octo.exe`, que o `tauri-build` grava a partir do
+`desktop/Cargo.toml`.
+
+### Build local
+
+```powershell
+cargo build --release -p orkai-desktop
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\octo.iss
+```
+
+O instalador sai em `target\installer\Octo-setup.exe`. `/DBinary=<caminho>` troca o `Octo.exe` empacotado.
+
+### Testes
+
+```sh
+cargo test -p orkai-desktop --test installer_e2e -- --ignored
+```
+
+Esses testes instalam, atualizam com o Octo rodando e desinstalam de verdade para o usuário atual (registro do
+Windows e Menu Iniciar), por isso ficam fora do `cargo test` e tiram do lugar um Octo instalado pelo setup na
+mesma máquina; o CI roda no runner Windows, que é descartável. `ORKAI_ISCC` aponta para outro `ISCC.exe`. Sem
+`--ignored`, o `cargo test` só confere o nome e a versão gravados no `Octo.exe`.
+
+## orkai (legado)
 
 `orkai.iss` gera o `orkai-setup.exe` com o Inno Setup 6, o mesmo que vem nos runners Windows do GitHub. Ele
 instala o orkai só para o usuário, em `%LOCALAPPDATA%\Programs\orkai`, sem pedir administrador, e a pasta
@@ -11,7 +46,7 @@ prefixo `orkai.exe.old-` da atualização automática). Se a instalação falhar
 antigo volta para o lugar. A versão do instalador vem do `ProductVersion` do binário, que o `build.rs` grava a
 partir do `Cargo.toml`.
 
-## Build local
+### Build local
 
 ```powershell
 cargo build --release
@@ -20,7 +55,7 @@ cargo build --release
 
 O instalador sai em `target\installer\orkai-setup.exe`. `/DBinary=<caminho>` troca o `orkai.exe` empacotado.
 
-## Testes
+### Testes
 
 ```sh
 cargo test --test installer_e2e -- --ignored
@@ -31,7 +66,7 @@ Windows e `PATH`), por isso ficam fora do `cargo test`; o CI roda no runner Wind
 `ORKAI_ISCC` aponta para outro `ISCC.exe`. Sem `--ignored`, o `cargo test` só confere a versão gravada no
 `orkai.exe`.
 
-## winget
+### winget
 
 O CI só publica quando a versão sobe. Em cada push no `main`, o job `version` lê a `version` do `Cargo.toml` e
 procura a release `v<versão>`: se ela já existe, o push só roda os testes; se não existe, os jobs `build` e
@@ -66,7 +101,7 @@ wingetcreate update LucasMarujo.orkai --version <versão> --submit `
   --urls https://github.com/lucasmarujo/octo/releases/download/v<versão>/orkai-setup.exe
 ```
 
-## Assinatura (SignPath Foundation)
+### Assinatura (SignPath Foundation)
 
 Com a variável `SIGNPATH_ORGANIZATION_ID` definida no repositório, o job `build` do Windows manda dois pedidos
 à SignPath: primeiro o `orkai.exe` (que vai dentro do instalador e é o binário da atualização automática),
