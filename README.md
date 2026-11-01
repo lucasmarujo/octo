@@ -47,7 +47,8 @@ never stops an agent. Download it from the
 `Octo-setup.exe` installs Octo for your user in `%LOCALAPPDATA%\Programs\Octo`, without admin rights, with a
 Start menu shortcut; running it again upgrades Octo in place, even while it's open, and Settings › Apps
 uninstalls it. Neither file is code signed yet (see [Code signing policy](#code-signing-policy)), so SmartScreen
-may show "Windows protected your PC": click **More info** › **Run anyway**.
+may show "Windows protected your PC": click **More info** › **Run anyway**. On macOS, unzip the file and drag
+Octo to Applications: it's signed with a Developer ID and notarized by Apple, so it opens like any other app.
 
 The orkai CLI described below is legacy: the releases no longer carry it, so it only installs
 [from source](#installation) and no longer updates itself. New features land in Octo.
@@ -728,6 +729,11 @@ by hand.
 
 - Committers and reviewers: [Lucas Marujo](https://github.com/lucasmarujo)
 - Approvers: [Lucas Marujo](https://github.com/lucasmarujo)
+
+`Octo.app`, in `Octo-macos-apple-silicon.zip` and `Octo-macos-intel.zip`, is signed with a Developer ID
+Application certificate (team `8VRVBA2X7C`), with the hardened runtime, and notarized by Apple, with the ticket
+stapled to the app. Only CI signs it, from builds of this repository; `codesign -dv /Applications/Octo.app`
+shows the team.
 
 **Privacy.** orkai has no telemetry and sends nothing about you or your projects. It only uses the network
 for:

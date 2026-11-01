@@ -338,6 +338,19 @@ test('a página e os dois READMEs mostram a code signing policy, que diz que o W
   assert.match(footer, /<a href="https:\/\/github\.com\/lucasmarujo\/octo#code-signing-policy">code signing policy<\/a>/);
 });
 
+test('o Octo para macOS sai assinado e notarizado, e nada manda abrir com o botão direito', () => {
+  const notarized = { 'README.md': 'notarized by Apple, with the ticket\nstapled to the app', 'README.pt-BR.md': 'notarizado pela Apple, com o ticket\ngrampeado no app' };
+  for (const [name, source] of [['README.md', readme], ['README.pt-BR.md', readmePtBr]]) {
+    const policy = source.split('## Code signing policy')[1];
+    assert.ok(policy.includes(notarized[name]), `${name}: a seção diz que o app do Mac é notarizado`);
+  }
+  const workflow = readFileSync(join(REPO, '.github', 'workflows', 'ci.yml'), 'utf8');
+  for (const [name, source] of [['README.md', readme], ['README.pt-BR.md', readmePtBr], ['index.html', html], ['ci.yml', workflow]]) {
+    assert.doesNotMatch(source, /not notarized|right-click|botão direito|não é notarizado/i, `${name} ainda manda contornar o Gatekeeper`);
+  }
+  assert.match(html, /Signed and notarized by Apple/);
+});
+
 test('o README é em inglês e aponta para o README.pt-BR.md, que aponta de volta', () => {
   assert.match(readme, /<b>English<\/b> · <a href="README\.pt-BR\.md">Português \(Brasil\)<\/a>/);
   assert.match(readmePtBr, /<a href="README\.md">English<\/a> · <b>Português \(Brasil\)<\/b>/);

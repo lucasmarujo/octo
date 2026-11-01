@@ -48,7 +48,9 @@ O `Octo-setup.exe` instala o Octo para o seu usuário em `%LOCALAPPDATA%\Program
 com atalho no Menu Iniciar; rodar de novo atualiza o Octo no lugar, mesmo com ele aberto, e Configurações ›
 Aplicativos desinstala. Nenhum dos dois arquivos é assinado ainda (veja a
 [Code signing policy](#code-signing-policy)), então o SmartScreen pode mostrar "O Windows protegeu o
-computador": clique em **Mais informações** › **Executar assim mesmo**.
+computador": clique em **Mais informações** › **Executar assim mesmo**. No macOS, descompacte o arquivo e
+arraste o Octo para Aplicativos: ele é assinado com um Developer ID e notarizado pela Apple, então abre como
+qualquer outro app.
 
 O orkai CLI descrito abaixo é legado: as releases não o trazem mais, então ele só se instala
 [pelo código-fonte](#instalação) e não se atualiza mais sozinho. As novidades chegam no Octo.
@@ -731,6 +733,11 @@ cada pedido de assinatura será aprovado à mão.
 
 - Committers e revisores: [Lucas Marujo](https://github.com/lucasmarujo)
 - Aprovadores: [Lucas Marujo](https://github.com/lucasmarujo)
+
+O `Octo.app`, no `Octo-macos-apple-silicon.zip` e no `Octo-macos-intel.zip`, é assinado com um certificado
+Developer ID Application (time `8VRVBA2X7C`), com o hardened runtime, e notarizado pela Apple, com o ticket
+grampeado no app. Só o CI assina, a partir de builds deste repositório; `codesign -dv /Applications/Octo.app`
+mostra o time.
 
 **Privacidade.** O orkai não tem telemetria e não envia nada sobre você ou seus projetos. Ele só usa a rede
 para:
