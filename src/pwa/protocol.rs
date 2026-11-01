@@ -285,6 +285,18 @@ pub struct Details {
     pub changes: Option<Vec<FileView>>,
     pub overlaps: Vec<OverlapView>,
     pub test: Option<TestView>,
+    #[serde(default)]
+    pub commits: Option<Vec<CommitView>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitView {
+    pub hash: String,
+    pub subject: String,
+    pub author: String,
+    pub at: u64,
+    pub on_branch: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

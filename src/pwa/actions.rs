@@ -13,8 +13,8 @@ use crate::project;
 use crate::protocol::ClientMsg;
 use crate::pwa::hub::{Event, Hub};
 use crate::pwa::protocol::{
-    BridgeMsg, Details, Dir, FileView, OverlapView, PhoneMsg, Preview, Run, SkillView, StartRequest, SubagentView,
-    TestView, Tone,
+    BridgeMsg, CommitView, Details, Dir, FileView, OverlapView, PhoneMsg, Preview, Run, SkillView, StartRequest,
+    SubagentView, TestView, Tone,
 };
 use crate::pwa::screen;
 use crate::skills;
@@ -536,10 +536,12 @@ fn describe(hub: &Hub, record: &AgentRecord) -> Details {
         ..Details::default()
     };
     let Some(mine) = record.worktree.as_ref() else {
-        details.changes =
-            worktree::folder(&record.cwd).and_then(|folder| worktree::pending(&folder)).ok().map(file_views);
+        let folder = worktree::folder(&record.cwd).ok();
+        details.changes = folder.as_ref().and_then(|folder| worktree::pending(folder).ok()).map(file_views);
+        details.commits = folder.and_then(|folder| worktree::log(&folder.repo, None).ok()).map(commit_views);
         return details;
     };
+    details.commits = worktree::log(&mine.path, Some(&mine.base)).ok().map(commit_views);
     let Ok(files) = worktree::files(mine) else { return details };
     let changes = worktree::Changes {
         files: files.len(),
@@ -563,6 +565,19 @@ fn file_views(files: Vec<worktree::FileChange>) -> Vec<FileView> {
     files
         .into_iter()
         .map(|file| FileView { path: file.path, insertions: file.insertions, deletions: file.deletions })
+        .collect()
+}
+
+fn commit_views(commits: Vec<worktree::Commit>) -> Vec<CommitView> {
+    commits
+        .into_iter()
+        .map(|commit| CommitView {
+            hash: commit.hash,
+            subject: commit.subject,
+            author: commit.author,
+            at: commit.at_ms,
+            on_branch: commit.on_branch,
+        })
         .collect()
 }
 

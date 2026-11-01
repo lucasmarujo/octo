@@ -85,6 +85,8 @@ export const PT = {
   file: 'arquivo',
   files: 'arquivos',
   'No changes on the branch yet.': 'Nenhuma mudança na branch ainda.',
+  Commits: 'Commits',
+  '{count} on this branch': '{count} nesta branch',
   'Nothing pending in the folder.': 'Nada pendente na pasta.',
   'Everything pending in the folder, not only what this agent changed.': 'Tudo o que está pendente na pasta, não só o que este agente mudou.',
   'Reading the changes…': 'Lendo as mudanças…',

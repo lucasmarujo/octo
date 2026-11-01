@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -15,6 +15,10 @@ pub const MAX_UNTRACKED_FILES: usize = 200;
 pub const MAX_COUNTED_BYTES: u64 = 1024 * 1024;
 pub const MAX_DIFF_BYTES: usize = 4 * 1024 * 1024;
 pub const CHANGES_EVERY_MS: u64 = 10_000;
+pub const MAX_LOG_COMMITS: usize = 20;
+const LOG_FORMAT: &str = "--format=%H%x1f%h%x1f%an%x1f%ct%x1f%s";
+const LOG_FIELD: char = '\u{1f}';
+const MS_PER_SECOND: u64 = 1000;
 const BRANCH_SLUG_MAX: usize = 40;
 const MAX_BRANCH_ATTEMPTS: usize = 100;
 const DEFAULT_SLUG: &str = "agent";
@@ -66,6 +70,15 @@ pub struct Folder {
 pub struct Committed {
     pub branch: String,
     pub tip: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Commit {
+    pub hash: String,
+    pub author: String,
+    pub at_ms: u64,
+    pub subject: String,
+    pub on_branch: bool,
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {
@@ -328,6 +341,31 @@ pub fn folder(dir: &Path) -> io::Result<Folder> {
     Ok(Folder { repo, branch })
 }
 
+pub fn log(dir: &Path, base: Option<&str>) -> io::Result<Vec<Commit>> {
+    let limit = format!("--max-count={MAX_LOG_COMMITS}");
+    let listed = run(dir, &["log", &limit, "-z", LOG_FORMAT, HEAD, "--"])?;
+    let on_branch: HashSet<String> = match base {
+        Some(base) => {
+            run(dir, &["rev-list", &limit, &format!("{base}..{HEAD}"), "--"])?.lines().map(str::to_string).collect()
+        }
+        None => HashSet::new(),
+    };
+    Ok(listed.split('\0').filter_map(|record| parse_commit(record, &on_branch)).collect())
+}
+
+fn parse_commit(record: &str, on_branch: &HashSet<String>) -> Option<Commit> {
+    let mut fields = record.trim_start_matches('\n').splitn(5, LOG_FIELD);
+    let (full, hash, author, at, subject) =
+        (fields.next()?, fields.next()?, fields.next()?, fields.next()?, fields.next()?);
+    Some(Commit {
+        hash: hash.to_string(),
+        author: author.to_string(),
+        at_ms: at.parse::<u64>().ok()?.saturating_mul(MS_PER_SECOND),
+        subject: subject.to_string(),
+        on_branch: on_branch.contains(full),
+    })
+}
+
 pub fn commit(folder: &Folder, message: &str) -> io::Result<Option<Committed>> {
     let branch = current_branch(&folder.repo)?;
     if run(&folder.repo, &["status", "--porcelain"])?.is_empty() {
@@ -501,6 +539,43 @@ mod tests {
         let (_, deep) = create(&r.home, 9, "Deep", &nested).unwrap();
         assert_eq!(deep, r.home.worktree_dir(9).join("app").join("deep"));
         assert_eq!(changes(&worktree).unwrap(), Changes::default());
+    }
+
+    fn subjects(commits: &[Commit]) -> Vec<&str> {
+        commits.iter().map(|commit| commit.subject.as_str()).collect()
+    }
+
+    #[test]
+    fn the_log_lists_the_latest_commits_like_git_log_and_marks_the_ones_on_the_agent_branch() {
+        let r = repo();
+        git_in(&r.repo, &["commit", "-q", "--allow-empty", "-m", "second on main: tabs | panes"]);
+        let (worktree, _) = create(&r.home, 3, "Feature", &r.repo).unwrap();
+        git_in(&worktree.path, &["commit", "-q", "--allow-empty", "-m", "feature work"]);
+        git_in(&r.repo, &["commit", "-q", "--allow-empty", "-m", "main moved on"]);
+
+        let commits = log(&worktree.path, Some(&worktree.base)).unwrap();
+        assert_eq!(subjects(&commits), ["feature work", "second on main: tabs | panes", "init"]);
+        assert_eq!(commits.iter().map(|commit| commit.on_branch).collect::<Vec<_>>(), [true, false, false]);
+        assert_eq!(commits[0].hash, git_in(&worktree.path, &["rev-parse", "--short", "HEAD"]));
+        assert_eq!(commits[0].author, "orkai");
+        let committed_at = git_in(&worktree.path, &["log", "-1", "--format=%ct"]).parse::<u64>().unwrap() * 1000;
+        assert_eq!(commits[0].at_ms, committed_at);
+
+        let main = log(&folder(&r.repo.join("app")).unwrap().repo, None).unwrap();
+        assert_eq!(subjects(&main), ["main moved on", "second on main: tabs | panes", "init"]);
+        assert!(main.iter().all(|commit| !commit.on_branch), "an agent outside a worktree has no branch of its own");
+
+        for index in 0..MAX_LOG_COMMITS {
+            git_in(&r.repo, &["commit", "-q", "--allow-empty", "-m", &format!("more {index}")]);
+        }
+        let latest = log(&r.repo, None).unwrap();
+        assert_eq!(latest.len(), MAX_LOG_COMMITS, "only the latest commits are read");
+        assert_eq!(latest[0].subject, format!("more {}", MAX_LOG_COMMITS - 1));
+
+        let empty = r.dir.join("empty-log");
+        fs::create_dir_all(&empty).unwrap();
+        git_in(&empty, &["init", "-q"]);
+        assert!(log(&empty, None).is_err(), "a repository without commits has no log");
     }
 
     #[test]

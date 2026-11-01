@@ -633,6 +633,20 @@ test('an agent outside a worktree shows what is pending in its folder and commit
   assert.match(source, /disabled: busy, onclick: \(\) => merge\(agent\) \}, t\('Merge'\)/, 'an agent in a worktree still merges its branch');
 });
 
+test('the agent panel lists the latest commits under its changes, like git log, marking the ones of its branch', () => {
+  const source = readFileSync(join(REPO, 'desktop/ui/js/agent.js'), 'utf8');
+  assert.match(source, /parts\.push\(changesSection\(agent, info\)\);\n\s*if \(info && info\.commits\) parts\.push\(commitsSection\(agent, info\.commits\)\);/, 'right under the changes, for a worktree or a plain folder');
+  const section = source.slice(source.indexOf('function commitsSection'), source.indexOf('\n}\n', source.indexOf('function commitsSection')));
+  assert.match(section, /commits\.map\(\(commit\) =>/, 'in the order the core reads them, newest first');
+  assert.match(section, /class: commit\.onBranch \? 'commit on-branch' : 'commit'/);
+  assert.match(section, /agent\.branch && own \? t\('\{count\} on this branch', \{ count: own \}\) : null/);
+  assert.match(section, /t\('\{time\} ago', \{ time: duration\(now\(\) - commit\.at\) \}\)/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.commit\.on-branch \.commit-hash \{ color: var\(--color-accent\); \}/);
+  assert.match(css, /\.commit-subject \{[^}]*text-overflow: ellipsis;/);
+  assert.match(rust('src/worktree.rs'), /pub const MAX_LOG_COMMITS: usize = \d+;/, 'the core reads a bounded log');
+});
+
 test('a Mac keeps its own traffic lights and Octo draws window controls only where the system draws none', () => {
   const TRAFFIC_LIGHTS_WIDTH = 60;
   const LIGHT_CENTER_BELOW_Y = { tahoe: -2.5, beforeTahoe: 1.5 };

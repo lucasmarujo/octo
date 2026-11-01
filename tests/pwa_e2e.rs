@@ -631,6 +631,7 @@ fn the_details_of_an_agent_and_its_restart_come_from_the_core() {
     assert_eq!(details.agent, id);
     assert!(details.subagents.is_empty() && details.overlaps.is_empty());
     assert_eq!(details.changes, None, "a terminal outside a git repository has no changes to show");
+    assert_eq!(details.commits, None, "nor commits");
     phone.send(&PhoneMsg::CrossReview { agent: id, reviewer: String::new() });
     let refused = phone.until(|message| match message {
         BridgeMsg::Notice { text, tone: Tone::Error } => Some(text),
@@ -711,7 +712,13 @@ fn an_agent_outside_a_worktree_shows_diffs_and_commits_what_is_pending_in_its_fo
     let id = add_agent(&fx.store, "folder", repo.clone());
     let mut phone = Phone::pair(fx.port, &fx.secret);
     phone.overview_where(|overview| agent(overview, id).is_some());
-    assert_eq!(details_of(&mut phone, id).changes, Some(Vec::new()), "a clean folder has nothing pending");
+    let clean = details_of(&mut phone, id);
+    assert_eq!(clean.changes, Some(Vec::new()), "a clean folder has nothing pending");
+    let commits = clean.commits.expect("a folder inside git shows its commits");
+    assert_eq!(commits.iter().map(|commit| commit.subject.as_str()).collect::<Vec<_>>(), ["start"]);
+    assert_eq!(commits[0].hash, git_output(&repo, &["rev-parse", "--short", "HEAD"]));
+    assert_eq!(commits[0].author, "orkai test");
+    assert!(!commits[0].on_branch);
 
     std::fs::write(repo.join("cart.js"), "one\ntwo\n").unwrap();
     std::fs::write(repo.join("tax.js"), "tax\n").unwrap();
@@ -738,7 +745,10 @@ fn an_agent_outside_a_worktree_shows_diffs_and_commits_what_is_pending_in_its_fo
     assert_eq!(done, format!("committed to {branch} as {tip}"));
     assert_eq!(git_output(&repo, &["log", "-1", "--format=%s"]), "folder");
     assert!(git_output(&repo, &["status", "--porcelain"]).is_empty());
-    assert_eq!(details_of(&mut phone, id).changes, Some(Vec::new()));
+    let committed = details_of(&mut phone, id);
+    assert_eq!(committed.changes, Some(Vec::new()));
+    let latest: Vec<String> = committed.commits.unwrap().into_iter().map(|commit| commit.subject).collect();
+    assert_eq!(latest, ["folder", "start"], "the commit Octo made shows up first, like in git log");
 
     phone.send(&PhoneMsg::Merge { agent: id });
     let nothing = phone.until(|message| match message {

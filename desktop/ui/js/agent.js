@@ -197,6 +197,23 @@ function changesSection(agent, info) {
   );
 }
 
+function commitsSection(agent, commits) {
+  const own = commits.filter((commit) => commit.onBranch).length;
+  return section(
+    t('Commits'),
+    agent.branch && own ? t('{count} on this branch', { count: own }) : null,
+    h('div', { class: 'commits' }, ...commits.map((commit) =>
+      h(
+        'div',
+        { class: commit.onBranch ? 'commit on-branch' : 'commit', title: `${commit.hash} · ${commit.author}\n${commit.subject}` },
+        h('span', { class: 'commit-hash' }, commit.hash),
+        h('span', { class: 'commit-subject' }, commit.subject),
+        h('span', { class: 'commit-time' }, t('{time} ago', { time: duration(now() - commit.at) })),
+      ),
+    )),
+  );
+}
+
 export function testLine(test, at) {
   const ago = test.finishedAt ? ` · ${t('{time} ago', { time: duration(at - test.finishedAt) })}` : '';
   if (test.state === 'running') return { mark: SPINNER[0], tone: 't-yellow', text: t('Running after the last turn…') };
@@ -226,6 +243,7 @@ function testSection(agent, test) {
 function details(agent, info) {
   const parts = [subagentsSection(info ? info.subagents : [])];
   if (agent.branch || (info && info.changes)) parts.push(changesSection(agent, info));
+  if (info && info.commits) parts.push(commitsSection(agent, info.commits));
   if (info && info.test) parts.push(testSection(agent, info.test));
   return parts;
 }
