@@ -84,10 +84,10 @@ function readmeTable(heading) {
   return lines.slice(first + 2, end).map((line) => line.split('|').slice(1, -1).map((cell) => cell.trim().replace(/`/g, '')));
 }
 
-test('title começa com o produto e cabe no SERP', () => {
+test('title é só o produto e o autor, igual ao nome da página no JSON-LD', () => {
   const title = head.match(/<title>([^<]+)<\/title>/)[1];
-  assert.ok(title.startsWith('Octo by OctoAI'), title);
-  assert.ok(title.length <= 60, `title com ${title.length} caracteres`);
+  assert.equal(title, 'Octo by Lucas Marujo');
+  assert.equal(jsonLd().find((node) => node['@type'] === 'WebPage').name, title);
 });
 
 test('meta description cita os agentes principais e tem tamanho de snippet', () => {
