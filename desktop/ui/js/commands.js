@@ -100,18 +100,17 @@ function toggle(arg, current, apply, title) {
   return on;
 }
 
-async function renameSession(arg, ctx) {
-  const to = arg || (await ask({ title: t('Rename the session'), value: state.session, action: t('Rename') }));
-  if (!to || to === state.session) return;
-  state.pendingSession = to.trim();
-  send({ type: 'renameSession', name: state.session, to });
-  ctx.refresh();
+export async function renameSession(name, arg) {
+  const to = arg || (await ask({ title: t('Rename the session'), value: name, action: t('Rename') }));
+  if (!to || to === name) return false;
+  if (name === state.session) state.pendingSession = to.trim();
+  send({ type: 'renameSession', name, to });
+  return true;
 }
 
-async function deleteSession(arg) {
-  const target = arg || state.session;
-  const sure = await confirm({ title: t('Delete the session {name}?', { name: target }), text: t('Only a session without agents can be deleted.'), action: t('Delete'), danger: true });
-  if (sure) send({ type: 'deleteSession', name: target });
+export async function deleteSession(name) {
+  const sure = await confirm({ title: t('Delete the session {name}?', { name }), text: t('Only a session without agents can be deleted.'), action: t('Delete'), danger: true });
+  if (sure) send({ type: 'deleteSession', name });
 }
 
 async function pick(agent) {
@@ -160,10 +159,10 @@ export function runCommand(text, ctx) {
       } else ctx.newSession();
       break;
     case 'rename-session':
-      renameSession(arg, ctx);
+      renameSession(state.session, arg).then((renamed) => renamed && ctx.refresh());
       break;
     case 'delete-session':
-      deleteSession(arg);
+      deleteSession(arg || state.session);
       break;
     case 'rename':
       agentCommand((agent) => (arg ? send({ type: 'rename', agent: agent.id, name: arg }) : rename(agent)));

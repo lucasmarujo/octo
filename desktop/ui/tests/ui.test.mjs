@@ -816,3 +816,15 @@ test('when the session on screen is gone the app moves to one that exists, even 
   assert.match(main, /selectSession\(names\.includes\(state\.overview\.session\) \? state\.overview\.session : names\[0\] \|\| null\);/);
   assert.doesNotMatch(rust('src/store.rs'), /default session cannot be deleted/);
 });
+
+test('a right click on a session in the sidebar offers to rename or delete that session', () => {
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /oncontextmenu: \(event\) => sessionMenu\(event, session\.name\)/);
+  assert.match(sidebar, /openMenu\(event\.currentTarget, \[item\(t\('Rename'\), renameSession\), item\(t\('Delete'\), deleteSession\)\], false\);/);
+  assert.match(sidebar, /closeMenu\(\);\n\s*act\(name\);/, 'the menu closes before the question opens');
+  const commands = readFileSync(join(REPO, 'desktop/ui/js/commands.js'), 'utf8');
+  assert.match(commands, /export async function renameSession\(name, arg\) \{[\s\S]*?value: name,[\s\S]*?if \(name === state\.session\) state\.pendingSession = to\.trim\(\);\n\s*send\(\{ type: 'renameSession', name, to \}\);/, 'renaming another session keeps the one on screen');
+  assert.match(commands, /export async function deleteSession\(name\) \{[\s\S]*?send\(\{ type: 'deleteSession', name \}\)/);
+  assert.match(commands, /case 'rename-session':\n\s*renameSession\(state\.session, arg\)/, 'the slash command still renames the session on screen');
+  assert.match(commands, /case 'delete-session':\n\s*deleteSession\(arg \|\| state\.session\);/);
+});

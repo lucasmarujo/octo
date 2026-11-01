@@ -1,5 +1,6 @@
+import { deleteSession, renameSession } from './commands.js';
 import { $, h, svg } from './dom.js';
-import { ask } from './dialogs.js';
+import { ask, closeMenu, openMenu } from './dialogs.js';
 import { SPINNER, duration, kindColor, label, usageColor } from './format.js';
 import { t } from './i18n.js';
 import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_PLUS } from './icons.js';
@@ -24,6 +25,25 @@ function summaryLine(entry, list, onOpen) {
   );
 }
 
+function sessionMenu(event, name) {
+  event.preventDefault();
+  const item = (text, act) =>
+    h(
+      'button',
+      {
+        class: 'menu-item',
+        type: 'button',
+        role: 'menuitem',
+        onclick: () => {
+          closeMenu();
+          act(name);
+        },
+      },
+      h('span', null, text),
+    );
+  openMenu(event.currentTarget, [item(t('Rename'), renameSession), item(t('Delete'), deleteSession)], false);
+}
+
 function sessionItem(session, onSelect, onOpen) {
   const agents = inSession(session.name);
   const selected = session.name === state.session;
@@ -46,7 +66,7 @@ function sessionItem(session, onSelect, onOpen) {
   const hint = !expanded && working ? h('span', { class: 'session-hint' }, `${SPINNER[1]}${working}`) : null;
   const row = h(
     'button',
-    { class: 'session-row', type: 'button', onclick: () => onSelect(session.name) },
+    { class: 'session-row', type: 'button', onclick: () => onSelect(session.name), oncontextmenu: (event) => sessionMenu(event, session.name) },
     chevron,
     h('span', { class: 'session-name' }, session.name),
     hint,
