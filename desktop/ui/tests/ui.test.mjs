@@ -447,18 +447,23 @@ test('the composer knows the same slash commands as the TUI, in the same order',
   assert.deepEqual(COMMANDS.map(([usage]) => usage), usages);
 });
 
-test('tab completes a slash command the way the TUI does', async () => {
-  const { completeCommand } = await import('../js/commands.js');
-  assert.equal(completeCommand('/whe', []), '/where ');
-  assert.equal(completeCommand('/qu', []), '/quit');
-  assert.equal(completeCommand('/wh', []), null);
-  assert.equal(completeCommand('/ren', []), '/rename');
-  assert.equal(completeCommand('/cro', []), '/cross-review ');
-  assert.equal(completeCommand('/rev', ['/review']), '/review ');
-  assert.equal(completeCommand('/mae', ['/maestri', '/maestri-chat', '/maestri-manager']), '/maestri');
-  assert.equal(completeCommand('/maestri', ['/maestri', '/maestri-chat']), null);
-  assert.equal(completeCommand('/s', ['/stripe:docs']), null);
-  assert.equal(completeCommand('/zzz', []), null);
+test('tab fills the suggestion selected in the palette and the arrows move the selection', async () => {
+  const { acceptedSuggestion, nextSuggestion } = await import('../js/commands.js');
+  assert.equal(acceptedSuggestion('/where <folder>', 'command'), '/where ', 'a command that takes arguments leaves room for them');
+  assert.equal(acceptedSuggestion('/quit', 'command'), '/quit');
+  assert.equal(acceptedSuggestion('/maestri-chat', 'skill'), '/maestri-chat ', 'a skill always takes arguments');
+  assert.equal(nextSuggestion(0, 1, 3), 1);
+  assert.equal(nextSuggestion(2, 1, 3), 0, 'down from the last goes back to the first');
+  assert.equal(nextSuggestion(0, -1, 3), 2, 'up from the first goes to the last');
+  assert.equal(nextSuggestion(0, 1, 0), 0);
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  assert.match(composer, /if \(paletteItems\.length\) acceptSuggestion\(paletteItems\[paletteIndex\]\);\n\s*return true;/, 'tab takes the selected one, even when several match');
+  assert.match(composer, /onclick: \(\) => acceptSuggestion\(item\)/, 'a click fills the same way');
+  assert.match(composer, /class: `palette-item \$\{item\.kind\}\$\{index === paletteIndex \? ' active' : ''\}`/);
+  assert.match(composer, /\(event\.key === 'ArrowDown' \|\| event\.key === 'ArrowUp'\) && !event\.ctrlKey && !\$\('palette'\)\.hidden/, 'ctrl+arrows still walk the history');
+  assert.match(composer, /if \(word !== paletteWord\) \{\n\s*paletteWord = word;\n\s*paletteIndex = 0;/, 'typing more selects the first match again');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.palette-item:hover, \.palette-item\.active \{ background: var\(--color-border\); \}/);
 });
 
 test('a slash command is read with its argument, and agent names take the TUI aliases', async () => {

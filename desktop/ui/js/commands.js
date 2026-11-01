@@ -53,22 +53,12 @@ export function matchingCommands(word) {
   return COMMANDS.filter(([usage]) => usage.startsWith(word));
 }
 
-function commonPrefix(words) {
-  if (!words.length) return '';
-  let prefix = words[0];
-  for (const word of words.slice(1)) {
-    while (!word.startsWith(prefix)) prefix = prefix.slice(0, -1);
-  }
-  return prefix;
+export function acceptedSuggestion(text, kind) {
+  return `${name(text)}${text.includes(' ') || kind === 'skill' ? ' ' : ''}`;
 }
 
-export function completeCommand(typed, skills) {
-  const commands = matchingCommands(typed).map(([usage]) => usage);
-  let completed;
-  if (commands.length === 1 && !skills.length) completed = `${name(commands[0])}${commands[0].includes(' ') ? ' ' : ''}`;
-  else if (!commands.length && skills.length === 1) completed = `${skills[0]} `;
-  else completed = commonPrefix([...commands.map(name), ...skills]);
-  return completed.length > typed.length ? completed : null;
+export function nextSuggestion(index, step, count) {
+  return count ? (index + step + count) % count : 0;
 }
 
 export function parseCommand(text) {

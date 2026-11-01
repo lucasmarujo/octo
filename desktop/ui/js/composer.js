@@ -1,5 +1,5 @@
 import { $, h, svg } from './dom.js';
-import { completeCommand, matchingCommands, parseCommand } from './commands.js';
+import { acceptedSuggestion, matchingCommands, nextSuggestion, parseCommand } from './commands.js';
 import { closeMenu, openMenu, pickFolder } from './dialogs.js';
 import { kindColor, label } from './format.js';
 import { t } from './i18n.js';
@@ -23,6 +23,9 @@ const MAX_SUGGESTIONS = 8;
 const SKILLS_TTL_MS = 5000;
 
 let runCommand = () => false;
+let paletteItems = [];
+let paletteIndex = 0;
+let paletteWord = null;
 
 export function setCommandRunner(run) {
   runCommand = run;
@@ -51,7 +54,12 @@ function typedWord() {
 export function renderPalette() {
   const palette = $('palette');
   const word = typedWord();
+  if (word !== paletteWord) {
+    paletteWord = word;
+    paletteIndex = 0;
+  }
   if (word === null) {
+    paletteItems = [];
     palette.hidden = true;
     return;
   }
@@ -60,23 +68,20 @@ export function renderPalette() {
   const skills = skillNames()
     .filter((skill) => `/${skill}`.startsWith(word))
     .map((skill) => ({ text: `/${skill}`, about: `skill · ${label(currentWho())}`, kind: 'skill' }));
-  const items = [...commands, ...skills].slice(0, MAX_SUGGESTIONS);
-  palette.hidden = items.length === 0;
+  paletteItems = [...commands, ...skills].slice(0, MAX_SUGGESTIONS);
+  paletteIndex = Math.min(paletteIndex, Math.max(paletteItems.length - 1, 0));
+  palette.hidden = paletteItems.length === 0;
   palette.replaceChildren(
-    ...items.map((item) =>
+    ...paletteItems.map((item, index) =>
       h(
         'button',
         {
-          class: `palette-item ${item.kind}`,
+          class: `palette-item ${item.kind}${index === paletteIndex ? ' active' : ''}`,
           type: 'button',
           role: 'option',
+          'aria-selected': String(index === paletteIndex),
           onmousedown: (event) => event.preventDefault(),
-          onclick: () => {
-            const usage = item.text.split(/\s/)[0];
-            $('task').value = `${usage}${item.text.includes(' ') || item.kind === 'skill' ? ' ' : ''}`;
-            $('task').focus();
-            renderPalette();
-          },
+          onclick: () => acceptSuggestion(item),
         },
         h('span', { class: 'palette-usage' }, item.text),
         h('span', { class: 'palette-about' }, item.about),
@@ -85,16 +90,21 @@ export function renderPalette() {
   );
 }
 
+function acceptSuggestion(item) {
+  $('task').value = acceptedSuggestion(item.text, item.kind);
+  $('task').focus();
+  renderPalette();
+}
+
 function completeTyped() {
-  const word = typedWord();
-  if (word === null) return false;
-  const skills = skillNames().map((skill) => `/${skill}`).filter((skill) => skill.startsWith(word));
-  const completed = completeCommand(word, skills);
-  if (completed) {
-    $('task').value = completed;
-    renderPalette();
-  }
+  if (typedWord() === null) return false;
+  if (paletteItems.length) acceptSuggestion(paletteItems[paletteIndex]);
   return true;
+}
+
+function moveSuggestion(step) {
+  paletteIndex = nextSuggestion(paletteIndex, step, paletteItems.length);
+  renderPalette();
 }
 
 function grow() {
@@ -203,6 +213,9 @@ function onKey(event) {
   } else if (event.key === 'Escape' && !$('palette').hidden) {
     event.preventDefault();
     $('palette').hidden = true;
+  } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && !event.ctrlKey && !$('palette').hidden) {
+    event.preventDefault();
+    moveSuggestion(event.key === 'ArrowDown' ? 1 : -1);
   } else if (event.ctrlKey && event.key === 'ArrowUp') {
     event.preventDefault();
     recall(-1);
