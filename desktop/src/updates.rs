@@ -9,6 +9,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 pub const ASSET_PREFIX: &str = "desktop-";
 pub const APP_ASSET_PREFIX: &str = "desktop-app-";
 pub const READY_EVENT: &str = "update-ready";
+pub const TRANSLOCATED: &str = "macOS runs Octo from a read-only copy, so it cannot update itself. Drag Octo to Applications and open it from there.";
+const TRANSLOCATION_FOLDER: &str = "AppTranslocation";
 
 #[derive(Default)]
 pub struct Updates {
@@ -51,11 +53,18 @@ fn replaces_its_bundle(exe: &Path) -> bool {
     cfg!(target_os = "macos") && update::app_bundle(exe).is_some()
 }
 
+fn runs_translocated(exe: &Path) -> bool {
+    cfg!(target_os = "macos") && exe.components().any(|part| part.as_os_str() == TRANSLOCATION_FOLDER)
+}
+
 pub fn updates_itself() -> bool {
     BUILD_COMMIT.is_some() && target().is_some() && std::env::var_os(DISABLE_ENV).is_none()
 }
 
 pub fn install_newer(source: &Source, exe: &Path) -> Result<Option<String>, String> {
+    if runs_translocated(exe) {
+        return Err(TRANSLOCATED.into());
+    }
     let commit = BUILD_COMMIT.ok_or("a build made on this computer does not update itself")?;
     let target = target().ok_or("there is no prebuilt Octo app for this platform")?;
     let manifest = source.manifest().map_err(|err| err.to_string())?;
@@ -176,6 +185,21 @@ mod tests {
         let in_bundle = Path::new("/Applications/Octo.app/Contents/MacOS/octo");
         assert_eq!(replaces_its_bundle(in_bundle), cfg!(target_os = "macos"));
         assert!(!replaces_its_bundle(Path::new("/usr/local/bin/octo")));
+    }
+
+    #[test]
+    fn a_mac_app_run_from_the_read_only_copy_of_macos_asks_to_be_moved_before_downloading_anything() {
+        let translocated = Path::new(
+            "/private/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/AppTranslocation/6CB3CC13-BADC-4B2E-8326-1E8AEE00CC39/d/Octo.app/Contents/MacOS/octo",
+        );
+        assert_eq!(runs_translocated(translocated), cfg!(target_os = "macos"));
+        assert!(!runs_translocated(Path::new("/Applications/Octo.app/Contents/MacOS/octo")));
+        assert!(!runs_translocated(Path::new("/Users/me/Downloads/Octo.app/Contents/MacOS/octo")));
+        assert!(!runs_translocated(Path::new("/Users/me/AppTranslocation.app/Contents/MacOS/octo")));
+        if cfg!(target_os = "macos") {
+            let unreachable = Source::at("http://127.0.0.1:9");
+            assert_eq!(install_newer(&unreachable, translocated), Err(TRANSLOCATED.to_string()));
+        }
     }
 
     #[test]

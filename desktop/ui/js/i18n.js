@@ -241,6 +241,7 @@ export const PT = {
   Status: 'Status',
   'This computer cannot play the chime here.': 'Este computador não consegue tocar o aviso aqui.',
   'Could not check for updates: {error}': 'Não foi possível procurar atualizações: {error}',
+  'macOS runs Octo from a read-only copy, so it cannot update itself. Drag Octo to Applications and open it from there.': 'O macOS roda o Octo de uma cópia somente leitura, então ele não consegue se atualizar. Arraste o Octo para Aplicativos e abra-o de lá.',
   '{version} is ready, restart to use it': '{version} está pronta, reinicie para usar',
   'checking…': 'procurando…',
   'could not check': 'não foi possível procurar',

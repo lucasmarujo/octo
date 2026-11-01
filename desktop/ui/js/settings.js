@@ -148,7 +148,7 @@ async function checkUpdate() {
     if (update.ready) state.updateReady = update.latest;
   } catch (err) {
     update = { failed: true };
-    toast(t('Could not check for updates: {error}', { error: err }), 'warn');
+    toast(t('Could not check for updates: {error}', { error: t(String(err)) }), 'warn');
   }
   render();
 }

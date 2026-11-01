@@ -696,6 +696,7 @@ test('every text the app shows has a Portuguese version', async () => {
     ...[...rust('src/tui/render.rs').matchAll(/USAGE_(?:WEEKLY|MONTHLY)_LABEL: &str = "([^"]+)"/g)].map((match) => match[1]),
     ...[...rust('src/usage.rs').matchAll(/Problem::\w+ => "([^"]+)"/g)].map((match) => match[1]),
     ...[...rust('desktop/src/settings.rs').match(/SHELL_RULE: &str = if cfg!\(windows\) \{ "([^"]+)" \} else \{ "([^"]+)" \}/).slice(1)],
+    rust('desktop/src/updates.rs').match(/TRANSLOCATED: &str =\s*"([^"]+)"/)[1],
   ];
   for (const text of shown) assert.ok(Object.hasOwn(PT, text), `no Portuguese for the backend text: ${text}`);
 });
@@ -741,4 +742,13 @@ test('Portuguese is chosen once, kept, and reopens the page where it was picked'
   assert.match(main, /applyStatic\(\);\n\s*pageAfterReload = pageToReopen\(\);/);
   assert.match(main, /invoke\('alert', \{ alerts, language: language\(\) \}\)/, 'desktop notifications follow the language');
   assert.match(main, /toast\(hubText\(message\.text\), message\.tone\)/);
+});
+
+test('an update that cannot install says why in the language of the app', async () => {
+  const { translate } = await import('../js/i18n.js');
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /t\('Could not check for updates: \{error\}', \{ error: t\(String\(err\)\) \}\)/);
+  const translocated = rust('desktop/src/updates.rs').match(/TRANSLOCATED: &str =\s*"([^"]+)"/)[1];
+  assert.match(translate('pt-BR', translocated), /Arraste o Octo para Aplicativos/);
+  assert.equal(translate('pt-BR', 'error sending request'), 'error sending request', 'any other error reaches the toast as is');
 });
