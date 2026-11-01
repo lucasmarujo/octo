@@ -299,6 +299,23 @@ h1, p { margin: 0; }
 .commit-subject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); color: var(--color-text-muted); }
 .commit.on-branch .commit-subject { color: var(--color-text); }
 .commit-time { flex-shrink: 0; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--color-text-faint); }
+.commit:hover .commit-subject { color: var(--color-text); }
+.commit.linked { cursor: pointer; }
+.commit.linked:hover .commit-subject { color: var(--color-link); text-decoration: underline; }
+.commit-tip { position: fixed; z-index: 30; display: flex; flex-direction: column; gap: 8px; width: 360px; max-height: 70vh; overflow: hidden; padding: 12px 14px; border-radius: 10px; background: var(--color-surface-raised); border: 1px solid var(--color-border); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); pointer-events: none; }
+.commit-tip[hidden] { display: none; }
+.tip-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.tip-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); color: var(--color-text-faint); }
+.tip-subject { font-size: var(--text-sm); line-height: 18px; color: var(--color-text); overflow-wrap: anywhere; }
+.tip-files { display: flex; flex-direction: column; gap: 3px; min-height: 0; overflow: hidden; }
+.tip-file { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-family: var(--font-mono); font-size: 11px; line-height: 15px; }
+.tip-status { width: 10px; flex-shrink: 0; font-weight: 700; color: var(--color-text-muted); }
+.tip-status.status-a { color: var(--color-done); }
+.tip-status.status-m { color: var(--color-waiting); }
+.tip-status.status-d { color: var(--color-lost); }
+.tip-status.status-r, .tip-status.status-c { color: var(--color-link); }
+.tip-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); }
+.tip-note, .tip-foot { font-size: var(--text-xs); color: var(--color-text-faint); }
 .overlap { font-size: var(--text-xs); line-height: 16px; }
 .detail-actions .button { flex: 1; justify-content: center; height: 30px; border-radius: 7px; }
 .detail-actions .button.merge { border-color: transparent; background: var(--color-accent); color: var(--color-accent-ink); }

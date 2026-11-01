@@ -4,11 +4,14 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use orkai::model::{AgentId, AgentRecord};
 use orkai::paths::Home;
 use orkai::pwa::hub::{Event, Hub};
 use orkai::pwa::protocol::PhoneMsg;
 use orkai::pwa::server::{Outbox, Peer, welcome};
 use orkai::util::lock;
+use orkai::worktree;
+use serde::Serialize;
 use tauri::webview::PageLoadEvent;
 use tauri::{Manager, State};
 
@@ -87,6 +90,45 @@ fn home_dir() -> Option<String> {
     orkai::paths::user_home().map(|home| home.display().to_string())
 }
 
+#[derive(Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitFileInfo {
+    pub status: String,
+    pub path: String,
+    pub from: Option<String>,
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitInfo {
+    pub files: Vec<CommitFileInfo>,
+    pub more: usize,
+    pub url: Option<String>,
+}
+
+fn describe_commit(record: &AgentRecord, hash: &str) -> Result<CommitInfo, String> {
+    let dir = match &record.worktree {
+        Some(mine) => mine.path.clone(),
+        None => worktree::folder(&record.cwd).map_err(|err| err.to_string())?.repo,
+    };
+    let detail = worktree::commit_detail(&dir, hash).map_err(|err| err.to_string())?;
+    Ok(CommitInfo {
+        files: detail
+            .files
+            .into_iter()
+            .map(|file| CommitFileInfo { status: file.status.to_string(), path: file.path, from: file.renamed_from })
+            .collect(),
+        more: detail.more,
+        url: detail.url,
+    })
+}
+
+#[tauri::command(async)]
+fn commit_info(link: State<'_, Link>, agent: AgentId, hash: String) -> Result<CommitInfo, String> {
+    let record = link.hub().record(agent).ok_or_else(|| format!("agent {agent} is gone"))?;
+    describe_commit(&record, &hash)
+}
+
 #[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
     if !orkai::termlink::is_web_link(&url) {
@@ -121,6 +163,7 @@ pub fn run() -> io::Result<()> {
             attach,
             send,
             open_link,
+            commit_info,
             home_dir,
             settings::settings,
             settings::save_settings,
@@ -200,6 +243,42 @@ mod tests {
 
     fn of_type(kind: &'static str) -> impl Fn(&Value) -> bool {
         move |message| message["type"] == kind
+    }
+
+    fn git(dir: &std::path::Path, args: &[&str]) -> String {
+        let output = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
+        assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn hovering_a_commit_of_an_agent_lists_its_files_from_the_folder_of_the_agent() {
+        let fx = fixture("commit");
+        let repo = fx.dir.join("project");
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["config", "user.email", "octo@example.com"]);
+        git(&repo, &["config", "user.name", "octo"]);
+        std::fs::write(repo.join("readme.md"), "hi\n").unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "first"]);
+        let store = Store::open(Home::at(fx.dir.join("agents"))).unwrap();
+        let record = store
+            .create_agent(orkai::model::NewAgent {
+                session: "default".into(),
+                name: "docs".into(),
+                kind: orkai::model::AgentKind::Terminal,
+                cwd: repo.clone(),
+                task: String::new(),
+            })
+            .unwrap();
+
+        let info = describe_commit(&record, &git(&repo, &["rev-parse", "--short", "HEAD"])).unwrap();
+        assert_eq!(info.files, [CommitFileInfo { status: "A".into(), path: "readme.md".into(), from: None }]);
+        assert_eq!((info.more, info.url.as_deref()), (0, None));
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["files"][0]["status"], "A", "the window reads camelCase fields");
+        assert!(describe_commit(&record, "--output=/tmp/x").unwrap_err().contains("not a commit hash"));
     }
 
     #[test]

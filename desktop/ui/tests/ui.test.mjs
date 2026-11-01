@@ -656,13 +656,38 @@ test('the agent panel lists the latest commits under its changes, like git log, 
   assert.match(source, /parts\.push\(changesSection\(agent, info\)\);\n\s*if \(info && info\.commits\) parts\.push\(commitsSection\(agent, info\.commits\)\);/, 'right under the changes, for a worktree or a plain folder');
   const section = source.slice(source.indexOf('function commitsSection'), source.indexOf('\n}\n', source.indexOf('function commitsSection')));
   assert.match(section, /commits\.map\(\(commit\) =>/, 'in the order the core reads them, newest first');
-  assert.match(section, /class: commit\.onBranch \? 'commit on-branch' : 'commit'/);
+  assert.match(section, /commit\.onBranch \? 'on-branch' : ''/);
   assert.match(section, /agent\.branch && own \? t\('\{count\} on this branch', \{ count: own \}\) : null/);
   assert.match(section, /t\('\{time\} ago', \{ time: duration\(now\(\) - commit\.at\) \}\)/);
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.match(css, /\.commit\.on-branch \.commit-hash \{ color: var\(--color-accent\); \}/);
   assert.match(css, /\.commit-subject \{[^}]*text-overflow: ellipsis;/);
   assert.match(rust('src/worktree.rs'), /pub const MAX_LOG_COMMITS: usize = \d+;/, 'the core reads a bounded log');
+});
+
+test('hovering a commit shows its files like VS Code and a click opens it on the web once it is on the remote', () => {
+  const source = readFileSync(join(REPO, 'desktop/ui/js/agent.js'), 'utf8');
+  const section = source.slice(source.indexOf('function commitsSection'), source.indexOf('\n}\n', source.indexOf('function commitsSection')));
+  assert.match(section, /dataset: \{ commit: commit\.hash \},\n\s*onmouseenter: \(\) => showCommitTip\(agent, commit\),\n\s*onmouseleave: hideCommitTip,\n\s*onclick: \(\) => openCommit\(agent, commit\),/);
+  assert.doesNotMatch(section, /title:/, 'no native tooltip covers the files');
+  assert.match(source, /invoke\('commit_info', \{ agent: agent\.id, hash: commit\.hash \}\)/, 'the files are read only when a commit is hovered');
+  assert.match(source, /if \(!commitInfo\.has\(key\)\)/, 'once per commit');
+  assert.match(source, /commitInfo\.delete\(key\);/, 'a commit that could not be read is read again on the next hover');
+  assert.match(source, /const url = loaded\.info && loaded\.info\.url;\n\s*if \(url\) invoke\('open_link', \{ url \}\)/, 'only a commit already on the remote opens');
+  assert.match(source, /url \? t\('Click to open it on \{host\}', \{ host: new URL\(url\)\.host \}\) : t\('Not on the remote yet\.'\)/);
+  assert.match(source, /`tip-status status-\$\{file\.status\.toLowerCase\(\)\}`/);
+  assert.match(source, /file\.from \? `\$\{file\.from\} → \$\{file\.path\}` : file\.path/, 'a rename shows where the file came from');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<div id="commit-tip" class="commit-tip" role="tooltip" hidden><\/div>/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.commit-tip\[hidden\] \{ display: none; \}/, 'the flex tooltip still hides');
+  assert.match(css, /\.commit-tip \{[^}]*pointer-events: none;/, 'the tooltip never steals the hover of the row under it');
+  for (const status of ['a', 'm', 'd']) assert.match(css, new RegExp(`\\.tip-status\\.status-${status} \\{ color: var\\(--color-`), status);
+  assert.match(css, /\.commit\.linked \{ cursor: pointer; \}/);
+  const link = rust('desktop/src/link.rs');
+  assert.match(link, /#\[tauri::command\(async\)\]\nfn commit_info\(/, 'git runs off the main thread');
+  assert.match(link, /generate_handler!\[[\s\S]*?commit_info,/);
+  assert.match(rust('src/worktree.rs'), /pub const MAX_COMMIT_FILES: usize = \d+;/, 'a huge commit lists a bounded number of files');
 });
 
 test('a Mac keeps its own traffic lights and Octo draws window controls only where the system draws none', () => {

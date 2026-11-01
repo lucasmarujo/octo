@@ -4,12 +4,18 @@ import { SPINNER, alive, duration, glyph, kindColor, label, plural } from './for
 import { hubText, t } from './i18n.js';
 import { ICON_BRANCH } from './icons.js';
 import { agents, now, state } from './state.js';
-import { send } from './transport.js';
+import { toast } from './toast.js';
+import { invoke, send } from './transport.js';
 
 const ATTENTION = ['paused', 'done'];
 const TEST_SOURCE = '.orkai.json';
+const COMMIT_TIP_GAP = 10;
+const COMMIT_TIP_MARGIN = 8;
 
 export const restarts = new Set();
+const commitInfo = new Map();
+const linkedCommits = new Set();
+let tipFor = null;
 
 export function nextAttention(skip) {
   const waiting = (name) =>
@@ -197,20 +203,109 @@ function changesSection(agent, info) {
   );
 }
 
+const commitKey = (agent, commit) => `${agent.id}:${commit.hash}`;
+
+function loadCommit(agent, commit) {
+  const key = commitKey(agent, commit);
+  if (!commitInfo.has(key)) {
+    const loading = invoke('commit_info', { agent: agent.id, hash: commit.hash }).then(
+      (info) => {
+        if (info.url) linkedCommits.add(key);
+        return { info };
+      },
+      (error) => {
+        commitInfo.delete(key);
+        return { error: String(error) };
+      },
+    );
+    commitInfo.set(key, loading);
+  }
+  return commitInfo.get(key);
+}
+
+function commitTip(commit, loaded) {
+  const head = h(
+    'div',
+    { class: 'tip-head' },
+    h('span', { class: 'commit-hash' }, commit.hash),
+    h('span', { class: 'tip-meta' }, `${commit.author} · ${t('{time} ago', { time: duration(now() - commit.at) })}`),
+  );
+  const subject = h('div', { class: 'tip-subject' }, commit.subject);
+  if (!loaded) return [head, subject, h('div', { class: 'tip-note' }, t('Reading the files…'))];
+  if (loaded.error) return [head, subject, h('div', { class: 'tip-note' }, t('Could not read this commit.'))];
+  const { files, more, url } = loaded.info;
+  const rows = files.map((file) =>
+    h(
+      'div',
+      { class: 'tip-file' },
+      h('span', { class: `tip-status status-${file.status.toLowerCase()}` }, file.status),
+      h('span', { class: 'tip-path' }, file.from ? `${file.from} → ${file.path}` : file.path),
+    ),
+  );
+  if (!files.length) rows.push(h('div', { class: 'tip-note' }, t('No files changed.')));
+  if (more) rows.push(h('div', { class: 'tip-note' }, t('and {count} more files', { count: more })));
+  const foot = url ? t('Click to open it on {host}', { host: new URL(url).host }) : t('Not on the remote yet.');
+  return [head, subject, h('div', { class: 'tip-files' }, ...rows), h('div', { class: 'tip-foot' }, foot)];
+}
+
+function placeCommitTip(tip, hash) {
+  const row = document.querySelector(`#details [data-commit="${hash}"]`);
+  if (!row) return hideCommitTip();
+  const box = row.getBoundingClientRect();
+  tip.style.left = `${Math.max(COMMIT_TIP_MARGIN, box.left - tip.offsetWidth - COMMIT_TIP_GAP)}px`;
+  tip.style.top = `${Math.max(COMMIT_TIP_MARGIN, Math.min(box.top, window.innerHeight - tip.offsetHeight - COMMIT_TIP_MARGIN))}px`;
+}
+
+function showCommitTip(agent, commit) {
+  const tip = $('commit-tip');
+  const key = commitKey(agent, commit);
+  if (tipFor === key && !tip.hidden) return;
+  tipFor = key;
+  tip.replaceChildren(...commitTip(commit, null));
+  tip.hidden = false;
+  placeCommitTip(tip, commit.hash);
+  loadCommit(agent, commit).then((loaded) => {
+    if (tipFor !== key) return;
+    tip.replaceChildren(...commitTip(commit, loaded));
+    placeCommitTip(tip, commit.hash);
+    const row = document.querySelector(`#details [data-commit="${commit.hash}"]`);
+    if (row) row.classList.toggle('linked', Boolean(loaded.info && loaded.info.url));
+  });
+}
+
+function hideCommitTip() {
+  tipFor = null;
+  $('commit-tip').hidden = true;
+}
+
+function openCommit(agent, commit) {
+  loadCommit(agent, commit).then((loaded) => {
+    const url = loaded.info && loaded.info.url;
+    if (url) invoke('open_link', { url }).catch((err) => toast(String(err), 'warn'));
+  });
+}
+
 function commitsSection(agent, commits) {
   const own = commits.filter((commit) => commit.onBranch).length;
   return section(
     t('Commits'),
     agent.branch && own ? t('{count} on this branch', { count: own }) : null,
-    h('div', { class: 'commits' }, ...commits.map((commit) =>
-      h(
+    h('div', { class: 'commits' }, ...commits.map((commit) => {
+      const classes = ['commit', commit.onBranch ? 'on-branch' : '', linkedCommits.has(commitKey(agent, commit)) ? 'linked' : ''];
+      return h(
         'div',
-        { class: commit.onBranch ? 'commit on-branch' : 'commit', title: `${commit.hash} · ${commit.author}\n${commit.subject}` },
+        {
+          class: classes.filter(Boolean).join(' '),
+          dataset: { commit: commit.hash },
+          onmouseenter: () => showCommitTip(agent, commit),
+          onmouseleave: hideCommitTip,
+          onclick: () => openCommit(agent, commit),
+        },
         h('span', { class: 'commit-hash' }, commit.hash),
         h('span', { class: 'commit-subject' }, commit.subject),
         h('span', { class: 'commit-time' }, t('{time} ago', { time: duration(now() - commit.at) })),
-      ),
-    )),
+      );
+    })),
   );
 }
 

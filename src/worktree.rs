@@ -16,6 +16,15 @@ pub const MAX_COUNTED_BYTES: u64 = 1024 * 1024;
 pub const MAX_DIFF_BYTES: usize = 4 * 1024 * 1024;
 pub const CHANGES_EVERY_MS: u64 = 10_000;
 pub const MAX_LOG_COMMITS: usize = 20;
+pub const MAX_COMMIT_FILES: usize = 50;
+const MIN_HASH_LEN: usize = 4;
+const MAX_HASH_LEN: usize = 64;
+const REMOTE_REFS: &str = "refs/remotes";
+const PREFERRED_REMOTE: &str = "origin";
+const AZURE_SSH_HOST: &str = "ssh.dev.azure.com";
+const AZURE_HOST: &str = "dev.azure.com";
+const AZURE_SSH_VERSION: &str = "v3/";
+const AZURE_REPO_SEGMENT: &str = "_git";
 const LOG_FORMAT: &str = "--format=%H%x1f%h%x1f%an%x1f%ct%x1f%s";
 const LOG_FIELD: char = '\u{1f}';
 const MS_PER_SECOND: u64 = 1000;
@@ -79,6 +88,20 @@ pub struct Commit {
     pub at_ms: u64,
     pub subject: String,
     pub on_branch: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommitFile {
+    pub status: char,
+    pub path: String,
+    pub renamed_from: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CommitDetail {
+    pub files: Vec<CommitFile>,
+    pub more: usize,
+    pub url: Option<String>,
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {
@@ -364,6 +387,103 @@ fn parse_commit(record: &str, on_branch: &HashSet<String>) -> Option<Commit> {
         subject: subject.to_string(),
         on_branch: on_branch.contains(full),
     })
+}
+
+fn is_commit_hash(text: &str) -> bool {
+    (MIN_HASH_LEN..=MAX_HASH_LEN).contains(&text.len()) && text.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+pub fn commit_detail(dir: &Path, hash: &str) -> io::Result<CommitDetail> {
+    if !is_commit_hash(hash) {
+        return Err(invalid(format!("{hash} is not a commit hash")));
+    }
+    let shown = run(
+        dir,
+        &["show", "--no-color", "--format=%H", "--name-status", "-z", "-M", "--diff-merges=first-parent", hash, "--"],
+    )?;
+    let mut fields = shown.split('\0');
+    let full = fields.next().unwrap_or_default().trim().to_string();
+    let mut detail = CommitDetail::default();
+    while let Some(status) = fields.next() {
+        let Some(letter) = status.trim_start().chars().next() else { continue };
+        let renamed_from = matches!(letter, 'R' | 'C').then(|| fields.next().map(str::to_string)).flatten();
+        let Some(path) = fields.next() else { break };
+        if detail.files.len() < MAX_COMMIT_FILES {
+            detail.files.push(CommitFile { status: letter, path: path.to_string(), renamed_from });
+        } else {
+            detail.more += 1;
+        }
+    }
+    detail.url = remote_holding(dir, &full)?.and_then(|remote| web_commit_url(&remote, &full));
+    Ok(detail)
+}
+
+fn remote_holding(dir: &Path, hash: &str) -> io::Result<Option<String>> {
+    let holding = run(dir, &["for-each-ref", &format!("--contains={hash}"), "--format=%(refname)", REMOTE_REFS])?;
+    if holding.is_empty() {
+        return Ok(None);
+    }
+    let configured = git(dir, &["config", "--get-regexp", r"^remote\..*\.url$"])?;
+    let remotes: Vec<(String, String)> = String::from_utf8_lossy(&configured.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (key, url) = line.split_once(' ')?;
+            let name = key.strip_prefix("remote.")?.strip_suffix(".url")?;
+            Some((name.to_string(), url.trim().to_string()))
+        })
+        .collect();
+    let holds = |name: &str| holding.lines().any(|reference| reference.starts_with(&format!("{REMOTE_REFS}/{name}/")));
+    let holder = remotes
+        .iter()
+        .find(|(name, _)| name == PREFERRED_REMOTE && holds(name))
+        .or_else(|| remotes.iter().find(|(name, _)| holds(name)));
+    Ok(holder.map(|(_, url)| url.clone()))
+}
+
+pub fn web_commit_url(remote: &str, hash: &str) -> Option<String> {
+    let (scheme, rest, keeps_port) = if let Some((scheme, rest)) = remote.split_once("://") {
+        match scheme {
+            "https" | "http" => (scheme, rest, true),
+            "ssh" | "git" => ("https", rest, false),
+            _ => return None,
+        }
+    } else {
+        ("https", remote, false)
+    };
+    let rest = match rest.split_once('@') {
+        Some((user, after)) if !user.contains('/') => after,
+        _ => rest,
+    };
+    let (authority, path) = if remote.contains("://") {
+        rest.split_once('/')?
+    } else {
+        let (host, path) = rest.split_once(':')?;
+        if host.len() < 2 || host.contains(['/', '\\']) {
+            return None;
+        }
+        (host, path)
+    };
+    let host = if keeps_port { authority } else { authority.split(':').next()? };
+    let path = path.trim_matches('/').trim_end_matches(".git");
+    if host.is_empty() || path.is_empty() || path.contains('\\') {
+        return None;
+    }
+    let (host, path) = match path.strip_prefix(AZURE_SSH_VERSION) {
+        Some(azure) if host == AZURE_SSH_HOST => {
+            let mut parts = azure.splitn(3, '/');
+            let (org, project, repo) = (parts.next()?, parts.next()?, parts.next()?);
+            (AZURE_HOST, format!("{org}/{project}/{AZURE_REPO_SEGMENT}/{repo}"))
+        }
+        _ => (host, path.to_string()),
+    };
+    let commit = if host.contains("gitlab") {
+        "-/commit"
+    } else if host.contains("bitbucket") {
+        "commits"
+    } else {
+        "commit"
+    };
+    Some(format!("{scheme}://{host}/{path}/{commit}/{hash}"))
 }
 
 pub fn commit(folder: &Folder, message: &str) -> io::Result<Option<Committed>> {
@@ -890,5 +1010,100 @@ mod tests {
         assert!(!found.contains_key(&4), "another repository");
         assert!(overlaps(&[(1, &web, &a)]).is_empty());
         assert!(overlaps(&[]).is_empty());
+    }
+
+    fn file(status: char, path: &str, renamed_from: Option<&str>) -> CommitFile {
+        CommitFile { status, path: path.into(), renamed_from: renamed_from.map(str::to_string) }
+    }
+
+    #[test]
+    fn a_commit_lists_the_files_it_added_changed_renamed_and_deleted() {
+        let r = repo();
+        fs::write(r.repo.join("app").join("lib.txt"), "one\ntwo\nthree\nfour\n").unwrap();
+        fs::write(r.repo.join("app").join("new file.txt"), "new\n").unwrap();
+        fs::remove_file(r.repo.join(".gitignore")).unwrap();
+        git_in(&r.repo, &["add", "-A"]);
+        git_in(&r.repo, &["commit", "-q", "-m", "change things"]);
+        git_in(&r.repo, &["mv", "app/lib.txt", "app/library.txt"]);
+        git_in(&r.repo, &["commit", "-q", "-m", "rename"]);
+
+        let changed = commit_detail(&r.repo, &git_in(&r.repo, &["rev-parse", "--short", "HEAD~1"])).unwrap();
+        assert_eq!(
+            changed.files,
+            [file('D', ".gitignore", None), file('M', "app/lib.txt", None), file('A', "app/new file.txt", None)]
+        );
+        assert_eq!(changed.more, 0);
+        let renamed = commit_detail(&r.repo, &git_in(&r.repo, &["rev-parse", "--short", "HEAD"])).unwrap();
+        assert_eq!(renamed.files, [file('R', "app/library.txt", Some("app/lib.txt"))]);
+        let first = commit_detail(&r.repo, &git_in(&r.repo, &["rev-list", "--max-parents=0", "HEAD"])).unwrap();
+        assert_eq!(
+            first.files,
+            [file('A', ".gitignore", None), file('A', "app/lib.txt", None)],
+            "the first commit adds everything"
+        );
+        assert_eq!(first.url, None, "a repository without a remote has no web page for its commits");
+    }
+
+    #[test]
+    fn a_commit_with_many_files_lists_the_first_ones_and_counts_the_rest() {
+        let r = repo();
+        for index in 0..MAX_COMMIT_FILES + 5 {
+            fs::write(r.repo.join(format!("file-{index:03}.txt")), "x\n").unwrap();
+        }
+        git_in(&r.repo, &["add", "-A"]);
+        git_in(&r.repo, &["commit", "-q", "-m", "many"]);
+        let detail = commit_detail(&r.repo, "HEAD").unwrap_err();
+        assert_eq!(detail.kind(), io::ErrorKind::InvalidInput, "only a commit hash is asked about");
+        let detail = commit_detail(&r.repo, &git_in(&r.repo, &["rev-parse", "HEAD"])).unwrap();
+        assert_eq!(detail.files.len(), MAX_COMMIT_FILES);
+        assert_eq!(detail.more, 5);
+    }
+
+    #[test]
+    fn a_commit_already_on_the_remote_opens_on_its_web_page_and_a_local_one_does_not() {
+        let r = repo();
+        let remote = r.dir.join("remote.git");
+        git_in(&r.dir, &["init", "-q", "--bare", "remote.git"]);
+        git_in(&r.repo, &["remote", "add", "origin", &remote.display().to_string()]);
+        git_in(&r.repo, &["push", "-q", "origin", "main"]);
+        let pushed = git_in(&r.repo, &["rev-parse", "HEAD"]);
+        git_in(&r.repo, &["commit", "-q", "--allow-empty", "-m", "only here"]);
+        let local = git_in(&r.repo, &["rev-parse", "--short", "HEAD"]);
+        git_in(&r.repo, &["remote", "set-url", "origin", "https://user:secret@github.com/acme/app.git"]);
+
+        let on_remote = commit_detail(&r.repo, &pushed[..7]).unwrap();
+        assert_eq!(on_remote.url.as_deref(), Some(format!("https://github.com/acme/app/commit/{pushed}").as_str()));
+        assert_eq!(commit_detail(&r.repo, &local).unwrap().url, None, "a commit nobody pushed only has its files");
+    }
+
+    #[test]
+    fn the_remote_of_every_common_host_becomes_the_web_page_of_the_commit() {
+        let hash = "0185de414b15da2aea478e6a39b8cd535a2be274";
+        let cases = [
+            ("https://github.com/acme/app.git", "https://github.com/acme/app/commit/"),
+            ("https://user:token@github.com/acme/app", "https://github.com/acme/app/commit/"),
+            ("git@github.com:acme/app.git", "https://github.com/acme/app/commit/"),
+            ("ssh://git@github.com/acme/app.git", "https://github.com/acme/app/commit/"),
+            ("ssh://git@git.acme.dev:2222/team/app.git", "https://git.acme.dev/team/app/commit/"),
+            ("http://git.local/team/app.git", "http://git.local/team/app/commit/"),
+            ("git://git.acme.dev/team/app.git", "https://git.acme.dev/team/app/commit/"),
+            ("https://gitlab.com/group/sub/app.git", "https://gitlab.com/group/sub/app/-/commit/"),
+            ("git@gitlab.acme.dev:group/app.git", "https://gitlab.acme.dev/group/app/-/commit/"),
+            ("git@bitbucket.org:team/app.git", "https://bitbucket.org/team/app/commits/"),
+            ("https://acme@dev.azure.com/acme/Project/_git/app", "https://dev.azure.com/acme/Project/_git/app/commit/"),
+            ("git@ssh.dev.azure.com:v3/acme/Project/app", "https://dev.azure.com/acme/Project/_git/app/commit/"),
+            (
+                "https://acme.visualstudio.com/Project/_git/app",
+                "https://acme.visualstudio.com/Project/_git/app/commit/",
+            ),
+        ];
+        for (remote, page) in cases {
+            assert_eq!(web_commit_url(remote, hash), Some(format!("{page}{hash}")), "{remote}");
+        }
+        for remote in
+            ["/srv/git/app.git", "C:\\repos\\app", "file:///srv/git/app.git", "../app.git", "https://github.com/"]
+        {
+            assert_eq!(web_commit_url(remote, hash), None, "{remote}");
+        }
     }
 }
