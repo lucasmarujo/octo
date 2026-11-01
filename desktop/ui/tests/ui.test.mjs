@@ -752,3 +752,11 @@ test('an update that cannot install says why in the language of the app', async 
   assert.match(translate('pt-BR', translocated), /Arraste o Octo para Aplicativos/);
   assert.equal(translate('pt-BR', 'error sending request'), 'error sending request', 'any other error reaches the toast as is');
 });
+
+test('a right click never opens the menu of the webview, with its inspect, save as and print', () => {
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /document\.addEventListener\('contextmenu', \(event\) => event\.preventDefault\(\)\);/);
+  assert.doesNotMatch(rust('desktop/Cargo.toml'), /devtools/, 'a release build never turns the inspector on');
+  const windows = ['desktop/tauri.conf.json', 'desktop/tauri.macos.conf.json'].flatMap((file) => JSON.parse(rust(file)).app.windows);
+  assert.ok(windows.every((window) => window.devtools !== true), 'no window turns the inspector on');
+});

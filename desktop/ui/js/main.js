@@ -551,6 +551,7 @@ function start() {
     });
   }
   document.addEventListener('keydown', onShortcut);
+  document.addEventListener('contextmenu', (event) => event.preventDefault());
   window.addEventListener('orkai:error', (event) => toast(event.detail, 'error'));
   setInterval(spin, SPIN_MS);
   setInterval(tick, TICK_MS);
