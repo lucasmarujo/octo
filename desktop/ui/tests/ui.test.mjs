@@ -824,6 +824,59 @@ test('when the session on screen is gone the app moves to one that exists, even 
   assert.doesNotMatch(rust('src/store.rs'), /default session cannot be deleted/);
 });
 
+test('plan usage lists the providers of the running agents first and folds to two until opened', async () => {
+  const { USAGE_FOLDED, usageOrder, usageShown } = await import('../js/format.js');
+  const entry = (kind, overrides) => ({ kind, windows: [{ label: '5h', used: 10, resetsAt: null }], credits: null, problem: null, ...overrides });
+  const entries = [entry('claude'), entry('codex', { windows: [], problem: 'login expired' }), entry('kilo', { windows: [], credits: 3 }), entry('opencode'), entry('grok')];
+  assert.deepEqual(usageOrder(entries, ['opencode', 'codex', 'terminal']).map((item) => item.kind), ['opencode', 'codex', 'claude', 'kilo', 'grok']);
+  const idle = usageOrder(entries, []);
+  assert.deepEqual(idle.map((item) => item.kind), ['claude', 'kilo', 'opencode', 'grok', 'codex'], 'nothing measured goes last, the rest keep the hub order');
+  assert.deepEqual(entries.map((item) => item.kind), ['claude', 'codex', 'kilo', 'opencode', 'grok'], 'ordering leaves the hub list alone');
+  assert.equal(USAGE_FOLDED, 2);
+  assert.deepEqual(usageShown(idle, false), idle.slice(0, 2));
+  assert.equal(usageShown(idle, true), idle);
+  assert.deepEqual(usageShown(idle.slice(0, 1), false), idle.slice(0, 1));
+  assert.deepEqual(usageShown([], false), []);
+});
+
+test('plan usage stays opened or folded as it was left, and only offers the arrow when something is folded away', async () => {
+  const { state, toggleUsage } = await import('../js/state.js');
+  const before = state.usageOpen;
+  toggleUsage();
+  assert.equal(state.usageOpen, !before);
+  toggleUsage();
+  assert.equal(state.usageOpen, before);
+  const source = readFileSync(join(REPO, 'desktop/ui/js/state.js'), 'utf8');
+  assert.match(source, /usageOpen: storage\.get\(USAGE_KEY\) === 'open'/);
+  assert.match(source, /storage\.set\(USAGE_KEY, state\.usageOpen \? 'open' : null\)/, 'folded is the default and is not stored');
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /const toggle = total > USAGE_FOLDED/);
+  assert.match(sidebar, /keep\(usageFrame, 'head', JSON\.stringify\(\[state\.usageOpen, entries\.length, hidden\]\)/, 'the arrow survives the tick that redraws the sidebar every second');
+  assert.match(sidebar, /keep\(usageCards, entry\.kind, JSON\.stringify\(entry\)/, 'a card is rebuilt only when its numbers change');
+  assert.match(sidebar, /node\.textContent = t\('resets in \{time\}'/, 'the reset countdown moves without rebuilding the card');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.usage \{[^}]*flex-shrink: 0/, 'folded usage never gets squeezed by a long session list');
+  assert.match(css, /\.usage\.open \{ flex-shrink: 1; min-height: 0; \}/, 'opened usage grows upward and stops at the sessions');
+  assert.match(css, /\.usage-list \{[^}]*overflow-y: auto/);
+});
+
+test('every provider with plan usage has its icon in the real colors of its brand', async () => {
+  const { PROVIDER_ICONS } = await import('../js/icons.js');
+  const providers = rust('src/usage.rs').match(/pub const PROVIDERS: \[AgentKind; \d+\] = \[([\s\S]*?)\];/)[1].match(/AgentKind::\w+/g).map((name) => name.slice(11).toLowerCase());
+  assert.ok(providers.length >= 7, 'Rust providers not found');
+  assert.deepEqual(Object.keys(PROVIDER_ICONS).sort(), [...providers].sort());
+  for (const [kind, icon] of Object.entries(PROVIDER_ICONS)) {
+    assert.match(icon, /^<svg width="(14|22)" height="\1" viewBox="0 0 24 24"[^>]*aria-hidden="true">[\s\S]+<\/svg>$/, kind);
+    assert.doesNotMatch(icon, /<title|<script|href=|url\(http/i, kind);
+  }
+  const brand = { claude: '#D97757', codex: '#3941FF', kilo: '#F8F676', antigravity: '#3186FF', kimi: '#1783FF' };
+  for (const [kind, color] of Object.entries(brand)) assert.ok(PROVIDER_ICONS[kind].includes(`"${color}"`), `${kind} keeps ${color}`);
+  for (const kind of ['grok', 'opencode']) assert.match(PROVIDER_ICONS[kind], /^<svg [^>]*fill="currentColor"/, `${kind} is black or white, like its logo`);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.usage-icon \{[^}]*overflow: hidden;[^}]*color: var\(--color-text\); background: var\(--color-surface-raised\); \}/, 'a neutral tile, so no brand gets tinted');
+  assert.ok(existsSync(join(REPO, 'desktop/ui/vendor/lobehub-icons/LICENSE')), 'the icon set keeps its MIT notice');
+});
+
 test('every control, overlay and view moves with the same motion tokens, and reduced motion turns it all off', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   for (const name of ['--ease-out', '--ease-in', '--ease-spring', '--motion-fast', '--motion-base', '--motion-slow']) assert.match(css, new RegExp(`${name}: `), name);

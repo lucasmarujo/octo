@@ -3,6 +3,7 @@ import { hubText, t } from './i18n.js';
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 export const USAGE_WARN = 70;
 export const USAGE_ALERT = 90;
+export const USAGE_FOLDED = 2;
 
 const LABELS = { antigravity: 'agy' };
 const KIND_COLORS = {
@@ -143,6 +144,17 @@ export function usageColor(used) {
   if (used >= USAGE_ALERT) return 'var(--color-lost)';
   if (used >= USAGE_WARN) return 'var(--color-waiting)';
   return 'var(--color-done)';
+}
+
+export function usageOrder(entries, kinds) {
+  const running = new Set(kinds);
+  const measured = (entry) => entry.windows.length > 0 || (entry.credits !== null && entry.credits !== undefined);
+  const rank = (entry) => (running.has(entry.kind) ? 0 : 2) + (measured(entry) ? 0 : 1);
+  return [...entries].sort((a, b) => rank(a) - rank(b));
+}
+
+export function usageShown(entries, open) {
+  return open ? entries : entries.slice(0, USAGE_FOLDED);
 }
 
 export function plural(count, one, many) {

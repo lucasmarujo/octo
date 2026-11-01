@@ -11,6 +11,7 @@ const TABS_KEY = 'orkai.tabs';
 const VIEW_KEY = 'orkai.view';
 const GRID_KEY = 'orkai.grid';
 const PROJECT_KEY = 'orkai.project';
+const USAGE_KEY = 'orkai.usage';
 
 export const VIEWS = ['board', 'list', 'grid'];
 
@@ -20,6 +21,7 @@ export const state = {
   overview: null,
   usage: null,
   usageAt: 0,
+  usageOpen: storage.get(USAGE_KEY) === 'open',
   skew: 0,
   frame: 0,
   session: storage.get(SESSION_KEY),
@@ -104,6 +106,11 @@ export function toggleExpanded(name) {
   if (state.expanded.has(name)) state.expanded.delete(name);
   else state.expanded.add(name);
   storage.set(EXPANDED_KEY, JSON.stringify([...state.expanded]));
+}
+
+export function toggleUsage() {
+  state.usageOpen = !state.usageOpen;
+  storage.set(USAGE_KEY, state.usageOpen ? 'open' : null);
 }
 
 export function installedKinds() {

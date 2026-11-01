@@ -222,6 +222,7 @@ export const PT = {
   'session name': 'nome da sessão',
   'funds {amount}': 'saldo {amount}',
   'Plan usage': 'Uso do plano',
+  'resets in {time}': 'renova em {time}',
   week: 'semana',
   month: 'mês',
   'not signed in': 'sem login',

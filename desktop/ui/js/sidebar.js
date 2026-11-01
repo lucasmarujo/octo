@@ -1,10 +1,10 @@
 import { deleteSession, renameSession } from './commands.js';
-import { $, h, svg } from './dom.js';
+import { $, h, keep, place, svg } from './dom.js';
 import { ask, closeMenu, openMenu } from './dialogs.js';
-import { SPINNER, duration, kindColor, label, usageColor } from './format.js';
+import { SPINNER, USAGE_FOLDED, USAGE_WARN, duration, kindColor, label, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
-import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_PLUS } from './icons.js';
-import { inSession, now, selectSession, state, toggleExpanded } from './state.js';
+import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_PLUS, PROVIDER_ICONS } from './icons.js';
+import { agents, inSession, now, selectSession, state, toggleExpanded, toggleUsage } from './state.js';
 import { send } from './transport.js';
 
 const SUMMARY = [
@@ -88,45 +88,93 @@ async function newSession(onSelect) {
   onSelect(name);
 }
 
+const UNFOLD_MS = 320;
+const usageCards = new Map();
+const usageFrame = new Map();
+
 function usageRow(window) {
   const used = Math.max(0, Math.min(100, window.used));
-  const reset = window.resetsAt ? duration(window.resetsAt - now()) : '';
   return h(
     'div',
     { class: 'usage-row' },
-    h('span', { class: 'usage-label' }, t(window.label)),
-    h('div', { class: 'usage-bar' }, h('div', { class: 'usage-fill', style: `width:${used}%;background:${usageColor(window.used)}` })),
-    h('span', { class: 'usage-pct', style: `color:${window.used >= 70 ? usageColor(window.used) : 'var(--color-text)'}` }, `${Math.round(window.used)}%`),
-    h('span', { class: 'usage-reset' }, reset),
+    h(
+      'div',
+      { class: 'usage-line' },
+      h('span', { class: 'usage-label' }, t(window.label)),
+      h('span', { class: 'usage-reset', dataset: window.resetsAt ? { resets: String(window.resetsAt) } : {} }),
+      h('span', { class: 'usage-pct', style: `color:${window.used >= USAGE_WARN ? usageColor(window.used) : 'var(--color-text)'}` }, `${Math.round(window.used)}%`),
+    ),
+    h('div', { class: 'usage-bar' }, h('div', { class: 'usage-fill', style: `width:${used}%;--fill:${usageColor(window.used)}` })),
   );
+}
+
+function usageCard(entry) {
+  const icon = PROVIDER_ICONS[entry.kind];
+  const funds = entry.credits !== null && entry.credits !== undefined
+    ? h('span', { class: 'usage-funds' }, t('funds {amount}', { amount: `$${entry.credits.toFixed(2)}` }))
+    : null;
+  return h(
+    'div',
+    { class: 'usage-card', style: `--tone:${kindColor(entry.kind)}` },
+    h('div', { class: 'usage-provider' }, h('span', { class: 'usage-icon' }, icon ? svg(icon) : null), h('span', { class: 'usage-kind' }, label(entry.kind)), funds),
+    entry.windows.map(usageRow),
+    entry.problem ? h('span', { class: 'usage-note' }, t(entry.problem)) : null,
+  );
+}
+
+function unfold() {
+  const host = $('usage');
+  host.classList.add('unfolding');
+  setTimeout(() => host.classList.remove('unfolding'), UNFOLD_MS);
+}
+
+function usageHead(total, hidden) {
+  const open = state.usageOpen;
+  const toggle = total > USAGE_FOLDED
+    ? h(
+        'button',
+        {
+          class: 'usage-toggle',
+          type: 'button',
+          'aria-expanded': String(open),
+          title: open ? t('Show fewer') : t('Show {count} more', { count: hidden }),
+          onclick: () => {
+            toggleUsage();
+            if (state.usageOpen) unfold();
+            renderUsage();
+          },
+        },
+        open ? null : h('span', null, `+${hidden}`),
+        svg(ICON_CHEVRON_DOWN),
+      )
+    : null;
+  return h('div', { class: 'usage-head' }, h('span', { class: 'caps' }, t('Plan usage')), h('span', { class: 'usage-note usage-ago' }), toggle);
 }
 
 function renderUsage() {
   const host = $('usage');
-  const entries = state.usage || [];
+  const entries = usageOrder(state.usage || [], agents().map((agent) => agent.kind));
   if (!entries.length) {
     host.hidden = true;
     return;
   }
   host.hidden = false;
-  const ago = state.usageAt ? t('{time} ago', { time: duration(Date.now() - state.usageAt) }) : '';
-  const blocks = entries.map((entry) => {
-    const rows = entry.windows.map(usageRow);
-    if (entry.credits !== null && entry.credits !== undefined) {
-      rows.push(h('span', { class: 'usage-note' }, t('funds {amount}', { amount: `$${entry.credits.toFixed(2)}` })));
-    }
-    if (entry.problem) rows.push(h('span', { class: 'usage-note' }, t(entry.problem)));
-    return h(
-      'div',
-      { class: 'usage-agent' },
-      h('span', { class: 'usage-kind', style: `color:${kindColor(entry.kind)}` }, label(entry.kind)),
-      rows,
-    );
+  const shown = usageShown(entries, state.usageOpen);
+  const hidden = entries.length - shown.length;
+  const head = keep(usageFrame, 'head', JSON.stringify([state.usageOpen, entries.length, hidden]), () => usageHead(entries.length, hidden));
+  head.querySelector('.usage-ago').textContent = state.usageAt ? t('{time} ago', { time: duration(Date.now() - state.usageAt) }) : '';
+  const cards = shown.map((entry, index) => {
+    const card = keep(usageCards, entry.kind, JSON.stringify(entry), () => usageCard(entry));
+    card.classList.toggle('extra', index >= USAGE_FOLDED);
+    return card;
   });
-  host.replaceChildren(
-    h('div', { class: 'usage-head' }, h('span', { class: 'caps' }, t('Plan usage')), h('span', { class: 'usage-note' }, ago)),
-    ...blocks,
-  );
+  const list = keep(usageFrame, 'list', '', () => h('div', { class: 'usage-list' }));
+  place(list, cards);
+  place(host, [head, list]);
+  host.classList.toggle('open', state.usageOpen);
+  for (const node of host.querySelectorAll('[data-resets]')) {
+    node.textContent = t('resets in {time}', { time: duration(Number(node.dataset.resets) - now()) });
+  }
 }
 
 export function renderSidebar(onSelect, onOpen) {
