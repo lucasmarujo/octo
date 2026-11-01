@@ -535,7 +535,11 @@ fn describe(hub: &Hub, record: &AgentRecord) -> Details {
         }),
         ..Details::default()
     };
-    let Some(mine) = record.worktree.as_ref() else { return details };
+    let Some(mine) = record.worktree.as_ref() else {
+        details.changes =
+            worktree::folder(&record.cwd).and_then(|folder| worktree::pending(&folder)).ok().map(file_views);
+        return details;
+    };
     let Ok(files) = worktree::files(mine) else { return details };
     let changes = worktree::Changes {
         files: files.len(),
@@ -551,13 +555,15 @@ fn describe(hub: &Hub, record: &AgentRecord) -> Details {
         .filter_map(|(id, name, worktree)| worktree::changes(&worktree).ok().map(|changes| (id, name, changes)))
         .collect();
     details.overlaps = overlaps_with(agent, &changes, &others);
-    details.changes = Some(
-        files
-            .into_iter()
-            .map(|file| FileView { path: file.path, insertions: file.insertions, deletions: file.deletions })
-            .collect(),
-    );
+    details.changes = Some(file_views(files));
     details
+}
+
+fn file_views(files: Vec<worktree::FileChange>) -> Vec<FileView> {
+    files
+        .into_iter()
+        .map(|file| FileView { path: file.path, insertions: file.insertions, deletions: file.deletions })
+        .collect()
 }
 
 fn details(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
@@ -611,21 +617,44 @@ pub fn clip(text: &[u8], limit: usize) -> (String, bool) {
 }
 
 fn diff(hub: &Hub, agent: AgentId, reply: &Sender<Event>) {
-    let Some(worktree) = hub.record(agent).and_then(|record| record.worktree) else {
-        return notice(reply, Tone::Warn, "this agent does not run in its own worktree");
-    };
+    let Some(record) = hub.record(agent) else { return };
     let reply = reply.clone();
-    spawn("orkai-pwa-diff", move || match worktree::diff(&worktree) {
-        Ok(bytes) => {
-            let (text, truncated) = clip(&bytes, MAX_DIFF_BYTES);
-            let _ = reply.send(Event::Reply(BridgeMsg::Diff { agent, branch: worktree.branch, text, truncated }));
+    spawn("orkai-pwa-diff", move || {
+        let read = match record.worktree {
+            Some(worktree) => worktree::diff(&worktree).map(|bytes| (worktree.branch, bytes)),
+            None => worktree::folder(&record.cwd)
+                .and_then(|folder| worktree::pending_diff(&folder).map(|bytes| (folder.branch, bytes))),
+        };
+        match read {
+            Ok((branch, bytes)) => {
+                let (text, truncated) = clip(&bytes, MAX_DIFF_BYTES);
+                let _ = reply.send(Event::Reply(BridgeMsg::Diff { agent, branch, text, truncated }));
+            }
+            Err(err) => notice(&reply, Tone::Error, format!("could not read the changes: {err}")),
         }
-        Err(err) => notice(&reply, Tone::Error, format!("could not read the changes: {err}")),
     });
 }
 
 fn merge(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
-    merge_then(hub, agent, reply, |_, _| {});
+    match hub.record(agent) {
+        Some(record) if record.worktree.is_none() => commit(hub, record, reply),
+        _ => merge_then(hub, agent, reply, |_, _| {}),
+    }
+}
+
+fn commit(hub: &Hub, record: AgentRecord, reply: &Sender<Event>) {
+    if matches!(hub.state(record.id), Some(AgentState::Working | AgentState::Paused)) {
+        return notice(reply, Tone::Warn, format!("wait for {} to finish (or stop it) before committing", record.name));
+    }
+    notice(reply, Tone::Info, format!("committing what is pending in the folder of {}…", record.name));
+    let (reply, message) = (reply.clone(), merge_message(&record));
+    spawn("orkai-pwa-commit", move || {
+        match worktree::folder(&record.cwd).and_then(|folder| worktree::commit(&folder, &message)) {
+            Ok(Some(done)) => notice(&reply, Tone::Success, format!("committed to {} as {}", done.branch, done.tip)),
+            Ok(None) => notice(&reply, Tone::Info, "nothing is pending to commit"),
+            Err(err) => notice(&reply, Tone::Error, format!("commit failed: {err}")),
+        }
+    });
 }
 
 fn merge_then(

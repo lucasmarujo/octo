@@ -71,10 +71,20 @@ async function remove(agent) {
 }
 
 export async function merge(agent) {
+  if (!agent.branch) return commit(agent);
   const sure = await confirm({
     title: t('Merge {branch}?', { branch: agent.branch }),
     text: t('Whatever is pending on the branch is committed and merged into the current branch of the repository. A conflict undoes the merge and leaves the repository as it was.'),
     action: t('Merge'),
+  });
+  if (sure) send({ type: 'merge', agent: agent.id });
+}
+
+async function commit(agent) {
+  const sure = await confirm({
+    title: t('Commit what is pending?'),
+    text: t('Everything not yet committed in the repository of {path} is committed to its current branch, including changes made by you or by other agents in that folder.', { path: shortPath(agent.cwd) }),
+    action: t('Commit'),
   });
   if (sure) send({ type: 'merge', agent: agent.id });
 }
@@ -147,6 +157,7 @@ function overlapText(overlap) {
 }
 
 function changesSection(agent, info) {
+  const inFolder = !agent.branch;
   const busy = agent.state === 'working' || agent.state === 'paused';
   const files = info && info.changes ? info.changes : [];
   const plus = files.reduce((sum, file) => sum + file.insertions, 0);
@@ -165,21 +176,24 @@ function changesSection(agent, info) {
             h('span', { class: `change-minus ${file.deletions ? 't-red' : 't-faint'}` }, file.deletions ? `−${file.deletions}` : '0'),
           ),
         ))
-      : h('span', { class: 'detail-note' }, t('No changes on the branch yet.'))
+      : h('span', { class: 'detail-note' }, inFolder ? t('Nothing pending in the folder.') : t('No changes on the branch yet.'))
     : h('span', { class: 'detail-note' }, t('Reading the changes…'));
   const overlaps = info ? info.overlaps : [];
   return section(
     t('Changes'),
     totals,
+    inFolder ? h('span', { class: 'detail-note' }, t('Everything pending in the folder, not only what this agent changed.')) : null,
     list,
     ...overlaps.map((overlap) => h('span', { class: 'overlap t-yellow', title: overlap.paths.join('\n') }, overlapText(overlap))),
     h(
       'div',
       { class: 'detail-actions' },
       h('button', { class: 'button', type: 'button', onclick: () => send({ type: 'diff', agent: agent.id }) }, t('Open diff')),
-      h('button', { class: 'button merge', type: 'button', disabled: busy, onclick: () => merge(agent) }, t('Merge')),
+      inFolder
+        ? h('button', { class: 'button merge', type: 'button', disabled: busy || !files.length, onclick: () => commit(agent) }, t('Commit'))
+        : h('button', { class: 'button merge', type: 'button', disabled: busy, onclick: () => merge(agent) }, t('Merge')),
     ),
-    busy ? h('span', { class: 'detail-note' }, t('Merge unlocks when the agent stops or is done.')) : null,
+    busy ? h('span', { class: 'detail-note' }, inFolder ? t('Commit unlocks when the agent stops or is done.') : t('Merge unlocks when the agent stops or is done.')) : null,
   );
 }
 
@@ -211,7 +225,7 @@ function testSection(agent, test) {
 
 function details(agent, info) {
   const parts = [subagentsSection(info ? info.subagents : [])];
-  if (agent.branch) parts.push(changesSection(agent, info));
+  if (agent.branch || (info && info.changes)) parts.push(changesSection(agent, info));
   if (info && info.test) parts.push(testSection(agent, info.test));
   return parts;
 }

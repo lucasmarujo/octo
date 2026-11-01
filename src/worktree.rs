@@ -19,6 +19,7 @@ const BRANCH_SLUG_MAX: usize = 40;
 const MAX_BRANCH_ATTEMPTS: usize = 100;
 const DEFAULT_SLUG: &str = "agent";
 const NULL_FILE: &str = "/dev/null";
+const HEAD: &str = "HEAD";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Changes {
@@ -53,6 +54,18 @@ pub struct Merged {
     pub target: String,
     pub tip: String,
     pub up_to_date: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Folder {
+    pub repo: PathBuf,
+    pub branch: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Committed {
+    pub branch: String,
+    pub tip: String,
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {
@@ -175,7 +188,15 @@ fn count_lines(path: &Path) -> usize {
 }
 
 pub fn files(worktree: &Worktree) -> io::Result<Vec<FileChange>> {
-    let numstat = run(&worktree.path, &["diff", "--numstat", "-z", &worktree.base])?;
+    files_since(&worktree.path, &worktree.base)
+}
+
+pub fn pending(folder: &Folder) -> io::Result<Vec<FileChange>> {
+    files_since(&folder.repo, HEAD)
+}
+
+fn files_since(path: &Path, base: &str) -> io::Result<Vec<FileChange>> {
+    let numstat = run(path, &["diff", "--numstat", "-z", base, "--"])?;
     let mut files = Vec::new();
     let mut fields = numstat.split('\0');
     while let Some(field) = fields.next() {
@@ -199,8 +220,8 @@ pub fn files(worktree: &Worktree) -> io::Result<Vec<FileChange>> {
             deletions: removed.parse::<usize>().unwrap_or(0),
         });
     }
-    for (index, file) in untracked(&worktree.path)?.into_iter().enumerate() {
-        let insertions = if index < MAX_UNTRACKED_FILES { count_lines(&worktree.path.join(&file)) } else { 0 };
+    for (index, file) in untracked(path)?.into_iter().enumerate() {
+        let insertions = if index < MAX_UNTRACKED_FILES { count_lines(&path.join(&file)) } else { 0 };
         files.push(FileChange { path: file, renamed_from: None, insertions, deletions: 0 });
     }
     Ok(files)
@@ -219,17 +240,25 @@ pub fn changes(worktree: &Worktree) -> io::Result<Changes> {
 }
 
 pub fn diff(worktree: &Worktree) -> io::Result<Vec<u8>> {
-    let output = git(&worktree.path, &["diff", "--color=always", "--stat", "--patch", &worktree.base])?;
+    diff_since(&worktree.path, &worktree.base)
+}
+
+pub fn pending_diff(folder: &Folder) -> io::Result<Vec<u8>> {
+    diff_since(&folder.repo, HEAD)
+}
+
+fn diff_since(path: &Path, base: &str) -> io::Result<Vec<u8>> {
+    let output = git(path, &["diff", "--color=always", "--stat", "--patch", base, "--"])?;
     if !output.status.success() {
         return Err(io::Error::other(error_line(&output.stderr)));
     }
     let mut out = output.stdout;
-    let new_files = untracked(&worktree.path)?;
+    let new_files = untracked(path)?;
     for file in new_files.iter().take(MAX_UNTRACKED_FILES) {
         if out.len() >= MAX_DIFF_BYTES {
             break;
         }
-        let added = git(&worktree.path, &["diff", "--no-index", "--color=always", "--", NULL_FILE, file])?;
+        let added = git(path, &["diff", "--no-index", "--color=always", "--", NULL_FILE, file])?;
         out.extend_from_slice(&added.stdout);
     }
     if new_files.len() > MAX_UNTRACKED_FILES {
@@ -268,8 +297,7 @@ pub fn merge(worktree: &Worktree, message: &str) -> io::Result<Merged> {
             .map_err(|err| io::Error::other(format!("could not commit the worktree changes: {err}")))?;
     }
     let tip = run(&worktree.path, &["rev-parse", "HEAD"])?;
-    let target = run(&worktree.repo, &["symbolic-ref", "--short", "-q", "HEAD"])
-        .map_err(|_| invalid(format!("{} is not on a branch", worktree.repo.display())))?;
+    let target = current_branch(&worktree.repo)?;
     let before = run(&worktree.repo, &["rev-parse", "HEAD"])?;
     let output = git(&worktree.repo, &["merge", "--no-edit", &worktree.branch])?;
     if output.status.success() {
@@ -287,6 +315,28 @@ pub fn merge(worktree: &Worktree, message: &str) -> io::Result<Merged> {
         worktree.branch,
         worktree.repo.display()
     )))
+}
+
+fn current_branch(repo: &Path) -> io::Result<String> {
+    run(repo, &["symbolic-ref", "--short", "-q", HEAD])
+        .map_err(|_| invalid(format!("{} is not on a branch", repo.display())))
+}
+
+pub fn folder(dir: &Path) -> io::Result<Folder> {
+    let repo = toplevel(dir)?;
+    let branch = current_branch(&repo).unwrap_or_else(|_| HEAD.to_string());
+    Ok(Folder { repo, branch })
+}
+
+pub fn commit(folder: &Folder, message: &str) -> io::Result<Option<Committed>> {
+    let branch = current_branch(&folder.repo)?;
+    if run(&folder.repo, &["status", "--porcelain"])?.is_empty() {
+        return Ok(None);
+    }
+    run(&folder.repo, &["add", "-A"])?;
+    run(&folder.repo, &["commit", "-m", message])?;
+    let tip = run(&folder.repo, &["rev-parse", "--short", HEAD])?;
+    Ok(Some(Committed { branch, tip }))
 }
 
 fn owned_by_orkai(home: &Home, worktree: &Worktree) -> bool {
@@ -540,6 +590,77 @@ mod tests {
         git_in(&r.repo, &["checkout", "-q", "--detach", &head]);
         let err = merge(&worktree, "x").unwrap_err().to_string();
         assert!(err.contains("is not on a branch"), "{err}");
+    }
+
+    fn listed(files: Vec<FileChange>) -> Vec<(String, usize, usize)> {
+        let mut listed: Vec<_> = files.into_iter().map(|file| (file.path, file.insertions, file.deletions)).collect();
+        listed.sort();
+        listed
+    }
+
+    #[test]
+    fn a_folder_lists_what_is_pending_since_its_last_commit_but_not_ignored_files() {
+        let r = repo();
+        let folder = folder(&r.repo.join("app")).unwrap();
+        assert_eq!(folder, Folder { repo: toplevel(&r.repo).unwrap(), branch: "main".into() });
+        assert!(pending(&folder).unwrap().is_empty());
+        assert!(pending_diff(&folder).unwrap().is_empty());
+
+        fs::write(r.repo.join("app").join("lib.txt"), "one\nTWO\nthree\n").unwrap();
+        fs::write(r.repo.join("notes.txt"), "a\nb\n").unwrap();
+        fs::write(r.repo.join(HEAD), "named like the revision\n").unwrap();
+        fs::create_dir_all(r.repo.join("target")).unwrap();
+        fs::write(r.repo.join("target").join("build.log"), "ignored\n").unwrap();
+        let expected = [(HEAD.to_string(), 1, 0), ("app/lib.txt".to_string(), 1, 1), ("notes.txt".to_string(), 2, 0)];
+        assert_eq!(listed(pending(&folder).unwrap()), expected);
+
+        git_in(&r.repo, &["add", "notes.txt", HEAD]);
+        assert_eq!(listed(pending(&folder).unwrap()), expected, "a staged file is still pending");
+        let text = String::from_utf8_lossy(&pending_diff(&folder).unwrap()).into_owned();
+        assert!(text.contains("app/lib.txt") && text.contains("TWO") && text.contains("notes.txt"), "{text}");
+        assert!(!text.contains("build.log"), "{text}");
+    }
+
+    #[test]
+    fn committing_a_folder_records_everything_pending_on_its_branch() {
+        let r = repo();
+        let folder = folder(&r.repo).unwrap();
+        let before = git_in(&r.repo, &["rev-parse", "HEAD"]);
+        assert_eq!(commit(&folder, "nothing").unwrap(), None, "a clean folder has nothing to commit");
+        assert_eq!(git_in(&r.repo, &["rev-parse", "HEAD"]), before);
+
+        fs::write(r.repo.join("app").join("lib.txt"), "one\n").unwrap();
+        fs::write(r.repo.join("plan.md"), "# Plan\n").unwrap();
+        let done = commit(&folder, "planner: write the plan").unwrap().unwrap();
+        assert_eq!(done, Committed { branch: "main".into(), tip: git_in(&r.repo, &["rev-parse", "--short", "HEAD"]) });
+        assert_eq!(git_in(&r.repo, &["log", "-1", "--format=%s"]), "planner: write the plan");
+        assert_eq!(git_in(&r.repo, &["show", "--name-only", "--format=", "HEAD"]), "app/lib.txt\nplan.md");
+        assert!(git_in(&r.repo, &["status", "--porcelain"]).is_empty());
+        assert!(pending(&folder).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_folder_off_any_branch_shows_its_changes_but_is_never_committed() {
+        let r = repo();
+        let head = git_in(&r.repo, &["rev-parse", "HEAD"]);
+        git_in(&r.repo, &["checkout", "-q", "--detach", &head]);
+        fs::write(r.repo.join("loose.txt"), "x\n").unwrap();
+        let folder = folder(&r.repo).unwrap();
+        assert_eq!(folder.branch, HEAD);
+        assert_eq!(listed(pending(&folder).unwrap()), [("loose.txt".to_string(), 1, 0)]);
+        let err = commit(&folder, "x").unwrap_err().to_string();
+        assert!(err.contains("is not on a branch"), "{err}");
+        assert_eq!(git_in(&r.repo, &["rev-parse", "HEAD"]), head);
+        assert!(r.repo.join("loose.txt").is_file());
+    }
+
+    #[test]
+    fn a_folder_outside_git_has_no_changes_to_read() {
+        let r = repo();
+        let plain = r.dir.join("plain");
+        fs::create_dir_all(&plain).unwrap();
+        let err = folder(&plain).unwrap_err().to_string();
+        assert!(err.contains("is not inside a git repository"), "{err}");
     }
 
     #[test]

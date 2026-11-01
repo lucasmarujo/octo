@@ -16,7 +16,9 @@ use orkai::paths::Home;
 use orkai::protocol::{ClientMsg, HolderMsg, TermSize};
 use orkai::pwa::crypto::{self, Channel, Ephemeral, Secret, Side};
 use orkai::pwa::hub::{Event, Hub};
-use orkai::pwa::protocol::{AgentView, BridgeMsg, Greeting, Overview, PhoneMsg, Screen, StartRequest, Tone, VERSION};
+use orkai::pwa::protocol::{
+    AgentView, BridgeMsg, Details, Greeting, Overview, PhoneMsg, Screen, StartRequest, Tone, VERSION,
+};
 use orkai::pwa::server::{OUTDATED, Outbox, Peer, Server, UNPAIRED};
 use orkai::store::Store;
 
@@ -628,7 +630,7 @@ fn the_details_of_an_agent_and_its_restart_come_from_the_core() {
     });
     assert_eq!(details.agent, id);
     assert!(details.subagents.is_empty() && details.overlaps.is_empty());
-    assert_eq!(details.changes, None, "a terminal outside a worktree has no changes to show");
+    assert_eq!(details.changes, None, "a terminal outside a git repository has no changes to show");
     phone.send(&PhoneMsg::CrossReview { agent: id, reviewer: String::new() });
     let refused = phone.until(|message| match message {
         BridgeMsg::Notice { text, tone: Tone::Error } => Some(text),
@@ -678,6 +680,73 @@ fn sessions_are_renamed_and_deleted_and_trust_needs_a_repository() {
 fn git(dir: &Path, args: &[&str]) {
     let status = std::process::Command::new("git").args(args).current_dir(dir).status().unwrap();
     assert!(status.success(), "git {args:?}");
+}
+
+fn git_output(dir: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git").args(args).current_dir(dir).output().unwrap();
+    assert!(output.status.success(), "git {args:?}");
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn details_of(phone: &mut Phone, id: AgentId) -> Details {
+    phone.send(&PhoneMsg::Details { agent: id });
+    phone.until(|message| match message {
+        BridgeMsg::Details(details) if details.agent == id => Some(details),
+        _ => None,
+    })
+}
+
+#[test]
+fn an_agent_outside_a_worktree_shows_diffs_and_commits_what_is_pending_in_its_folder() {
+    let fx = fixture();
+    let repo = fx.dir.join("folder");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q"]);
+    git(&repo, &["config", "user.email", "test@orkai.dev"]);
+    git(&repo, &["config", "user.name", "orkai test"]);
+    git(&repo, &["config", "core.autocrlf", "false"]);
+    std::fs::write(repo.join("cart.js"), "one\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "start"]);
+    let id = start_terminal(&fx, "folder");
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.overview_where(|overview| agent(overview, id).is_some_and(|a| !a.starting && a.state == AgentState::Idle));
+    assert_eq!(details_of(&mut phone, id).changes, Some(Vec::new()), "a clean folder has nothing pending");
+
+    std::fs::write(repo.join("cart.js"), "one\ntwo\n").unwrap();
+    std::fs::write(repo.join("tax.js"), "tax\n").unwrap();
+    let details = details_of(&mut phone, id);
+    let files: Vec<(String, usize, usize)> =
+        details.changes.unwrap().into_iter().map(|file| (file.path, file.insertions, file.deletions)).collect();
+    assert_eq!(files, [("cart.js".to_string(), 1, 0), ("tax.js".to_string(), 1, 0)]);
+    assert!(details.overlaps.is_empty());
+
+    phone.send(&PhoneMsg::Diff { agent: id });
+    let (branch, text) = phone.until(|message| match message {
+        BridgeMsg::Diff { agent, branch, text, .. } if agent == id => Some((branch, text)),
+        _ => None,
+    });
+    assert_eq!(branch, git_output(&repo, &["branch", "--show-current"]));
+    assert!(text.contains("cart.js") && text.contains("two") && text.contains("tax.js"), "{text}");
+
+    phone.send(&PhoneMsg::Merge { agent: id });
+    let done = phone.until(|message| match message {
+        BridgeMsg::Notice { text, tone: Tone::Success } => Some(text),
+        _ => None,
+    });
+    let tip = git_output(&repo, &["rev-parse", "--short", "HEAD"]);
+    assert_eq!(done, format!("committed to {branch} as {tip}"));
+    assert_eq!(git_output(&repo, &["log", "-1", "--format=%s"]), "folder");
+    assert!(git_output(&repo, &["status", "--porcelain"]).is_empty());
+    assert_eq!(details_of(&mut phone, id).changes, Some(Vec::new()));
+
+    phone.send(&PhoneMsg::Merge { agent: id });
+    let nothing = phone.until(|message| match message {
+        BridgeMsg::Notice { text, tone: Tone::Info } if text.starts_with("nothing") => Some(text),
+        _ => None,
+    });
+    assert_eq!(nothing, "nothing is pending to commit");
+    assert_eq!(git_output(&repo, &["rev-parse", "--short", "HEAD"]), tip);
 }
 
 #[test]

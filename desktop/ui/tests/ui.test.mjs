@@ -624,6 +624,15 @@ test('once stopped, the idle column removes every stopped agent at once, after a
   assert.match(board, /async function removeStopped\(\) \{[\s\S]*?const sure = await confirm\(\{[\s\S]*?danger: true[\s\S]*?for \(const agent of targets\) send\(\{ type: 'remove', agent: agent\.id \}\)/, 'it asks before removing');
 });
 
+test('an agent outside a worktree shows what is pending in its folder and commits it instead of merging', () => {
+  const source = readFileSync(join(REPO, 'desktop/ui/js/agent.js'), 'utf8');
+  assert.match(source, /if \(agent\.branch \|\| \(info && info\.changes\)\) parts\.push\(changesSection\(agent, info\)\)/, 'the core sends changes only for a folder inside git');
+  assert.match(source, /export async function merge\(agent\) \{\n\s*if \(!agent\.branch\) return commit\(agent\);/, '/merge commits for an agent without a branch');
+  assert.match(source, /async function commit\(agent\) \{[\s\S]*?const sure = await confirm\(\{[\s\S]*?if \(sure\) send\(\{ type: 'merge', agent: agent\.id \}\)/, 'it asks before committing');
+  assert.match(source, /disabled: busy \|\| !files\.length, onclick: \(\) => commit\(agent\)/, 'a busy agent or a clean folder keeps Commit off');
+  assert.match(source, /disabled: busy, onclick: \(\) => merge\(agent\) \}, t\('Merge'\)/, 'an agent in a worktree still merges its branch');
+});
+
 test('every text the app shows has a Portuguese version', async () => {
   const { PT } = await import('../js/i18n.js');
   const ui = join(REPO, 'desktop/ui');
