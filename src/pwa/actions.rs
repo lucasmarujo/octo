@@ -67,10 +67,12 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         PhoneMsg::CrossReview { agent, reviewer } => cross_review(hub, agent, &reviewer, reply),
         PhoneMsg::Tests { agent } => tests(hub, agent, reply),
         PhoneMsg::Skills { kind, cwd } => list_skills(kind, &cwd, reply),
-        PhoneMsg::Skill { kind, session, cwd, name, args, worktree, bypass } => {
-            run_skill(hub, SkillRun { kind, session, cwd, name, args, worktree, bypass }, reply);
+        PhoneMsg::Skill { kind, session, cwd, name, args, worktree, bypass, remote_control } => {
+            run_skill(hub, SkillRun { kind, session, cwd, name, args, worktree, bypass, remote_control }, reply);
         }
-        PhoneMsg::Race { session, cwd, race: line, bypass } => race(hub, session, &cwd, &line, bypass, reply),
+        PhoneMsg::Race { session, cwd, race: line, bypass, remote_control } => {
+            race(hub, session, &cwd, &line, bypass, remote_control, reply);
+        }
         PhoneMsg::Compare { agent } => compare(hub, agent, reply),
         PhoneMsg::Pick { agent } => pick(hub, agent, reply),
         PhoneMsg::RenameSession { name, to } => match hub.store().rename_session(&name, &to) {
@@ -161,7 +163,7 @@ pub fn resolve_dir(path: &str) -> PathBuf {
 }
 
 fn start(hub: &Arc<Hub>, request: StartRequest, reply: &Sender<Event>) {
-    let StartRequest { kind, session, cwd, task, worktree, bypass } = request;
+    let StartRequest { kind, session, cwd, task, worktree, bypass, remote_control } = request;
     if !hub.kinds().contains(&kind) {
         return notice(reply, Tone::Error, format!("{} is not installed on {}", kind.label(), hub.host()));
     }
@@ -175,13 +177,14 @@ fn start(hub: &Arc<Hub>, request: StartRequest, reply: &Sender<Event>) {
     let name = default_agent_name(kind, &task, |name| hub.name_taken(&session, name));
     let isolate = worktree && kind.is_ai();
     let bypass = bypass && kind.is_ai();
+    let remote_control = remote_control && kind == AgentKind::Claude;
     let place = if isolate { " in a new worktree" } else { "" };
     let mode = if bypass { " with permissions bypassed" } else { "" };
     notice(reply, Tone::Info, format!("starting {} {name}{place}{mode}…", kind.label()));
     let draft = NewAgent { session, name, kind, cwd, task };
     let (hub, reply) = (Arc::clone(hub), reply.clone());
     spawn("orkai-pwa-launch", move || {
-        match hub.launcher().create(draft, DEFAULT_SIZE, isolate, bypass) {
+        match hub.launcher().create(draft, DEFAULT_SIZE, isolate, bypass, remote_control) {
             Ok(record) => notice(&reply, Tone::Success, format!("{} {} started", record.kind.label(), record.name)),
             Err(err) => notice(&reply, Tone::Error, format!("could not start the agent: {err}")),
         }
@@ -283,6 +286,7 @@ fn cross_review(hub: &Arc<Hub>, agent: AgentId, reviewer: &str, reply: &Sender<E
             task: review_task(worktree),
             worktree: false,
             bypass: false,
+            remote_control: false,
         },
         reply,
     );
@@ -296,6 +300,7 @@ struct SkillRun {
     args: String,
     worktree: bool,
     bypass: bool,
+    remote_control: bool,
 }
 
 fn list_skills(kind: AgentKind, cwd: &str, reply: &Sender<Event>) {
@@ -324,6 +329,7 @@ fn run_skill(hub: &Arc<Hub>, run: SkillRun, reply: &Sender<Event>) {
         task,
         worktree: run.worktree,
         bypass: run.bypass,
+        remote_control: run.remote_control,
     };
     start(hub, request, reply);
 }
@@ -338,7 +344,15 @@ pub fn race_kinds(kinds: &[AgentKind], installed: &[AgentKind]) -> Result<(), St
     }
 }
 
-fn race(hub: &Arc<Hub>, session: String, cwd: &str, line: &str, bypass: bool, reply: &Sender<Event>) {
+fn race(
+    hub: &Arc<Hub>,
+    session: String,
+    cwd: &str,
+    line: &str,
+    bypass: bool,
+    remote_control: bool,
+    reply: &Sender<Event>,
+) {
     let Some((kinds, task)) = parse_race(line) else {
         return notice(reply, Tone::Error, format!("usage: /race <agent,agent…> <task>, 2 to {MAX_RACERS} AI agents"));
     };
@@ -364,8 +378,9 @@ fn race(hub: &Arc<Hub>, session: String, cwd: &str, line: &str, bypass: bool, re
     spawn("orkai-pwa-race", move || {
         for draft in drafts {
             let bypass = bypass && draft.kind.is_ai();
+            let remote_control = remote_control && draft.kind == AgentKind::Claude;
             let name = draft.name.clone();
-            if let Err(err) = hub.launcher().create_in_race(draft, DEFAULT_SIZE, bypass, race) {
+            if let Err(err) = hub.launcher().create_in_race(draft, DEFAULT_SIZE, bypass, remote_control, race) {
                 notice(&reply, Tone::Error, format!("could not start {name}: {err}"));
             }
             hub.nudge();

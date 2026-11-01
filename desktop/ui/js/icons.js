@@ -10,6 +10,8 @@ export const ICON_BRANCH = `<svg width="12" height="12" viewBox="0 0 12 12" fill
 
 export const ICON_SHIELD = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1l4 1.5v3.2c0 2.5-1.7 4.3-4 5.3-2.3-1-4-2.8-4-5.3V2.5L6 1z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>`;
 
+export const ICON_REMOTE = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M3.9 3.9a3 3 0 0 0 0 4.2M8.1 3.9a3 3 0 0 1 0 4.2M2.2 2.2a5.4 5.4 0 0 0 0 7.6M9.8 2.2a5.4 5.4 0 0 1 0 7.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>`;
+
 export const ICON_STOP = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.3"/></svg>`;
 
 export const ICON_TRASH = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 3.5h8M4.5 3.5V2.2h3v1.3M3.2 3.5l.5 6.3h4.6l.5-6.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;

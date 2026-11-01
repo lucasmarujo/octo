@@ -194,6 +194,8 @@ export const PT = {
   where: 'onde',
   'Each new AI agent runs in its own git worktree and orkai/<name> branch': 'Cada agente de IA novo roda no próprio worktree git e na branch orkai/<nome>',
   Bypass: 'Bypass',
+  'Remote Control': 'Remote Control',
+  'New Claude agents start with Remote Control: continue them from claude.ai or the Claude app': 'Os agentes Claude novos começam com Remote Control: continue de claude.ai ou do app do Claude',
   'New AI agents run tools, commands and edits without asking. Only in folders you trust.': 'Os agentes de IA novos rodam ferramentas, comandos e edições sem perguntar. Só em pastas em que você confia.',
   Cancel: 'Cancelar',
   'The diff is too long to show whole; the rest is on the branch.': 'O diff é longo demais para aparecer inteiro; o resto está na branch.',

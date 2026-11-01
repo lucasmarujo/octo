@@ -196,7 +196,7 @@ export function runCommand(text, ctx) {
       send({ type: 'trust', cwd: currentWhere() });
       break;
     case 'race':
-      send({ type: 'race', session: state.session, cwd: currentWhere(), race: arg, bypass: state.bypass });
+      send({ type: 'race', session: state.session, cwd: currentWhere(), race: arg, bypass: state.bypass, remoteControl: state.remote });
       break;
     case 'compare':
       agentCommand((agent) => send({ type: 'compare', agent: agent.id }));
@@ -214,7 +214,7 @@ export function runCommand(text, ctx) {
       ctx.quit();
       break;
     default:
-      send({ type: 'skill', kind: currentWho(), session: state.session, cwd: currentWhere(), name: word, args: arg, worktree: worktreeOn(), bypass: state.bypass });
+      send({ type: 'skill', kind: currentWho(), session: state.session, cwd: currentWhere(), name: word, args: arg, worktree: worktreeOn(), bypass: state.bypass, remoteControl: state.remote });
       break;
   }
   return true;

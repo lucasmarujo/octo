@@ -907,6 +907,32 @@ test('the phone button shows a phone and a green outline while a phone is connec
   assert.match(css, /\.footer-pair\.connected \{ box-shadow: inset 0 0 0 1px color-mix\(in srgb, var\(--color-done\) 70%, transparent\); \}/, 'an inset outline, so the footer does not move');
 });
 
+test('remote control is a yellow toggle between worktree and bypass, off until chosen and only for Claude', async () => {
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  const order = [...html.matchAll(/<button id="(worktree|remote|bypass)" class="toggle"/g)].map((match) => match[1]);
+  assert.deepEqual(order, ['worktree', 'remote', 'bypass']);
+  const { state, setRemote } = await import('../js/state.js');
+  assert.equal(state.remote, false, 'off by default');
+  setRemote(true);
+  assert.equal(state.remote, true);
+  setRemote(false);
+  const source = readFileSync(join(REPO, 'desktop/ui/js/state.js'), 'utf8');
+  assert.match(source, /remote: storage\.get\(REMOTE_KEY\) === 'on'/);
+  assert.match(source, /storage\.set\(REMOTE_KEY, on \? 'on' : null\)/);
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  assert.match(composer, /remoteControl: state\.remote && kind === 'claude'/);
+  assert.match(composer, /remote\.classList\.add\('caution'\);\n\s*remote\.setAttribute\('aria-pressed', String\(state\.remote\)\)/);
+  const commands = readFileSync(join(REPO, 'desktop/ui/js/commands.js'), 'utf8');
+  assert.match(commands, /type: 'race'[^}]*remoteControl: state\.remote/);
+  assert.match(commands, /type: 'skill'[^}]*remoteControl: state\.remote/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.toggle\.caution\[aria-pressed="true"\] \{ color: var\(--color-waiting\);/);
+  const actions = rust('src/pwa/actions.rs');
+  assert.match(actions, /let remote_control = remote_control && kind == AgentKind::Claude;/);
+  assert.match(actions, /let remote_control = remote_control && draft\.kind == AgentKind::Claude;/);
+  assert.match(rust('src/launch.rs'), /if record\.remote_control \{\n\s*args\.push\("--remote-control"\.to_string\(\)\);/);
+});
+
 test('every control, overlay and view moves with the same motion tokens, and reduced motion turns it all off', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   for (const name of ['--ease-out', '--ease-in', '--ease-spring', '--motion-fast', '--motion-base', '--motion-slow']) assert.match(css, new RegExp(`${name}: `), name);

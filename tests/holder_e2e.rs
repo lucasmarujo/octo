@@ -764,7 +764,7 @@ fn an_agent_started_in_bypass_mode_gets_the_flag_and_keeps_it_when_recovered() {
         cwd: fx.dir.join("work"),
         task: String::new(),
     };
-    let mut record = launcher.create(draft, size, false, true).unwrap();
+    let mut record = launcher.create(draft, size, false, true, false).unwrap();
     assert!(record.bypass);
     assert!(fx.store.load_agent(record.id).unwrap().bypass, "the mode is saved with the agent");
     stop_after_seeing(&fx, record.id, size, "--dangerously-skip-permissions");
@@ -807,8 +807,8 @@ fn agents_of_a_race_each_get_their_own_worktree_and_share_the_race() {
         task: String::new(),
     };
     let size = TermSize { rows: 24, cols: 100 };
-    let first = launcher.create_in_race(racer("first"), size, false, 42).unwrap();
-    let second = launcher.create_in_race(racer("second"), size, false, 42).unwrap();
+    let first = launcher.create_in_race(racer("first"), size, false, false, 42).unwrap();
+    let second = launcher.create_in_race(racer("second"), size, false, false, 42).unwrap();
     for record in [&first, &second] {
         let saved = fx.store.load_agent(record.id).unwrap();
         assert_eq!(saved.race, Some(42));
@@ -849,7 +849,7 @@ fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
         cwd: repo.join("app"),
         task: "git branch --show-current".into(),
     };
-    let record = launcher.create(draft, TermSize { rows: 24, cols: 100 }, true, false).unwrap();
+    let record = launcher.create(draft, TermSize { rows: 24, cols: 100 }, true, false, false).unwrap();
     let worktree = record.worktree.clone().expect("the agent must get a worktree");
     assert_eq!(worktree.branch, "orkai/branch-check");
     assert_eq!(record.cwd, worktree.path.join("app"));
@@ -870,7 +870,7 @@ fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
         cwd: record.cwd.clone(),
         task: String::new(),
     };
-    let guest = launcher.create(inside, TermSize { rows: 24, cols: 100 }, false, false).unwrap();
+    let guest = launcher.create(inside, TermSize { rows: 24, cols: 100 }, false, false, false).unwrap();
     assert_eq!(guest.worktree, None);
     assert_eq!(guest.project, Some(repo.join("app")), "an agent inside the worktree belongs to its project");
     assert_eq!(fx.store.load_agent(guest.id).unwrap().project_dir(), repo.join("app"));

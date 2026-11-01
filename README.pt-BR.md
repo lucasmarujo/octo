@@ -680,9 +680,9 @@ por exemplo, para mandar ao celular pelo [ntfy](https://ntfy.sh):
 "notify_args": ["-c", "curl -s -d \"$ORKAI_MESSAGE\" ntfy.sh/meu-topico"]
 ```
 
-Todo Claude Code iniciado ou retomado pelo orkai abre com Remote Control ligado
-(`--remote-control`), então qualquer sessão pode ser continuada no app do Claude ou em
-claude.ai/code. O Codex não tem um equivalente para a sessão interativa no terminal.
+Ligue o **Remote Control** no composer do Octo e os agentes Claude Code que ele iniciar abrem com
+`--remote-control`, então a sessão pode ser continuada no app do Claude ou em claude.ai/code; um agente
+retomado mantém a escolha com que começou. O Codex não tem um equivalente para a sessão interativa no terminal.
 
 ## Ícone nos terminais
 

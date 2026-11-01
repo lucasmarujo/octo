@@ -632,7 +632,9 @@ pub fn build_spec(
             let session_id = chosen_session_id(record)?;
             let resume = mode == LaunchMode::Resume && chosen_session_exists(record.kind, homes, &session_id);
             let mut args = config.claude_args.clone();
-            args.push("--remote-control".to_string());
+            if record.remote_control {
+                args.push("--remote-control".to_string());
+            }
             if resume {
                 args.extend(["--resume".to_string(), session_id]);
             } else {
@@ -1022,8 +1024,15 @@ impl Launcher {
         &self.exe
     }
 
-    pub fn create(&self, draft: NewAgent, size: TermSize, isolate: bool, bypass: bool) -> io::Result<AgentRecord> {
-        self.create_with_parent(draft, size, isolate, bypass, None)
+    pub fn create(
+        &self,
+        draft: NewAgent,
+        size: TermSize,
+        isolate: bool,
+        bypass: bool,
+        remote_control: bool,
+    ) -> io::Result<AgentRecord> {
+        self.create_with_parent(draft, size, isolate, bypass, remote_control, None)
     }
 
     pub fn create_with_parent(
@@ -1032,17 +1041,27 @@ impl Launcher {
         size: TermSize,
         isolate: bool,
         bypass: bool,
+        remote_control: bool,
         parent: Option<AgentId>,
     ) -> io::Result<AgentRecord> {
         let mut record = self.store.create_agent(draft)?;
         record.bypass = bypass;
+        record.remote_control = remote_control;
         record.parent = parent;
         self.launch_new(record, size, isolate)
     }
 
-    pub fn create_in_race(&self, draft: NewAgent, size: TermSize, bypass: bool, race: u64) -> io::Result<AgentRecord> {
+    pub fn create_in_race(
+        &self,
+        draft: NewAgent,
+        size: TermSize,
+        bypass: bool,
+        remote_control: bool,
+        race: u64,
+    ) -> io::Result<AgentRecord> {
         let mut record = self.store.create_agent(draft)?;
         record.bypass = bypass;
+        record.remote_control = remote_control;
         record.race = Some(race);
         self.launch_new(record, size, true)
     }
@@ -1163,6 +1182,7 @@ mod tests {
             launches: 0,
             worktree: None,
             bypass: false,
+            remote_control: false,
             project: None,
             parent: None,
             race: None,
@@ -1200,7 +1220,7 @@ mod tests {
         .unwrap();
         let id = r.conversation_id.clone().unwrap();
         assert!(is_uuid(&id));
-        assert_eq!(spec.args, vec!["--remote-control".to_string(), "--session-id".to_string(), id]);
+        assert_eq!(spec.args, vec!["--session-id".to_string(), id]);
         assert_eq!(spec.initial_input.as_deref(), Some("fix the build"));
         assert_eq!((spec.rows, spec.cols), (30, 100));
         assert!(spec.env.iter().any(|(k, v)| k == "ORKAI_AGENT_ID" && v == "5"));
@@ -1229,7 +1249,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(spec.args, vec!["--remote-control".to_string(), "--resume".to_string(), id.to_string()]);
+        assert_eq!(spec.args, vec!["--resume".to_string(), id.to_string()]);
         assert_eq!(spec.initial_input, None);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -1250,22 +1270,44 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(spec.args, vec!["--remote-control".to_string(), "--session-id".to_string(), id.to_string()]);
+        assert_eq!(spec.args, vec!["--session-id".to_string(), id.to_string()]);
         assert_eq!(spec.initial_input.as_deref(), Some("task"));
         fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
-    fn claude_keeps_configured_args_and_always_enables_remote_control() {
+    fn claude_keeps_configured_args_and_enables_remote_control_only_when_chosen() {
         let dir = temp_dir("claude-remote-control");
         let program = fake_program(&dir);
         let config = Config { claude_args: vec!["--model".into(), "opus".into()], ..config_with(&program) };
         let id = "123e4567-e89b-42d3-a456-426614174000";
         let mut r = record(AgentKind::Claude, dir.clone(), "task");
         r.conversation_id = Some(id.into());
-        let spec =
+        let plain =
             build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), &Homes::default(), None).unwrap();
-        assert_eq!(spec.args, vec!["--model", "opus", "--remote-control", "--session-id", id]);
+        assert_eq!(plain.args, vec!["--model", "opus", "--session-id", id]);
+        r.remote_control = true;
+        let chosen =
+            build_spec(&config, &mut r, LaunchMode::Fresh, TermSize::new(24, 80), &Homes::default(), None).unwrap();
+        assert_eq!(chosen.args, vec!["--model", "opus", "--remote-control", "--session-id", id]);
+        let claude_dir = dir.join("claude-home");
+        fs::create_dir_all(claude_dir.join("projects").join("C--work")).unwrap();
+        fs::write(claude_dir.join("projects").join("C--work").join(format!("{id}.jsonl")), b"{}").unwrap();
+        let homes = Homes { claude: Some(claude_dir), ..Homes::default() };
+        let resumed = build_spec(&config, &mut r, LaunchMode::Resume, TermSize::new(24, 80), &homes, None).unwrap();
+        assert_eq!(resumed.args, vec!["--model", "opus", "--remote-control", "--resume", id], "kept when resumed");
+        let mut codex = record(AgentKind::Codex, dir.clone(), "task");
+        codex.remote_control = true;
+        let codex = build_spec(
+            &config_with(&program),
+            &mut codex,
+            LaunchMode::Fresh,
+            TermSize::new(24, 80),
+            &Homes::default(),
+            None,
+        )
+        .unwrap();
+        assert!(!codex.args.contains(&"--remote-control".to_string()), "only Claude Code has remote control");
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -1573,7 +1615,7 @@ mod tests {
         let settings_arg = hooks.claude_settings.to_string_lossy().into_owned();
         let tail: Vec<&str> = spec.args.iter().rev().take(2).rev().map(String::as_str).collect();
         assert_eq!(tail, vec!["--settings", settings_arg.as_str()]);
-        assert!(spec.args.contains(&"--remote-control".to_string()));
+        assert!(!spec.args.contains(&"--remote-control".to_string()), "remote control is the user's choice");
         let written: serde_json::Value = fsutil::read_json(&hooks.claude_settings).unwrap();
         let command = written["hooks"]["Stop"][0]["hooks"][0]["command"].as_str().unwrap().to_string();
         assert_eq!(command, hooks::claude_hook_command(&hooks.exe, r.id));

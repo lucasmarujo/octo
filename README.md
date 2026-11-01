@@ -676,9 +676,9 @@ for example, to send it to your phone through [ntfy](https://ntfy.sh):
 "notify_args": ["-c", "curl -s -d \"$ORKAI_MESSAGE\" ntfy.sh/my-topic"]
 ```
 
-Every Claude Code started or resumed by orkai opens with Remote Control on
-(`--remote-control`), so any session can be continued in the Claude app or at
-claude.ai/code. Codex has no equivalent for the interactive session in the terminal.
+Turn on **Remote Control** in the Octo composer and the Claude Code agents it starts open with
+`--remote-control`, so their sessions can be continued in the Claude app or at claude.ai/code; a resumed
+agent keeps the choice it was started with. Codex has no equivalent for the interactive session in the terminal.
 
 ## Terminal icons
 

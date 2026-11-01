@@ -114,6 +114,8 @@ pub enum PhoneMsg {
         worktree: bool,
         #[serde(default)]
         bypass: bool,
+        #[serde(default)]
+        remote_control: bool,
     },
     Race {
         session: String,
@@ -121,6 +123,8 @@ pub enum PhoneMsg {
         race: String,
         #[serde(default)]
         bypass: bool,
+        #[serde(default)]
+        remote_control: bool,
     },
     Compare {
         agent: AgentId,
@@ -152,6 +156,8 @@ pub struct StartRequest {
     pub worktree: bool,
     #[serde(default)]
     pub bypass: bool,
+    #[serde(default)]
+    pub remote_control: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -369,7 +375,23 @@ mod tests {
             (r#"{"type":"details","agent":4}"#, PhoneMsg::Details { agent: 4 }),
             (
                 r#"{"type":"race","session":"s","cwd":"/w","race":"cc,codex fix"}"#,
-                PhoneMsg::Race { session: "s".into(), cwd: "/w".into(), race: "cc,codex fix".into(), bypass: false },
+                PhoneMsg::Race {
+                    session: "s".into(),
+                    cwd: "/w".into(),
+                    race: "cc,codex fix".into(),
+                    bypass: false,
+                    remote_control: false,
+                },
+            ),
+            (
+                r#"{"type":"race","session":"s","cwd":"/w","race":"cc,codex fix","remoteControl":true}"#,
+                PhoneMsg::Race {
+                    session: "s".into(),
+                    cwd: "/w".into(),
+                    race: "cc,codex fix".into(),
+                    bypass: false,
+                    remote_control: true,
+                },
             ),
             (r#"{"type":"trust","cwd":"/w"}"#, PhoneMsg::Trust { cwd: "/w".into(), command: None }),
             (
@@ -390,6 +412,7 @@ mod tests {
                     task: "t".into(),
                     worktree: true,
                     bypass: false,
+                    remote_control: false,
                 }),
             ),
             (
@@ -401,7 +424,33 @@ mod tests {
                     task: String::new(),
                     worktree: false,
                     bypass: true,
+                    remote_control: false,
                 }),
+            ),
+            (
+                r#"{"type":"start","kind":"claude","session":"s","cwd":"~","task":"t","worktree":false,"remoteControl":true}"#,
+                PhoneMsg::Start(StartRequest {
+                    kind: AgentKind::Claude,
+                    session: "s".into(),
+                    cwd: "~".into(),
+                    task: "t".into(),
+                    worktree: false,
+                    bypass: false,
+                    remote_control: true,
+                }),
+            ),
+            (
+                r#"{"type":"skill","kind":"claude","session":"s","cwd":"~","name":"review","remoteControl":true}"#,
+                PhoneMsg::Skill {
+                    kind: AgentKind::Claude,
+                    session: "s".into(),
+                    cwd: "~".into(),
+                    name: "review".into(),
+                    args: String::new(),
+                    worktree: false,
+                    bypass: false,
+                    remote_control: true,
+                },
             ),
         ];
         for (text, expected) in cases {

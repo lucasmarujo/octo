@@ -220,6 +220,7 @@ pub fn new_agent(
         DEFAULT_SIZE,
         isolate,
         false,
+        false,
         parent,
     )?;
     println!("started {} {} (#{}) in session {}", record.kind.label(), record.name, record.id, record.session);

@@ -324,7 +324,7 @@ impl Server {
         let draft = NewAgent { session, name, kind, cwd: cli::strip_verbatim(folder), task };
         let record = self
             .launcher
-            .create_with_parent(draft, DEFAULT_SIZE, args.worktree && kind.is_ai(), bypass, caller.map(|c| c.id))
+            .create_with_parent(draft, DEFAULT_SIZE, args.worktree && kind.is_ai(), bypass, false, caller.map(|c| c.id))
             .map_err(|err| err.to_string())?;
         Ok(json!({
             "id": record.id,

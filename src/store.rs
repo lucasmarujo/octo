@@ -175,6 +175,7 @@ impl Store {
             launches: 0,
             worktree: None,
             bypass: false,
+            remote_control: false,
             project: None,
             parent: None,
             race: None,

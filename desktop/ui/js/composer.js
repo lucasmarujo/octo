@@ -3,13 +3,14 @@ import { acceptedSuggestion, matchingCommands, nextSuggestion, parseCommand } fr
 import { closeMenu, menuShown, openMenu, pickFolder } from './dialogs.js';
 import { kindColor, label } from './format.js';
 import { t } from './i18n.js';
-import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_SHIELD } from './icons.js';
+import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_REMOTE, ICON_SHIELD } from './icons.js';
 import { flash } from './motion.js';
 import {
   currentWhere,
   currentWho,
   installedKinds,
   setBypass,
+  setRemote,
   setWhere,
   setWho,
   setWorktree,
@@ -192,6 +193,7 @@ function submit(event) {
     task: ai ? raw : command,
     worktree: worktreeOn() && ai,
     bypass: state.bypass && ai,
+    remoteControl: state.remote && kind === 'claude',
   });
   flash($('composer'), 'sent');
   if (text) state.history.push(raw);
@@ -240,6 +242,11 @@ export function renderComposer() {
   worktree.setAttribute('aria-pressed', String(worktreeOn()));
   worktree.replaceChildren(svg(ICON_BRANCH), t('Worktree'));
   worktree.title = t('Each new AI agent runs in its own git worktree and orkai/<name> branch');
+  const remote = $('remote');
+  remote.classList.add('caution');
+  remote.setAttribute('aria-pressed', String(state.remote));
+  remote.replaceChildren(svg(ICON_REMOTE), t('Remote Control'));
+  remote.title = t('New Claude agents start with Remote Control: continue them from claude.ai or the Claude app');
   const bypass = $('bypass');
   bypass.classList.add('danger');
   bypass.setAttribute('aria-pressed', String(state.bypass));
@@ -267,6 +274,10 @@ export function initComposer() {
   );
   $('worktree').addEventListener('click', () => {
     setWorktree(!worktreeOn());
+    renderComposer();
+  });
+  $('remote').addEventListener('click', () => {
+    setRemote(!state.remote);
     renderComposer();
   });
   $('bypass').addEventListener('click', () => {

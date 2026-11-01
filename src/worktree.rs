@@ -970,6 +970,7 @@ mod tests {
             launches: 0,
             worktree,
             bypass: false,
+            remote_control: false,
             project: None,
             parent: None,
             race: None,

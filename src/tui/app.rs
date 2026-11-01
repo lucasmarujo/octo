@@ -1468,8 +1468,8 @@ impl App {
         self.set_notice(Tone::Info, format!("starting {} {name}{place}{mode}…", kind.label()));
         let _ = thread::Builder::new().name("orkai-launch".into()).spawn(move || {
             let created = match race {
-                Some(race) => launcher.create_in_race(draft, size, bypass, race),
-                None => launcher.create(draft, size, isolate, bypass),
+                Some(race) => launcher.create_in_race(draft, size, bypass, false, race),
+                None => launcher.create(draft, size, isolate, bypass, false),
             };
             let result = created.map_err(|e| e.to_string());
             let _ = tx.send(AppEvent::Launched { result });

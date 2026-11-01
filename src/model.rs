@@ -145,12 +145,18 @@ pub struct AgentRecord {
     pub worktree: Option<Worktree>,
     #[serde(default)]
     pub bypass: bool,
+    #[serde(default = "started_before_remote_control_was_a_choice")]
+    pub remote_control: bool,
     #[serde(default)]
     pub project: Option<PathBuf>,
     #[serde(default)]
     pub parent: Option<AgentId>,
     #[serde(default)]
     pub race: Option<u64>,
+}
+
+fn started_before_remote_control_was_a_choice() -> bool {
+    true
 }
 
 impl AgentRecord {
@@ -450,6 +456,9 @@ mod tests {
         assert_eq!(record.conversation_id, None);
         assert_eq!(record.launches, 0);
         assert!(!record.bypass, "agents saved before bypass existed keep asking for permissions");
+        assert!(record.remote_control, "agents saved before it was a choice keep the remote control they started with");
+        let chosen = r#"{"id":3,"session":"default","name":"a","kind":"claude","cwd":"/x","created_at_ms":1,"remote_control":false}"#;
+        assert!(!serde_json::from_str::<AgentRecord>(chosen).unwrap().remote_control);
     }
 
     #[test]

@@ -7,6 +7,7 @@ const WHO_KEY = 'orkai.who';
 const WHERE_KEY = 'orkai.where';
 const WORKTREE_KEY = 'orkai.worktree';
 const BYPASS_KEY = 'orkai.bypass';
+const REMOTE_KEY = 'orkai.remote';
 const TABS_KEY = 'orkai.tabs';
 const VIEW_KEY = 'orkai.view';
 const GRID_KEY = 'orkai.grid';
@@ -31,6 +32,7 @@ export const state = {
   where: storage.json(WHERE_KEY, {}),
   worktree: storage.json(WORKTREE_KEY, null),
   bypass: storage.get(BYPASS_KEY) === 'on',
+  remote: storage.get(REMOTE_KEY) === 'on',
   history: [],
   recall: -1,
   folders: null,
@@ -154,4 +156,9 @@ export function setWorktree(on) {
 export function setBypass(on) {
   state.bypass = on;
   storage.set(BYPASS_KEY, on ? 'on' : null);
+}
+
+export function setRemote(on) {
+  state.remote = on;
+  storage.set(REMOTE_KEY, on ? 'on' : null);
 }
