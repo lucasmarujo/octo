@@ -877,6 +877,17 @@ test('every provider with plan usage has its icon in the real colors of its bran
   assert.ok(existsSync(join(REPO, 'desktop/ui/vendor/lobehub-icons/LICENSE')), 'the icon set keeps its MIT notice');
 });
 
+test('the worktree toggle turns blue when on, and bypass stays red', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.toggle\[aria-pressed="true"\] \{ color: var\(--color-link\); border-color: color-mix\(in srgb, var\(--color-link\) 50%, transparent\); background: color-mix\(in srgb, var\(--color-link\) 10%, transparent\); \}/);
+  assert.match(css, /\.toggle\.danger\[aria-pressed="true"\] \{ color: var\(--color-lost\);/);
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<button id="worktree" class="toggle" /);
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  assert.match(composer, /bypass\.classList\.add\('danger'\)/);
+  assert.doesNotMatch(composer, /worktree\.classList\.add/);
+});
+
 test('every control, overlay and view moves with the same motion tokens, and reduced motion turns it all off', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   for (const name of ['--ease-out', '--ease-in', '--ease-spring', '--motion-fast', '--motion-base', '--motion-slow']) assert.match(css, new RegExp(`${name}: `), name);

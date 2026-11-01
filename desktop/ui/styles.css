@@ -433,7 +433,7 @@ h1, p { margin: 0; }
 .chip .value.path { font-weight: 400; color: var(--color-link); }
 .toggle { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--color-border); font-size: var(--text-sm); font-weight: 600; color: var(--color-text-muted); }
 .toggle:hover { color: var(--color-text); }
-.toggle[aria-pressed="true"] { color: var(--color-accent); border-color: color-mix(in srgb, var(--color-accent) 50%, transparent); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.toggle[aria-pressed="true"] { color: var(--color-link); border-color: color-mix(in srgb, var(--color-link) 50%, transparent); background: color-mix(in srgb, var(--color-link) 10%, transparent); }
 .toggle.danger[aria-pressed="true"] { color: var(--color-lost); border-color: color-mix(in srgb, var(--color-lost) 50%, transparent); background: color-mix(in srgb, var(--color-lost) 10%, transparent); }
 .hint { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-faint); padding-right: 8px; }
 .composer { position: relative; }
