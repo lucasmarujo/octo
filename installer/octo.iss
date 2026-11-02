@@ -6,11 +6,13 @@
 #if AppVersion == ""
   #error The binary has no ProductVersion: build it with tauri-build
 #endif
+#define AppCopyright GetStringFileInfo(Binary, "LegalCopyright")
 
 [Setup]
 AppId={{4790510D-69A3-4053-BB86-2D7AEA02DAAC}
 AppName=Octo
 AppVersion={#AppVersion}
+AppCopyright={#AppCopyright}
 AppPublisher=OctoAI
 AppPublisherURL=https://octo.marujo.dev
 AppSupportURL=https://github.com/lucasmarujo/octo/issues

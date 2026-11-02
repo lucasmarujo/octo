@@ -14,6 +14,7 @@ const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../installer/octo.iss
 const SETUP_NAME: &str = "Octo-setup.exe";
 const APP_NAME: &str = "Octo";
 const APP_PUBLISHER: &str = "OctoAI";
+const APP_COPYRIGHT: &str = "Copyright (c) 2026 Lucas Marujo";
 const APP_EXE: &str = "Octo.exe";
 const SHORTCUT: &str = r"Microsoft\Windows\Start Menu\Programs\Octo.lnk";
 const ISCC_ENV: &str = "ORKAI_ISCC";
@@ -263,9 +264,12 @@ impl Drop for RunningOcto {
 }
 
 #[test]
-fn the_windows_app_carries_its_name_and_version() {
+fn the_windows_app_carries_its_name_version_publisher_and_copyright() {
     let info = VersionInfo::of(Path::new(env!("CARGO_BIN_EXE_octo")));
     assert_eq!(info.string("ProductName").as_deref(), Some(APP_NAME));
+    assert_eq!(info.string("FileDescription").as_deref(), Some(APP_NAME));
+    assert_eq!(info.string("CompanyName").as_deref(), Some(APP_PUBLISHER));
+    assert_eq!(info.string("LegalCopyright").as_deref(), Some(APP_COPYRIGHT));
     assert_eq!(info.string("ProductVersion").as_deref(), Some(env!("CARGO_PKG_VERSION")));
     assert_eq!(info.string("FileVersion").as_deref(), Some(env!("CARGO_PKG_VERSION")));
     assert_eq!(info.fixed_product_version(), package_version());
@@ -273,9 +277,11 @@ fn the_windows_app_carries_its_name_and_version() {
 
 #[test]
 #[ignore = "needs Inno Setup's ISCC; CI runs it with --ignored"]
-fn the_installer_carries_the_same_name_and_version_as_the_app() {
+fn the_installer_carries_the_same_name_version_publisher_and_copyright_as_the_app() {
     let info = VersionInfo::of(setup());
     assert_eq!(info.string("ProductName").as_deref(), Some(APP_NAME));
+    assert_eq!(info.string("CompanyName").as_deref(), Some(APP_PUBLISHER));
+    assert_eq!(info.string("LegalCopyright").as_deref(), Some(APP_COPYRIGHT));
     assert_eq!(info.string("ProductVersion").as_deref(), Some(env!("CARGO_PKG_VERSION")));
     assert_eq!(info.fixed_product_version(), package_version());
 }

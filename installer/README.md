@@ -10,8 +10,9 @@ atualização automática do Octo.
 Rodar o instalador com o Octo aberto não fecha nada: o `Octo.exe` em uso é renomeado para
 `Octo.exe.old-setup-*` antes da cópia, e o próprio Octo apaga esse arquivo na próxima abertura (o mesmo prefixo
 `Octo.exe.old-` da atualização automática). Se a instalação falhar ou for cancelada, o binário antigo volta para
-o lugar. A versão do instalador vem do `ProductVersion` do `Octo.exe`, que o `tauri-build` grava a partir do
-`desktop/Cargo.toml`.
+o lugar. A versão e o copyright do instalador vêm do `ProductVersion` e do `LegalCopyright` do `Octo.exe`, que o
+`tauri-build` grava a partir do `desktop/Cargo.toml` e do `desktop/tauri.conf.json` (`bundle.copyright`, e
+`bundle.publisher` no `CompanyName`, igual ao `AppPublisher` do instalador).
 
 ### Build local
 

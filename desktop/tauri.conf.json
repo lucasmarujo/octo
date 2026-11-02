@@ -27,6 +27,8 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "OctoAI",
+    "copyright": "Copyright (c) 2026 Lucas Marujo",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
