@@ -640,7 +640,6 @@ h1, p { margin: 0; }
 .pair-label { width: 64px; flex-shrink: 0; color: var(--color-text-faint); font-family: var(--font-mono); font-size: var(--text-xs); }
 .pair-value { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--text-sm); line-height: 18px; }
 .pair-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-link); font-family: var(--font-mono); font-size: var(--text-xs); user-select: text; }
-.pair-waiting { display: flex; align-items: center; gap: 10px; padding: 24px 0; font-size: var(--text-sm); }
 .pair-state { display: flex; align-items: center; gap: 24px; }
 .pair-placeholder { position: relative; display: grid; place-items: center; width: 232px; height: 232px; flex-shrink: 0; border: 1px dashed var(--color-border-strong); border-radius: 10px; color: var(--color-text-faint); }
 .pair-ghost { position: absolute; inset: 14px; width: calc(100% - 28px); height: calc(100% - 28px); opacity: 0.15; filter: blur(1px); }

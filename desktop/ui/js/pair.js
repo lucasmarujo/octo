@@ -65,16 +65,16 @@ export function describeDevice(device) {
     const version = /(?:iPhone|CPU) OS (\d+)_(\d+)/.exec(agent);
     const tablet = apple === 'iPad';
     const number = version ? ` ${version[1]}${version[2] === '0' ? '' : `.${version[2]}`}` : '';
-    return { name: apple, platform: 'ios', form: tablet ? 'tablet' : 'phone', os: `${tablet ? 'iPadOS' : 'iOS'}${number}`, browser: browser || 'Safari' };
+    return { name: apple, os: `${tablet ? 'iPadOS' : 'iOS'}${number}`, browser: browser || 'Safari' };
   }
   const android = /Android(?: (\d+))?/.exec(agent);
   if (android) {
     const tablet = !/Mobile/.test(agent);
     const version = device.osVersion?.split('.')[0] || (/; K\)/.test(agent) ? null : android[1]);
-    return { name: device.model || (tablet ? t('Android tablet') : t('Android phone')), platform: 'android', form: tablet ? 'tablet' : 'phone', os: version ? `Android ${version}` : 'Android', browser };
+    return { name: device.model || (tablet ? t('Android tablet') : t('Android phone')), os: version ? `Android ${version}` : 'Android', browser };
   }
   const desktop = [[/Windows/, 'Windows'], [/CrOS/, 'ChromeOS'], [/Mac OS X|Macintosh/, 'macOS'], [/Linux/, 'Linux']].find(([pattern]) => pattern.test(agent));
-  return { name: desktop ? t('{os} computer', { os: desktop[1] }) : t('Unknown device'), platform: 'desktop', form: 'desktop', os: desktop?.[1] || null, browser };
+  return { name: desktop ? t('{os} computer', { os: desktop[1] }) : t('Unknown device'), os: desktop?.[1] || null, browser };
 }
 
 export function connectedFor(sinceMs, now = Date.now()) {
@@ -98,14 +98,6 @@ export function renderPhoneStatus(pairing) {
   const detail = { off: t('Phone access is off'), pending: t('Starting…'), failed: t('Pairing needs attention'), ready: t('Waiting for a phone'), connected: t('Live · end-to-end encrypted') }[status];
   button.replaceChildren(svg(ICON_PAIR), h('span', { class: 'phone-text' }, h('strong', null, title), h('small', null, detail)), svg(ICON_CHEVRON_RIGHT));
   button.setAttribute('aria-label', `${title} · ${detail}`);
-}
-
-export function badge(pairing) {
-  if (!pairing.enabled) return { text: t('off'), tone: 't-faint' };
-  if (pairing.phase === 'failed') return { text: t('error'), tone: 't-red' };
-  if (phoneConnected(pairing)) return { text: `● ${pairing.phones}`, tone: 't-green' };
-  if (pairing.phase === 'ready') return { text: t('on'), tone: 't-green' };
-  return { text: '…', tone: 't-yellow' };
 }
 
 export function waiting(pairing) {

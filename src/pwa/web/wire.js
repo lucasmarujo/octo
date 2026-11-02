@@ -82,7 +82,7 @@
       const hints = nav.userAgentData ? await nav.userAgentData.getHighEntropyValues(['model', 'platformVersion']) : {};
       model = hints.model || null;
       osVersion = hints.platformVersion || null;
-    } catch (_) { /* user agent remains available */ }
+    } catch (_) {}
     if (!model && /Macintosh/.test(nav.userAgent || '') && nav.maxTouchPoints > 1) model = 'iPad';
     return { model, osVersion, standalone, client: tabId() };
   }

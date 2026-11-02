@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ratatui::style::Color;
+use serde::{Deserialize, Serialize};
 
 use crate::client::{self, Connection};
 use crate::config::Config;
@@ -147,7 +148,7 @@ pub fn hex(color: Color) -> String {
 
 const MAX_DEVICE_TEXT: usize = 300;
 
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Device {
     pub id: u64,

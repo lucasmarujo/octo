@@ -418,13 +418,13 @@ test('the pairing code is drawn from the modules the core encodes', async () => 
   assert.equal(qrPath(['000']), '');
 });
 
-test('the pairing badge and the waiting line follow the bridge like in the TUI', async () => {
-  const { badge, waiting } = await import('../js/pair.js');
-  assert.deepEqual(badge({ enabled: false }), { text: 'off', tone: 't-faint' });
-  assert.equal(badge({ enabled: true, phase: 'ready', phones: 2 }).text, '● 2');
-  assert.equal(badge({ enabled: true, phase: 'ready', phones: 0 }).text, 'on');
-  assert.equal(badge({ enabled: true, phase: 'failed' }).tone, 't-red');
-  assert.equal(badge({ enabled: true, phase: 'connecting' }).text, '…');
+test('the pairing status and the waiting line follow the bridge', async () => {
+  const { phoneStatus, waiting } = await import('../js/pair.js');
+  assert.equal(phoneStatus({ enabled: false }), 'off');
+  assert.equal(phoneStatus({ enabled: true, phase: 'ready', phones: 2 }), 'connected');
+  assert.equal(phoneStatus({ enabled: true, phase: 'ready', phones: 0 }), 'ready');
+  assert.equal(phoneStatus({ enabled: true, phase: 'failed' }), 'failed');
+  assert.equal(phoneStatus({ enabled: true, phase: 'connecting' }), 'pending');
   assert.match(waiting({ phase: null }).text, /Starting/);
   assert.match(waiting({ phase: 'installing' }).text, /cloudflared/);
   assert.equal(waiting({ phase: 'connecting', tunnel: 'tailscale' }).text, 'Opening the tailscale tunnel…');
@@ -434,11 +434,11 @@ test('the pairing badge and the waiting line follow the bridge like in the TUI',
 test('the pairing dialog names connected devices and their connection age', async () => {
   const { describeDevice, connectedFor, phoneStatus } = await import('../js/pair.js');
   assert.deepEqual(describeDevice({ agent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile Safari/604.1' }),
-    { name: 'iPhone', platform: 'ios', form: 'phone', os: 'iOS 17.2', browser: 'Safari 17' });
+    { name: 'iPhone', os: 'iOS 17.2', browser: 'Safari 17' });
   assert.deepEqual(describeDevice({ agent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36', model: 'Pixel 8', osVersion: '14.0' }),
-    { name: 'Pixel 8', platform: 'android', form: 'phone', os: 'Android 14', browser: 'Chrome 120' });
+    { name: 'Pixel 8', os: 'Android 14', browser: 'Chrome 120' });
   assert.deepEqual(describeDevice({ agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0' }),
-    { name: 'Windows computer', platform: 'desktop', form: 'desktop', os: 'Windows', browser: 'Chrome 122' });
+    { name: 'Windows computer', os: 'Windows', browser: 'Chrome 122' });
   assert.equal(connectedFor(1000, 1000), 'just now');
   assert.equal(connectedFor(1000, 1000 + 61_000), '1 min');
   assert.equal(connectedFor(1000, 1000 + 3_661_000), '1 h 01 min');
