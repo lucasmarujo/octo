@@ -538,8 +538,14 @@ h1, p { margin: 0; }
 
 .connecting { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; flex: 1; color: var(--color-text-muted); }
 
-.sidebar-footer { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.sidebar-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex-shrink: 0; }
 .footer-pair { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 32px; padding: 0 10px; border-radius: 8px; color: var(--color-text-muted); font-size: var(--text-sm); font-weight: 500; line-height: 16px; }
+.footer-pair.phone-status { flex: 0 0 100%; height: 48px; border: 1px solid var(--color-border); text-align: left; }
+.phone-status[data-state="connected"] { background: color-mix(in srgb, var(--color-done) 7%, transparent); }
+.phone-status[data-state="failed"] { border-color: var(--color-lost); }
+.phone-text { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.phone-text strong, .phone-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-text small { color: var(--color-text-faint); font-size: var(--text-xs); }
 .footer-pair:hover { background: var(--color-surface-raised); color: var(--color-text); }
 .footer-pair.connected { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-done) 70%, transparent); }
 .footer-pair svg { flex-shrink: 0; }
@@ -557,6 +563,21 @@ h1, p { margin: 0; }
 .pair-value { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--text-sm); line-height: 18px; }
 .pair-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-link); font-family: var(--font-mono); font-size: var(--text-xs); user-select: text; }
 .pair-waiting { display: flex; align-items: center; gap: 10px; padding: 24px 0; font-size: var(--text-sm); }
+.pair-state { display: flex; align-items: center; gap: 24px; }
+.pair-placeholder { position: relative; display: grid; place-items: center; width: 232px; height: 232px; flex-shrink: 0; border: 1px dashed var(--color-border-strong); border-radius: 10px; color: var(--color-text-faint); }
+.pair-ghost { position: absolute; inset: 14px; width: calc(100% - 28px); height: calc(100% - 28px); opacity: 0.15; filter: blur(1px); }
+.pair-placeholder-mark { z-index: 1; display: grid; place-items: center; width: 54px; height: 54px; border-radius: 12px; background: var(--color-surface); font-size: 22px; }
+.pair-state-message { display: flex; flex-direction: column; gap: 8px; font-size: var(--text-sm); }
+.pair-state-message strong { font-size: var(--text-lg); }
+.pair-devices { margin: 0; padding: 0; list-style: none; border: 1px solid var(--color-border); border-radius: 8px; }
+.pair-device { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 8px 10px; }
+.pair-device + .pair-device { border-top: 1px solid var(--color-border); }
+.pair-device-name { grid-column: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pair-device-meta { grid-column: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); font-size: var(--text-xs); }
+.pair-device-since { grid-column: 2; grid-row: 1 / 3; align-self: center; color: var(--color-text-faint); font-size: var(--text-xs); }
+.pair-badge-connected { color: var(--color-done); }
+.pair-badge-failed { color: var(--color-lost); }
+@media (max-width: 700px) { .pair-state { flex-direction: column; align-items: flex-start; } }
 .footer-icon { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; color: var(--color-text-muted); }
 .footer-icon:hover { color: var(--color-text); }
 .footer-icon:hover, .footer-icon[aria-current="true"] { background: var(--color-surface-raised); }

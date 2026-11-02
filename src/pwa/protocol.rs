@@ -17,6 +17,16 @@ pub enum Greeting {
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum PhoneMsg {
     Sync,
+    Device {
+        #[serde(default)]
+        model: Option<String>,
+        #[serde(default)]
+        os_version: Option<String>,
+        #[serde(default)]
+        standalone: bool,
+        #[serde(default)]
+        client: Option<String>,
+    },
     Open {
         agent: AgentId,
         rows: u16,
@@ -367,6 +377,15 @@ mod tests {
     fn phone_messages_read_the_way_the_app_writes_them() {
         let cases = [
             (r#"{"type":"sync"}"#, PhoneMsg::Sync),
+            (
+                r#"{"type":"device","model":"Pixel 8","osVersion":"14","standalone":true,"client":"tab-1"}"#,
+                PhoneMsg::Device {
+                    model: Some("Pixel 8".into()),
+                    os_version: Some("14".into()),
+                    standalone: true,
+                    client: Some("tab-1".into()),
+                },
+            ),
             (r#"{"type":"open","agent":3,"rows":30,"cols":48}"#, PhoneMsg::Open { agent: 3, rows: 30, cols: 48 }),
             (r#"{"type":"keys","data":"\u001b[A"}"#, PhoneMsg::Keys { data: "\x1b[A".into() }),
             (r#"{"type":"send","text":"fix it"}"#, PhoneMsg::Send { text: "fix it".into() }),

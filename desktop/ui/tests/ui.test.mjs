@@ -431,6 +431,21 @@ test('the pairing badge and the waiting line follow the bridge like in the TUI',
   assert.equal(waiting({ phase: 'failed', error: 'no network' }).text, 'no network · retrying');
 });
 
+test('the pairing dialog names connected devices and their connection age', async () => {
+  const { describeDevice, connectedFor, phoneStatus } = await import('../js/pair.js');
+  assert.deepEqual(describeDevice({ agent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile Safari/604.1' }),
+    { name: 'iPhone', platform: 'ios', form: 'phone', os: 'iOS 17.2', browser: 'Safari 17' });
+  assert.deepEqual(describeDevice({ agent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36', model: 'Pixel 8', osVersion: '14.0' }),
+    { name: 'Pixel 8', platform: 'android', form: 'phone', os: 'Android 14', browser: 'Chrome 120' });
+  assert.deepEqual(describeDevice({ agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0' }),
+    { name: 'Windows computer', platform: 'desktop', form: 'desktop', os: 'Windows', browser: 'Chrome 122' });
+  assert.equal(connectedFor(1000, 1000), 'just now');
+  assert.equal(connectedFor(1000, 1000 + 61_000), '1 min');
+  assert.equal(connectedFor(1000, 1000 + 3_661_000), '1 h 01 min');
+  assert.equal(connectedFor(1000, 1000 + 90_061_000), '1 d 1 h');
+  assert.equal(phoneStatus({ enabled: true, phase: 'ready', phones: 1 }), 'connected');
+});
+
 test('the test line of an agent says what the TUI says about its last run', async () => {
   const { testLine } = await import('../js/agent.js');
   const base = { command: 'cargo test', startedAt: NOW - 50_000, finishedAt: NOW - 41_000, code: 0 };

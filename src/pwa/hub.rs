@@ -145,9 +145,32 @@ pub fn hex(color: Color) -> String {
     }
 }
 
+const MAX_DEVICE_TEXT: usize = 300;
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Device {
+    pub id: u64,
+    pub agent: String,
+    pub ip: Option<String>,
+    pub since_ms: u64,
+    pub model: Option<String>,
+    pub os_version: Option<String>,
+    pub standalone: bool,
+    #[serde(skip)]
+    pub client: Option<String>,
+}
+
+pub fn device_text(text: &str) -> Option<String> {
+    let clean: String = text.chars().filter(|c| !c.is_control()).take(MAX_DEVICE_TEXT).collect();
+    let clean = clean.trim();
+    (!clean.is_empty()).then(|| clean.to_string())
+}
+
 #[derive(Default)]
 struct Inner {
     phones: BTreeMap<u64, Sender<Event>>,
+    devices: BTreeMap<u64, Device>,
     next_phone: u64,
     agents: BTreeMap<AgentId, Tracked>,
     sessions: Vec<Session>,
@@ -278,12 +301,63 @@ impl Hub {
     }
 
     pub fn leave(&self, id: u64) {
-        self.inner().phones.remove(&id);
+        let mut inner = self.inner();
+        inner.phones.remove(&id);
+        inner.devices.remove(&id);
+        drop(inner);
         self.wake.notify_all();
+    }
+
+    pub fn describe(&self, id: u64, device: Device) {
+        let mut inner = self.inner();
+        if inner.phones.contains_key(&id) {
+            inner.devices.insert(id, Device { id, ..device });
+        }
+    }
+
+    pub fn refine(
+        &self,
+        id: u64,
+        model: Option<String>,
+        os_version: Option<String>,
+        standalone: bool,
+        client: Option<String>,
+    ) {
+        let mut inner = self.inner();
+        let client = client.as_deref().and_then(device_text);
+        if client.is_some() {
+            let stale: Vec<u64> = inner
+                .devices
+                .values()
+                .filter(|device| device.id != id && device.client == client)
+                .map(|device| device.id)
+                .collect();
+            for old in stale {
+                inner.phones.remove(&old);
+                inner.devices.remove(&old);
+            }
+        }
+        if let Some(device) = inner.devices.get_mut(&id) {
+            device.model = model.as_deref().and_then(device_text);
+            device.os_version = os_version.as_deref().and_then(device_text);
+            device.standalone = standalone;
+            device.client = client;
+        }
+        drop(inner);
+        self.wake.notify_all();
+    }
+
+    pub fn devices(&self) -> Vec<Device> {
+        let inner = self.inner();
+        inner.devices.values().filter(|device| inner.phones.contains_key(&device.id)).cloned().collect()
     }
 
     pub fn phones(&self) -> usize {
         self.inner().phones.len()
+    }
+
+    pub(crate) fn has_phone(&self, id: u64) -> bool {
+        self.inner().phones.contains_key(&id)
     }
 
     pub fn nudge(&self) {
@@ -753,6 +827,32 @@ mod tests {
     fn colors_become_css_hex() {
         assert_eq!(hex(Color::Rgb(255, 95, 135)), "#ff5f87");
         assert_eq!(hex(Color::Reset), "#9696a0");
+    }
+
+    #[test]
+    fn connected_devices_are_bounded_and_reconnecting_tabs_replace_old_entries() {
+        let dir = std::env::temp_dir().join(format!("orkai-hub-devices-{}-{}", std::process::id(), now_ms()));
+        let store = Store::open(Home::at(dir.join("home"))).unwrap();
+        let launcher = Launcher::new(store, Config::default(), &std::env::current_exe().unwrap()).unwrap();
+        let hub = Hub::new(launcher, "host".into());
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let id = hub.join(tx);
+        hub.describe(id, Device { agent: "Safari".into(), since_ms: 5, ..Device::default() });
+        hub.refine(id, Some(format!(" {}\u{7} ", "A".repeat(400))), None, true, Some("tab-1".into()));
+        assert!(hub.devices()[0].model.as_ref().unwrap().len() <= 300);
+        assert!(!hub.devices()[0].model.as_ref().unwrap().contains('\u{7}'));
+        let (next_tx, _next_rx) = std::sync::mpsc::channel();
+        let next = hub.join(next_tx);
+        hub.describe(next, Device { agent: "Chrome".into(), ..Device::default() });
+        hub.refine(next, None, None, false, Some("tab-1".into()));
+        assert_eq!(hub.phones(), 1);
+        assert!(!hub.has_phone(id));
+        assert_eq!(hub.devices().iter().map(|device| device.id).collect::<Vec<_>>(), vec![next]);
+        hub.leave(id);
+        assert_eq!(hub.phones(), 1);
+        hub.leave(next);
+        assert!(hub.devices().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
