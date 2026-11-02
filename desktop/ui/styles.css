@@ -31,13 +31,13 @@
   --term-bg: #08080b;
   --term-fg: #ececf2;
   --kind-claude: #de805c;
-  --kind-codex: #78afff;
+  --kind-codex: #8f9bff;
   --kind-kilo: #ece26e;
   --kind-opencode: #fab283;
-  --kind-antigravity: #9696ff;
+  --kind-antigravity: #4f8dff;
   --kind-grok: #e8e8f0;
   --kind-qwen: #ba8cff;
-  --kind-kimi: #ec80dc;
+  --kind-kimi: #5ec8ff;
   --kind-pi: #aadc5a;
   --kind-terminal: #5ad2d2;
   --kind-other: #9a9aa8;
@@ -100,13 +100,13 @@
   --term-bg: #fbfbfd;
   --term-fg: #16161d;
   --kind-claude: #c4613a;
-  --kind-codex: #2f6fd6;
+  --kind-codex: #4a54e0;
   --kind-kilo: #8f7f00;
   --kind-opencode: #c4702f;
-  --kind-antigravity: #5050d8;
+  --kind-antigravity: #1f6fe6;
   --kind-grok: #3a3a48;
   --kind-qwen: #7d45cc;
-  --kind-kimi: #b8409f;
+  --kind-kimi: #0b84c6;
   --kind-pi: #4f7d12;
   --kind-terminal: #0f8585;
   --kind-other: #6a6a78;
@@ -418,10 +418,10 @@ h1, p { margin: 0; }
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; flex: 1; color: var(--color-text-muted); text-align: center; }
 .empty-title { font-size: var(--text-lg); font-weight: 700; color: var(--color-text); }
 
-.composer { display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; padding: 14px 16px 12px 18px; border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-border); }
-.composer:focus-within { border-color: var(--color-border-strong); }
+.composer { --agent: var(--color-accent); display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; padding: 14px 16px 12px 18px; border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-border); }
+.composer:focus-within { border-color: color-mix(in srgb, var(--agent) 38%, var(--color-border-strong)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--agent) 9%, transparent); }
 .composer-line { display: flex; align-items: flex-start; gap: 10px; }
-.caret { width: 2px; height: 20px; margin-top: 1px; background: var(--color-accent); flex-shrink: 0; }
+.caret { width: 2px; height: 20px; margin-top: 1px; background: var(--agent); flex-shrink: 0; }
 .task { flex: 1; min-height: 22px; max-height: 160px; resize: none; border: 0; outline: none; background: transparent; color: var(--color-text); font-family: var(--font-sans); font-size: var(--text-md); line-height: 22px; padding: 0; user-select: text; overflow-y: hidden; }
 .task::placeholder { color: var(--color-text-faint); }
 .task:focus-visible { outline: none; }

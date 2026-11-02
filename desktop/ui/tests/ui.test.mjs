@@ -74,6 +74,25 @@ test('the dark theme keeps the colors of the TUI and the light theme redefines e
   for (const token of ['--color-bg', '--color-text', '--term-bg', '--term-fg']) assert.ok(light.includes(`${token}:`), token);
 });
 
+test('codex, antigravity and kimi keep distinct colors across the board, site and phone', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const site = rust('site/assets/site.css');
+  const phone = rust('src/pwa/web/style.css');
+  const dark = { codex: '#8f9bff', antigravity: '#4f8dff', kimi: '#5ec8ff' };
+  const light = { codex: '#4a54e0', antigravity: '#1f6fe6', kimi: '#0b84c6' };
+  for (const [kind, color] of Object.entries(dark)) {
+    assert.equal(kindHex(kind), color);
+    assert.ok(css.includes(`--kind-${kind}: ${color};`));
+    assert.ok(site.includes(`--${kind === 'antigravity' ? 'agy' : kind}: ${color};`));
+    assert.ok(phone.includes(`.k-${kind} { color: ${color}; }`));
+    assert.ok(css.includes(`--kind-${kind}: ${light[kind]};`));
+  }
+  const composer = rust('desktop/ui/js/composer.js');
+  assert.match(composer, /\$\('composer'\)\.style\.setProperty\('--agent', kindColor\(who\)\)/);
+  assert.match(css, /\.composer:focus-within \{[^}]*var\(--agent\)/);
+  assert.match(css, /\.caret \{[^}]*background: var\(--agent\)/);
+});
+
 test('the agent screen leaves the agent title to the cards and keeps its status bar for alerts', () => {
   const source = readFileSync(join(REPO, 'desktop/ui/js/agent.js'), 'utf8');
   const status = source.slice(source.indexOf('export function renderStatus'), source.indexOf('\n}\n', source.indexOf('export function renderStatus')));

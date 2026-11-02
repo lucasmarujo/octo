@@ -347,13 +347,13 @@ kbd { border: 1px solid var(--rule); border-radius: 4px; padding: 0 5px; backgro
 .t-red { color: var(--red); }
 .t-link { color: var(--link); }
 .k-claude { color: #de805c; }
-.k-codex { color: #78afff; }
+.k-codex { color: #8f9bff; }
 .k-kilo { color: #ece26e; }
 .k-opencode { color: #fab283; }
-.k-antigravity { color: #9696ff; }
+.k-antigravity { color: #4f8dff; }
 .k-grok { color: #e8e8f0; }
 .k-qwen { color: #ba8cff; }
-.k-kimi { color: #ec80dc; }
+.k-kimi { color: #5ec8ff; }
 .k-pi { color: #aadc5a; }
 .k-terminal { color: #5ad2d2; }
 

@@ -236,6 +236,7 @@ export function renderComposer() {
     h('span', { class: 'value', style: `color:${kindColor(who)}` }, label(who)),
     svg(ICON_CHEVRON_DOWN),
   );
+  $('composer').style.setProperty('--agent', kindColor(who));
   $('where').replaceChildren(h('span', { class: 'key' }, t('where')), h('span', { class: 'value path' }, currentWhere()));
   $('where').title = currentWhere();
   const worktree = $('worktree');
