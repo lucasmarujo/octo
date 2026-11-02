@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -118,13 +118,8 @@ fn upgrade(hub: &Arc<Hub>, secret: &Secret, mut stream: TcpStream, request: &htt
 }
 
 fn seen(request: &http::Request) -> Device {
-    let forwarded = request
-        .header("cf-connecting-ip")
-        .or_else(|| request.header("x-forwarded-for").and_then(|list| list.split(',').next()));
-    let ip = forwarded.map(str::trim).and_then(|ip| ip.parse::<IpAddr>().ok()).map(|ip| ip.to_string());
     Device {
         agent: request.header("user-agent").and_then(device_text).unwrap_or_default(),
-        ip,
         since_ms: now_ms(),
         ..Device::default()
     }
@@ -555,7 +550,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tunnel_headers_describe_a_device_without_trusting_invalid_addresses() {
+    fn a_device_is_described_by_its_browser_and_never_by_its_address() {
         let request = http::Request {
             method: "GET".into(),
             path: "/ws".into(),
@@ -566,10 +561,9 @@ mod tests {
             ],
         };
         let device = seen(&request);
-        assert_eq!(device.ip.as_deref(), Some("203.0.113.9"));
         assert_eq!(device.agent, "Safari");
-        let invalid = http::Request { headers: vec![("x-forwarded-for".into(), "not an ip".into())], ..request };
-        assert_eq!(seen(&invalid).ip, None);
+        let kept = serde_json::to_string(&device).unwrap();
+        assert!(!kept.contains("203.0.113.9") && !kept.contains("198.51.100.2"), "{kept}");
     }
 
     fn view(viewers: Option<u16>, requested: Option<TermSize>) -> View {

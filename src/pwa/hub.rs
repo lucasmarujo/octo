@@ -152,7 +152,6 @@ const MAX_DEVICE_TEXT: usize = 300;
 pub struct Device {
     pub id: u64,
     pub agent: String,
-    pub ip: Option<String>,
     pub since_ms: u64,
     pub model: Option<String>,
     pub os_version: Option<String>,
