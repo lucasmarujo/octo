@@ -93,6 +93,14 @@ export function splitTyped(text) {
   return [text.slice(0, cut + 1), text.slice(cut + 1)];
 }
 
+export function folderNote(repo, missing, worktree) {
+  if (missing) return { tone: 'missing', icon: ICON_ALERT, text: t('This folder does not exist') };
+  if (repo && worktree) return { tone: 'worktree', icon: ICON_BRANCH, text: t('{repo} is a git repository · each agent gets its own worktree', { repo: baseName(repo) }) };
+  if (repo) return { tone: 'git', icon: ICON_BRANCH, text: t('{repo} is a git repository · worktree is off, agents work right in it', { repo: baseName(repo) }) };
+  if (worktree) return { tone: 'blocked', icon: ICON_ALERT, text: t('Not a git repository · turn worktree off to start AI agents here') };
+  return { tone: 'plain', icon: ICON_FOLDER, text: t('Not a git repository · agents work right in this folder') };
+}
+
 function recentFolders() {
   const overview = state.overview || {};
   const saved = storage.json(RECENT_KEY, []);
@@ -199,15 +207,9 @@ export function pickFolder(start, onPick) {
     use.disabled = !item && listing.missing;
     use.replaceChildren(h('span', null, t('Use {name}', { name })));
     use.title = item ? item.path : listing.path;
-    const repo = item ? item.repo : listing.repo;
-    let tone = 'plain';
-    let icon = ICON_FOLDER;
-    let text = t('Not a git repository · agents work right in this folder');
-    if (listing.missing && !item) [tone, icon, text] = ['missing', ICON_ALERT, t('This folder does not exist')];
-    else if (repo && worktreeOn()) [tone, icon, text] = ['worktree', ICON_BRANCH, t('{repo} is a git repository · each agent gets its own worktree', { repo: baseName(repo) })];
-    else if (repo) [tone, icon, text] = ['git', ICON_BRANCH, t('{repo} is a git repository · worktree is off, agents work right in it', { repo: baseName(repo) })];
-    status.dataset.tone = tone;
-    status.replaceChildren(svg(icon), h('span', null, text));
+    const summary = folderNote(item ? item.repo : listing.repo, !item && listing.missing, worktreeOn());
+    status.dataset.tone = summary.tone;
+    status.replaceChildren(svg(summary.icon), h('span', null, summary.text));
   }
 
   function row(item, index, extra = {}) {

@@ -246,6 +246,7 @@ export const PT = {
   'You can still use this folder.': 'Você ainda pode usar esta pasta.',
   'This folder does not exist': 'Esta pasta não existe',
   'Not a git repository · agents work right in this folder': 'Não é um repositório git · os agentes trabalham direto nesta pasta',
+  'Not a git repository · turn worktree off to start AI agents here': 'Não é um repositório git · desligue o worktree para iniciar agentes de IA aqui',
   '{repo} is a git repository · each agent gets its own worktree': '{repo} é um repositório git · cada agente ganha o próprio worktree',
   '{repo} is a git repository · worktree is off, agents work right in it': '{repo} é um repositório git · worktree desligado, os agentes trabalham direto nele',
   'Open in a tab': 'Abrir numa aba',
