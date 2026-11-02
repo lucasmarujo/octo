@@ -16,6 +16,7 @@
   <body>
     <div class="app">
       <header class="titlebar" data-tauri-drag-region>
+        <span id="breadcrumb" class="breadcrumb" data-tauri-drag-region></span>
         <nav id="tabs" class="tabs" data-tauri-drag-region></nav>
         <div class="window-controls">
           <button id="win-min" class="win-button" type="button" aria-label="Minimize" data-i18n-label="Minimize">
@@ -39,15 +40,18 @@
             </div>
           </div>
           <section class="sessions">
-            <span class="caps" data-i18n="Sessions">Sessions</span>
+            <div class="sessions-head"><span class="caps" data-i18n="Workspaces">Workspaces</span><button id="new-workspace" class="workspace-create" type="button" aria-label="New workspace" title="New workspace" data-i18n-label="New workspace" data-i18n-title="New workspace"></button></div>
             <div id="sessions" class="session-list"></div>
           </section>
-          <div class="spacer"></div>
-          <section id="usage" class="usage" hidden></section>
           <footer class="sidebar-footer">
-            <button id="pair" class="footer-pair" type="button" title="Pair your phone (ctrl P)" data-i18n-title="Pair your phone (ctrl P)"></button>
+            <details id="usage-popover" class="usage-popover">
+              <summary id="usage-button" class="footer-icon" aria-label="Plan usage" title="Plan usage" data-i18n-label="Plan usage" data-i18n-title="Plan usage"></summary>
+              <section id="usage" class="usage" hidden></section>
+            </details>
+            <button id="pair" class="footer-pair" type="button" aria-label="Pair your phone" title="Pair your phone (ctrl P)" data-i18n-label="Pair your phone" data-i18n-title="Pair your phone (ctrl P)"></button>
             <button id="open-help" class="footer-icon" type="button" aria-label="How to use" title="How to use (F1)" data-i18n-label="How to use" data-i18n-title="How to use (F1)"></button>
             <button id="open-settings" class="footer-icon" type="button" aria-label="Settings" title="Settings" data-i18n-label="Settings" data-i18n-title="Settings"></button>
+            <button id="toggle-theme" class="footer-icon" type="button" aria-label="Toggle light and dark theme" title="Toggle light and dark theme" data-i18n-label="Toggle light and dark theme" data-i18n-title="Toggle light and dark theme"></button>
           </footer>
         </aside>
         <main class="main">
@@ -90,6 +94,7 @@
               <div id="list-body" class="list-body"></div>
             </div>
             <div id="grid" class="grid" hidden></div>
+            <div id="empty-state" class="empty-state" hidden><h2 data-i18n="What would you like to work on?">What would you like to work on?</h2><p data-i18n="Choose an agent, write a task and send it.">Choose an agent, write a task and send it.</p></div>
             <form id="composer" class="composer" autocomplete="off">
               <div id="palette" class="palette" role="listbox" hidden></div>
               <div class="composer-line">
@@ -104,9 +109,15 @@
               <div class="composer-options">
                 <button id="who" class="chip" type="button" aria-haspopup="menu"></button>
                 <button id="where" class="chip" type="button"></button>
-                <button id="worktree" class="toggle" type="button" aria-pressed="false"></button>
-                <button id="remote" class="toggle" type="button" aria-pressed="false"></button>
-                <button id="bypass" class="toggle" type="button" aria-pressed="false"></button>
+                <details id="composer-advanced" class="composer-advanced">
+                  <summary id="composer-options-toggle" class="composer-options-toggle" aria-label="Advanced launch options" data-i18n-label="Advanced launch options"></summary>
+                  <div class="composer-advanced-panel">
+                    <span class="advanced-title" data-i18n="Launch options">Launch options</span>
+                    <button id="worktree" class="toggle" type="button" aria-pressed="false"></button>
+                    <button id="remote" class="toggle" type="button" aria-pressed="false"></button>
+                    <button id="bypass" class="toggle" type="button" aria-pressed="false"></button>
+                  </div>
+                </details>
                 <div class="grow"></div>
                 <span class="hint">⇧↵ <span data-i18n="new line">new line</span></span>
                 <button id="launch" class="button primary" type="submit"><span data-i18n="Launch">Launch</span> <span class="mono">↵</span></button>

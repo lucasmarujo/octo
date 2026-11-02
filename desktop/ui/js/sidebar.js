@@ -1,10 +1,12 @@
 import { deleteSession, renameSession } from './commands.js';
 import { $, h, keep, place, svg } from './dom.js';
-import { ask, closeMenu, openMenu } from './dialogs.js';
+import { ask, closeMenu, confirm, openMenu } from './dialogs.js';
 import { SPINNER, USAGE_FOLDED, USAGE_WARN, duration, kindColor, label, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
-import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_PLUS, PROVIDER_ICONS } from './icons.js';
-import { agents, inSession, now, selectSession, state, toggleExpanded, toggleUsage } from './state.js';
+import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_FOLDER, ICON_MORE, ICON_PLUS, PROVIDER_ICONS } from './icons.js';
+import { assignWorkspace, agents, createWorkspace, inSession, moveWorkspace, now, removeWorkspace, renameWorkspace, state, toggleExpanded, toggleUsage, toggleWorkspace, workspaceFor } from './state.js';
+import { motion } from './motion.js';
+import { toast } from './toast.js';
 import { send } from './transport.js';
 
 const SUMMARY = [
@@ -25,6 +27,19 @@ function summaryLine(entry, list, onOpen) {
   );
 }
 
+let select = null;
+let open = null;
+let dragging = null;
+
+function refresh() {
+  $('sessions').dataset.signature = '';
+  renderSidebar(select, open);
+}
+
+function menuItem(text, act) {
+  return h('button', { class: 'menu-item', type: 'button', role: 'menuitem', onclick: () => { closeMenu(); act(); } }, h('span', null, text));
+}
+
 function sessionMenu(event, name) {
   event.preventDefault();
   const item = (text, act) =>
@@ -41,7 +56,48 @@ function sessionMenu(event, name) {
       },
       h('span', null, text),
     );
+  const workspace = workspaceFor(name);
+  const siblings = workspace ? workspace.sessions.filter((session) => state.overview.sessions.some((item) => item.name === session)) : [];
+  const index = siblings.indexOf(name);
+  const move = (id, before) => () => { assignWorkspace(name, id, before); refresh(); };
+  if (state.workspaces.length) {
+    const destinations = [{ id: null, name: t('Uncategorized') }, ...state.workspaces].filter((item) => item.id !== (workspace?.id || null));
+    openMenu(event.currentTarget, [
+      item(t('Rename'), renameSession),
+      workspace && index > 0 ? menuItem(t('Move up'), move(workspace.id, siblings[index - 1])) : null,
+      workspace && index < siblings.length - 1 ? menuItem(t('Move down'), move(workspace.id, siblings[index + 2] || null)) : null,
+      ...destinations.map((item) => menuItem(t('Move to {name}', { name: item.name }), move(item.id, null))),
+      item(t('Delete'), deleteSession),
+    ].filter(Boolean), false);
+    return;
+  }
   openMenu(event.currentTarget, [item(t('Rename'), renameSession), item(t('Delete'), deleteSession)], false);
+}
+
+async function newWorkspace() {
+  const name = await ask({ title: t('New workspace'), text: t('Group related sessions in a collapsible category.'), action: t('Create'), placeholder: t('workspace name') });
+  if (!name) return;
+  if (!createWorkspace(name)) return toast(t('A workspace with this name already exists.'), 'warn');
+  refresh();
+}
+
+function workspaceMenu(event, workspace) {
+  event.preventDefault();
+  const index = state.workspaces.indexOf(workspace);
+  const items = [menuItem(t('New session in {name}', { name: workspace.name }), () => newSession(select, workspace)),
+    menuItem(t('Rename workspace'), async () => {
+      const name = await ask({ title: t('Rename workspace'), value: workspace.name, action: t('Rename') });
+      if (name && !renameWorkspace(workspace.id, name)) toast(t('A workspace with this name already exists.'), 'warn');
+      refresh();
+    }),
+    index > 0 ? menuItem(t('Move up'), () => { moveWorkspace(workspace.id, state.workspaces[index - 1].id); refresh(); }) : null,
+    index < state.workspaces.length - 1 ? menuItem(t('Move down'), () => { moveWorkspace(workspace.id, state.workspaces[index + 2]?.id); refresh(); }) : null,
+    menuItem(t('Remove workspace'), async () => {
+      const sure = await confirm({ title: t('Remove workspace'), text: t('Only the category is removed. Its sessions and agents are kept.'), action: t('Remove'), danger: true });
+      if (sure) { removeWorkspace(workspace.id); refresh(); }
+    }),
+  ].filter(Boolean);
+  openMenu(event.currentTarget, items, false);
 }
 
 function sessionItem(session, onSelect, onOpen) {
@@ -66,7 +122,7 @@ function sessionItem(session, onSelect, onOpen) {
   const hint = !expanded && working ? h('span', { class: 'session-hint' }, `${SPINNER[1]}${working}`) : null;
   const row = h(
     'button',
-    { class: 'session-row', type: 'button', onclick: () => onSelect(session.name), oncontextmenu: (event) => sessionMenu(event, session.name) },
+    { class: 'session-row', id: `session-${encodeURIComponent(session.name)}`, type: 'button', draggable: true, dataset: { session: session.name }, onclick: () => onSelect(session.name), oncontextmenu: (event) => sessionMenu(event, session.name) },
     chevron,
     h('span', { class: 'session-name' }, session.name),
     hint,
@@ -77,15 +133,89 @@ function sessionItem(session, onSelect, onOpen) {
     : [];
   const visible = lines.filter(Boolean);
   const classes = ['session', selected ? 'selected' : '', expanded && visible.length ? 'expanded' : ''].filter(Boolean);
-  return h('div', { class: classes.join(' ') }, row, visible);
+  return h('div', { class: classes.join(' '), dataset: { session: session.name } }, row, visible);
 }
 
-async function newSession(onSelect) {
+async function newSession(onSelect, workspace = workspaceFor()) {
   const name = await ask({ title: t('New session'), text: t('A session groups agents you work on together.'), action: t('Create'), placeholder: t('session name') });
   if (!name) return;
+  if (state.overview?.sessions.some((session) => session.name === name)) return toast(t('A session with this name already exists.'), 'warn');
   state.pendingSession = name;
+  state.pendingWorkspace = { name, id: workspace?.id || null };
   send({ type: 'session', name });
   onSelect(name);
+}
+
+function workspaceGroup(workspace, sessions, onSelect, onOpen) {
+  const id = workspace?.id || 'uncategorized';
+  const name = workspace?.name || t('Uncategorized');
+  const collapsed = workspace ? Boolean(workspace.collapsed) : state.uncategorizedCollapsed;
+  const waiting = sessions.flatMap((session) => inSession(session.name)).filter((agent) => agent.state === 'paused' && !agent.starting).length;
+  return h('section', { class: 'sidebar-workspace', dataset: { workspace: id } },
+    h('div', { class: 'sidebar-workspace-head', draggable: Boolean(workspace),
+      oncontextmenu: workspace ? (event) => workspaceMenu(event, workspace) : null },
+      h('button', { class: 'sidebar-workspace-toggle', id: `workspace-${id}`, type: 'button', 'aria-expanded': String(!collapsed), onclick: () => { toggleWorkspace(id); refresh(); } },
+        svg(workspace ? collapsed ? ICON_CHEVRON_RIGHT : ICON_CHEVRON_DOWN : ICON_FOLDER), h('span', { class: 'sidebar-workspace-name' }, name),
+        waiting ? h('span', { class: 'sidebar-workspace-waiting' }, String(waiting)) : h('span', { class: 'session-count' }, String(sessions.length))),
+      h('button', { class: 'sidebar-workspace-action', type: 'button', 'aria-label': t('New session in {name}', { name }), title: t('New session in {name}', { name }), onclick: () => newSession(onSelect, workspace) }, svg(ICON_PLUS)),
+      workspace ? h('button', { class: 'sidebar-workspace-action', type: 'button', 'aria-label': t('Workspace options'), title: t('Workspace options'), onclick: (event) => workspaceMenu(event, workspace) }, svg(ICON_MORE)) : null,
+    ),
+    h('div', { class: 'sidebar-workspace-sessions', hidden: collapsed },
+      sessions.map((session) => sessionItem(session, onSelect, onOpen)),
+      sessions.length ? null : h('button', { class: 'sidebar-workspace-empty', type: 'button', onclick: () => newSession(onSelect, workspace) }, t('Create your first session')),
+    ),
+  );
+}
+
+function listen(host) {
+  host.addEventListener('dragstart', (event) => {
+    const row = event.target.closest('[data-session]');
+    const group = event.target.closest('.sidebar-workspace-head');
+    dragging = row ? { kind: 'session', name: row.dataset.session } : group && group.parentElement.dataset.workspace !== 'uncategorized' ? { kind: 'workspace', id: group.parentElement.dataset.workspace } : null;
+    if (!dragging) return event.preventDefault();
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', dragging.name || dragging.id);
+  });
+  host.addEventListener('dragover', (event) => {
+    const group = event.target.closest('.sidebar-workspace');
+    if (!dragging || !group) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    for (const item of host.querySelectorAll('[data-drop]')) delete item.dataset.drop;
+    group.dataset.drop = dragging.kind;
+  });
+  host.addEventListener('drop', (event) => {
+    if (!dragging) return;
+    const group = event.target.closest('.sidebar-workspace');
+    if (!group) return;
+    event.preventDefault();
+    delete group.dataset.drop;
+    const before = new Map([...host.querySelectorAll('.sidebar-workspace, .session')].map((node) => [node.dataset.workspace ? `w:${node.dataset.workspace}` : `s:${node.dataset.session}`, node.getBoundingClientRect().top]));
+    if (dragging.kind === 'workspace') {
+      if (group.dataset.workspace !== 'uncategorized') {
+        const after = event.clientY > group.getBoundingClientRect().top + group.offsetHeight / 2;
+        moveWorkspace(dragging.id, after ? group.nextElementSibling?.dataset.workspace || null : group.dataset.workspace);
+      }
+    } else {
+      const id = group.dataset.workspace === 'uncategorized' ? null : group.dataset.workspace;
+      const row = event.target.closest('[data-session]');
+      if (row?.dataset.session === dragging.name) { dragging = null; return; }
+      const after = row && event.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+      const next = after ? row.nextElementSibling?.dataset.session : row?.dataset.session;
+      assignWorkspace(dragging.name, id, next || null);
+    }
+    dragging = null;
+    refresh();
+    const options = motion('--motion-slow');
+    for (const node of host.querySelectorAll('.sidebar-workspace, .session')) {
+      const from = before.get(node.dataset.workspace ? `w:${node.dataset.workspace}` : `s:${node.dataset.session}`);
+      if (from !== undefined && options.duration) { const dy = from - node.getBoundingClientRect().top; if (dy) node.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], options); }
+    }
+  });
+  host.addEventListener('dragend', () => {
+    dragging = null;
+    for (const item of host.querySelectorAll('[data-drop]')) delete item.dataset.drop;
+  });
 }
 
 const UNFOLD_MS = 320;
@@ -155,7 +285,8 @@ function renderUsage() {
   const host = $('usage');
   const entries = usageOrder(state.usage || [], agents().map((agent) => agent.kind));
   if (!entries.length) {
-    host.hidden = true;
+    host.hidden = false;
+    host.replaceChildren(h('span', { class: 'usage-note' }, t('No usage data yet.')));
     return;
   }
   host.hidden = false;
@@ -178,19 +309,34 @@ function renderUsage() {
 }
 
 export function renderSidebar(onSelect, onOpen) {
+  select = onSelect;
+  open = onOpen;
   $('host').textContent = state.host;
+  if ($('breadcrumb').firstElementChild) $('breadcrumb').firstElementChild.textContent = workspaceFor()?.name || t('Personal workspace');
   const overview = state.overview;
   const host = $('sessions');
+  const createWorkspaceButton = $('new-workspace');
+  if (!createWorkspaceButton.dataset.ready) {
+    createWorkspaceButton.dataset.ready = '1';
+    createWorkspaceButton.replaceChildren(svg(ICON_PLUS));
+    createWorkspaceButton.addEventListener('click', newWorkspace);
+    listen(host);
+  }
   const signature = overview
     ? JSON.stringify([
         state.session,
         [...state.expanded],
+        state.workspaces,
+        state.uncategorizedCollapsed,
         overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map((agent) => [agent.name, agent.state, agent.starting])]),
       ])
     : '';
-  if (overview && host.dataset.signature !== signature) {
+  if (overview && !dragging && host.dataset.signature !== signature) {
     host.dataset.signature = signature;
-    const items = overview.sessions.map((session) => sessionItem(session, onSelect, onOpen));
+    const focused = host.contains(document.activeElement) ? document.activeElement.id : null;
+    const items = state.workspaces.map((workspace) => workspaceGroup(workspace, workspace.sessions.map((name) => overview.sessions.find((session) => session.name === name)).filter(Boolean), onSelect, onOpen));
+    const uncategorized = overview.sessions.filter((session) => !workspaceFor(session.name));
+    if (uncategorized.length || !items.length) items.push(workspaceGroup(null, uncategorized, onSelect, onOpen));
     const create = h(
       'button',
       { class: 'session-row new-session', type: 'button', onclick: () => newSession(onSelect) },
@@ -199,6 +345,7 @@ export function renderSidebar(onSelect, onOpen) {
       h('span', { class: 'kbd' }, 'ctrl N'),
     );
     host.replaceChildren(...items, create);
+    if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
   }
   renderUsage();
 }

@@ -13,6 +13,8 @@ const VIEW_KEY = 'orkai.view';
 const GRID_KEY = 'orkai.grid';
 const PROJECT_KEY = 'orkai.project';
 const USAGE_KEY = 'orkai.usage';
+const WORKSPACES_KEY = 'octo.workspaces';
+const savedWorkspaces = storage.json(WORKSPACES_KEY, []);
 
 export const VIEWS = ['board', 'list', 'grid'];
 
@@ -27,6 +29,10 @@ export const state = {
   frame: 0,
   session: storage.get(SESSION_KEY),
   pendingSession: null,
+  pendingWorkspace: null,
+  pendingRename: null,
+  workspaces: Array.isArray(savedWorkspaces) ? savedWorkspaces.filter((item) => item && typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.sessions) && item.sessions.every((name) => typeof name === 'string')) : [],
+  uncategorizedCollapsed: storage.get('octo.uncategorizedCollapsed') === 'on',
   expanded: new Set(storage.json(EXPANDED_KEY, [])),
   who: storage.get(WHO_KEY),
   where: storage.json(WHERE_KEY, {}),
@@ -67,6 +73,85 @@ export function agents() {
 
 export function inSession(name = state.session) {
   return agents().filter((agent) => agent.session === name);
+}
+
+const saveWorkspaces = () => storage.set(WORKSPACES_KEY, JSON.stringify(state.workspaces));
+
+export function workspaceFor(session = state.session) {
+  return state.workspaces.find((item) => item.sessions.includes(session)) || null;
+}
+
+export function createWorkspace(name) {
+  name = name.trim();
+  if (!name || state.workspaces.some((item) => item.name === name)) return null;
+  const workspace = { id: crypto.randomUUID(), name, sessions: [], collapsed: false };
+  state.workspaces.push(workspace);
+  saveWorkspaces();
+  return workspace;
+}
+
+export function renameWorkspace(id, name) {
+  name = name.trim();
+  const workspace = state.workspaces.find((item) => item.id === id);
+  if (!workspace || !name || state.workspaces.some((item) => item.id !== id && item.name === name)) return false;
+  workspace.name = name;
+  saveWorkspaces();
+  return true;
+}
+
+export function assignWorkspace(session, id, before = null) {
+  const workspace = state.workspaces.find((item) => item.id === id);
+  if (id && !workspace) return;
+  for (const item of state.workspaces) item.sessions = item.sessions.filter((name) => name !== session);
+  if (workspace) {
+    const at = workspace.sessions.indexOf(before);
+    workspace.sessions.splice(at < 0 ? workspace.sessions.length : at, 0, session);
+  }
+  saveWorkspaces();
+}
+
+export function moveWorkspace(id, before = null) {
+  const workspace = state.workspaces.find((item) => item.id === id);
+  if (!workspace || id === before) return;
+  state.workspaces = state.workspaces.filter((item) => item !== workspace);
+  const at = state.workspaces.findIndex((item) => item.id === before);
+  state.workspaces.splice(at < 0 ? state.workspaces.length : at, 0, workspace);
+  saveWorkspaces();
+}
+
+export function toggleWorkspace(id) {
+  if (id === 'uncategorized') {
+    state.uncategorizedCollapsed = !state.uncategorizedCollapsed;
+    storage.set('octo.uncategorizedCollapsed', state.uncategorizedCollapsed ? 'on' : null);
+    return;
+  }
+  const workspace = state.workspaces.find((item) => item.id === id);
+  if (!workspace) return;
+  workspace.collapsed = !workspace.collapsed;
+  saveWorkspaces();
+}
+
+export function removeWorkspace(id) {
+  state.workspaces = state.workspaces.filter((item) => item.id !== id);
+  saveWorkspaces();
+}
+
+export function reconcileWorkspaces(names) {
+  let changed = false;
+  if (state.pendingRename && names.includes(state.pendingRename.to) && !names.includes(state.pendingRename.from)) {
+    for (const item of state.workspaces) item.sessions = item.sessions.map((name) => name === state.pendingRename.from ? state.pendingRename.to : name);
+    state.pendingRename = null;
+    changed = true;
+  }
+  if (state.pendingWorkspace && names.includes(state.pendingWorkspace.name)) {
+    assignWorkspace(state.pendingWorkspace.name, state.pendingWorkspace.id);
+    state.pendingWorkspace = null;
+  }
+  for (const item of state.workspaces) {
+    const kept = item.sessions.filter((name) => names.includes(name));
+    if (kept.length !== item.sessions.length) { item.sessions = kept; changed = true; }
+  }
+  if (changed) saveWorkspaces();
 }
 
 export function projectsInSession() {
