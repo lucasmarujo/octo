@@ -260,11 +260,11 @@ mod tests {
         assert_eq!(store.next_session_name().unwrap(), "session-3");
         assert!(store.create_session("session-2").is_err());
         let agent = store.create_agent(draft("session-2", "a")).unwrap();
-        store.rename_session("session-2", "work").unwrap();
-        assert_eq!(store.load_agent(agent.id).unwrap().session, "work");
-        assert!(store.delete_session("work").is_err());
+        store.rename_session("session-2", "café 2026").unwrap();
+        assert_eq!(store.load_agent(agent.id).unwrap().session, "café 2026");
+        assert!(store.delete_session("café 2026").is_err());
         store.remove_agent(agent.id).unwrap();
-        store.delete_session("work").unwrap();
+        store.delete_session("café 2026").unwrap();
         let names: Vec<_> = store.load_sessions().unwrap().into_iter().map(|s| s.name).collect();
         assert_eq!(names, vec![DEFAULT_SESSION]);
         fs::remove_dir_all(dir).unwrap();
@@ -326,7 +326,9 @@ mod tests {
     #[test]
     fn invalid_names_are_rejected() {
         let (store, dir) = temp_store("invalid");
-        assert!(store.create_agent(draft("bad session", "a")).is_err());
+        assert!(store.create_agent(draft("bad/session", "a")).is_err());
+        let agent = store.create_agent(draft("projeto ção", "a")).unwrap();
+        assert_eq!(store.load_agent(agent.id).unwrap().session, "projeto ção");
         assert!(store.create_agent(draft("default", "")).is_err());
         assert!(store.create_session("../x").is_err());
         fs::remove_dir_all(dir).unwrap();
