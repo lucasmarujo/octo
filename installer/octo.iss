@@ -36,6 +36,9 @@ WizardStyle=modern
 VersionInfoVersion={#GetVersionNumbersString(Binary)}
 VersionInfoTextVersion={#AppVersion}
 VersionInfoProductTextVersion={#AppVersion}
+#ifdef Thumbprint
+SignTool=octo powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $q{#AddBackslash(SourcePath)}sign.ps1$q -Thumbprint {#Thumbprint} -Path $f
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

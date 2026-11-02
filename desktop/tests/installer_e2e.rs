@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 use orkai::util::now_ms;
 
 const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../installer/octo.iss");
+const SIGN_SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../installer/sign.ps1");
+const SIGN_TOOL: &str = "/Socto=$p";
 const SETUP_NAME: &str = "Octo-setup.exe";
 const APP_NAME: &str = "Octo";
 const APP_PUBLISHER: &str = "OctoAI";
@@ -148,21 +150,105 @@ fn run(program: &Path, args: &[&str]) -> ExitStatus {
     status.unwrap()
 }
 
+fn compile_setup(binary: &Path, out: &Path, thumbprint: Option<&str>) -> Result<PathBuf, String> {
+    let iscc = std::env::var_os(ISCC_ENV).map_or_else(|| PathBuf::from(DEFAULT_ISCC), PathBuf::from);
+    let mut command = Command::new(&iscc);
+    command.arg("/Q").arg(format!("/DBinary={}", binary.display())).arg(format!("/O{}", out.display()));
+    if let Some(thumbprint) = thumbprint {
+        command.arg(SIGN_TOOL).arg(format!("/DThumbprint={thumbprint}"));
+    }
+    let output = command
+        .arg(SCRIPT)
+        .output()
+        .unwrap_or_else(|err| panic!("{}: {err}; install Inno Setup 6 or set {ISCC_ENV}", iscc.display()));
+    let log = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    if output.status.success() { Ok(out.join(SETUP_NAME)) } else { Err(log) }
+}
+
 fn setup() -> &'static Path {
     SETUP.get_or_init(|| {
-        let iscc = std::env::var_os(ISCC_ENV).map_or_else(|| PathBuf::from(DEFAULT_ISCC), PathBuf::from);
         let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("octo-installer");
-        let output = Command::new(&iscc)
-            .arg("/Q")
-            .arg(format!("/DBinary={}", env!("CARGO_BIN_EXE_octo")))
-            .arg(format!("/O{}", out.display()))
-            .arg(SCRIPT)
-            .output()
-            .unwrap_or_else(|err| panic!("{}: {err}; install Inno Setup 6 or set {ISCC_ENV}", iscc.display()));
-        let log = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-        assert!(output.status.success(), "ISCC failed:\n{log}");
-        out.join(SETUP_NAME)
+        compile_setup(Path::new(env!("CARGO_BIN_EXE_octo")), &out, None)
+            .unwrap_or_else(|log| panic!("ISCC failed:\n{log}"))
     })
+}
+
+fn powershell(script: &str) -> String {
+    let output =
+        Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", script]).output().unwrap();
+    assert!(output.status.success(), "powershell failed:\n{}", String::from_utf8_lossy(&output.stderr));
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn sign(file: &Path, thumbprint: &str) -> ExitStatus {
+    Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SIGN_SCRIPT])
+        .args(["-Thumbprint", thumbprint, "-Path"])
+        .arg(file)
+        .status()
+        .unwrap()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Signature {
+    signer: String,
+    timestamped: bool,
+}
+
+fn signature(file: &Path) -> Option<Signature> {
+    let script = format!(
+        "$s = Get-AuthenticodeSignature -LiteralPath '{}'; if ($s.SignerCertificate) {{ \"$($s.SignerCertificate.Thumbprint) $([bool]$s.TimeStamperCertificate)\" }}",
+        file.display()
+    );
+    let output = powershell(&script);
+    let (signer, timestamped) = output.split_once(' ')?;
+    Some(Signature { signer: signer.to_string(), timestamped: timestamped == "True" })
+}
+
+struct Certificate {
+    thumbprint: String,
+}
+
+impl Certificate {
+    fn new() -> Self {
+        let thumbprint = powershell(
+            r"(New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=Octo signing test' -CertStoreLocation Cert:\CurrentUser\My).Thumbprint",
+        );
+        assert_eq!(thumbprint.len(), 40, "unexpected thumbprint {thumbprint:?}");
+        Self { thumbprint }
+    }
+
+    fn signature(&self) -> Option<Signature> {
+        Some(Signature { signer: self.thumbprint.clone(), timestamped: true })
+    }
+}
+
+impl Drop for Certificate {
+    fn drop(&mut self) {
+        let _ = powershell(&format!(r"Remove-Item Cert:\CurrentUser\My\{}", self.thumbprint));
+    }
+}
+
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("{tag}-{}-{}", std::process::id(), now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Self(dir)
+    }
+
+    fn app(&self) -> PathBuf {
+        let app = self.0.join(APP_EXE);
+        std::fs::copy(env!("CARGO_BIN_EXE_octo"), &app).unwrap();
+        app
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 fn start_menu_shortcut() -> PathBuf {
@@ -202,9 +288,13 @@ impl Install {
     }
 
     fn install(&self) {
+        self.install_from(setup());
+    }
+
+    fn install_from(&self, setup: &Path) {
         let log = self.dir.with_extension("log");
         let (dir, log_arg) = (format!("/DIR={}", self.dir.display()), format!("/LOG={}", log.display()));
-        let status = run(setup(), &["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", &dir, &log_arg]);
+        let status = run(setup, &["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", &dir, &log_arg]);
         let log = std::fs::read_to_string(&log).unwrap_or_default();
         assert!(status.success(), "setup exited with {status}:\n{log}");
     }
@@ -284,6 +374,58 @@ fn the_installer_carries_the_same_name_version_publisher_and_copyright_as_the_ap
     assert_eq!(info.string("LegalCopyright").as_deref(), Some(APP_COPYRIGHT));
     assert_eq!(info.string("ProductVersion").as_deref(), Some(env!("CARGO_PKG_VERSION")));
     assert_eq!(info.fixed_product_version(), package_version());
+}
+
+#[test]
+#[ignore = "needs Inno Setup's ISCC; CI runs it with --ignored"]
+fn without_a_certificate_the_app_and_the_installer_come_out_unsigned() {
+    assert_eq!(signature(Path::new(env!("CARGO_BIN_EXE_octo"))), None);
+    assert_eq!(signature(setup()), None);
+}
+
+#[test]
+#[ignore = "adds a throwaway certificate to the user's store, needs ISCC and the timestamp server; CI runs it with --ignored"]
+fn signs_the_app_and_the_installer_with_the_certificate_and_a_timestamp() {
+    let certificate = Certificate::new();
+    let dir = TempDir::new("octo-signed");
+    let app = dir.app();
+
+    assert!(sign(&app, &certificate.thumbprint).success());
+    assert_eq!(signature(&app), certificate.signature());
+    assert_eq!(VersionInfo::of(&app).string("ProductVersion").as_deref(), Some(env!("CARGO_PKG_VERSION")));
+
+    let setup = compile_setup(&app, &dir.0, Some(&certificate.thumbprint)).unwrap_or_else(|log| panic!("{log}"));
+    assert_eq!(signature(&setup), certificate.signature());
+}
+
+#[test]
+#[ignore = "needs Inno Setup's ISCC; CI runs it with --ignored"]
+fn a_certificate_that_is_not_in_the_store_signs_nothing_and_stops_the_installer() {
+    let missing = "0".repeat(40);
+    let dir = TempDir::new("octo-unknown-certificate");
+    let app = dir.app();
+
+    assert!(!sign(&app, &missing).success());
+    assert_eq!(signature(&app), None);
+    assert!(compile_setup(&app, &dir.0, Some(&missing)).is_err());
+}
+
+#[test]
+#[ignore = "installs Octo for the current user (registry and Start menu); CI runs it with --ignored"]
+fn the_signed_installer_installs_a_signed_app_and_uninstaller() {
+    let certificate = Certificate::new();
+    let dir = TempDir::new("octo-signed-install");
+    let app = dir.app();
+    assert!(sign(&app, &certificate.thumbprint).success());
+    let setup = compile_setup(&app, &dir.0, Some(&certificate.thumbprint)).unwrap_or_else(|log| panic!("{log}"));
+
+    let install = Install::new("signed");
+    install.install_from(&setup);
+    assert_eq!(signature(&install.exe()), certificate.signature());
+    assert_eq!(signature(&install.uninstaller()), certificate.signature());
+
+    install.uninstall();
+    assert!(!install.dir.exists(), "{:?}", file_names(&install.dir));
 }
 
 #[test]

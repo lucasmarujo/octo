@@ -137,10 +137,52 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
       - name: Build
         run: cargo build --release --locked -p orkai-desktop --target ${{ matrix.target }}
+      - name: Load the Windows signing certificate
+        id: windows-certificate
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            exit 0
+          }
+          if (-not $env:WINDOWS_CERTIFICATE_PASSWORD) {
+            Write-Output "::error::WINDOWS_CERTIFICATE is set without WINDOWS_CERTIFICATE_PASSWORD"
+            exit 1
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'windows-certificate.pfx'
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+            $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $certificate = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password |
+              Where-Object { $_.HasPrivateKey -and $_.EnhancedKeyUsageList.ObjectId -contains '1.3.6.1.5.5.7.3.3' } |
+              Select-Object -First 1
+          } finally {
+            Remove-Item $pfx -ErrorAction SilentlyContinue
+          }
+          if (-not $certificate) {
+            Write-Output "::error::WINDOWS_CERTIFICATE has no code signing certificate with its private key"
+            exit 1
+          }
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "thumbprint=$($certificate.Thumbprint)`n")
+      - name: Sign the app
+        if: steps.windows-certificate.outputs.thumbprint
+        env:
+          THUMBPRINT: ${{ steps.windows-certificate.outputs.thumbprint }}
+        run: |
+          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File installer\sign.ps1 -Thumbprint $env:THUMBPRINT -Path "target\${{ matrix.target }}\release\octo.exe"
       - name: Build the installer
         if: runner.os == 'Windows'
+        env:
+          THUMBPRINT: ${{ steps.windows-certificate.outputs.thumbprint }}
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DBinary=$PWD\target\${{ matrix.target }}\release\octo.exe" installer\octo.iss
+          $arguments = @("/DBinary=$PWD\target\${{ matrix.target }}\release\octo.exe", 'installer\octo.iss')
+          if ($env:THUMBPRINT) {
+            $arguments = @('/Socto=$p', "/DThumbprint=$env:THUMBPRINT") + $arguments
+          }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" @arguments
       - name: Stage
         shell: bash
         run: |
@@ -223,9 +265,34 @@ jobs:
           OCTO_SIGNED_APP: ${{ github.workspace }}/target/bundle/Octo.app
           OCTO_LEGACY_UPDATE: ${{ github.workspace }}/dist/${{ matrix.update }}
         run: cargo test --release --locked -p orkai-desktop --target ${{ matrix.target }} --test macos_app_e2e
-      - name: Warn that the app is unsigned
+      - name: Check the Windows signatures
         if: runner.os == 'Windows'
-        run: echo "::warning::Octo is published unsigned"
+        env:
+          THUMBPRINT: ${{ steps.windows-certificate.outputs.thumbprint }}
+        run: |
+          $failed = $false
+          "## Windows signatures", "", "| File | Signature | Signer | Timestamp |", "| --- | --- | --- | --- |" >> $env:GITHUB_STEP_SUMMARY
+          foreach ($file in 'dist\Octo.exe', 'dist\Octo-setup.exe') {
+            $signature = Get-AuthenticodeSignature -LiteralPath $file
+            $signer = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
+            $timestamped = [bool]$signature.TimeStamperCertificate
+            "| ``$(Split-Path $file -Leaf)`` | $($signature.Status) | $signer | $timestamped |" >> $env:GITHUB_STEP_SUMMARY
+            if ($env:THUMBPRINT) {
+              if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne $env:THUMBPRINT -or -not $timestamped) {
+                Write-Output "::error::$file is not validly signed and timestamped with the release certificate: $($signature.Status) $($signature.StatusMessage)"
+                $failed = $true
+              }
+            } elseif ($signature.Status -ne 'NotSigned') {
+              Write-Output "::error::$file carries a signature although no certificate was given: $($signature.Status)"
+              $failed = $true
+            }
+          }
+          if (-not $env:THUMBPRINT) {
+            Write-Output "::warning::Octo is published unsigned"
+          }
+          if ($failed) {
+            exit 1
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: octo-${{ matrix.target }}

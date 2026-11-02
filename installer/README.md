@@ -34,6 +34,40 @@ Windows e Menu Iniciar), por isso ficam fora do `cargo test` e tiram do lugar um
 mesma máquina; o CI roda no runner Windows, que é descartável. `ORKAI_ISCC` aponta para outro `ISCC.exe`. Sem
 `--ignored`, o `cargo test` só confere o nome e a versão gravados no `Octo.exe`.
 
+### Assinatura
+
+O `sign.ps1` assina um arquivo com o `signtool` do Windows SDK, usando um certificado de assinatura de código que
+já está no repositório de certificados do usuário (`-Thumbprint`): digest SHA-256, carimbo de tempo RFC 3161
+(`-TimestampUrl`, por padrão o da DigiCert) e descrição `Octo`. Depois confere que o arquivo saiu assinado por
+esse certificado e com carimbo de tempo, e termina com erro se não saiu.
+
+Com `/Socto=$p /DThumbprint=<impressão digital>`, o ISCC chama o `sign.ps1` para assinar o `Octo-setup.exe` e o
+desinstalador; sem `Thumbprint`, o instalador sai sem assinatura, como antes:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\sign.ps1 -Thumbprint <impressão digital> -Path target\release\octo.exe
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" '/Socto=$p' /DThumbprint=<impressão digital> installer\octo.iss
+```
+
+No CI, o job `desktop-build` do Windows lê os segredos `WINDOWS_CERTIFICATE` (o `.pfx` em base64) e
+`WINDOWS_CERTIFICATE_PASSWORD`, importa o certificado no runner, apaga o `.pfx`, assina o `Octo.exe` antes de
+montar o instalador e de o `manifest.json` calcular os hashes, e monta o `Octo-setup.exe` assinado. Por último
+confere os dois arquivos com `Get-AuthenticodeSignature`: cada um precisa estar `Valid`, assinado por esse
+certificado e com carimbo de tempo; se não estiver, o job falha e a versão não é publicada. O resumo da execução
+mostra a assinatura de cada arquivo. Sem os segredos, os dois saem sem assinatura e o CI deixa o aviso
+`Octo is published unsigned`.
+
+Um certificado OV ou IV emitido hoje não vem em `.pfx`: a chave fica num token ou num serviço na nuvem (como o
+SimplySign da Certum). Nesse caso, o passo `Load the Windows signing certificate` troca a importação do `.pfx`
+pelo login do serviço, que deixa o certificado no repositório do runner, e devolve a impressão digital dele; o
+resto do fluxo não muda. Um certificado autoassinado assina, mas o Windows não confia nele e a conferência do CI
+recusa.
+
+`signs_the_app_and_the_installer_with_the_certificate_and_a_timestamp`,
+`a_certificate_that_is_not_in_the_store_signs_nothing_and_stops_the_installer` e
+`the_signed_installer_installs_a_signed_app_and_uninstaller` criam um certificado autoassinado descartável no
+repositório do usuário, assinam com ele e o removem no fim; precisam da rede para o carimbo de tempo.
+
 ## orkai (legado)
 
 Depois da 0.2.8 as releases trazem só o Octo: o CI não gera nem publica mais o `orkai.exe` e o
