@@ -84,7 +84,7 @@ button { cursor: pointer; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--yellow); flex-shrink: 0; }
 .dot[data-state="live"] { background: var(--green); }
 .dot[data-state="connecting"] { animation: pulse 1s ease-in-out infinite; }
-.dot[data-state="offline"], .dot[data-state="unpaired"] { background: var(--red); }
+.dot[data-state="offline"], .dot[data-state="unpaired"], .dot[data-state="replaced"] { background: var(--red); }
 @keyframes pulse { 50% { opacity: 0.25; } }
 
 .view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }

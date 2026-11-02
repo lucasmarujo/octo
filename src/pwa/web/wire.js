@@ -8,6 +8,7 @@
   const LINK_KEY = 'k';
   const UNPAIRED = 4001;
   const OUTDATED = 4002;
+  const REPLACED = 4003;
   const subtle = root.crypto && root.crypto.subtle;
   const utf8 = new TextEncoder();
   const text = new TextDecoder();
@@ -187,7 +188,7 @@
     }
   }
 
-  const api = { VERSION, UNPAIRED, OUTDATED, Session, encode, decode, nonce, secretFrom, linkKey, supported: Boolean(subtle) };
+  const api = { VERSION, UNPAIRED, OUTDATED, REPLACED, Session, encode, decode, nonce, secretFrom, linkKey, supported: Boolean(subtle) };
   root.OrkaiWire = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -29,6 +29,7 @@ use crate::util::now_ms;
 pub const MAX_CONNECTIONS: usize = 8;
 pub const UNPAIRED: u16 = 4001;
 pub const OUTDATED: u16 = 4002;
+pub const REPLACED: u16 = 4003;
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -154,7 +155,7 @@ fn next_message(ws: &mut WebSocket<TcpStream>, deadline: Instant) -> io::Result<
     }
 }
 
-fn close(mut ws: WebSocket<TcpStream>, code: u16, reason: &str) {
+fn close(ws: &mut WebSocket<TcpStream>, code: u16, reason: &str) {
     let frame = CloseFrame { code: CloseCode::from(code), reason: reason.to_string().into() };
     let _ = ws.close(Some(frame));
     let _ = ws.flush();
@@ -479,7 +480,7 @@ impl Phone {
     fn pair(mut ws: WebSocket<TcpStream>, secret: &Secret) -> io::Result<Option<Self>> {
         let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
         let Message::Text(text) = next_message(&mut ws, deadline)? else {
-            close(ws, OUTDATED, "expected the hello");
+            close(&mut ws, OUTDATED, "expected the hello");
             return Ok(None);
         };
         let peer = match serde_json::from_str::<Greeting>(text.as_str()) {
@@ -487,7 +488,7 @@ impl Phone {
             _ => None,
         };
         let Some(peer) = peer else {
-            close(ws, OUTDATED, "this orkai speaks another pwa protocol; reload the app");
+            close(&mut ws, OUTDATED, "this orkai speaks another pwa protocol; reload the app");
             return Ok(None);
         };
         let own = Ephemeral::generate().map_err(io::Error::other)?;
@@ -496,12 +497,12 @@ impl Phone {
         let hello = serde_json::to_string(&Greeting::Hello { version: VERSION, key }).map_err(io::Error::other)?;
         ws.send(Message::text(hello)).map_err(ws_error)?;
         let Message::Binary(first) = next_message(&mut ws, deadline)? else {
-            close(ws, UNPAIRED, "expected an encrypted frame");
+            close(&mut ws, UNPAIRED, "expected an encrypted frame");
             return Ok(None);
         };
         let proven = channel.open(&first).ok().and_then(|plain| serde_json::from_slice::<PhoneMsg>(&plain).ok());
         if proven.is_none() {
-            close(ws, UNPAIRED, "this phone is not paired with this orkai");
+            close(&mut ws, UNPAIRED, "this phone is not paired with this orkai");
             return Ok(None);
         }
         Ok(Some(Self { ws, channel, heard: Instant::now(), pinged: Instant::now() }))
@@ -510,6 +511,7 @@ impl Phone {
     fn run(&mut self, peer: &mut Peer) -> io::Result<()> {
         loop {
             if !peer.hub.has_phone(peer.id) {
+                close(&mut self.ws, REPLACED, "this octo opened in another tab");
                 return Ok(());
             }
             peer.pump(self)?;

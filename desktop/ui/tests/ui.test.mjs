@@ -446,6 +446,16 @@ test('the pairing dialog names connected devices and their connection age', asyn
   assert.equal(phoneStatus({ enabled: true, phase: 'ready', phones: 1 }), 'connected');
 });
 
+test('a phone tab that another tab of the same browser replaced waits for a tap instead of reconnecting', () => {
+  const code = rust('src/pwa/server.rs').match(/pub const REPLACED: u16 = (\d+);/)[1];
+  assert.match(rust('src/pwa/web/wire.js'), new RegExp(`const REPLACED = ${code};`), 'the phone knows the code the bridge closes with');
+  const app = rust('src/pwa/web/app.js');
+  const replaced = app.match(/if \(code === Wire\.REPLACED\) \{([\s\S]*?)\n {4}\}/)[1];
+  assert.match(replaced, /setLink\('replaced'\);[\s\S]*showPair\([^)]*, true, false\);\s+return;/);
+  assert.doesNotMatch(replaced, /setTimeout|connect\(/, 'reconnecting would replace the other tab in turn, forever');
+  assert.match(app, /\['unpaired', 'replaced'\]\.includes\(el\.link\.dataset\.state\)/, 'coming back to the tab or going online does not take the session back either');
+});
+
 test('the test line of an agent says what the TUI says about its last run', async () => {
   const { testLine } = await import('../js/agent.js');
   const base = { command: 'cargo test', startedAt: NOW - 50_000, finishedAt: NOW - 41_000, code: 0 };

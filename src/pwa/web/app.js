@@ -43,7 +43,7 @@
     overview: $('overview'), sessions: $('sessions'), stats: $('stats'), usage: $('usage'), lost: $('lost'),
     list: $('list'), agent: $('agent'), screen: $('screen'), rows: $('rows'), cursor: $('cursor'), live: $('live'),
     keys: $('keys'), pair: $('pair'), pairMascot: $('pair-mascot'), pairText: $('pair-text'), retry: $('retry'),
-    pairForm: $('pair-form'), pairLink: $('pair-link'),
+    pairForm: $('pair-form'), pairLink: $('pair-link'), pairSteps: $('pair-steps'),
     composer: $('composer'), picks: $('picks'), form: $('form'), input: $('input'), send: $('send'),
     sheet: $('sheet'), sheetTitle: $('sheet-title'), sheetBody: $('sheet-body'), sheetClose: $('sheet-close'),
     toast: $('toast'),
@@ -407,9 +407,11 @@
     renderHeader();
   }
 
-  function showPair(text, retry) {
+  function showPair(text, retry, steps = true) {
     el.pairText.textContent = text;
     el.retry.hidden = !retry;
+    el.pairSteps.hidden = !steps;
+    el.pairForm.hidden = !steps;
     show('pair');
   }
 
@@ -848,6 +850,11 @@
       reloadOnce();
       return;
     }
+    if (code === Wire.REPLACED) {
+      setLink('replaced');
+      showPair('this Octo is open in another tab of this browser. tap try again to use it here.', true, false);
+      return;
+    }
     setLink('offline');
     const delay = RETRY[state.attempt] || RETRY_MAX;
     state.attempt += 1;
@@ -875,7 +882,7 @@
   }
 
   function reconnectNow() {
-    if (document.hidden || state.session || !state.secret || el.link.dataset.state === 'unpaired') return;
+    if (document.hidden || state.session || !state.secret || ['unpaired', 'replaced'].includes(el.link.dataset.state)) return;
     state.attempt = 0;
     connect();
   }

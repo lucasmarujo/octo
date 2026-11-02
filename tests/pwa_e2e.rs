@@ -19,7 +19,7 @@ use orkai::pwa::hub::{Event, Hub};
 use orkai::pwa::protocol::{
     AgentView, BridgeMsg, Details, Greeting, Overview, PhoneMsg, Screen, StartRequest, Tone, VERSION,
 };
-use orkai::pwa::server::{OUTDATED, Outbox, Peer, Server, UNPAIRED};
+use orkai::pwa::server::{OUTDATED, Outbox, Peer, REPLACED, Server, UNPAIRED};
 use orkai::store::Store;
 
 const TIMEOUT: Duration = Duration::from_secs(25);
@@ -84,6 +84,36 @@ fn a_paired_phone_reports_its_device_to_the_desktop() {
     assert_eq!(device.os_version.as_deref(), Some("14"));
     assert!(device.standalone);
     assert!(device.since_ms > 0);
+}
+
+#[test]
+fn a_tab_replaced_by_another_tab_of_the_same_browser_is_told_so_and_the_new_one_stays() {
+    let fx = fixture();
+    let tab = |model: &str| PhoneMsg::Device {
+        model: Some(model.into()),
+        os_version: None,
+        standalone: false,
+        client: Some("tab-1".into()),
+    };
+    let listed = |model: &str| {
+        let deadline = Instant::now() + TIMEOUT;
+        while fx.hub.devices().iter().all(|device| device.model.as_deref() != Some(model)) && Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    let mut first = Phone::pair(fx.port, &fx.secret);
+    first.send(&tab("first"));
+    listed("first");
+    let mut second = Phone::pair(fx.port, &fx.secret);
+    second.send(&tab("second"));
+    listed("second");
+    assert_eq!(close_code(&mut first.ws), Some(REPLACED), "the old tab learns why it was closed");
+    assert_eq!(fx.hub.phones(), 1);
+    second.send(&PhoneMsg::Sync);
+    second.until(|message| matches!(message, BridgeMsg::State(_)).then_some(()));
+    let models: Vec<_> = fx.hub.devices().into_iter().filter_map(|device| device.model).collect();
+    assert_eq!(models, ["second"]);
 }
 
 fn socket(port: u16) -> WebSocket<TcpStream> {
