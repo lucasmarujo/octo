@@ -565,8 +565,9 @@ No server of yours or of orkai sits in the middle.
 
 Every push to `main` goes through the tests on the three systems and publishes nothing. When a push raises
 the `version` in `Cargo.toml`, CI also builds Octo for every platform and publishes the `v<version>`
-release, whose files never change, with the Windows installer and a `manifest.json` holding the version, the
-commit and the SHA-256 of each app binary.
+release, whose files never change, with the Windows installer, a `manifest.json` holding the version, the
+commit and the SHA-256 of each app binary, and a `SHA256SUMS` with the SHA-256 of every file in the release
+(`sha256sum --check SHA256SUMS`, or `Get-FileHash` on Windows).
 
 Every time you open Octo, it checks the manifest of the newest version in the background. If that version is
 newer than yours, it downloads the binary for your platform, checks size and SHA-256, replaces its own

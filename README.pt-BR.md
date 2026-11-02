@@ -569,8 +569,9 @@ Nenhum servidor seu ou do orkai fica no meio.
 
 Cada push no `main` passa pelos testes nos três sistemas e não publica nada. Quando um push sobe a
 `version` do `Cargo.toml`, o CI também gera o Octo para todas as plataformas e publica a release
-`v<versão>`, cujos arquivos nunca mudam, com o instalador do Windows e um `manifest.json` contendo a versão, o
-commit e o SHA-256 de cada binário do app.
+`v<versão>`, cujos arquivos nunca mudam, com o instalador do Windows, um `manifest.json` contendo a versão, o
+commit e o SHA-256 de cada binário do app, e um `SHA256SUMS` com o SHA-256 de todos os arquivos da release
+(`sha256sum --check SHA256SUMS`, ou `Get-FileHash` no Windows).
 
 Toda vez que você abre o Octo, ele consulta em segundo plano o manifesto da versão mais nova. Se essa versão for
 mais nova que a sua, ele baixa o binário da sua plataforma, confere tamanho e SHA-256, substitui o próprio

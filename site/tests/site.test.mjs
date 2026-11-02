@@ -351,6 +351,24 @@ test('o Octo para macOS sai assinado e notarizado, e nada manda abrir com o bot�
   assert.match(html, /Signed and notarized by Apple/);
 });
 
+test('cada release publica um SHA256SUMS de todos os arquivos, conferido antes de sair', () => {
+  const workflow = readFileSync(join(REPO, '.github', 'workflows', 'ci.yml'), 'utf8');
+  const publish = workflow.slice(workflow.indexOf('\n  publish:'));
+  const manifest = publish.indexOf('- name: Write manifest');
+  const checksums = publish.indexOf('- name: Write the checksums and the report');
+  const release = publish.indexOf('- name: Publish the version');
+  assert.ok(manifest > 0 && manifest < checksums && checksums < release, 'o SHA256SUMS sai depois do manifest.json e antes da release');
+  const step = publish.slice(checksums, release);
+  assert.match(step, /working-directory: dist/);
+  assert.match(step, /sha256sum -- \* > "\$RUNNER_TEMP\/SHA256SUMS"/);
+  assert.match(step, /sha256sum --check --strict SHA256SUMS/);
+  assert.match(step, /\$GITHUB_STEP_SUMMARY/);
+  assert.match(publish.slice(release), /gh release create "\$TAG" dist\/\*/);
+  for (const [name, source] of [['README.md', readme], ['README.pt-BR.md', readmePtBr]]) {
+    assert.match(source, /`SHA256SUMS`/, `${name}: o README cita o SHA256SUMS`);
+  }
+});
+
 test('o README é em inglês e aponta para o README.pt-BR.md, que aponta de volta', () => {
   assert.match(readme, /<b>English<\/b> · <a href="README\.pt-BR\.md">Português \(Brasil\)<\/a>/);
   assert.match(readmePtBr, /<a href="README\.md">English<\/a> · <b>Português \(Brasil\)<\/b>/);
