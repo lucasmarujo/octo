@@ -185,12 +185,20 @@ fn file_name(exe: &Path) -> io::Result<String> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "executable path has no file name"))
 }
 
+fn free_old_path(dir: &Path, name: &str, pid: u32) -> PathBuf {
+    let first = dir.join(format!("{name}{OLD_MARKER}{pid}"));
+    if !first.exists() {
+        return first;
+    }
+    (1u32..).map(|n| dir.join(format!("{name}{OLD_MARKER}{pid}-{n}"))).find(|path| !path.exists()).unwrap_or(first)
+}
+
 pub fn install(exe: &Path, bytes: &[u8]) -> io::Result<()> {
     let dir = exe.parent().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "executable has no parent"))?;
     let name = file_name(exe)?;
     let pid = std::process::id();
     let staged = dir.join(format!(".{name}{STAGING_MARKER}{pid}"));
-    let old = dir.join(format!("{name}{OLD_MARKER}{pid}"));
+    let old = free_old_path(dir, &name, pid);
     let write = || -> io::Result<()> {
         let mut file = fs::File::create(&staged)?;
         file.write_all(bytes)?;
@@ -254,7 +262,7 @@ pub fn install_app(exe: &Path, archive: &[u8]) -> io::Result<()> {
     let name = file_name(bundle)?;
     let pid = std::process::id();
     let staging = dir.join(format!(".{name}{STAGING_MARKER}{pid}"));
-    let old = dir.join(format!("{name}{OLD_MARKER}{pid}"));
+    let old = free_old_path(dir, &name, pid);
     let result = unpack_app(archive, &staging).and_then(|unpacked| {
         if !unpacked.join(executable).is_file() {
             return Err(invalid("the downloaded app has no executable"));
@@ -505,6 +513,35 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             assert_eq!(fs::metadata(&exe).unwrap().permissions().mode() & 0o777, 0o755);
         }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn hold_like_a_running_executable(path: &Path) -> fs::File {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            const FILE_SHARE_READ: u32 = 0x1;
+            fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(path).unwrap()
+        }
+        #[cfg(not(windows))]
+        fs::File::open(path).unwrap()
+    }
+
+    #[test]
+    fn a_second_update_before_the_restart_keeps_the_copy_that_is_still_running() {
+        let dir = temp_dir("install-twice");
+        let exe = dir.join(if cfg!(windows) { "orkai.exe" } else { "orkai" });
+        let name = file_name(&exe).unwrap();
+        let running = dir.join(format!("{name}{OLD_MARKER}{}", std::process::id()));
+        fs::write(&running, b"running binary").unwrap();
+        fs::write(&exe, b"first update").unwrap();
+        let held = hold_like_a_running_executable(&running);
+        install(&exe, b"second update").unwrap();
+        drop(held);
+        assert_eq!(fs::read(&exe).unwrap(), b"second update");
+        assert_eq!(fs::read(&running).unwrap(), b"running binary", "the copy in use is never replaced");
+        cleanup(&exe);
+        assert_eq!(names_in(&dir), vec![name]);
         fs::remove_dir_all(dir).unwrap();
     }
 
