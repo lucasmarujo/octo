@@ -93,6 +93,11 @@ export function splitTyped(text) {
   return [text.slice(0, cut + 1), text.slice(cut + 1)];
 }
 
+export function emptyTypedNote(tail, typed) {
+  if (!tail) return [t('No folders inside'), t('You can still use this folder.')];
+  return [t('No folder starts with “{name}” here', { name: tail }), t('Enter goes to {path}', { path: typed })];
+}
+
 export function folderNote(repo, missing, worktree) {
   if (missing) return { tone: 'missing', icon: ICON_ALERT, text: t('This folder does not exist') };
   if (repo && worktree) return { tone: 'worktree', icon: ICON_BRANCH, text: t('{repo} is a git repository · each agent gets its own worktree', { repo: baseName(repo) }) };
@@ -260,7 +265,7 @@ export function pickFolder(start, onPick) {
       const matches = ready ? (tail ? ranked(listing.dirs, tail).filter((entry) => entry.match.whole) : listing.dirs.map((dir) => ({ dir, match: null }))) : [];
       for (const { dir, match } of matches) add(withRepo(dir), { marks: match?.marks });
       if (ready && listing.missing) rows.push(note(t('This folder does not exist'), t('Check the path, or press Enter to try it anyway.')));
-      else if (ready && !items.length) rows.push(note(t('No folder starts with “{name}” here', { name: tail }), t('Enter goes to {path}', { path: text })));
+      else if (ready && !items.length) rows.push(note(...emptyTypedNote(tail, text)));
     } else {
       const local = ranked(listing.dirs, text);
       const search = pick.search;

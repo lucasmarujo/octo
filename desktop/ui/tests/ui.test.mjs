@@ -1032,6 +1032,12 @@ test('the folder picker splits a path into clickable crumbs and completes typed 
   assert.deepEqual(splitTyped('C:\\Users\\a'), ['C:\\Users\\', 'a']);
 });
 
+test('a typed path to a folder without subfolders says it is empty instead of quoting an empty name', async () => {
+  const { emptyTypedNote } = await import('../js/folders.js');
+  assert.deepEqual(emptyTypedNote('', 'C:/work/'), ['No folders inside', 'You can still use this folder.']);
+  assert.deepEqual(emptyTypedNote('Doc', '~/Doc'), ['No folder starts with “Doc” here', 'Enter goes to ~/Doc']);
+});
+
 test('the folder picker warns that AI agents cannot start outside a repository while worktree is on', async () => {
   const { folderNote } = await import('../js/folders.js');
   const blocked = folderNote(null, false, true);
