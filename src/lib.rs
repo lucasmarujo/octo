@@ -3,6 +3,7 @@ pub mod cli;
 pub mod client;
 pub mod clipboard;
 pub mod config;
+pub mod folders;
 pub mod fsutil;
 pub mod holder;
 pub mod hooks;

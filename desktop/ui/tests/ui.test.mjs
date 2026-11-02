@@ -1010,3 +1010,24 @@ test('a right click on a session in the sidebar offers to rename or delete that 
   assert.match(commands, /case 'rename-session':\n\s*renameSession\(state\.session, arg\)/, 'the slash command still renames the session on screen');
   assert.match(commands, /case 'delete-session':\n\s*deleteSession\(arg \|\| state\.session\);/);
 });
+
+test('the folder picker ranks matches like src/folders.rs and keeps the matched letters', async () => {
+  const { fuzzy } = await import('../js/folders.js');
+  assert.equal(fuzzy('octo', 'octo').score, 1000, 'an exact name wins');
+  assert.ok(fuzzy('oc', 'octo').score > fuzzy('oc', 'my-octo').score, 'a prefix beats a word inside the name');
+  assert.ok(fuzzy('oc', 'my-octo').score > fuzzy('oc', 'doctor').score, 'a word start beats the middle of a word');
+  assert.deepEqual(fuzzy('mo', 'my-octo').marks, [0, 3], 'letters in order mark where they matched');
+  assert.equal(fuzzy('AP', 'api').whole, true, 'case is ignored');
+  assert.equal(fuzzy('zz', 'octo'), null);
+  assert.equal(fuzzy('ox', 'o-aaaaaaaaaaaaaaaaaax'), null, 'letters spread too far apart are not a match');
+});
+
+test('the folder picker splits a path into clickable crumbs and completes typed paths', async () => {
+  const { folderCrumbs, splitTyped } = await import('../js/folders.js');
+  assert.deepEqual(folderCrumbs('/Users/ana/dev', '/Users/ana'), [{ name: '~', path: '/Users/ana' }, { name: 'dev', path: '/Users/ana/dev' }]);
+  assert.deepEqual(folderCrumbs('/opt/x', '/Users/ana').map((crumb) => crumb.path), ['/', '/opt', '/opt/x']);
+  assert.deepEqual(folderCrumbs('C:\\Users\\ana', null).map((crumb) => crumb.name), ['C:', 'Users', 'ana'], 'a Windows drive is the first crumb');
+  assert.deepEqual(splitTyped('~/Doc'), ['~/', 'Doc']);
+  assert.deepEqual(splitTyped('~'), ['~', '']);
+  assert.deepEqual(splitTyped('C:\\Users\\a'), ['C:\\Users\\', 'a']);
+});

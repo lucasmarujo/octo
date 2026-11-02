@@ -1,6 +1,7 @@
 import { merge, rename, restart } from './agent.js';
 import { stopOrRemove } from './board.js';
-import { ask, confirm, pickFolder } from './dialogs.js';
+import { ask, confirm } from './dialogs.js';
+import { pickFolder } from './folders.js';
 import { label } from './format.js';
 import { t } from './i18n.js';
 import {
