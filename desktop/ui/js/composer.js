@@ -1,6 +1,7 @@
 import { $, h, svg } from './dom.js';
 import { acceptedSuggestion, matchingCommands, nextSuggestion, parseCommand } from './commands.js';
-import { closeMenu, menuShown, openMenu, pickFolder } from './dialogs.js';
+import { closeMenu, menuShown, openMenu } from './dialogs.js';
+import { pickFolder } from './folders.js';
 import { kindColor, label } from './format.js';
 import { t } from './i18n.js';
 import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_REMOTE, ICON_SHIELD } from './icons.js';

@@ -70,6 +70,17 @@ pub enum PhoneMsg {
     },
     Folders {
         path: String,
+        #[serde(default)]
+        hidden: bool,
+        #[serde(default)]
+        places: bool,
+    },
+    FolderSearch {
+        root: String,
+        query: String,
+        #[serde(default)]
+        hidden: bool,
+        seq: u64,
     },
     Diff {
         agent: AgentId,
@@ -163,20 +174,70 @@ pub struct StartRequest {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum BridgeMsg {
-    Welcome { host: String, version: String },
+    Welcome {
+        host: String,
+        version: String,
+    },
     State(Overview),
-    Usage { entries: Vec<UsageEntry> },
+    Usage {
+        entries: Vec<UsageEntry>,
+    },
     Screen(Screen),
-    Notice { text: String, tone: Tone },
-    Folders { path: String, parent: Option<String>, dirs: Vec<Dir> },
-    Diff { agent: AgentId, branch: String, text: String, truncated: bool },
-    Peek { previews: Vec<Preview> },
+    Notice {
+        text: String,
+        tone: Tone,
+    },
+    Folders {
+        path: String,
+        parent: Option<String>,
+        dirs: Vec<Dir>,
+        repo: Option<String>,
+        missing: bool,
+        truncated: bool,
+        places: Option<Vec<PlaceView>>,
+    },
+    FolderSearch {
+        seq: u64,
+        root: String,
+        query: String,
+        hits: Vec<FolderHit>,
+        truncated: bool,
+    },
+    Diff {
+        agent: AgentId,
+        branch: String,
+        text: String,
+        truncated: bool,
+    },
+    Peek {
+        previews: Vec<Preview>,
+    },
     Details(Details),
-    Tests { agent: AgentId, command: String, state: TestState, text: String, truncated: bool },
-    Link { url: String },
-    Skills { kind: AgentKind, cwd: String, skills: Vec<SkillView> },
-    Compare { agent: AgentId, title: String, text: String },
-    TrustAsk { cwd: String, repo: String, command: String },
+    Tests {
+        agent: AgentId,
+        command: String,
+        state: TestState,
+        text: String,
+        truncated: bool,
+    },
+    Link {
+        url: String,
+    },
+    Skills {
+        kind: AgentKind,
+        cwd: String,
+        skills: Vec<SkillView>,
+    },
+    Compare {
+        agent: AgentId,
+        title: String,
+        text: String,
+    },
+    TrustAsk {
+        cwd: String,
+        repo: String,
+        command: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -349,6 +410,23 @@ pub struct Preview {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Dir {
+    pub name: String,
+    pub path: String,
+    pub git: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct FolderHit {
+    pub name: String,
+    pub path: String,
+    pub rel: String,
+    pub git: bool,
+    pub repo: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PlaceView {
+    pub kind: String,
     pub name: String,
     pub path: String,
 }

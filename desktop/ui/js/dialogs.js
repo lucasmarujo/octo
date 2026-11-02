@@ -2,9 +2,7 @@ import { $, h } from './dom.js';
 import { t } from './i18n.js';
 import { motionMs } from './motion.js';
 import { sgrRuns } from './palette.js';
-import { send } from './transport.js';
 
-let folderPick = null;
 let menuClosing = null;
 
 function open(title, body, actions) {
@@ -19,7 +17,6 @@ function open(title, body, actions) {
 
 function close() {
   const dialog = $('dialog');
-  folderPick = null;
   if (dialog.open) dialog.close();
 }
 
@@ -147,44 +144,6 @@ export function showTests(message) {
 
 export function showCompare(message) {
   report(t('Race · {title}', { title: message.title }), message.text, t('No agent of the race changed anything yet.'), []);
-}
-
-export function pickFolder(start, onPick) {
-  const dialog = $('dialog');
-  folderPick = { onPick, path: start };
-  const list = h('div', { class: 'folders', id: 'folder-list' }, h('div', { class: 'folder up' }, t('Loading…')));
-  const path = h('span', { class: 'folder-path', id: 'folder-path' }, start);
-  open(t('Where should the agents run?'), [path, list], [
-    h('button', { class: 'button', type: 'button', onclick: close }, t('Cancel')),
-    h('button', {
-      class: 'button primary',
-      type: 'button',
-      onclick: () => {
-        const pick = folderPick;
-        close();
-        if (pick) pick.onPick(pick.path);
-      },
-    }, t('Use this folder')),
-  ]);
-  dialog.addEventListener('close', () => {
-    folderPick = null;
-  }, { once: true });
-  send({ type: 'folders', path: start });
-}
-
-export function showFolders(message) {
-  if (!folderPick) return;
-  folderPick.path = message.path;
-  const list = $('folder-list');
-  const path = $('folder-path');
-  if (!list || !path) return;
-  path.textContent = message.path;
-  const go = (target) => () => send({ type: 'folders', path: target });
-  const rows = [];
-  if (message.parent) rows.push(h('button', { class: 'folder up', type: 'button', onclick: go(message.parent) }, '..'));
-  for (const dir of message.dirs) rows.push(h('button', { class: 'folder', type: 'button', onclick: go(dir.path) }, `${dir.name}/`));
-  if (!message.dirs.length) rows.push(h('div', { class: 'folder up' }, t('No folders inside')));
-  list.replaceChildren(...rows);
 }
 
 export { close as closeDialog, open as openDialog };
