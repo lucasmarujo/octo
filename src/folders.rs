@@ -1,9 +1,9 @@
-//! Folder browsing behind the desktop and phone pickers: listing, deep search and places.
-
 use std::collections::VecDeque;
 use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
 
 pub const MAX_LISTED: usize = 2000;
 pub const MAX_HITS: usize = 60;
@@ -12,7 +12,6 @@ const ENOUGH_WHOLE: usize = 3;
 const SEARCH_VISITS: usize = 60_000;
 const SEARCH_BUDGET: Duration = Duration::from_millis(700);
 
-// Build output, caches and package stores: never a folder anyone picks, and they dominate a walk.
 const HEAVY: &[&str] = &[
     "node_modules",
     "target",
@@ -37,7 +36,6 @@ const HEAVY: &[&str] = &[
     "DerivedData",
     ".Trash",
 ];
-// Only skipped right under a filesystem root, so ~/dev or ~/build-tools still show up.
 const SYSTEM_ROOTS: &[&str] = &[
     "proc",
     "sys",
@@ -77,14 +75,24 @@ pub struct Hit {
     depth: usize,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PlaceKind {
+    Home,
+    Desktop,
+    Documents,
+    Downloads,
+    Code,
+    Volume,
+}
+
 pub struct Place {
-    pub kind: &'static str,
+    pub kind: PlaceKind,
     pub name: String,
     pub path: PathBuf,
 }
 
 pub fn is_repo(dir: &Path) -> bool {
-    // `.git` is a folder in a clone and a file in a worktree.
     dir.join(".git").exists()
 }
 
@@ -115,11 +123,17 @@ fn subfolders(dir: &Path, hidden: bool, follow_links: bool) -> impl Iterator<Ite
 }
 
 pub fn list(dir: &Path, hidden: bool) -> Listing {
-    let mut dirs: Vec<_> =
-        subfolders(dir, hidden, true).map(|(name, path)| (name, path.clone(), is_repo(&path))).collect();
-    dirs.sort_by_cached_key(|(name, ..)| name.to_lowercase());
-    let truncated = dirs.len() > MAX_LISTED;
-    dirs.truncate(MAX_LISTED);
+    let mut found: Vec<_> = subfolders(dir, hidden, true).collect();
+    found.sort_by_cached_key(|(name, _)| name.to_lowercase());
+    let truncated = found.len() > MAX_LISTED;
+    found.truncate(MAX_LISTED);
+    let dirs = found
+        .into_iter()
+        .map(|(name, path)| {
+            let git = is_repo(&path);
+            (name, path, git)
+        })
+        .collect();
     Listing { dirs, truncated }
 }
 
@@ -130,7 +144,6 @@ fn skipped(name: &str, under_root: bool) -> bool {
         || (cfg!(windows) && name.eq_ignore_ascii_case("AppData"))
 }
 
-// macOS apps and bundles are folders on disk but files to the person; their insides are noise.
 fn is_package(name: &str) -> bool {
     cfg!(target_os = "macos")
         && [".app", ".framework", ".bundle", ".xcodeproj", ".xcworkspace", ".photoslibrary", ".plugin"]
@@ -166,7 +179,6 @@ pub fn score(query: &str, text: &str) -> Option<i64> {
     if let Some(&at) = found.first() {
         return Some(500 - at as i64 - extra / 2);
     }
-    // Letters in order count only from the start of a word, or "octo" would match "collections".
     let first = (0..t.len()).find(|&at| t[at] == q[0] && boundary(&original, at))?;
     let (mut at, mut gaps, mut starts) = (first + 1, 0i64, 1i64);
     for &wanted in &q[1..] {
@@ -183,7 +195,6 @@ pub fn score(query: &str, text: &str) -> Option<i64> {
 /// Stops after a fixed time and number of folders so a huge disk answers fast; `truncated` says so.
 pub fn search(root: &Path, query: &str, hidden: bool) -> (Vec<Hit>, bool) {
     let query = query.trim().replace('\\', "/");
-    // With a slash the last part names the folder and the rest must appear, in order, in the path above it.
     let (head, tail) = query.rsplit_once('/').map_or(("", query.as_str()), |(head, tail)| (head, tail));
     let head = head.to_lowercase();
     let tail_lower = tail.to_lowercase();
@@ -245,7 +256,7 @@ pub fn search(root: &Path, query: &str, hidden: bool) -> (Vec<Hit>, bool) {
 /// The places a picker offers in its side bar, in the words of each system.
 pub fn places() -> Vec<Place> {
     let mut places = Vec::new();
-    let mut add = |kind: &'static str, name: String, path: PathBuf| {
+    let mut add = |kind: PlaceKind, name: String, path: PathBuf| {
         if path.is_dir() && !places.iter().any(|place: &Place| place.path == path) {
             places.push(Place { kind, name, path });
         }
@@ -255,29 +266,30 @@ pub fn places() -> Vec<Place> {
     };
     let home = dirs::home_dir();
     if let Some(home) = &home {
-        add("home", name_of(home), home.clone());
+        add(PlaceKind::Home, name_of(home), home.clone());
     }
-    for (kind, dir) in
-        [("desktop", dirs::desktop_dir()), ("documents", dirs::document_dir()), ("downloads", dirs::download_dir())]
-    {
+    for (kind, dir) in [
+        (PlaceKind::Desktop, dirs::desktop_dir()),
+        (PlaceKind::Documents, dirs::document_dir()),
+        (PlaceKind::Downloads, dirs::download_dir()),
+    ] {
         if let Some(dir) = dir {
             add(kind, name_of(&dir), dir);
         }
     }
     if let Some(home) = &home {
         for name in CODE_FOLDERS {
-            add("code", (*name).to_string(), home.join(name));
+            add(PlaceKind::Code, (*name).to_string(), home.join(name));
         }
     }
     for (name, path) in volumes() {
-        add("volume", name, path);
+        add(PlaceKind::Volume, name, path);
     }
     places
 }
 
 #[cfg(windows)]
 fn volumes() -> Vec<(String, PathBuf)> {
-    // A and B are floppy letters that can stall the first probe.
     (b'C'..=b'Z')
         .map(|letter| (format!("{}:", letter as char), PathBuf::from(format!("{}:\\", letter as char))))
         .filter(|(_, path)| path.exists())
@@ -294,7 +306,6 @@ fn volumes() -> Vec<(String, PathBuf)> {
         vec![PathBuf::from("/media").join(user), PathBuf::from("/mnt")]
     };
     for mount in mounts {
-        // On a Mac the boot disk is a symlink to / inside /Volumes; links are left out.
         found.extend(subfolders(&mount, false, false));
     }
     found
@@ -366,9 +377,29 @@ mod tests {
     }
 
     #[test]
+    fn the_listing_stops_at_its_limit_and_says_so() {
+        let root = temp("limit");
+        for index in 0..=MAX_LISTED {
+            std::fs::create_dir(root.join(format!("{index:05}"))).unwrap();
+        }
+        let listing = list(&root, false);
+        assert!(listing.truncated);
+        assert_eq!(listing.dirs.len(), MAX_LISTED);
+        assert_eq!(listing.dirs.last().map(|(name, ..)| name.as_str()), Some("01999"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn place_kinds_reach_the_picker_in_lowercase() {
+        let kinds = [PlaceKind::Home, PlaceKind::Documents, PlaceKind::Code, PlaceKind::Volume];
+        let sent: Vec<_> = kinds.iter().map(|kind| serde_json::to_value(kind).unwrap()).collect();
+        assert_eq!(sent, ["home", "documents", "code", "volume"]);
+    }
+
+    #[test]
     fn places_start_at_home_and_never_repeat_a_folder() {
         let places = places();
-        assert_eq!(places.first().map(|place| place.kind), dirs::home_dir().map(|_| "home"));
+        assert_eq!(places.first().map(|place| place.kind), dirs::home_dir().map(|_| PlaceKind::Home));
         let mut paths: Vec<_> = places.iter().map(|place| &place.path).collect();
         paths.sort();
         paths.dedup();

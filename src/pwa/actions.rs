@@ -254,7 +254,7 @@ pub fn list_folders(path: &str, hidden: bool, with_places: bool) -> BridgeMsg {
         places: with_places.then(|| {
             crate::folders::places()
                 .into_iter()
-                .map(|place| PlaceView { kind: place.kind.to_string(), name: place.name, path: text(&place.path) })
+                .map(|place| PlaceView { kind: place.kind, name: place.name, path: text(&place.path) })
                 .collect()
         }),
     }
@@ -267,7 +267,6 @@ fn folders(path: &str, hidden: bool, places: bool, reply: &Sender<Event>) {
     });
 }
 
-// shortcut: a superseded search runs to its time budget instead of being cancelled; the UI drops it by seq.
 fn folder_search(root: String, query: String, hidden: bool, seq: u64, reply: &Sender<Event>) {
     let reply = reply.clone();
     spawn("orkai-pwa-folder-search", move || {

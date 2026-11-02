@@ -1031,3 +1031,10 @@ test('the folder picker splits a path into clickable crumbs and completes typed 
   assert.deepEqual(splitTyped('~'), ['~', '']);
   assert.deepEqual(splitTyped('C:\\Users\\a'), ['C:\\Users\\', 'a']);
 });
+
+test('every kind of place the core sends has its icon in the folder picker', () => {
+  const variants = rust('src/folders.rs').match(/pub enum PlaceKind \{([^}]+)\}/)[1].match(/\w+/g).map((name) => name.toLowerCase());
+  const picker = readFileSync(new URL('../js/folders.js', import.meta.url), 'utf8');
+  const icons = [...picker.match(/const PLACE_ICONS = \{([^}]+)\}/)[1].matchAll(/(\w+):/g)].map(([, kind]) => kind);
+  assert.deepEqual(icons.sort(), variants.sort());
+});

@@ -2,7 +2,7 @@ import { closeDialog, openDialog } from './dialogs.js';
 import { $, h, storage, svg } from './dom.js';
 import { t } from './i18n.js';
 import {
-  ICON_ALERT, ICON_ARROW_RIGHT, ICON_BRANCH, ICON_CHEVRON_RIGHT, ICON_CLOCK, ICON_CODE, ICON_DESKTOP, ICON_DOCUMENT,
+  ICON_ALERT, ICON_BRANCH, ICON_CHEVRON_RIGHT, ICON_CLOCK, ICON_CODE, ICON_DESKTOP, ICON_DOCUMENT,
   ICON_DOWNLOAD, ICON_DRIVE, ICON_EYE, ICON_FOLDER, ICON_FOLDER_UP, ICON_HOME, ICON_SEARCH,
 } from './icons.js';
 import { state, worktreeOn } from './state.js';
@@ -14,7 +14,6 @@ const HIDDEN_KEY = 'octo.hiddenFolders';
 const RECENT_FOLDERS = 8;
 const SEARCH_DELAY_MS = 160;
 const MIN_DEEP_QUERY = 2;
-// Matches that hold the query in one piece push out the ones that only hold its letters in order.
 const ENOUGH_WHOLE = 3;
 const PATH_LIKE = /^(~|\/|\\|[A-Za-z]:[\\/])/;
 const PLACE_ICONS = { home: ICON_HOME, desktop: ICON_DESKTOP, documents: ICON_DOCUMENT, downloads: ICON_DOWNLOAD, code: ICON_CODE, volume: ICON_DRIVE };
@@ -26,7 +25,6 @@ const baseName = (path) => trimSep(path).split(/[\\/]/).at(-1) || path;
 const samePath = (a, b) => Boolean(a && b) && trimSep(a).toLowerCase() === trimSep(b).toLowerCase();
 const isBoundary = (text, at) => at === 0 || /[-_. /]/.test(text[at - 1]) || (/[a-z]/.test(text[at - 1]) && /[A-Z]/.test(text[at]));
 
-// The same ranking as src/folders.rs, plus which letters matched so they can be highlighted.
 export function fuzzy(query, text) {
   const q = query.toLowerCase();
   const lower = text.toLowerCase();
@@ -72,7 +70,6 @@ function marked(name, marks) {
   return parts;
 }
 
-// Each crumb keeps the real path so Windows drives and the home folder stay clickable.
 export function folderCrumbs(path, home) {
   const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
   const homeDir = home ? trimSep(home) : '';
@@ -90,7 +87,6 @@ export function folderCrumbs(path, home) {
   return crumbs;
 }
 
-// The folder part of a typed path and the name being typed after it: "~/Doc" → ["~/", "Doc"].
 export function splitTyped(text) {
   if (text === '~') return ['~', ''];
   const cut = Math.max(text.lastIndexOf('/'), text.lastIndexOf('\\'));
@@ -171,7 +167,6 @@ export function pickFolder(start, onPick) {
     onPick(path);
   }
 
-  // Tab writes the highlighted folder into the field as a path, so typing continues inside it.
   function complete(item) {
     const sep = item.path.includes('\\') && !item.path.includes('/') ? '\\' : '/';
     const home = state.home ? trimSep(state.home) : '';
@@ -282,7 +277,6 @@ export function pickFolder(start, onPick) {
     list.replaceChildren(...rows);
     list.removeAttribute('aria-busy');
     searching.classList.toggle('on', Boolean(text) && !pathMode() && text.length >= MIN_DEEP_QUERY && (!pick.search || pick.search.pending || pick.search.query !== text));
-    // A selection survives results arriving; a typed path with nothing after its slash means the folder itself.
     const kept = pick.activePath ? items.findIndex((item) => item.path === pick.activePath) : -1;
     const typingName = pathMode() ? Boolean(splitTyped(text)[1]) : Boolean(text);
     setActive(kept >= 0 ? kept : typingName && items.length ? 0 : -1);
@@ -329,7 +323,6 @@ export function pickFolder(start, onPick) {
     pick.timer = setTimeout(() => send({ type: 'folderSearch', root: pick.listing.path, query: text, hidden: pick.hidden, seq: pick.search.seq }), SEARCH_DELAY_MS);
   }
 
-  // A typed path lists its folder part, so "~/Doc" shows ~ filtered to names starting with "Doc".
   function update() {
     const text = query();
     pick.activePath = null;

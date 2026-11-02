@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::folders::PlaceKind;
 use crate::model::{AgentId, AgentKind, AgentState, TestState};
 
 pub const VERSION: u32 = 2;
@@ -426,7 +427,7 @@ pub struct FolderHit {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct PlaceView {
-    pub kind: String,
+    pub kind: PlaceKind,
     pub name: String,
     pub path: String,
 }
