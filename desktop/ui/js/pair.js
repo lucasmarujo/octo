@@ -2,6 +2,7 @@ import { $, h, svg } from './dom.js';
 import { closeDialog, confirm, openDialog } from './dialogs.js';
 import { SPINNER } from './format.js';
 import { t } from './i18n.js';
+import { ICON_PAIR, ICON_CHEVRON_RIGHT } from './icons.js';
 import { state } from './state.js';
 import { toast } from './toast.js';
 import { invoke } from './transport.js';
@@ -17,6 +18,15 @@ const STEPS = [
   t('Share › Add to Home Screen keeps it one tap away'),
 ];
 const PRIVACY = t('The tunnel only carries encrypted bytes; the key lives in this code, never on a server.');
+const GHOST = Array.from({ length: 21 }, (_, y) => Array.from({ length: 21 }, (_, x) => ((x * 73856093) ^ (y * 19349663)) % 7 < 3 ? '1' : '0').join(''));
+const BROWSERS = [
+  [/(?:EdgiOS|EdgA|Edg)\/(\d+)/, 'Edge'],
+  [/SamsungBrowser\/(\d+)/, 'Samsung Internet'],
+  [/(?:OPiOS|OPR)\/(\d+)/, 'Opera'],
+  [/(?:FxiOS|Firefox)\/(\d+)/, 'Firefox'],
+  [/(?:CriOS|Chrome)\/(\d+)/, 'Chrome'],
+  [/Version\/(\d+)[\d.]*.*Safari/, 'Safari'],
+];
 
 let timer = null;
 let shown = '';
@@ -39,12 +49,55 @@ export function phoneConnected(pairing) {
   return Boolean(pairing.enabled) && pairing.phase === 'ready' && pairing.phones > 0;
 }
 
-export function badge(pairing) {
-  if (!pairing.enabled) return { text: t('off'), tone: 't-faint' };
-  if (pairing.phase === 'failed') return { text: t('error'), tone: 't-red' };
-  if (phoneConnected(pairing)) return { text: `● ${pairing.phones}`, tone: 't-green' };
-  if (pairing.phase === 'ready') return { text: t('on'), tone: 't-green' };
-  return { text: '…', tone: 't-yellow' };
+export function phoneStatus(pairing) {
+  if (!pairing.enabled) return 'off';
+  if (pairing.phase === 'failed') return 'failed';
+  if (pairing.phase !== 'ready') return 'pending';
+  return pairing.phones > 0 ? 'connected' : 'ready';
+}
+
+export function describeDevice(device) {
+  const agent = device.agent || '';
+  const found = BROWSERS.find(([pattern]) => pattern.test(agent));
+  const browser = found ? `${found[1]} ${found[0].exec(agent)[1]}` : null;
+  const apple = /\b(iPhone|iPad|iPod)\b/.exec(agent)?.[1] || (device.model === 'iPad' ? 'iPad' : null);
+  if (apple) {
+    const version = /(?:iPhone|CPU) OS (\d+)_(\d+)/.exec(agent);
+    const tablet = apple === 'iPad';
+    const number = version ? ` ${version[1]}${version[2] === '0' ? '' : `.${version[2]}`}` : '';
+    return { name: apple, os: `${tablet ? 'iPadOS' : 'iOS'}${number}`, browser: browser || 'Safari' };
+  }
+  const android = /Android(?: (\d+))?/.exec(agent);
+  if (android) {
+    const tablet = !/Mobile/.test(agent);
+    const version = device.osVersion?.split('.')[0] || (/; K\)/.test(agent) ? null : android[1]);
+    return { name: device.model || (tablet ? t('Android tablet') : t('Android phone')), os: version ? `Android ${version}` : 'Android', browser };
+  }
+  const desktop = [[/Windows/, 'Windows'], [/CrOS/, 'ChromeOS'], [/Mac OS X|Macintosh/, 'macOS'], [/Linux/, 'Linux']].find(([pattern]) => pattern.test(agent));
+  return { name: desktop ? t('{os} computer', { os: desktop[1] }) : t('Unknown device'), os: desktop?.[1] || null, browser };
+}
+
+export function connectedFor(sinceMs, now = Date.now()) {
+  const minutes = Math.floor(Math.max(0, now - sinceMs) / 60000);
+  if (minutes < 1) return t('just now');
+  if (minutes < 60) return t('{n} min', { n: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('{h} h {m} min', { h: hours, m: String(minutes % 60).padStart(2, '0') });
+  return t('{d} d {h} h', { d: Math.floor(hours / 24), h: hours % 24 });
+}
+
+export function renderPhoneStatus(pairing) {
+  const button = $('pair');
+  const status = phoneStatus(pairing);
+  const named = status === 'connected' && pairing.devices?.length === 1 && pairing.devices[0].agent ? describeDevice(pairing.devices[0]).name : null;
+  const key = `${status}:${pairing.phones}:${named || ''}`;
+  if (button.dataset.key === key) return;
+  button.dataset.key = key;
+  button.dataset.state = status;
+  const title = named || (status === 'connected' ? t('{count} connected', { count: pairing.phones }) : t('Pair phone'));
+  const detail = { off: t('Phone access is off'), pending: t('Starting…'), failed: t('Pairing needs attention'), ready: t('Waiting for a phone'), connected: t('Live · end-to-end encrypted') }[status];
+  button.replaceChildren(svg(ICON_PAIR), h('span', { class: 'phone-text' }, h('strong', null, title), h('small', null, detail)), svg(ICON_CHEVRON_RIGHT));
+  button.setAttribute('aria-label', `${title} · ${detail}`);
 }
 
 export function waiting(pairing) {
@@ -73,13 +126,30 @@ function detail(label, ...value) {
   return h('div', { class: 'pair-detail' }, h('span', { class: 'pair-label' }, label), h('span', { class: 'pair-value' }, ...value));
 }
 
+function statePanel(pairing) {
+  const pending = pairing.enabled && pairing.phase !== 'failed';
+  const message = pairing.enabled ? waiting(pairing).text : t('Turn on to get a pairing code');
+  return h('div', { class: 'pair-state' },
+    h('div', { class: 'pair-placeholder', 'aria-hidden': 'true' }, svg(`<svg class="pair-ghost" viewBox="0 0 21 21" shape-rendering="crispEdges"><path d="${qrPath(GHOST)}" fill="currentColor"/></svg>`),
+      h('span', { class: 'pair-placeholder-mark' }, pending ? SPINNER[state.frame % SPINNER.length] : svg(ICON_PAIR))),
+    h('div', { class: 'pair-state-message', role: 'status' }, h('strong', null, pairing.enabled ? t(pairing.phase === 'failed' ? 'Pairing needs attention' : 'Preparing a secure connection') : t('Phone access is off')), h('span', null, message)));
+}
+
+function deviceCard(device) {
+  const about = device.agent ? describeDevice(device) : { name: t('Phone'), os: null, browser: null };
+  const meta = device.agent ? [about.os, about.browser, device.standalone ? t('Home Screen app') : t('in the browser')].filter(Boolean).join(' · ') : t('Live · end-to-end encrypted');
+  return h('li', { class: 'pair-device' },
+    h('span', { class: 'pair-device-name' }, about.name),
+    h('span', { class: 'pair-device-meta', title: device.agent || '' }, meta),
+    device.sinceMs ? h('span', { class: 'pair-device-since', dataset: { since: device.sinceMs } }, connectedFor(device.sinceMs)) : null);
+}
+
 function body(pairing) {
   if (!pairing.enabled) {
-    return h('p', { class: 'dialog-text' }, t('Octo is off on your phone. Turn it on to show the pairing code: your agents on the phone, from anywhere.'));
+    return statePanel(pairing);
   }
   if (!pairing.link || !pairing.qr) {
-    const text = waiting(pairing);
-    return h('div', { class: `pair-waiting ${text.tone}` }, h('span', { class: 'glyph', dataset: { spin: '1' } }, SPINNER[state.frame % SPINNER.length]), text.text);
+    return statePanel(pairing);
   }
   const phones = pairing.phones === 0 ? h('span', { class: 't-faint' }, t('no phone connected')) : h('span', { class: 't-green' }, t('{count} connected', { count: pairing.phones }));
   return h(
@@ -93,6 +163,7 @@ function body(pairing) {
       detail(t('tunnel'), `${pairing.tunnel} · ${t('ready')}`),
       detail(t('link'), h('span', { class: 'pair-link', title: pairing.link }, pairing.link), h('button', { class: 'button small', type: 'button', onclick: () => copy(pairing.link) }, t('Copy'))),
       detail(t('phones'), phones),
+      pairing.phones > 0 ? h('ul', { class: 'pair-devices', 'aria-label': t('Connected devices') }, ...(pairing.devices?.length ? pairing.devices : Array.from({ length: pairing.phones }, () => ({}))).map(deviceCard)) : null,
       detail(t('privacy'), h('span', { class: 't-faint' }, PRIVACY)),
     ),
   );
@@ -133,6 +204,7 @@ function actions(pairing) {
 
 function markPhone(pairing) {
   $('pair').classList.toggle('connected', phoneConnected(pairing));
+  renderPhoneStatus(pairing);
 }
 
 function render(pairing) {
@@ -140,11 +212,16 @@ function render(pairing) {
   const signature = JSON.stringify(pairing);
   if (signature === shown && $('dialog').open) return;
   shown = signature;
-  const mark = badge(pairing);
-  const title = [h('span', null, t('Pair your phone')), h('span', { class: `pair-badge ${mark.tone}` }, mark.text)];
+  const title = [h('span', null, t('Pair your phone')), statusPill(pairing)];
   const tagline = h('p', { class: 'pair-tagline' }, t('Octo on your phone, from anywhere · end-to-end encrypted'));
   const dialog = openDialog(title, [tagline, body(pairing)], actions(pairing));
   dialog.classList.add('pairing');
+}
+
+function statusPill(pairing) {
+  const status = phoneStatus(pairing);
+  const text = { off: t('Off'), pending: t('Starting…'), failed: t('Pairing needs attention'), ready: t('Waiting for a phone'), connected: t('Live') }[status];
+  return h('span', { class: `pair-badge pair-badge-${status}` }, text);
 }
 
 function stop() {
@@ -173,7 +250,10 @@ export async function openPairing() {
       stop();
       return;
     }
-    render(await invoke('pairing'));
+    try {
+      render(await invoke('pairing'));
+      for (const node of document.querySelectorAll('.pairing [data-since]')) node.textContent = connectedFor(Number(node.dataset.since));
+    } catch (err) { closeDialog(); toast(String(err), 'error'); }
   }, POLL_MS);
   $('dialog').addEventListener('close', stop, { once: true });
 }

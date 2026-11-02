@@ -4,7 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use orkai::pwa::bridge::{self, Info, Phase};
-use orkai::pwa::hub::Hub;
+use orkai::pwa::hub::{Device, Hub};
 use orkai::pwa::qr::Qr;
 use serde::Serialize;
 use tauri::State;
@@ -23,6 +23,7 @@ pub struct Pairing {
     pub tunnel: Option<String>,
     pub error: Option<String>,
     pub phones: usize,
+    pub devices: Vec<Device>,
     pub link: Option<String>,
     pub qr: Option<Vec<String>>,
 }
@@ -39,6 +40,7 @@ pub fn describe(enabled: bool, info: Option<&Info>, link: Option<String>) -> Pai
         tunnel: info.map(|info| info.tunnel.label().to_string()),
         error: info.and_then(|info| info.error.clone()),
         phones: info.map_or(0, |info| info.phones),
+        devices: info.map(|info| info.devices.clone()).unwrap_or_default(),
         link,
         qr,
     }
@@ -83,7 +85,7 @@ pub fn keep_alive(hub: Arc<Hub>) {
         loop {
             let enabled = hub.store().pwa_enabled().unwrap_or(false);
             let due = started.is_none_or(|at| at.elapsed() >= REVIVE_AFTER);
-            if enabled && due && bridge::status(hub.store().home()).is_none() {
+            if enabled && due && bridge::status(hub.store().home()).is_none_or(|info| info.version < bridge::VERSION) {
                 started = Some(Instant::now());
                 let _ = start(&hub);
             }
@@ -124,6 +126,7 @@ mod tests {
             url: Some("https://orkai.example".into()),
             error: None,
             phones,
+            devices: Vec::new(),
             started_at_ms: 1,
             alive_at_ms: 2,
             exe: None,
@@ -153,7 +156,16 @@ mod tests {
         let off = describe(false, None, None);
         assert_eq!(
             off,
-            Pairing { enabled: false, phase: None, tunnel: None, error: None, phones: 0, link: None, qr: None }
+            Pairing {
+                enabled: false,
+                phase: None,
+                tunnel: None,
+                error: None,
+                phones: 0,
+                devices: Vec::new(),
+                link: None,
+                qr: None
+            }
         );
     }
 

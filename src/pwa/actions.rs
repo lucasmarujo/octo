@@ -8,13 +8,13 @@ use crate::client;
 use crate::launch;
 use crate::launch::LaunchMode;
 use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, NewAgent, validate_agent_name};
-use crate::paths::{expand_tilde, matching_directories, user_home};
+use crate::paths::{expand_tilde, user_home};
 use crate::project;
 use crate::protocol::ClientMsg;
 use crate::pwa::hub::{Event, Hub};
 use crate::pwa::protocol::{
-    BridgeMsg, CommitView, Details, Dir, FileView, OverlapView, PhoneMsg, Preview, Run, SkillView, StartRequest,
-    SubagentView, TestView, Tone,
+    BridgeMsg, CommitView, Details, Dir, FileView, FolderHit, OverlapView, PhoneMsg, PlaceView, Preview, Run,
+    SkillView, StartRequest, SubagentView, TestView, Tone,
 };
 use crate::pwa::screen;
 use crate::skills;
@@ -58,7 +58,8 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
             Err(err) => notice(reply, Tone::Error, err.to_string()),
         },
         PhoneMsg::Recover { session } => recover(hub, &session, reply),
-        PhoneMsg::Folders { path } => folders(&path, reply),
+        PhoneMsg::Folders { path, hidden, places, seq } => folders(&path, hidden, places, seq, reply),
+        PhoneMsg::FolderSearch { root, query, hidden, seq } => folder_search(root, query, hidden, seq, reply),
         PhoneMsg::Diff { agent } => diff(hub, agent, reply),
         PhoneMsg::Merge { agent } => merge(hub, agent, reply),
         PhoneMsg::Peek { agents, rows } => peek(hub, agents, rows, reply),
@@ -91,6 +92,7 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         },
         PhoneMsg::Trust { cwd, command } => trust(hub, &cwd, command, reply),
         PhoneMsg::Sync
+        | PhoneMsg::Device { .. }
         | PhoneMsg::Open { .. }
         | PhoneMsg::Close
         | PhoneMsg::Size { .. }
@@ -239,23 +241,56 @@ fn relaunch(hub: &Arc<Hub>, records: Vec<AgentRecord>, reply: &Sender<Event>) {
     });
 }
 
-pub fn list_folders(path: &str) -> BridgeMsg {
+pub fn list_folders(path: &str, hidden: bool, with_places: bool, seq: u64) -> BridgeMsg {
     let dir = resolve_dir(path);
-    let dirs = matching_directories(&dir, "")
-        .into_iter()
-        .map(|name| Dir { path: dir.join(&name).to_string_lossy().into_owned(), name })
-        .collect();
+    let listing = crate::folders::list(&dir, hidden);
+    let text = |path: &std::path::Path| path.to_string_lossy().into_owned();
     BridgeMsg::Folders {
-        path: dir.to_string_lossy().into_owned(),
-        parent: dir.parent().map(|parent| parent.to_string_lossy().into_owned()),
-        dirs,
+        seq,
+        path: text(&dir),
+        parent: dir.parent().map(text),
+        dirs: listing.dirs.into_iter().map(|(name, path, git)| Dir { path: text(&path), name, git }).collect(),
+        repo: dir.ancestors().find(|folder| crate::folders::is_repo(folder)).map(text),
+        missing: !dir.is_dir(),
+        truncated: listing.truncated,
+        places: with_places.then(|| {
+            crate::folders::places()
+                .into_iter()
+                .map(|place| PlaceView { kind: place.kind, name: place.name, path: text(&place.path) })
+                .collect()
+        }),
     }
 }
 
-fn folders(path: &str, reply: &Sender<Event>) {
+fn folders(path: &str, hidden: bool, places: bool, seq: u64, reply: &Sender<Event>) {
     let (path, reply) = (path.to_string(), reply.clone());
     spawn("orkai-pwa-folders", move || {
-        let _ = reply.send(Event::Reply(list_folders(&path)));
+        let _ = reply.send(Event::Reply(list_folders(&path, hidden, places, seq)));
+    });
+}
+
+fn folder_search(root: String, query: String, hidden: bool, seq: u64, reply: &Sender<Event>) {
+    let reply = reply.clone();
+    spawn("orkai-pwa-folder-search", move || {
+        let dir = resolve_dir(&root);
+        let (hits, truncated) = crate::folders::search(&dir, &query, hidden);
+        let hits = hits
+            .into_iter()
+            .map(|hit| FolderHit {
+                name: hit.name,
+                path: hit.path.to_string_lossy().into_owned(),
+                rel: hit.rel,
+                git: hit.git,
+                repo: hit.repo.map(|repo| repo.to_string_lossy().into_owned()),
+            })
+            .collect();
+        let _ = reply.send(Event::Reply(BridgeMsg::FolderSearch {
+            seq,
+            root: dir.to_string_lossy().into_owned(),
+            query,
+            hits,
+            truncated,
+        }));
     });
 }
 
@@ -814,8 +849,28 @@ mod tests {
         std::fs::create_dir_all(dir.join("Alpha")).unwrap();
         std::fs::create_dir_all(dir.join(".hidden")).unwrap();
         std::fs::write(dir.join("file.txt"), "x").unwrap();
-        let BridgeMsg::Folders { path, parent, dirs } = list_folders(&dir.to_string_lossy()) else { panic!() };
+        std::fs::create_dir_all(dir.join("beta").join(".git")).unwrap();
+        let BridgeMsg::Folders { seq, path, parent, dirs, repo, missing, .. } =
+            list_folders(&dir.to_string_lossy(), false, false, 7)
+        else {
+            panic!()
+        };
+        assert_eq!(seq, 7, "the reply names the request it answers");
         assert_eq!(path, dir.to_string_lossy());
+        assert!(!missing);
+        assert_eq!(dirs.iter().map(|d| d.git).collect::<Vec<_>>(), [false, true], "only beta is a repository");
+        assert_eq!(repo, None);
+        let BridgeMsg::Folders { repo, .. } = list_folders(&dir.join("beta").to_string_lossy(), false, false, 0) else {
+            panic!()
+        };
+        assert_eq!(repo.as_deref(), Some(&*dir.join("beta").to_string_lossy()));
+        let BridgeMsg::Folders { missing, dirs: none, places, .. } =
+            list_folders(&dir.join("gone").to_string_lossy(), false, true, 0)
+        else {
+            panic!()
+        };
+        assert!(missing && none.is_empty());
+        assert!(places.is_some_and(|places| !places.is_empty()), "places come only when asked");
         assert_eq!(parent.as_deref(), dir.parent().map(|p| p.to_string_lossy()).as_deref());
         let names: Vec<&str> = dirs.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(names, ["Alpha", "beta"]);

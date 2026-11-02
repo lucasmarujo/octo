@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::folders::PlaceKind;
 use crate::model::{AgentId, AgentKind, AgentState, TestState};
 
 pub const VERSION: u32 = 2;
@@ -17,6 +18,16 @@ pub enum Greeting {
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum PhoneMsg {
     Sync,
+    Device {
+        #[serde(default)]
+        model: Option<String>,
+        #[serde(default)]
+        os_version: Option<String>,
+        #[serde(default)]
+        standalone: bool,
+        #[serde(default)]
+        client: Option<String>,
+    },
     Open {
         agent: AgentId,
         rows: u16,
@@ -70,6 +81,19 @@ pub enum PhoneMsg {
     },
     Folders {
         path: String,
+        #[serde(default)]
+        hidden: bool,
+        #[serde(default)]
+        places: bool,
+        #[serde(default)]
+        seq: u64,
+    },
+    FolderSearch {
+        root: String,
+        query: String,
+        #[serde(default)]
+        hidden: bool,
+        seq: u64,
     },
     Diff {
         agent: AgentId,
@@ -163,20 +187,71 @@ pub struct StartRequest {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum BridgeMsg {
-    Welcome { host: String, version: String },
+    Welcome {
+        host: String,
+        version: String,
+    },
     State(Overview),
-    Usage { entries: Vec<UsageEntry> },
+    Usage {
+        entries: Vec<UsageEntry>,
+    },
     Screen(Screen),
-    Notice { text: String, tone: Tone },
-    Folders { path: String, parent: Option<String>, dirs: Vec<Dir> },
-    Diff { agent: AgentId, branch: String, text: String, truncated: bool },
-    Peek { previews: Vec<Preview> },
+    Notice {
+        text: String,
+        tone: Tone,
+    },
+    Folders {
+        seq: u64,
+        path: String,
+        parent: Option<String>,
+        dirs: Vec<Dir>,
+        repo: Option<String>,
+        missing: bool,
+        truncated: bool,
+        places: Option<Vec<PlaceView>>,
+    },
+    FolderSearch {
+        seq: u64,
+        root: String,
+        query: String,
+        hits: Vec<FolderHit>,
+        truncated: bool,
+    },
+    Diff {
+        agent: AgentId,
+        branch: String,
+        text: String,
+        truncated: bool,
+    },
+    Peek {
+        previews: Vec<Preview>,
+    },
     Details(Details),
-    Tests { agent: AgentId, command: String, state: TestState, text: String, truncated: bool },
-    Link { url: String },
-    Skills { kind: AgentKind, cwd: String, skills: Vec<SkillView> },
-    Compare { agent: AgentId, title: String, text: String },
-    TrustAsk { cwd: String, repo: String, command: String },
+    Tests {
+        agent: AgentId,
+        command: String,
+        state: TestState,
+        text: String,
+        truncated: bool,
+    },
+    Link {
+        url: String,
+    },
+    Skills {
+        kind: AgentKind,
+        cwd: String,
+        skills: Vec<SkillView>,
+    },
+    Compare {
+        agent: AgentId,
+        title: String,
+        text: String,
+    },
+    TrustAsk {
+        cwd: String,
+        repo: String,
+        command: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -351,6 +426,23 @@ pub struct Preview {
 pub struct Dir {
     pub name: String,
     pub path: String,
+    pub git: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct FolderHit {
+    pub name: String,
+    pub path: String,
+    pub rel: String,
+    pub git: bool,
+    pub repo: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PlaceView {
+    pub kind: PlaceKind,
+    pub name: String,
+    pub path: String,
 }
 
 #[cfg(test)]
@@ -367,6 +459,15 @@ mod tests {
     fn phone_messages_read_the_way_the_app_writes_them() {
         let cases = [
             (r#"{"type":"sync"}"#, PhoneMsg::Sync),
+            (
+                r#"{"type":"device","model":"Pixel 8","osVersion":"14","standalone":true,"client":"tab-1"}"#,
+                PhoneMsg::Device {
+                    model: Some("Pixel 8".into()),
+                    os_version: Some("14".into()),
+                    standalone: true,
+                    client: Some("tab-1".into()),
+                },
+            ),
             (r#"{"type":"open","agent":3,"rows":30,"cols":48}"#, PhoneMsg::Open { agent: 3, rows: 30, cols: 48 }),
             (r#"{"type":"keys","data":"\u001b[A"}"#, PhoneMsg::Keys { data: "\x1b[A".into() }),
             (r#"{"type":"send","text":"fix it"}"#, PhoneMsg::Send { text: "fix it".into() }),
@@ -451,6 +552,18 @@ mod tests {
                     bypass: false,
                     remote_control: true,
                 },
+            ),
+            (
+                r#"{"type":"folders","path":"~"}"#,
+                PhoneMsg::Folders { path: "~".into(), hidden: false, places: false, seq: 0 },
+            ),
+            (
+                r#"{"type":"folders","path":"/w","hidden":true,"places":true,"seq":3}"#,
+                PhoneMsg::Folders { path: "/w".into(), hidden: true, places: true, seq: 3 },
+            ),
+            (
+                r#"{"type":"folderSearch","root":"~","query":"oc","seq":2}"#,
+                PhoneMsg::FolderSearch { root: "~".into(), query: "oc".into(), hidden: false, seq: 2 },
             ),
         ];
         for (text, expected) in cases {

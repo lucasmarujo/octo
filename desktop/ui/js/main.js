@@ -3,7 +3,8 @@ import { detectAlerts, notice, windowTitle } from './alerts.js';
 import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tickBoard } from './board.js';
 import { initComposer, renderComposer, renderPalette, setCommandRunner } from './composer.js';
 import { runCommand } from './commands.js';
-import { closeMenu, confirm, menuShown, showCompare, showDiff, showFolders, showTests } from './dialogs.js';
+import { closeMenu, confirm, menuShown, showCompare, showDiff, showTests } from './dialogs.js';
+import { showFolderSearch, showFolders } from './folders.js';
 import { $, h, svg } from './dom.js';
 import { SPINNER, alive, glyph } from './format.js';
 import { deactivateGrid, peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
@@ -356,6 +357,9 @@ function onMessage(message) {
       break;
     case 'folders':
       showFolders(message);
+      break;
+    case 'folderSearch':
+      showFolderSearch(message);
       break;
     case 'diff':
       showDiff(message);

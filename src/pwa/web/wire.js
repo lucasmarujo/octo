@@ -8,6 +8,7 @@
   const LINK_KEY = 'k';
   const UNPAIRED = 4001;
   const OUTDATED = 4002;
+  const REPLACED = 4003;
   const subtle = root.crypto && root.crypto.subtle;
   const utf8 = new TextEncoder();
   const text = new TextDecoder();
@@ -57,6 +58,33 @@
     const value = String(link || '').replace(/\s+/g, '');
     const fragment = value.slice(value.indexOf('#') + 1);
     return new URLSearchParams(fragment).get(LINK_KEY) || fragment;
+  }
+
+  function tabId() {
+    try {
+      let id = root.sessionStorage.getItem('octo.tab');
+      if (!id) {
+        id = root.crypto.randomUUID();
+        root.sessionStorage.setItem('octo.tab', id);
+      }
+      return id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function deviceInfo() {
+    const nav = root.navigator || {};
+    const standalone = Boolean(nav.standalone) || Boolean(root.matchMedia && root.matchMedia('(display-mode: standalone)').matches);
+    let model = null;
+    let osVersion = null;
+    try {
+      const hints = nav.userAgentData ? await nav.userAgentData.getHighEntropyValues(['model', 'platformVersion']) : {};
+      model = hints.model || null;
+      osVersion = hints.platformVersion || null;
+    } catch (_) {}
+    if (!model && /Macintosh/.test(nav.userAgent || '') && nav.maxTouchPoints > 1) model = 'iPad';
+    return { model, osVersion, standalone, client: tabId() };
   }
 
   async function deriveKeys(secret, privateKey, phone, bridge) {
@@ -125,6 +153,7 @@
       }
       this.keys = await deriveKeys(this.secret, this.pair.privateKey, this.own, decode(greeting.key));
       this.send({ type: 'sync' });
+      deviceInfo().then((device) => this.send({ type: 'device', ...device }));
       if (this.handlers.ready) this.handlers.ready();
     }
 
@@ -159,7 +188,7 @@
     }
   }
 
-  const api = { VERSION, UNPAIRED, OUTDATED, Session, encode, decode, nonce, secretFrom, linkKey, supported: Boolean(subtle) };
+  const api = { VERSION, UNPAIRED, OUTDATED, REPLACED, Session, encode, decode, nonce, secretFrom, linkKey, supported: Boolean(subtle) };
   root.OrkaiWire = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

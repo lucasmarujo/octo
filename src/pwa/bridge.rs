@@ -14,14 +14,14 @@ use crate::launch;
 use crate::paths::{HOME_ENV, Home};
 use crate::pwa::cloudflared;
 use crate::pwa::crypto::{self, Secret};
-use crate::pwa::hub::Hub;
+use crate::pwa::hub::{Device, Hub};
 use crate::pwa::server::Server;
 use crate::pwa::tunnel::{self, QuickTunnel, Tunnel, TunnelKind};
 use crate::store::Store;
 use crate::util::{lock, now_ms};
 
 pub const COMMAND: &str = "__pwa";
-pub const VERSION: u32 = 7;
+pub const VERSION: u32 = 8;
 pub const DEFAULT_PORT: u16 = 7470;
 pub const STALE_AFTER_MS: u64 = 15_000;
 pub const LINK_KEY: &str = "k";
@@ -60,6 +60,8 @@ pub struct Info {
     pub error: Option<String>,
     #[serde(default)]
     pub phones: usize,
+    #[serde(default)]
+    pub devices: Vec<Device>,
     pub started_at_ms: u64,
     pub alive_at_ms: u64,
     #[serde(default)]
@@ -221,6 +223,7 @@ pub fn run(home: &Home, tunnel: TunnelKind, port: u16) -> io::Result<()> {
         url: None,
         error: None,
         phones: 0,
+        devices: Vec::new(),
         started_at_ms: now,
         alive_at_ms: now,
         exe: Some(exe),
@@ -251,6 +254,7 @@ fn rival(home: &Home, tunnel: TunnelKind, port: u16, err: io::Error) -> io::Resu
         url: None,
         error: Some(format!("port {port} is in use; set pwa_port in config.json")),
         phones: 0,
+        devices: Vec::new(),
         started_at_ms: now,
         alive_at_ms: now,
         exe: None,
@@ -290,13 +294,16 @@ impl State {
         let mut written = Instant::now();
         while !self.stop_requested() {
             thread::sleep(SUPERVISE_EVERY);
-            let phones = hub.phones();
+            let (phones, devices) = (hub.phones(), hub.devices());
             let before = lock(&self.info).phones;
             if phones != before {
                 diag(self.home(), &format!("phones connected: {phones}"));
             }
-            if phones != before || written.elapsed() >= HEARTBEAT_EVERY {
-                self.update(|info| info.phones = phones);
+            if phones != before || lock(&self.info).devices != devices || written.elapsed() >= HEARTBEAT_EVERY {
+                self.update(|info| {
+                    info.phones = phones;
+                    info.devices = devices;
+                });
                 written = Instant::now();
             }
         }
@@ -435,6 +442,7 @@ mod tests {
             url: Some("https://a-b.trycloudflare.com".into()),
             error: None,
             phones: 0,
+            devices: Vec::new(),
             started_at_ms: 1,
             alive_at_ms,
             exe: None,

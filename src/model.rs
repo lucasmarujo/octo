@@ -361,8 +361,8 @@ pub fn validate_session_name(name: &str) -> Result<String, String> {
     if trimmed.chars().count() > MAX_SESSION_NAME_LEN {
         return Err(format!("session name must have at most {MAX_SESSION_NAME_LEN} characters"));
     }
-    if !trimmed.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')) {
-        return Err("session name may only contain letters, digits, '-', '_' and '.'".into());
+    if !trimmed.chars().all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.')) {
+        return Err("session name may only contain letters, digits, spaces, '-', '_' and '.'".into());
     }
     Ok(trimmed.to_string())
 }
@@ -435,7 +435,9 @@ mod tests {
     fn session_names_are_validated() {
         assert_eq!(validate_session_name(" work-1 ").unwrap(), "work-1");
         assert!(validate_session_name("").is_err());
-        assert!(validate_session_name("has space").is_err());
+        assert_eq!(validate_session_name(" projeto ção ").unwrap(), "projeto ção");
+        assert_eq!(validate_session_name("café 2026").unwrap(), "café 2026");
+        assert!(validate_session_name("tab\there").is_err());
         assert!(validate_session_name("../escape").is_err());
         assert!(validate_session_name(&"a".repeat(MAX_SESSION_NAME_LEN + 1)).is_err());
     }

@@ -19,7 +19,7 @@ use orkai::pwa::hub::{Event, Hub};
 use orkai::pwa::protocol::{
     AgentView, BridgeMsg, Details, Greeting, Overview, PhoneMsg, Screen, StartRequest, Tone, VERSION,
 };
-use orkai::pwa::server::{OUTDATED, Outbox, Peer, Server, UNPAIRED};
+use orkai::pwa::server::{OUTDATED, Outbox, Peer, REPLACED, Server, UNPAIRED};
 use orkai::store::Store;
 
 const TIMEOUT: Duration = Duration::from_secs(25);
@@ -31,6 +31,7 @@ struct Fixture {
     secret: Secret,
     port: u16,
     store: Store,
+    hub: Arc<Hub>,
 }
 
 impl Drop for Fixture {
@@ -59,7 +60,60 @@ fn fixture() -> Fixture {
     let server = Server::bind(0, Arc::clone(&hub), secret).unwrap();
     let port = server.port();
     std::thread::spawn(move || server.serve());
-    Fixture { dir, secret, port, store }
+    Fixture { dir, secret, port, store, hub }
+}
+
+#[test]
+fn a_paired_phone_reports_its_device_to_the_desktop() {
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.send(&PhoneMsg::Device {
+        model: Some("Pixel 8".into()),
+        os_version: Some("14".into()),
+        standalone: true,
+        client: Some("tab-1".into()),
+    });
+    let deadline = Instant::now() + TIMEOUT;
+    while fx.hub.devices().first().and_then(|device| device.model.as_deref()) != Some("Pixel 8")
+        && Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let device = fx.hub.devices().pop().expect("the paired phone is listed");
+    assert_eq!(device.model.as_deref(), Some("Pixel 8"));
+    assert_eq!(device.os_version.as_deref(), Some("14"));
+    assert!(device.standalone);
+    assert!(device.since_ms > 0);
+}
+
+#[test]
+fn a_tab_replaced_by_another_tab_of_the_same_browser_is_told_so_and_the_new_one_stays() {
+    let fx = fixture();
+    let tab = |model: &str| PhoneMsg::Device {
+        model: Some(model.into()),
+        os_version: None,
+        standalone: false,
+        client: Some("tab-1".into()),
+    };
+    let listed = |model: &str| {
+        let deadline = Instant::now() + TIMEOUT;
+        while fx.hub.devices().iter().all(|device| device.model.as_deref() != Some(model)) && Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    let mut first = Phone::pair(fx.port, &fx.secret);
+    first.send(&tab("first"));
+    listed("first");
+    let mut second = Phone::pair(fx.port, &fx.secret);
+    second.send(&tab("second"));
+    listed("second");
+    assert_eq!(close_code(&mut first.ws), Some(REPLACED), "the old tab learns why it was closed");
+    assert_eq!(fx.hub.phones(), 1);
+    second.send(&PhoneMsg::Sync);
+    second.until(|message| matches!(message, BridgeMsg::State(_)).then_some(()));
+    let models: Vec<_> = fx.hub.devices().into_iter().filter_map(|device| device.model).collect();
+    assert_eq!(models, ["second"]);
 }
 
 fn socket(port: u16) -> WebSocket<TcpStream> {
@@ -459,7 +513,12 @@ fn the_phone_creates_sessions_and_browses_folders() {
     let mut phone = Phone::pair(fx.port, &fx.secret);
     phone.send(&PhoneMsg::Session { name: "mobile".into() });
     phone.overview_where(|overview| overview.sessions.iter().any(|s| s.name == "mobile"));
-    phone.send(&PhoneMsg::Folders { path: fx.dir.to_string_lossy().into_owned() });
+    phone.send(&PhoneMsg::Folders {
+        path: fx.dir.to_string_lossy().into_owned(),
+        hidden: false,
+        places: false,
+        seq: 0,
+    });
     let names = phone.until(|message| match message {
         BridgeMsg::Folders { dirs, .. } => Some(dirs.into_iter().map(|dir| dir.name).collect::<Vec<_>>()),
         _ => None,
@@ -531,7 +590,11 @@ fn a_window_without_a_socket_drives_the_hub_through_its_inbox() {
         _ => None,
     });
     assert_eq!(started, "term-1");
-    peer.handle(PhoneMsg::Folders { path: fx.dir.to_string_lossy().into_owned() }, &mut window).unwrap();
+    peer.handle(
+        PhoneMsg::Folders { path: fx.dir.to_string_lossy().into_owned(), hidden: false, places: false, seq: 0 },
+        &mut window,
+    )
+    .unwrap();
     let names = pump_until(&mut peer, &mut window, |message| match message {
         BridgeMsg::Folders { dirs, .. } => Some(dirs.iter().map(|dir| dir.name.clone()).collect::<Vec<_>>()),
         _ => None,

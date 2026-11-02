@@ -300,11 +300,19 @@ mod tests {
         std::fs::create_dir_all(fx.dir.join("alpha")).unwrap();
         let (channel, rx) = window();
         fx.link.attach(channel).unwrap();
-        fx.link.send(PhoneMsg::Folders { path: fx.dir.to_string_lossy().into_owned() }).unwrap();
+        fx.link
+            .send(PhoneMsg::Folders {
+                path: fx.dir.to_string_lossy().into_owned(),
+                hidden: false,
+                places: false,
+                seq: 4,
+            })
+            .unwrap();
         let folders = until(&rx, of_type("folders"));
         let names: Vec<&str> =
             folders["dirs"].as_array().unwrap().iter().filter_map(|dir| dir["name"].as_str()).collect();
         assert!(names.contains(&"alpha"), "{names:?}");
+        assert_eq!(folders["seq"], 4, "the window can tell which listing a reply answers");
     }
 
     #[test]

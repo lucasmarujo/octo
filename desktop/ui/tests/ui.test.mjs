@@ -418,17 +418,42 @@ test('the pairing code is drawn from the modules the core encodes', async () => 
   assert.equal(qrPath(['000']), '');
 });
 
-test('the pairing badge and the waiting line follow the bridge like in the TUI', async () => {
-  const { badge, waiting } = await import('../js/pair.js');
-  assert.deepEqual(badge({ enabled: false }), { text: 'off', tone: 't-faint' });
-  assert.equal(badge({ enabled: true, phase: 'ready', phones: 2 }).text, '● 2');
-  assert.equal(badge({ enabled: true, phase: 'ready', phones: 0 }).text, 'on');
-  assert.equal(badge({ enabled: true, phase: 'failed' }).tone, 't-red');
-  assert.equal(badge({ enabled: true, phase: 'connecting' }).text, '…');
+test('the pairing status and the waiting line follow the bridge', async () => {
+  const { phoneStatus, waiting } = await import('../js/pair.js');
+  assert.equal(phoneStatus({ enabled: false }), 'off');
+  assert.equal(phoneStatus({ enabled: true, phase: 'ready', phones: 2 }), 'connected');
+  assert.equal(phoneStatus({ enabled: true, phase: 'ready', phones: 0 }), 'ready');
+  assert.equal(phoneStatus({ enabled: true, phase: 'failed' }), 'failed');
+  assert.equal(phoneStatus({ enabled: true, phase: 'connecting' }), 'pending');
   assert.match(waiting({ phase: null }).text, /Starting/);
   assert.match(waiting({ phase: 'installing' }).text, /cloudflared/);
   assert.equal(waiting({ phase: 'connecting', tunnel: 'tailscale' }).text, 'Opening the tailscale tunnel…');
   assert.equal(waiting({ phase: 'failed', error: 'no network' }).text, 'no network · retrying');
+});
+
+test('the pairing dialog names connected devices and their connection age', async () => {
+  const { describeDevice, connectedFor, phoneStatus } = await import('../js/pair.js');
+  assert.deepEqual(describeDevice({ agent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile Safari/604.1' }),
+    { name: 'iPhone', os: 'iOS 17.2', browser: 'Safari 17' });
+  assert.deepEqual(describeDevice({ agent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36', model: 'Pixel 8', osVersion: '14.0' }),
+    { name: 'Pixel 8', os: 'Android 14', browser: 'Chrome 120' });
+  assert.deepEqual(describeDevice({ agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0' }),
+    { name: 'Windows computer', os: 'Windows', browser: 'Chrome 122' });
+  assert.equal(connectedFor(1000, 1000), 'just now');
+  assert.equal(connectedFor(1000, 1000 + 61_000), '1 min');
+  assert.equal(connectedFor(1000, 1000 + 3_661_000), '1 h 01 min');
+  assert.equal(connectedFor(1000, 1000 + 90_061_000), '1 d 1 h');
+  assert.equal(phoneStatus({ enabled: true, phase: 'ready', phones: 1 }), 'connected');
+});
+
+test('a phone tab that another tab of the same browser replaced waits for a tap instead of reconnecting', () => {
+  const code = rust('src/pwa/server.rs').match(/pub const REPLACED: u16 = (\d+);/)[1];
+  assert.match(rust('src/pwa/web/wire.js'), new RegExp(`const REPLACED = ${code};`), 'the phone knows the code the bridge closes with');
+  const app = rust('src/pwa/web/app.js');
+  const replaced = app.match(/if \(code === Wire\.REPLACED\) \{([\s\S]*?)\n {4}\}/)[1];
+  assert.match(replaced, /setLink\('replaced'\);[\s\S]*showPair\([^)]*, true, false\);\s+return;/);
+  assert.doesNotMatch(replaced, /setTimeout|connect\(/, 'reconnecting would replace the other tab in turn, forever');
+  assert.match(app, /\['unpaired', 'replaced'\]\.includes\(el\.link\.dataset\.state\)/, 'coming back to the tab or going online does not take the session back either');
 });
 
 test('the test line of an agent says what the TUI says about its last run', async () => {
@@ -1038,4 +1063,61 @@ test('workspace moves preserve session names and rename only after the server co
     state.pendingRename = rename;
     state.pendingWorkspace = pending;
   }
+});
+
+test('the folder picker ranks matches like src/folders.rs and keeps the matched letters', async () => {
+  const { fuzzy } = await import('../js/folders.js');
+  assert.equal(fuzzy('octo', 'octo').score, 1000, 'an exact name wins');
+  assert.ok(fuzzy('oc', 'octo').score > fuzzy('oc', 'my-octo').score, 'a prefix beats a word inside the name');
+  assert.ok(fuzzy('oc', 'my-octo').score > fuzzy('oc', 'doctor').score, 'a word start beats the middle of a word');
+  assert.deepEqual(fuzzy('mo', 'my-octo').marks, [0, 3], 'letters in order mark where they matched');
+  assert.equal(fuzzy('AP', 'api').whole, true, 'case is ignored');
+  assert.equal(fuzzy('zz', 'octo'), null);
+  assert.equal(fuzzy('ox', 'o-aaaaaaaaaaaaaaaaaax'), null, 'letters spread too far apart are not a match');
+});
+
+test('the folder picker splits a path into clickable crumbs and completes typed paths', async () => {
+  const { folderCrumbs, splitTyped } = await import('../js/folders.js');
+  assert.deepEqual(folderCrumbs('/Users/ana/dev', '/Users/ana'), [{ name: '~', path: '/Users/ana' }, { name: 'dev', path: '/Users/ana/dev' }]);
+  assert.deepEqual(folderCrumbs('/opt/x', '/Users/ana').map((crumb) => crumb.path), ['/', '/opt', '/opt/x']);
+  assert.deepEqual(folderCrumbs('C:\\Users\\ana', null).map((crumb) => crumb.name), ['C:', 'Users', 'ana'], 'a Windows drive is the first crumb');
+  assert.deepEqual(splitTyped('~/Doc'), ['~/', 'Doc']);
+  assert.deepEqual(splitTyped('~'), ['~', '']);
+  assert.deepEqual(splitTyped('C:\\Users\\a'), ['C:\\Users\\', 'a']);
+});
+
+test('a typed path to a folder without subfolders says it is empty instead of quoting an empty name', async () => {
+  const { emptyTypedNote } = await import('../js/folders.js');
+  assert.deepEqual(emptyTypedNote('', 'C:/work/'), ['No folders inside', 'You can still use this folder.']);
+  assert.deepEqual(emptyTypedNote('Doc', '~/Doc'), ['No folder starts with “Doc” here', 'Enter goes to ~/Doc']);
+});
+
+test('the folder picker warns that AI agents cannot start outside a repository while worktree is on', async () => {
+  const { folderNote } = await import('../js/folders.js');
+  const blocked = folderNote(null, false, true);
+  assert.equal(blocked.tone, 'blocked');
+  assert.equal(blocked.text, 'Not a git repository · turn worktree off to start AI agents here');
+  assert.equal(folderNote(null, false, false).tone, 'plain', 'without worktree agents run right in the folder');
+  assert.equal(folderNote('/w/octo', false, true).text, 'octo is a git repository · each agent gets its own worktree');
+  assert.equal(folderNote('/w/octo', false, false).tone, 'git');
+  assert.equal(folderNote(null, true, true).tone, 'missing', 'a folder that does not exist says so first');
+  assert.match(readFileSync(new URL('../styles.css', import.meta.url), 'utf8'), /\.folder-status\[data-tone="blocked"\] \{ color: var\(--color-waiting\); \}/);
+});
+
+test('the folder picker numbers every listing it asks for and drops a reply to an older one', () => {
+  const picker = readFileSync(new URL('../js/folders.js', import.meta.url), 'utf8');
+  const asked = [...picker.matchAll(/send\(\{ type: '(folders|folderSearch)'[^}]*\}\)/g)].map(([call]) => call);
+  assert.equal(asked.length, 2, 'one place asks for listings and one for searches');
+  for (const call of asked) assert.match(call, /seq: pick\.(listed|search\.seq)/);
+  assert.match(picker, /pick\.listed = \+\+requests;/, 'listings and searches share one counter, so a reopened picker never takes an old reply');
+  assert.match(picker, /seq: \+\+requests \}/);
+  assert.match(picker, /pick\.onListing = \(message\) => \{\n\s+if \(message\.seq !== pick\.listed\) return;/);
+  assert.match(rust('src/pwa/protocol.rs'), /Folders \{\n\s+path: String,[\s\S]*?#\[serde\(default\)\]\n\s+seq: u64,\n\s+\},/, 'the phone keeps sending listings without a number');
+});
+
+test('every kind of place the core sends has its icon in the folder picker', () => {
+  const variants = rust('src/folders.rs').match(/pub enum PlaceKind \{([^}]+)\}/)[1].match(/\w+/g).map((name) => name.toLowerCase());
+  const picker = readFileSync(new URL('../js/folders.js', import.meta.url), 'utf8');
+  const icons = [...picker.match(/const PLACE_ICONS = \{([^}]+)\}/)[1].matchAll(/(\w+):/g)].map(([, kind]) => kind);
+  assert.deepEqual(icons.sort(), variants.sort());
 });
