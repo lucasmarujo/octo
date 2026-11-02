@@ -8,13 +8,13 @@ export const USAGE_FOLDED = 2;
 const LABELS = { antigravity: 'agy' };
 const KIND_COLORS = {
   claude: '#de805c',
-  codex: '#78afff',
+  codex: '#8f9bff',
   kilo: '#ece26e',
   opencode: '#fab283',
-  antigravity: '#9696ff',
+  antigravity: '#4f8dff',
   grok: '#e8e8f0',
   qwen: '#ba8cff',
-  kimi: '#ec80dc',
+  kimi: '#5ec8ff',
   pi: '#aadc5a',
   terminal: '#5ad2d2',
 };
