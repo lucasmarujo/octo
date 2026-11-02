@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -19,11 +19,12 @@ use crate::protocol::{ClientMsg, HolderMsg, TermSize};
 use crate::pwa::actions;
 use crate::pwa::crypto::{self, Channel, Ephemeral, Secret, Side};
 use crate::pwa::http;
-use crate::pwa::hub::{Event, Hub, encode};
+use crate::pwa::hub::{Device, Event, Hub, device_text, encode};
 use crate::pwa::protocol::{BridgeMsg, Greeting, PhoneMsg, Tone, VERSION};
 use crate::pwa::screen::Mirror;
 use crate::tui::keys;
 use crate::tui::view::TermView;
+use crate::util::now_ms;
 
 pub const MAX_CONNECTIONS: usize = 8;
 pub const UNPAIRED: u16 = 4001;
@@ -112,7 +113,21 @@ fn upgrade(hub: &Arc<Hub>, secret: &Secret, mut stream: TcpStream, request: &htt
     let Some(mut phone) = Phone::pair(ws, secret)? else { return Ok(()) };
     phone.send(&welcome(hub))?;
     let mut peer = Peer::join(hub);
+    hub.describe(peer.id, seen(request));
     phone.run(&mut peer)
+}
+
+fn seen(request: &http::Request) -> Device {
+    let forwarded = request
+        .header("cf-connecting-ip")
+        .or_else(|| request.header("x-forwarded-for").and_then(|list| list.split(',').next()));
+    let ip = forwarded.map(str::trim).and_then(|ip| ip.parse::<IpAddr>().ok()).map(|ip| ip.to_string());
+    Device {
+        agent: request.header("user-agent").and_then(device_text).unwrap_or_default(),
+        ip,
+        since_ms: now_ms(),
+        ..Device::default()
+    }
 }
 
 pub fn welcome(hub: &Hub) -> BridgeMsg {
@@ -256,6 +271,9 @@ impl Peer {
     pub fn handle(&mut self, message: PhoneMsg, out: &mut impl Outbox) -> io::Result<()> {
         match message {
             PhoneMsg::Sync => self.hub.nudge(),
+            PhoneMsg::Device { model, os_version, standalone, client } => {
+                self.hub.refine(self.id, model, os_version, standalone, client)
+            }
             PhoneMsg::Open { agent, rows, cols } => self.open(agent, clamp(rows, cols)),
             PhoneMsg::Close => self.view = None,
             PhoneMsg::Size { rows, cols } => {
@@ -496,6 +514,9 @@ impl Phone {
 
     fn run(&mut self, peer: &mut Peer) -> io::Result<()> {
         loop {
+            if !peer.hub.has_phone(peer.id) {
+                return Ok(());
+            }
             peer.pump(self)?;
             self.on_timers()?;
             match self.ws.read() {
@@ -532,6 +553,24 @@ impl Phone {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tunnel_headers_describe_a_device_without_trusting_invalid_addresses() {
+        let request = http::Request {
+            method: "GET".into(),
+            path: "/ws".into(),
+            headers: vec![
+                ("cf-connecting-ip".into(), "203.0.113.9".into()),
+                ("x-forwarded-for".into(), "198.51.100.2, 127.0.0.1".into()),
+                ("user-agent".into(), "Safari\u{7}".into()),
+            ],
+        };
+        let device = seen(&request);
+        assert_eq!(device.ip.as_deref(), Some("203.0.113.9"));
+        assert_eq!(device.agent, "Safari");
+        let invalid = http::Request { headers: vec![("x-forwarded-for".into(), "not an ip".into())], ..request };
+        assert_eq!(seen(&invalid).ip, None);
+    }
 
     fn view(viewers: Option<u16>, requested: Option<TermSize>) -> View {
         View {

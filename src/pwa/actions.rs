@@ -92,6 +92,7 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         },
         PhoneMsg::Trust { cwd, command } => trust(hub, &cwd, command, reply),
         PhoneMsg::Sync
+        | PhoneMsg::Device { .. }
         | PhoneMsg::Open { .. }
         | PhoneMsg::Close
         | PhoneMsg::Size { .. }

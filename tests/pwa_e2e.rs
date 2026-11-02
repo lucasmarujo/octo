@@ -31,6 +31,7 @@ struct Fixture {
     secret: Secret,
     port: u16,
     store: Store,
+    hub: Arc<Hub>,
 }
 
 impl Drop for Fixture {
@@ -59,7 +60,30 @@ fn fixture() -> Fixture {
     let server = Server::bind(0, Arc::clone(&hub), secret).unwrap();
     let port = server.port();
     std::thread::spawn(move || server.serve());
-    Fixture { dir, secret, port, store }
+    Fixture { dir, secret, port, store, hub }
+}
+
+#[test]
+fn a_paired_phone_reports_its_device_to_the_desktop() {
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.send(&PhoneMsg::Device {
+        model: Some("Pixel 8".into()),
+        os_version: Some("14".into()),
+        standalone: true,
+        client: Some("tab-1".into()),
+    });
+    let deadline = Instant::now() + TIMEOUT;
+    while fx.hub.devices().first().and_then(|device| device.model.as_deref()) != Some("Pixel 8")
+        && Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let device = fx.hub.devices().pop().expect("the paired phone is listed");
+    assert_eq!(device.model.as_deref(), Some("Pixel 8"));
+    assert_eq!(device.os_version.as_deref(), Some("14"));
+    assert!(device.standalone);
+    assert!(device.since_ms > 0);
 }
 
 fn socket(port: u16) -> WebSocket<TcpStream> {

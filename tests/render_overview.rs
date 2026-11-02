@@ -1847,6 +1847,7 @@ fn ready_bridge(phones: usize) -> Info {
         url: Some("https://quiet-river-sound-lamp.trycloudflare.com".into()),
         error: None,
         phones,
+        devices: Vec::new(),
         started_at_ms: now_ms(),
         alive_at_ms: now_ms(),
         exe: None,
