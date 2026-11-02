@@ -4,7 +4,7 @@ import { closeMenu, menuShown, openMenu } from './dialogs.js';
 import { pickFolder } from './folders.js';
 import { kindColor, label } from './format.js';
 import { t } from './i18n.js';
-import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_REMOTE, ICON_SHIELD } from './icons.js';
+import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_OPTIONS, ICON_REMOTE, ICON_SHIELD } from './icons.js';
 import { flash } from './motion.js';
 import {
   currentWhere,
@@ -253,6 +253,9 @@ export function renderComposer() {
   bypass.setAttribute('aria-pressed', String(state.bypass));
   bypass.replaceChildren(svg(ICON_SHIELD), t('Bypass'));
   bypass.title = t('New AI agents run tools, commands and edits without asking. Only in folders you trust.');
+  const options = $('composer-options-toggle');
+  options.replaceChildren(...[svg(ICON_OPTIONS), t('Options'), state.bypass ? h('span', { class: 't-red' }, t('Bypass')) : null].filter(Boolean));
+  options.classList.toggle('has-bypass', state.bypass);
 }
 
 export function initComposer() {
@@ -284,6 +287,15 @@ export function initComposer() {
   $('bypass').addEventListener('click', () => {
     setBypass(!state.bypass);
     renderComposer();
+  });
+  $('composer-advanced').addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      $('composer-advanced').open = false;
+      $('composer-options-toggle').focus();
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!$('composer-advanced').contains(event.target)) $('composer-advanced').open = false;
   });
   document.addEventListener('click', (event) => {
     if (!$('menu').contains(event.target)) closeMenu();

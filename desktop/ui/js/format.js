@@ -105,8 +105,16 @@ export function elapsed(agent, now) {
 export function activity(agent) {
   if (agent.starting) return { text: t('starting…'), tone: 't-faint' };
   if (agent.state === 'lost') return { text: t('Interrupted by a crash or a reboot'), tone: 't-red' };
-  if (agent.state === 'exited') return { text: agent.exit ? hubText(agent.exit) : t('ended'), tone: 't-faint' };
+  if (agent.state === 'exited') return exitText(agent.exit);
   return { text: agent.activity, tone: agent.state === 'idle' ? 't-muted' : 't-text' };
+}
+
+export function exitText(exit) {
+  const code = /^exited with code (-?\d+)$/.exec(exit || '')?.[1];
+  if (!exit || exit === 'exited' || code === '130' || code === '143') return { text: t('Stopped'), tone: 't-faint' };
+  if (code === '0') return { text: t('Finished'), tone: 't-faint' };
+  if (code) return { text: t('Failed with code {code}', { code }), tone: 't-red' };
+  return { text: hubText(exit), tone: 't-red' };
 }
 
 export function groupByProject(agents) {

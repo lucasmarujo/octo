@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { COLUMNS, USAGE_ALERT, USAGE_WARN, column, duration, elapsed, glyph, kindColor, kindHex, label, usageColor } from '../js/format.js';
+import { COLUMNS, USAGE_ALERT, USAGE_WARN, column, duration, elapsed, exitText, glyph, kindColor, kindHex, label, usageColor } from '../js/format.js';
 import { MOODS, moodOf } from '../js/kai.js';
 
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
@@ -1034,6 +1034,35 @@ test('a right click on a session in the sidebar offers to rename or delete that 
   assert.match(commands, /export async function deleteSession\(name\) \{[\s\S]*?send\(\{ type: 'deleteSession', name \}\)/);
   assert.match(commands, /case 'rename-session':\n\s*renameSession\(state\.session, arg\)/, 'the slash command still renames the session on screen');
   assert.match(commands, /case 'delete-session':\n\s*deleteSession\(arg \|\| state\.session\);/);
+});
+
+test('exited agents distinguish a deliberate stop, success, and failure', () => {
+  for (const exit of [null, 'exited', 'exited with code 130', 'exited with code 143']) assert.deepEqual(exitText(exit), { text: 'Stopped', tone: 't-faint' });
+  assert.deepEqual(exitText('exited with code 0'), { text: 'Finished', tone: 't-faint' });
+  assert.deepEqual(exitText('exited with code 2'), { text: 'Failed with code 2', tone: 't-red' });
+});
+
+test('workspace moves preserve session names and rename only after the server confirms', async () => {
+  const { assignWorkspace, moveWorkspace, reconcileWorkspaces, state } = await import('../js/state.js');
+  const saved = state.workspaces;
+  const rename = state.pendingRename;
+  const pending = state.pendingWorkspace;
+  try {
+    state.workspaces = [{ id: 'a', name: 'A', sessions: ['one', 'two'] }, { id: 'b', name: 'B', sessions: ['three'] }];
+    assignWorkspace('two', 'b', 'three');
+    assert.deepEqual(state.workspaces.map((item) => item.sessions), [['one'], ['two', 'three']]);
+    moveWorkspace('b', 'a');
+    assert.deepEqual(state.workspaces.map((item) => item.id), ['b', 'a']);
+    state.pendingRename = { from: 'two', to: 'renamed' };
+    reconcileWorkspaces(['one', 'two', 'three']);
+    assert.equal(state.pendingRename.to, 'renamed');
+    reconcileWorkspaces(['one', 'renamed', 'three']);
+    assert.deepEqual(state.workspaces[0].sessions, ['renamed', 'three']);
+  } finally {
+    state.workspaces = saved;
+    state.pendingRename = rename;
+    state.pendingWorkspace = pending;
+  }
 });
 
 test('the folder picker ranks matches like src/folders.rs and keeps the matched letters', async () => {

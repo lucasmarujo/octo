@@ -96,6 +96,7 @@ export async function renameSession(name, arg) {
   if (!to || to === name) return false;
   if (name === state.session) state.pendingSession = to.trim();
   send({ type: 'renameSession', name, to });
+  state.pendingRename = { from: name, to: to.trim() };
   return true;
 }
 

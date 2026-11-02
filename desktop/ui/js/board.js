@@ -238,6 +238,7 @@ export function renderBoard(handlers) {
       h('section', { class: 'column', dataset: { column: def.key } }, columnHead(def, 0), h('div', { class: 'column-body' })),
     );
     section.querySelector('.count').textContent = String(members.length);
+    section.classList.toggle('vacant', members.length === 0);
     const stopAll = section.querySelector('[data-action="stop-all"]');
     if (stopAll) stopAll.hidden = idleRunning(members).length === 0;
     const removeAll = section.querySelector('[data-action="remove-all"]');

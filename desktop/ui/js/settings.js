@@ -39,7 +39,7 @@ export function applyTheme() {
   document.documentElement.dataset.theme = light ? 'light' : 'dark';
 }
 
-function setTheme(choice) {
+export function setTheme(choice) {
   storage.set(THEME_KEY, choice === 'dark' ? null : choice);
   applyTheme();
   render();

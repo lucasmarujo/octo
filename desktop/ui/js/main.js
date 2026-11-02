@@ -10,14 +10,14 @@ import { SPINNER, alive, glyph } from './format.js';
 import { deactivateGrid, peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
 import { renderHelp } from './help.js';
 import { applyStatic, hubText, language, pageToReopen, t } from './i18n.js';
-import { ICON_HELP, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS } from './icons.js';
+import { ICON_GAUGE, ICON_HELP, ICON_MOON, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS, ICON_SUN } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
 import { initTooltips } from './motion.js';
 import { renderList, tickList } from './list.js';
 import { openPairing, watchPhone } from './pair.js';
-import { applyTheme, renderSettings } from './settings.js';
+import { applyTheme, renderSettings, setTheme } from './settings.js';
 import { promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
-import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
+import { findAgent, inSession, reconcileWorkspaces, saveTabs, selectSession, setGridSize, setView, state, visible, workspaceFor } from './state.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
 import { channel, connect, currentWindow, invoke, send } from './transport.js';
@@ -47,6 +47,7 @@ function sessionNames() {
 
 function settleSession() {
   const names = sessionNames();
+  reconcileWorkspaces(names);
   if (state.pendingSession && names.includes(state.pendingSession)) {
     selectSession(state.pendingSession);
     state.pendingSession = null;
@@ -110,13 +111,14 @@ function tabButton(id) {
 
 function renderTabs() {
   const host = $('tabs');
-  const signature = JSON.stringify([state.active, state.tabs.map((id) => {
+  const signature = JSON.stringify([state.active, state.session, workspaceFor()?.name, state.tabs.map((id) => {
     if (isPage(id)) return id;
     const agent = findAgent(id);
     return agent ? [id, agent.name, agent.state, agent.kind, agent.starting] : null;
   })]);
   if (host.dataset.signature === signature) return;
   host.dataset.signature = signature;
+  $('breadcrumb').replaceChildren(h('span', null, workspaceFor()?.name || t('Personal workspace')), h('span', { class: 'breadcrumb-divider' }, '/'), h('span', null, state.session || t('Sessions')));
   for (const page of Object.keys(PAGES)) $(`open-${page}`).setAttribute('aria-current', String(state.active === page));
   host.replaceChildren(
     h('button', { class: `tab fixed${state.active === null ? ' active' : ''}`, type: 'button', onclick: showOverview }, svg(ICON_OVERVIEW), t('Overview')),
@@ -136,8 +138,12 @@ function shownView() {
 
 function renderView() {
   const view = shownView();
+  const empty = inSession().length === 0;
+  $('overview').classList.toggle('is-empty', empty);
+  $('empty-state').hidden = !empty;
   if (view !== 'grid') deactivateGrid();
-  for (const name of Object.keys(RENDERERS)) $(name).hidden = name !== view;
+  for (const name of Object.keys(RENDERERS)) $(name).hidden = empty || name !== view;
+  if (empty) { renderBoard(handlers); return; }
   RENDERERS[view][0](handlers);
 }
 
@@ -499,7 +505,15 @@ function initWindow() {
   $('brand-mascot').replaceChildren(kai('idle'));
   $('open-help').replaceChildren(svg(ICON_HELP));
   $('open-settings').replaceChildren(svg(ICON_SETTINGS));
-  $('pair').replaceChildren(svg(ICON_PAIR), t('Pair phone'));
+  $('usage-button').replaceChildren(svg(ICON_GAUGE));
+  $('pair').replaceChildren(svg(ICON_PAIR));
+  const themeIcon = () => $('toggle-theme').replaceChildren(svg(document.documentElement.dataset.theme === 'light' ? ICON_MOON : ICON_SUN));
+  themeIcon();
+  new MutationObserver(themeIcon).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  $('toggle-theme').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'));
+  document.addEventListener('click', (event) => {
+    if (!$('usage-popover').contains(event.target)) $('usage-popover').open = false;
+  });
   $('pair').addEventListener('click', openPairing);
   watchPhone();
   $('open-help').addEventListener('click', () => openPage('help'));
