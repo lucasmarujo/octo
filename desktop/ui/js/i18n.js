@@ -174,7 +174,6 @@ export const PT = {
   'Group related sessions in a collapsible category.': 'Agrupe sessões relacionadas em uma categoria recolhível.',
   'Move up': 'Mover para cima',
   'Move down': 'Mover para baixo',
-  'Move to': 'Mover para',
   'New session in {name}': 'Nova sessão em {name}',
   'Create your first session': 'Crie sua primeira sessão',
   'Workspace options': 'Opções do espaço de trabalho',
