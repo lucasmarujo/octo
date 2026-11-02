@@ -253,7 +253,7 @@ export function renderComposer() {
   bypass.replaceChildren(svg(ICON_SHIELD), t('Bypass'));
   bypass.title = t('New AI agents run tools, commands and edits without asking. Only in folders you trust.');
   const options = $('composer-options-toggle');
-  options.replaceChildren(svg(ICON_OPTIONS), t('Options'), state.bypass ? h('span', { class: 't-red' }, t('Bypass')) : null);
+  options.replaceChildren(...[svg(ICON_OPTIONS), t('Options'), state.bypass ? h('span', { class: 't-red' }, t('Bypass')) : null].filter(Boolean));
   options.classList.toggle('has-bypass', state.bypass);
 }
 
