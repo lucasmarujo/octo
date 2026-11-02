@@ -19,6 +19,7 @@ const PATH_LIKE = /^(~|\/|\\|[A-Za-z]:[\\/])/;
 const PLACE_ICONS = { home: ICON_HOME, desktop: ICON_DESKTOP, documents: ICON_DOCUMENT, downloads: ICON_DOWNLOAD, code: ICON_CODE, volume: ICON_DRIVE };
 
 let current = null;
+let requests = 0;
 
 const trimSep = (path) => (path.length > 1 ? path.replace(/[\\/]+$/, '') : path);
 const baseName = (path) => trimSep(path).split(/[\\/]/).at(-1) || path;
@@ -131,7 +132,7 @@ export function pickFolder(start, onPick) {
   const dialog = $('dialog');
   const pick = {
     listing: null, places: null, hidden: storage.get(HIDDEN_KEY) === 'on', active: -1, shown: [],
-    typed: null, keepFilter: false, seq: 0, search: null, timer: 0, activePath: null,
+    typed: null, keepFilter: false, listed: 0, search: null, timer: 0, activePath: null,
   };
   current = pick;
 
@@ -156,7 +157,8 @@ export function pickFolder(start, onPick) {
     pick.keepFilter = keepFilter;
     if (!keepFilter) filter.value = '';
     if (pick.listing) list.setAttribute('aria-busy', 'true');
-    send({ type: 'folders', path, hidden: pick.hidden, places: !pick.places });
+    pick.listed = ++requests;
+    send({ type: 'folders', path, hidden: pick.hidden, places: !pick.places, seq: pick.listed });
   };
   const goUp = () => pick.listing?.parent && browse(pick.listing.parent);
   const target = () => pick.shown[pick.active] || null;
@@ -326,7 +328,7 @@ export function pickFolder(start, onPick) {
     const text = query();
     if (!pick.listing || !text || pathMode() || text.length < MIN_DEEP_QUERY) return;
     if (pick.search && pick.search.query === text && pick.search.root === pick.listing.path) return;
-    pick.search = { query: text, root: pick.listing.path, hits: [], pending: true, truncated: false, seq: ++pick.seq };
+    pick.search = { query: text, root: pick.listing.path, hits: [], pending: true, truncated: false, seq: ++requests };
     pick.timer = setTimeout(() => send({ type: 'folderSearch', root: pick.listing.path, query: text, hidden: pick.hidden, seq: pick.search.seq }), SEARCH_DELAY_MS);
   }
 
@@ -347,6 +349,7 @@ export function pickFolder(start, onPick) {
   }
 
   pick.onListing = (message) => {
+    if (message.seq !== pick.listed) return;
     const moved = !pick.listing || !samePath(pick.listing.path, message.path);
     pick.listing = { ...message, dirs: message.dirs || [] };
     if (message.places) pick.places = message.places;
@@ -420,7 +423,7 @@ export function pickFolder(start, onPick) {
   };
   dialog.addEventListener('close', closed);
   filter.focus();
-  send({ type: 'folders', path: start, hidden: pick.hidden, places: true });
+  browse(start);
 }
 
 export function showFolders(message) {

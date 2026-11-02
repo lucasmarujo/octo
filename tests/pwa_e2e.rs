@@ -459,7 +459,12 @@ fn the_phone_creates_sessions_and_browses_folders() {
     let mut phone = Phone::pair(fx.port, &fx.secret);
     phone.send(&PhoneMsg::Session { name: "mobile".into() });
     phone.overview_where(|overview| overview.sessions.iter().any(|s| s.name == "mobile"));
-    phone.send(&PhoneMsg::Folders { path: fx.dir.to_string_lossy().into_owned(), hidden: false, places: false });
+    phone.send(&PhoneMsg::Folders {
+        path: fx.dir.to_string_lossy().into_owned(),
+        hidden: false,
+        places: false,
+        seq: 0,
+    });
     let names = phone.until(|message| match message {
         BridgeMsg::Folders { dirs, .. } => Some(dirs.into_iter().map(|dir| dir.name).collect::<Vec<_>>()),
         _ => None,
@@ -532,7 +537,7 @@ fn a_window_without_a_socket_drives_the_hub_through_its_inbox() {
     });
     assert_eq!(started, "term-1");
     peer.handle(
-        PhoneMsg::Folders { path: fx.dir.to_string_lossy().into_owned(), hidden: false, places: false },
+        PhoneMsg::Folders { path: fx.dir.to_string_lossy().into_owned(), hidden: false, places: false, seq: 0 },
         &mut window,
     )
     .unwrap();

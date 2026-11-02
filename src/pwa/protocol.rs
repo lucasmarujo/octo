@@ -75,6 +75,8 @@ pub enum PhoneMsg {
         hidden: bool,
         #[serde(default)]
         places: bool,
+        #[serde(default)]
+        seq: u64,
     },
     FolderSearch {
         root: String,
@@ -189,6 +191,7 @@ pub enum BridgeMsg {
         tone: Tone,
     },
     Folders {
+        seq: u64,
         path: String,
         parent: Option<String>,
         dirs: Vec<Dir>,
@@ -530,6 +533,18 @@ mod tests {
                     bypass: false,
                     remote_control: true,
                 },
+            ),
+            (
+                r#"{"type":"folders","path":"~"}"#,
+                PhoneMsg::Folders { path: "~".into(), hidden: false, places: false, seq: 0 },
+            ),
+            (
+                r#"{"type":"folders","path":"/w","hidden":true,"places":true,"seq":3}"#,
+                PhoneMsg::Folders { path: "/w".into(), hidden: true, places: true, seq: 3 },
+            ),
+            (
+                r#"{"type":"folderSearch","root":"~","query":"oc","seq":2}"#,
+                PhoneMsg::FolderSearch { root: "~".into(), query: "oc".into(), hidden: false, seq: 2 },
             ),
         ];
         for (text, expected) in cases {

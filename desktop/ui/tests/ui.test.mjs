@@ -1050,6 +1050,17 @@ test('the folder picker warns that AI agents cannot start outside a repository w
   assert.match(readFileSync(new URL('../styles.css', import.meta.url), 'utf8'), /\.folder-status\[data-tone="blocked"\] \{ color: var\(--color-waiting\); \}/);
 });
 
+test('the folder picker numbers every listing it asks for and drops a reply to an older one', () => {
+  const picker = readFileSync(new URL('../js/folders.js', import.meta.url), 'utf8');
+  const asked = [...picker.matchAll(/send\(\{ type: '(folders|folderSearch)'[^}]*\}\)/g)].map(([call]) => call);
+  assert.equal(asked.length, 2, 'one place asks for listings and one for searches');
+  for (const call of asked) assert.match(call, /seq: pick\.(listed|search\.seq)/);
+  assert.match(picker, /pick\.listed = \+\+requests;/, 'listings and searches share one counter, so a reopened picker never takes an old reply');
+  assert.match(picker, /seq: \+\+requests \}/);
+  assert.match(picker, /pick\.onListing = \(message\) => \{\n\s+if \(message\.seq !== pick\.listed\) return;/);
+  assert.match(rust('src/pwa/protocol.rs'), /Folders \{\n\s+path: String,[\s\S]*?#\[serde\(default\)\]\n\s+seq: u64,\n\s+\},/, 'the phone keeps sending listings without a number');
+});
+
 test('every kind of place the core sends has its icon in the folder picker', () => {
   const variants = rust('src/folders.rs').match(/pub enum PlaceKind \{([^}]+)\}/)[1].match(/\w+/g).map((name) => name.toLowerCase());
   const picker = readFileSync(new URL('../js/folders.js', import.meta.url), 'utf8');

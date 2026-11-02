@@ -58,7 +58,7 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
             Err(err) => notice(reply, Tone::Error, err.to_string()),
         },
         PhoneMsg::Recover { session } => recover(hub, &session, reply),
-        PhoneMsg::Folders { path, hidden, places } => folders(&path, hidden, places, reply),
+        PhoneMsg::Folders { path, hidden, places, seq } => folders(&path, hidden, places, seq, reply),
         PhoneMsg::FolderSearch { root, query, hidden, seq } => folder_search(root, query, hidden, seq, reply),
         PhoneMsg::Diff { agent } => diff(hub, agent, reply),
         PhoneMsg::Merge { agent } => merge(hub, agent, reply),
@@ -240,11 +240,12 @@ fn relaunch(hub: &Arc<Hub>, records: Vec<AgentRecord>, reply: &Sender<Event>) {
     });
 }
 
-pub fn list_folders(path: &str, hidden: bool, with_places: bool) -> BridgeMsg {
+pub fn list_folders(path: &str, hidden: bool, with_places: bool, seq: u64) -> BridgeMsg {
     let dir = resolve_dir(path);
     let listing = crate::folders::list(&dir, hidden);
     let text = |path: &std::path::Path| path.to_string_lossy().into_owned();
     BridgeMsg::Folders {
+        seq,
         path: text(&dir),
         parent: dir.parent().map(text),
         dirs: listing.dirs.into_iter().map(|(name, path, git)| Dir { path: text(&path), name, git }).collect(),
@@ -260,10 +261,10 @@ pub fn list_folders(path: &str, hidden: bool, with_places: bool) -> BridgeMsg {
     }
 }
 
-fn folders(path: &str, hidden: bool, places: bool, reply: &Sender<Event>) {
+fn folders(path: &str, hidden: bool, places: bool, seq: u64, reply: &Sender<Event>) {
     let (path, reply) = (path.to_string(), reply.clone());
     spawn("orkai-pwa-folders", move || {
-        let _ = reply.send(Event::Reply(list_folders(&path, hidden, places)));
+        let _ = reply.send(Event::Reply(list_folders(&path, hidden, places, seq)));
     });
 }
 
@@ -848,21 +849,22 @@ mod tests {
         std::fs::create_dir_all(dir.join(".hidden")).unwrap();
         std::fs::write(dir.join("file.txt"), "x").unwrap();
         std::fs::create_dir_all(dir.join("beta").join(".git")).unwrap();
-        let BridgeMsg::Folders { path, parent, dirs, repo, missing, .. } =
-            list_folders(&dir.to_string_lossy(), false, false)
+        let BridgeMsg::Folders { seq, path, parent, dirs, repo, missing, .. } =
+            list_folders(&dir.to_string_lossy(), false, false, 7)
         else {
             panic!()
         };
+        assert_eq!(seq, 7, "the reply names the request it answers");
         assert_eq!(path, dir.to_string_lossy());
         assert!(!missing);
         assert_eq!(dirs.iter().map(|d| d.git).collect::<Vec<_>>(), [false, true], "only beta is a repository");
         assert_eq!(repo, None);
-        let BridgeMsg::Folders { repo, .. } = list_folders(&dir.join("beta").to_string_lossy(), false, false) else {
+        let BridgeMsg::Folders { repo, .. } = list_folders(&dir.join("beta").to_string_lossy(), false, false, 0) else {
             panic!()
         };
         assert_eq!(repo.as_deref(), Some(&*dir.join("beta").to_string_lossy()));
         let BridgeMsg::Folders { missing, dirs: none, places, .. } =
-            list_folders(&dir.join("gone").to_string_lossy(), false, true)
+            list_folders(&dir.join("gone").to_string_lossy(), false, true, 0)
         else {
             panic!()
         };
