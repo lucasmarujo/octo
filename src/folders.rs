@@ -56,7 +56,7 @@ const SYSTEM_ROOTS: &[&str] = &[
     "Recovery",
 ];
 const CODE_FOLDERS: &[&str] =
-    &["Developer", "dev", "code", "Code", "projects", "Projects", "repos", "workspace", "src", "git", "GitHub", "work"];
+    &["Developer", "dev", "code", "projects", "repos", "workspace", "src", "git", "GitHub", "work"];
 
 pub struct Listing {
     pub dirs: Vec<(String, PathBuf, bool)>,
@@ -278,14 +278,22 @@ pub fn places() -> Vec<Place> {
         }
     }
     if let Some(home) = &home {
-        for name in CODE_FOLDERS {
-            add(PlaceKind::Code, (*name).to_string(), home.join(name));
+        for (name, path) in code_folders(home) {
+            add(PlaceKind::Code, name, path);
         }
     }
     for (name, path) in volumes() {
         add(PlaceKind::Volume, name, path);
     }
     places
+}
+
+fn code_folders(home: &Path) -> Vec<(String, PathBuf)> {
+    let found: Vec<_> = subfolders(home, false, true).collect();
+    CODE_FOLDERS
+        .iter()
+        .filter_map(|wanted| found.iter().find(|(name, _)| name.eq_ignore_ascii_case(wanted)).cloned())
+        .collect()
 }
 
 #[cfg(windows)]
@@ -387,6 +395,19 @@ mod tests {
         assert_eq!(listing.dirs.len(), MAX_LISTED);
         assert_eq!(listing.dirs.last().map(|(name, ..)| name.as_str()), Some("01999"));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn code_folders_are_offered_once_under_their_name_on_disk() {
+        let home = temp("code");
+        for dir in ["Projects", "Code", "DEV", "notes"] {
+            std::fs::create_dir_all(home.join(dir)).unwrap();
+        }
+        let found = code_folders(&home);
+        let names: Vec<&str> = found.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["DEV", "Code", "Projects"]);
+        assert_eq!(found[1].1, home.join("Code"));
+        std::fs::remove_dir_all(home).unwrap();
     }
 
     #[test]
