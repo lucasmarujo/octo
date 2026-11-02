@@ -174,8 +174,11 @@ fn setup() -> &'static Path {
 }
 
 fn powershell(script: &str) -> String {
-    let output =
-        Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", script]).output().unwrap();
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .env_remove("PSModulePath")
+        .output()
+        .unwrap();
     assert!(output.status.success(), "powershell failed:\n{}", String::from_utf8_lossy(&output.stderr));
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
