@@ -382,6 +382,16 @@ test('a long line of the help wraps inside its column instead of running over th
   assert.doesNotMatch(rule('.help-row'), /[^-]height: 30px/);
 });
 
+test('the changes and the test of an agent stay on one line in the list', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const rule = css.split('\n.cell-worktree { display: flex;')[1].split('}')[0];
+  assert.match(rule, /white-space: nowrap/);
+  const longest = '12 files +1204 −333 ✓ test'.length;
+  const monoWidth = 7.2;
+  const gaps = 3 * 7;
+  assert.ok(Number(rule.match(/ width: (\d+)px/)[1]) >= longest * monoWidth - 3 * monoWidth + gaps, 'room for four digit counts');
+});
+
 test('an agent that starts waiting or finishes raises one alert, like in the TUI', async () => {
   const { ALERT_REPEAT_MS, detectAlerts } = await import('../js/alerts.js');
   const app = rust('src/tui/app.rs');

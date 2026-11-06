@@ -394,7 +394,7 @@ h1, p { margin: 0; }
 .cell-alive { color: var(--color-text-faint); }
 .cell-doing { flex: 1 1 0; min-width: 0; padding-left: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 18px; }
 .cell-doing.mono { font-size: var(--text-sm); }
-.cell-worktree { display: flex; justify-content: flex-end; width: 150px; flex-shrink: 0; min-width: 0; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-muted); }
+.cell-worktree { display: flex; justify-content: flex-end; width: 200px; flex-shrink: 0; min-width: 0; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-muted); white-space: nowrap; }
 .cell-worktree .branch { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .list-head > span { font-size: 11px; line-height: 14px; font-weight: 400; color: var(--color-text-faint); }
 .row .card-tools { top: 3px; right: 8px; }
