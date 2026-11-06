@@ -140,7 +140,10 @@ fn open_link(url: String) -> Result<(), String> {
 
 pub fn run() -> io::Result<()> {
     orkai::migrate::adopt_on_launch();
-    let hub = Hub::open(&Home::resolve()?)?;
+    let home = Home::resolve()?;
+    let hub = Hub::open(&home)?;
+    #[cfg(windows)]
+    crate::shell_icon::refresh(&home);
     pair::keep_alive(Arc::clone(&hub));
     recover::on_launch(Arc::clone(&hub));
     let link = Link::new(hub);

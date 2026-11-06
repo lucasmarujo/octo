@@ -6,6 +6,8 @@ mod login_path;
 mod pair;
 mod recover;
 mod settings;
+#[cfg(windows)]
+mod shell_icon;
 mod term;
 mod updates;
 #[cfg(target_os = "macos")]
