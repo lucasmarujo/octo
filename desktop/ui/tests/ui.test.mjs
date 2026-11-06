@@ -1078,6 +1078,16 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.match(rust('src/pwa/actions.rs'), /PhoneMsg::MoveAgent \{ agent, session \} => move_agent\(hub, agent, &session, reply\)/);
 });
 
+test('settings show one section at a time, so every entry of the nav always does something', () => {
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /const SECTIONS = \{ Appearance: appearanceSection, Agents: agentsSection, Alerts: alertsSection, Phone: phoneSection, Updates: updatesSection \};/);
+  assert.match(settings, /h\('div', \{ class: 'settings-content' \}, SECTIONS\[shownSection\]\(\)\)/, 'only the chosen section is on the page');
+  assert.match(settings, /'aria-current': String\(name === shownSection\), onclick: \(\) => showSection\(name\)/);
+  assert.doesNotMatch(settings, /scrollIntoView|addEventListener\('scroll'/, 'the nav depends on nothing that a short page cannot do');
+  const save = settings.match(/function render\(\) \{[\s\S]*?\n\}/)[0];
+  assert.match(save, /host\.scrollTop = scroll;/, 'saving a setting keeps the place on the page');
+});
+
 test('the folder picker ranks matches like src/folders.rs and keeps the matched letters', async () => {
   const { fuzzy } = await import('../js/folders.js');
   assert.equal(fuzzy('octo', 'octo').score, 1000, 'an exact name wins');

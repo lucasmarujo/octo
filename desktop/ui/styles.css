@@ -707,8 +707,8 @@ h1, p { margin: 0; }
 .settings-nav-item[aria-current="true"] { background: var(--color-surface-raised); color: var(--color-text); font-weight: 600; }
 .settings-saved { display: flex; flex-direction: column; gap: 4px; padding: 20px 10px 0; color: var(--color-text-faint); font-size: var(--text-xs); line-height: 16px; }
 .settings-path { color: var(--color-text-muted); font-family: var(--font-mono); font-size: 11px; line-height: 16px; }
-.settings-content { display: flex; flex-direction: column; gap: 40px; flex: 1; min-width: 0; max-width: 760px; padding-top: 52px; }
-.settings-section { display: flex; flex-direction: column; scroll-margin-top: 32px; }
+.settings-content { display: flex; flex-direction: column; flex: 1; min-width: 0; max-width: 760px; padding-top: 52px; }
+.settings-section { display: flex; flex-direction: column; }
 .settings-heading { padding-bottom: 6px; }
 .settings-heading h2 { margin: 0; font-size: var(--text-lg); font-weight: 700; line-height: 22px; }
 .settings-heading.with-text { display: flex; flex-direction: column; gap: 4px; padding-bottom: 14px; }
