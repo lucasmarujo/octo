@@ -374,6 +374,14 @@ test('the help says the same in English and in Portuguese, and English comes fir
   });
 });
 
+test('a long line of the help wraps inside its column instead of running over the next one', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const rule = (selector) => css.split(`\n${selector} {`)[1].split('}')[0];
+  assert.doesNotMatch(rule('.help-row-text'), /white-space: nowrap/);
+  assert.match(rule('.help-row'), /min-height: 30px/);
+  assert.doesNotMatch(rule('.help-row'), /[^-]height: 30px/);
+});
+
 test('an agent that starts waiting or finishes raises one alert, like in the TUI', async () => {
   const { ALERT_REPEAT_MS, detectAlerts } = await import('../js/alerts.js');
   const app = rust('src/tui/app.rs');
