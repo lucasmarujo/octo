@@ -9,7 +9,7 @@ export const HELP = {
     lead: 'Run many AI agents across your projects from one window. Closing Octo stops no agent: they keep working and Octo reconnects when you come back.',
     language: 'Language',
     steps: [
-      ['Pick the folder', () => ['Click ', key('where'), ' or press ', key('ctrl L'), '. Each session remembers its own folder.']],
+      ['Pick the folder', () => ['Click the folder below the task or press ', key('ctrl L'), '. Each session remembers its own folder.']],
       ['Pick who runs it', () => ['Any installed agent or a terminal. ', key('tab'), ' cycles through them.']],
       ['Write the task', () => ['Press ', key('enter'), ' and the agent starts already working on it.']],
       ['Answer when it needs you', () => ['Octo chimes and ', key('alt N'), ' opens the agent waiting the longest.']],
@@ -35,7 +35,7 @@ export const HELP = {
     lead: 'Rode vários agentes de IA nos seus projetos a partir de uma janela. Fechar o Octo não para nenhum agente: eles continuam trabalhando e o Octo se reconecta quando você volta.',
     language: 'Idioma',
     steps: [
-      ['Escolha a pasta', () => ['Clique em ', key('onde'), ' ou aperte ', key('ctrl L'), '. Cada sessão lembra a própria pasta.']],
+      ['Escolha a pasta', () => ['Clique na pasta abaixo da tarefa ou aperte ', key('ctrl L'), '. Cada sessão lembra a própria pasta.']],
       ['Escolha quem roda', () => ['Qualquer agente instalado ou um terminal. ', key('tab'), ' alterna entre eles.']],
       ['Escreva a tarefa', () => ['Aperte ', key('enter'), ' e o agente já começa trabalhando nela.']],
       ['Responda quando ele precisar', () => ['O Octo toca um aviso e ', key('alt N'), ' abre o agente que espera há mais tempo.']],

@@ -124,7 +124,7 @@ function agentsSection() {
       'div',
       { class: 'settings-heading with-text' },
       h('h2', null, t('Agents')),
-      h('p', null, t('The program Octo runs for each agent and the extra arguments it passes. Only installed agents show up in'), ' ', mono(t('who')), '.'),
+      h('p', null, t('The program Octo runs for each agent and the extra arguments it passes. Only installed agents can be picked in the task box.')),
     ),
     h('div', { class: 'agents-head' }, h('span', { class: 'caps agents-name' }, t('Agent')), h('span', { class: 'caps agents-command' }, t('Command')), h('span', { class: 'caps agents-args' }, t('Arguments')), h('span', { class: 'caps agent-status' }, t('Status'))),
     ...agents.map(agentRow),

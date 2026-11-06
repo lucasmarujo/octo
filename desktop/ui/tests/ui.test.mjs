@@ -447,6 +447,34 @@ test('the help says the same in English and in Portuguese, and English comes fir
   });
 });
 
+test('the chips of the task box show only the agent and the folder, and still name themselves to a screen reader', async () => {
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  assert.doesNotMatch(composer, /class: 'key'/, 'no label next to the value');
+  assert.doesNotMatch(composer, /t\('(who|where)'\)/);
+  assert.match(composer, /\$\('who'\)\.setAttribute\('aria-label', `\$\{t\('Who runs the task'\)\}: \$\{label\(who\)\}`\);\n\s*\$\('who'\)\.title = t\('Who runs the task'\);/);
+  assert.match(composer, /\$\('where'\)\.setAttribute\('aria-label', `\$\{t\('Where the task runs'\)\}: \$\{currentWhere\(\)\}`\);\n\s*\$\('where'\)\.title = currentWhere\(\);/);
+  assert.doesNotMatch(readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8'), /\.chip \.key/);
+  const { PT } = await import('../js/i18n.js');
+  assert.equal(PT['Who runs the task'], 'Quem roda a tarefa');
+  assert.equal(PT['Where the task runs'], 'Onde a tarefa roda');
+  for (const gone of ['who', 'where']) assert.ok(!Object.hasOwn(PT, gone), `${gone} is no longer a text of the app`);
+});
+
+test('the help and the settings no longer point at the who and where labels of the task box', async () => {
+  const help = readFileSync(join(REPO, 'desktop/ui/js/help.js'), 'utf8');
+  assert.doesNotMatch(help, /key\('(who|where|quem|onde)'\)/);
+  assert.ok(help.includes("['Click the folder below the task or press ', key('ctrl L'), '. Each session remembers its own folder.']"));
+  assert.ok(help.includes("['Clique na pasta abaixo da tarefa ou aperte ', key('ctrl L'), '. Cada sessão lembra a própria pasta.']"));
+  assert.match(readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8'), /\.help-key \{[^}]*white-space: nowrap;/, 'the longer step never breaks ctrl L across two lines');
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.doesNotMatch(settings, /mono\(t\('who'\)\)/);
+  const { PT } = await import('../js/i18n.js');
+  const sentence = 'The program Octo runs for each agent and the extra arguments it passes. Only installed agents can be picked in the task box.';
+  assert.ok(settings.includes(`t('${sentence}')`));
+  assert.equal(PT[sentence], 'O programa que o Octo roda para cada agente e os argumentos extras que ele passa. Só os agentes instalados podem ser escolhidos na caixa de tarefa.');
+  assert.ok(!Object.hasOwn(PT, 'The program Octo runs for each agent and the extra arguments it passes. Only installed agents show up in'));
+});
+
 test('a long line of the help wraps inside its column instead of running over the next one', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   const rule = (selector) => css.split(`\n${selector} {`)[1].split('}')[0];

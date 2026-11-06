@@ -466,7 +466,6 @@ h1, p { margin: 0; }
 .composer-options { display: flex; align-items: center; gap: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border-radius: 7px; background: var(--color-surface-raised); max-width: 360px; }
 .chip:hover { background: var(--color-border); }
-.chip .key { font-size: var(--text-xs); color: var(--color-text-faint); }
 .chip .value { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip .value.path { font-weight: 400; color: var(--color-link); }
 .toggle { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--color-border); font-size: var(--text-sm); font-weight: 600; color: var(--color-text-muted); }
@@ -709,7 +708,7 @@ h1, p { margin: 0; }
 .help-step.first .help-step-number { color: var(--color-accent); }
 .help-step-title { font-size: var(--text-lg); font-weight: 700; line-height: 22px; }
 .help-step-text { color: var(--color-text-muted); font-size: var(--text-sm); line-height: 19px; }
-.help-key { color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-xs); }
+.help-key { color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; }
 .help-reference { display: flex; flex-wrap: wrap; gap: 28px 40px; flex-shrink: 0; }
 .help-group { display: flex; flex-direction: column; gap: 2px; flex: 1 1 0; min-width: 240px; }
 .help-group-title { padding-bottom: 10px; }

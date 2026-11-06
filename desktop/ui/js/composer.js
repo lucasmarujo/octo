@@ -233,11 +233,13 @@ function onKey(event) {
 export function renderComposer() {
   const who = currentWho();
   $('who').replaceChildren(
-    h('span', { class: 'key' }, t('who')),
     h('span', { class: 'value', style: `color:${kindColor(who)}` }, label(who)),
     svg(ICON_CHEVRON_DOWN),
   );
-  $('where').replaceChildren(h('span', { class: 'key' }, t('where')), h('span', { class: 'value path' }, currentWhere()));
+  $('who').setAttribute('aria-label', `${t('Who runs the task')}: ${label(who)}`);
+  $('who').title = t('Who runs the task');
+  $('where').replaceChildren(h('span', { class: 'value path' }, currentWhere()));
+  $('where').setAttribute('aria-label', `${t('Where the task runs')}: ${currentWhere()}`);
   $('where').title = currentWhere();
   const worktree = $('worktree');
   worktree.setAttribute('aria-pressed', String(worktreeOn()));
