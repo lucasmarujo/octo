@@ -2,7 +2,7 @@ import { nextAttention, rename, renderAgent, renderAgentHead, renderStatus, rest
 import { detectAlerts, notice, windowTitle } from './alerts.js';
 import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tickBoard } from './board.js';
 import { initComposer, renderComposer, renderPalette, setCommandRunner, toggleWorktree } from './composer.js';
-import { runCommand } from './commands.js';
+import { renameSession, runCommand } from './commands.js';
 import { closeMenu, confirm, menuShown, showCompare, showDiff, showTests } from './dialogs.js';
 import { showFolderSearch, showFolders } from './folders.js';
 import { $, h, svg } from './dom.js';
@@ -544,6 +544,7 @@ function start() {
   initTooltips();
   setCommandRunner((text) => runCommand(text, commands));
   $('recover').addEventListener('click', () => send({ type: 'recover', session: state.session }));
+  $('session-title').addEventListener('dblclick', () => state.session && renameSession(state.session));
   $('project').addEventListener('click', (event) => {
     event.stopPropagation();
     if (!menuShown()) openProjectMenu(onFilter);

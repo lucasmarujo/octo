@@ -30,6 +30,7 @@ export const PT = {
   Sessions: 'Sessões',
   'Resize the sidebar': 'Redimensionar a barra lateral',
   'Resize the agent panel': 'Redimensionar o painel do agente',
+  'Double click to rename': 'Clique duplo para renomear',
   'Drag to resize, double click to reset': 'Arraste para redimensionar, clique duplo para voltar ao padrão',
   'Pair your phone (ctrl P)': 'Parear o celular (ctrl P)',
   'How to use (F1)': 'Como usar (F1)',

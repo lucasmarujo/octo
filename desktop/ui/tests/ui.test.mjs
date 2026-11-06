@@ -1334,6 +1334,15 @@ test('the sidebar is as wide as the user left it, within limits, on every screen
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initSidebarWidth\(\);/);
 });
 
+test('a double click on the title of a session renames it from the board, the list and the grid', async () => {
+  const { PT } = await import('../js/i18n.js');
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /\$\('session-title'\)\.addEventListener\('dblclick', \(\) => state\.session && renameSession\(state\.session\)\);/, 'the same rename as the sidebar');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<header class="overview-head">[\s\S]*?<h1 id="session-title"[^>]*title="Double click to rename"[^>]*>[\s\S]*?<div id="board"/, 'one title above all three views');
+  assert.equal(PT['Double click to rename'], 'Clique duplo para renomear');
+});
+
 test('the panel of an agent is as wide as the user left it and never scrolls sideways', async () => {
   const { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, detailsWidth } = await import('../js/format.js');
   const { PT } = await import('../js/i18n.js');
