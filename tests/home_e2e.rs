@@ -1,20 +1,21 @@
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use orkai::client;
 use orkai::config::Config;
-use orkai::launch::{Launcher, kill_process_tree, process_is_holder, spawn_holder, wait_for_runtime};
+use orkai::launch::{Launcher, kill_process_tree, process_is_holder, spawn_detached, spawn_holder, wait_for_runtime};
 use orkai::migrate::{Adoption, adopt};
 use orkai::model::{AgentId, AgentKind, LaunchSpec, NewAgent};
-use orkai::paths::{HOME_DIR, Home, LEGACY_HOME_DIR, located_in};
+use orkai::paths::{HOME_DIR, HOME_ENV, Home, LEGACY_HOME_DIR, located_in};
 use orkai::protocol::ClientMsg;
 use orkai::pwa::bridge;
 use orkai::pwa::tunnel::TunnelKind;
 use orkai::store::Store;
 use orkai::util::now_ms;
 
-const TIMEOUT: Duration = Duration::from_secs(90);
+const TIMEOUT: Duration = Duration::from_secs(20);
 const STEP: Duration = Duration::from_millis(50);
 
 struct Fixture {
@@ -136,15 +137,26 @@ fn the_phone_bridge_steps_aside_for_the_move_and_the_pairing_goes_with_the_folde
     Store::open(old.clone()).unwrap();
     let secret = bridge::load_secret(&old).unwrap();
     let port = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
-    let exe = Path::new(env!("CARGO_BIN_EXE_orkai"));
-    bridge::start(&old, exe, TunnelKind::Tailscale, port).unwrap();
+    let no_tools = fx.base.join("no-tools");
+    std::fs::create_dir_all(&no_tools).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_orkai"));
+    command
+        .args([bridge::COMMAND, "--tunnel", TunnelKind::Tailscale.label(), "--port", &port.to_string()])
+        .env(HOME_ENV, old.root())
+        .env("PATH", &no_tools)
+        .current_dir(old.root())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let mut process = spawn_detached(&mut command).unwrap();
     assert!(bridge::wait_until(&old, TIMEOUT, |info| info.is_some()), "the bridge is up");
+    let log = bridge::log_path(&old);
+    let untouched =
+        until(|| std::fs::read_to_string(&log).is_ok_and(|text| text.contains("tailscale is not installed")));
+    assert!(untouched, "no test reaches a real tunnel of the machine");
 
-    let moved = until(|| adopt(&fx.base, process_is_holder).is_ok_and(|done| done == Adoption::Moved));
-    if !moved {
-        bridge::stop(&old).unwrap();
-    }
-    assert!(moved, "the bridge stops once it is done opening its tunnel");
+    assert_eq!(adopt(&fx.base, process_is_holder).unwrap(), Adoption::Moved);
+    process.wait().unwrap();
     assert!(!fx.legacy.exists(), "nothing of the bridge holds the old folder");
     let new = Home::at(&fx.home);
     assert_eq!(bridge::load_secret(&new).unwrap(), secret, "paired phones stay paired");
