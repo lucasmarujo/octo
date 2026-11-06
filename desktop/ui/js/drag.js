@@ -3,7 +3,7 @@ import { canMove } from './format.js';
 import { findAgent } from './state.js';
 import { send } from './transport.js';
 
-const HANDLES = '#board .card, #list-body .row, #grid .tile-head';
+const HANDLES = '#board .card, #list-body .row, #grid .tile-head, #sessions .summary';
 const NOT_HANDLES = 'button, input, textarea, a, .xterm';
 const START_AFTER_PX = 6;
 const GHOST_OFFSET_PX = 12;
@@ -18,7 +18,7 @@ function swallow(event) {
 }
 
 function sessionAt(x, y) {
-  const row = document.elementFromPoint(x, y)?.closest('.session-row[data-session]');
+  const row = document.elementFromPoint(x, y)?.closest('.session')?.querySelector('.session-row[data-session]');
   return row && canMove(moving.agent, row.dataset.session) ? row : null;
 }
 
@@ -45,6 +45,7 @@ function begin(event) {
   source.classList.add('moving-source');
   document.body.append(ghost);
   document.documentElement.classList.add('moving-agent');
+  document.documentElement.addEventListener('lostpointercapture', callOff, { once: true });
   document.documentElement.setPointerCapture(pointer);
   follow(event);
 }
@@ -92,7 +93,6 @@ export function initAgentDrag() {
   document.addEventListener('pointermove', onPointerMove);
   document.addEventListener('pointerup', onPointerUp);
   document.addEventListener('pointercancel', callOff);
-  window.addEventListener('blur', callOff);
   document.addEventListener(
     'keydown',
     (event) => {

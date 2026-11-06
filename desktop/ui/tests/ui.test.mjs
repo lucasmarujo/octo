@@ -1069,7 +1069,12 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.equal(canMove(agent({}), null), false);
   const drag = readFileSync(join(REPO, 'desktop/ui/js/drag.js'), 'utf8');
   assert.match(drag, /send\(\{ type: 'moveAgent', agent: moving\.agent\.id, session \}\)/);
-  assert.match(drag, /#board \.card, #list-body \.row, #grid \.tile-head/, 'a tile drags by its head: its screen is a terminal to select from');
+  assert.match(drag, /#board \.card, #list-body \.row, #grid \.tile-head, #sessions \.summary/, 'a tile drags by its head: its screen is a terminal to select from');
+  assert.match(drag, /closest\('\.session'\)\?\.querySelector\('\.session-row\[data-session\]'\)/, 'a drop counts anywhere on an expanded session, not only on its row');
+  assert.doesNotMatch(drag, /addEventListener\('blur'/, 'the capture of the pointer says when a drag is lost');
+  const sidebarCode = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebarCode, /class: `summary\$\{entry\.waiting \? ' waiting' : ''\}`, dataset: \{ agent: String\(list\[0\]\.id\) \}/, 'an agent listed in the sidebar drags from there too');
+  assert.match(sidebarCode, /\[agent\.id, agent\.name, agent\.state, agent\.starting\]/, 'a line never keeps the id of another agent with the same name');
   assert.match(drag, /\.xterm/, 'nothing drags out of a terminal');
   assert.match(drag, /addEventListener\('click', swallow, \{ capture: true, once: true \}\)/);
   assert.match(drag, /event\.key === 'Escape'/, 'a drag can be called off');

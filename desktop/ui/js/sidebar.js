@@ -21,7 +21,7 @@ function summaryLine(entry, list, onOpen) {
   const rest = list.length > 1 ? h('span', { class: 't-faint' }, ` +${list.length - 1}`) : null;
   return h(
     'div',
-    { class: `summary${entry.waiting ? ' waiting' : ''}`, onclick: () => onOpen(list[0]) },
+    { class: `summary${entry.waiting ? ' waiting' : ''}`, dataset: { agent: String(list[0].id) }, onclick: () => onOpen(list[0]) },
     h('span', { class: `glyph ${entry.tone}`, dataset: entry.glyph ? {} : { spin: '1' } }, glyph),
     h('span', { class: 'summary-text' }, list[0].name, rest),
   );
@@ -187,7 +187,7 @@ export function renderSidebar(onSelect, onOpen) {
     ? JSON.stringify([
         state.session,
         [...state.expanded],
-        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map((agent) => [agent.name, agent.state, agent.starting])]),
+        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map((agent) => [agent.id, agent.name, agent.state, agent.starting])]),
       ])
     : '';
   if (overview && host.dataset.signature !== signature) {
