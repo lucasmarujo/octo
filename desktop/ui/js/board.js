@@ -79,7 +79,7 @@ function card(agent, handlers) {
         h('span', { class: 'kbd' }, 'alt N'),
       )
     : null;
-  const subagents = (agent.subagents || []).slice(0, 2).map((sub) => {
+  const subagents = (agent.subagents || []).map((sub) => {
     const line = subagentLine(sub, now());
     return h('div', { class: 'card-sub' }, h('span', { class: 'card-sub-role' }, `↳ ${line.role}`), h('span', { class: 'card-sub-time' }, line.time), sub.activity ? h('span', { class: 't-faint' }, `· ${sub.activity}`) : null);
   });

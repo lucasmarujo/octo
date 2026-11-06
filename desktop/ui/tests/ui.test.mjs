@@ -668,6 +668,11 @@ test('a card sums up its worktree and its tests like the overview of the TUI', a
   assert.deepEqual(subagentLine({ role: 'Explore', description: 'Find callers', activity: 'Grep', startedAt: NOW - 12_000 }, NOW), { role: 'Explore', time: '12s', text: 'Find callers · Grep' });
 });
 
+test('a card on the board lists every subagent of its agent', () => {
+  const board = readFileSync(join(REPO, 'desktop/ui/js/board.js'), 'utf8');
+  assert.match(board, /const subagents = \(agent\.subagents \|\| \[\]\)\.map\(/);
+});
+
 test('the agent terminal reads the raw frames the holder bridge sends, in the same tags as the Rust side', async () => {
   const { ENDED, OUTPUT, SNAPSHOT, decodeFrame } = await import('../js/termwire.js');
   const source = rust('desktop/src/term.rs');
