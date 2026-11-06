@@ -187,11 +187,17 @@ h1, p { margin: 0; }
 
 .sidebar { display: flex; flex-direction: column; gap: 24px; width: var(--sidebar); flex-shrink: 0; padding: 20px 12px 16px; border-right: 1px solid var(--color-border); overflow-y: auto; }
 .sidebar .spacer { flex: 1; min-height: 0; }
+.sidebar-resize { position: relative; z-index: 2; width: 0; flex-shrink: 0; }
+.sidebar-resize::before { content: ""; position: absolute; top: 0; bottom: 0; left: -5px; width: 9px; cursor: col-resize; }
+.sidebar-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: -1px; width: 2px; background: transparent; transition: background-color var(--motion-fast) var(--ease-out); pointer-events: none; }
+.sidebar-resize:hover::after, .sidebar-resize:focus-visible::after, .resizing-sidebar .sidebar-resize::after { background: var(--color-accent); }
+.sidebar-resize:focus-visible { outline: none; }
+.resizing-sidebar, .resizing-sidebar * { cursor: col-resize !important; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px; }
 .brand-mascot { display: flex; width: 96px; height: 96px; flex-shrink: 0; }
-.brand-text { display: flex; flex-direction: column; gap: 2px; }
+.brand-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .wordmark { font-size: 22px; font-weight: 800; line-height: 22px; letter-spacing: -0.02em; }
-.host { font-family: var(--font-mono); font-size: var(--text-xs); line-height: 14px; color: var(--color-text-faint); }
+.host { overflow: hidden; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 14px; color: var(--color-text-faint); text-overflow: ellipsis; white-space: nowrap; }
 .sessions { display: flex; flex-direction: column; gap: 8px; }
 .sessions > .caps { padding: 0 8px; }
 .session-list { display: flex; flex-direction: column; gap: 2px; }

@@ -28,6 +28,8 @@ export const PT = {
   Maximize: 'Maximizar',
   Close: 'Fechar',
   Sessions: 'Sessões',
+  'Resize the sidebar': 'Redimensionar a barra lateral',
+  'Drag to resize, double click to reset': 'Arraste para redimensionar, clique duplo para voltar ao padrão',
   'Pair your phone (ctrl P)': 'Parear o celular (ctrl P)',
   'How to use (F1)': 'Como usar (F1)',
   'Agents on screen': 'Agentes na tela',

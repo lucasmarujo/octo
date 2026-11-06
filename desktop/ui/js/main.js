@@ -16,7 +16,7 @@ import { initTooltips } from './motion.js';
 import { renderList, tickList } from './list.js';
 import { openPairing, watchPhone } from './pair.js';
 import { applyTheme, renderSettings } from './settings.js';
-import { promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
+import { initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
@@ -535,6 +535,7 @@ function start() {
   applyTheme();
   window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
   initWindow();
+  initSidebarWidth();
   initTerminal();
   initComposer();
   initTooltips();

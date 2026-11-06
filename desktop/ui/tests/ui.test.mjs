@@ -1036,6 +1036,29 @@ test('a right click on a session in the sidebar offers to rename or delete that 
   assert.match(commands, /case 'delete-session':\n\s*deleteSession\(arg \|\| state\.session\);/);
 });
 
+test('the sidebar is as wide as the user left it, within limits, on every screen', async () => {
+  const { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, sidebarWidth } = await import('../js/format.js');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.equal(SIDEBAR_DEFAULT, Number(css.match(/--sidebar: (\d+)px;/)[1]), 'the first paint has the same width');
+  assert.equal(sidebarWidth(null), SIDEBAR_DEFAULT, 'nothing saved yet');
+  assert.equal(sidebarWidth('not a number'), SIDEBAR_DEFAULT);
+  assert.equal(sidebarWidth(''), SIDEBAR_DEFAULT);
+  assert.equal(sidebarWidth('320'), 320);
+  assert.equal(sidebarWidth(320.6), 321);
+  assert.equal(sidebarWidth(0), SIDEBAR_MIN);
+  assert.equal(sidebarWidth(9999), SIDEBAR_MAX);
+  const windows = JSON.parse(rust('desktop/tauri.conf.json')).app.windows;
+  assert.ok(windows.every((window) => window.minWidth - SIDEBAR_MAX >= 600), 'the widest sidebar still leaves room for the screen beside it');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<\/aside>\s*<div id="sidebar-resize"[^>]*role="separator"[^>]*tabindex="0"[^>]*><\/div>\s*<main class="main">/, 'beside the sidebar, outside of any one view');
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /handle\.setPointerCapture\(event\.pointerId\)/, 'a drag over a terminal keeps resizing');
+  assert.match(sidebar, /storage\.set\(WIDTH_KEY, width === SIDEBAR_DEFAULT \? null : String\(width\)\)/);
+  assert.match(sidebar, /handle\.addEventListener\('dblclick', \(\) => \{\n\s*apply\(SIDEBAR_DEFAULT\);/);
+  assert.match(sidebar, /event\.key !== 'ArrowLeft' && event\.key !== 'ArrowRight'/, 'it also works from the keyboard');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initSidebarWidth\(\);/);
+});
+
 test('the folder picker ranks matches like src/folders.rs and keeps the matched letters', async () => {
   const { fuzzy } = await import('../js/folders.js');
   assert.equal(fuzzy('octo', 'octo').score, 1000, 'an exact name wins');

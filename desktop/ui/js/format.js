@@ -4,6 +4,9 @@ export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', 
 export const USAGE_WARN = 70;
 export const USAGE_ALERT = 90;
 export const USAGE_FOLDED = 2;
+export const SIDEBAR_DEFAULT = 248;
+export const SIDEBAR_MIN = 200;
+export const SIDEBAR_MAX = 480;
 
 const LABELS = { antigravity: 'agy' };
 const KIND_COLORS = {
@@ -25,6 +28,12 @@ export const COLUMNS = [
   { key: 'done', title: t('Done'), empty: t('Finished agents land here.') },
   { key: 'idle', title: t('Idle'), empty: t('No idle agents.') },
 ];
+
+export function sidebarWidth(value) {
+  const width = value === null || value === '' ? Number.NaN : Number(value);
+  if (!Number.isFinite(width)) return SIDEBAR_DEFAULT;
+  return Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)));
+}
 
 export const GRID_SIZES = ['4', '6', '8', '10', '12', 'all'];
 export const DEFAULT_GRID_SIZE = '6';

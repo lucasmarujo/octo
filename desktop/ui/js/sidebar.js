@@ -1,12 +1,14 @@
 import { deleteSession, renameSession } from './commands.js';
-import { $, h, keep, place, svg } from './dom.js';
+import { $, h, keep, place, storage, svg } from './dom.js';
 import { ask, closeMenu, openMenu } from './dialogs.js';
-import { SPINNER, USAGE_FOLDED, USAGE_WARN, duration, kindColor, label, usageColor, usageOrder, usageShown } from './format.js';
+import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, duration, kindColor, label, sidebarWidth, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
 import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_PLUS, PROVIDER_ICONS } from './icons.js';
 import { agents, inSession, now, selectSession, state, toggleExpanded, toggleUsage } from './state.js';
 import { send } from './transport.js';
 
+const WIDTH_KEY = 'octo.sidebar';
+const WIDTH_STEP = 16;
 const SUMMARY = [
   { state: 'paused', glyph: '‖', tone: 't-yellow', waiting: true },
   { state: 'working', glyph: null, tone: 't-text' },
@@ -209,4 +211,41 @@ export function spinSidebar() {
 
 export function promptNewSession(onSelect) {
   return newSession(onSelect);
+}
+
+export function initSidebarWidth() {
+  const handle = $('sidebar-resize');
+  let width = sidebarWidth(storage.get(WIDTH_KEY));
+  const apply = (value) => {
+    width = sidebarWidth(value);
+    document.documentElement.style.setProperty('--sidebar', `${width}px`);
+    handle.setAttribute('aria-valuenow', String(width));
+  };
+  const save = () => storage.set(WIDTH_KEY, width === SIDEBAR_DEFAULT ? null : String(width));
+  handle.setAttribute('aria-valuemin', String(SIDEBAR_MIN));
+  handle.setAttribute('aria-valuemax', String(SIDEBAR_MAX));
+  apply(width);
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    document.documentElement.classList.add('resizing-sidebar');
+  });
+  handle.addEventListener('pointermove', (event) => {
+    if (handle.hasPointerCapture(event.pointerId)) apply(event.clientX);
+  });
+  handle.addEventListener('lostpointercapture', () => {
+    document.documentElement.classList.remove('resizing-sidebar');
+    save();
+  });
+  handle.addEventListener('dblclick', () => {
+    apply(SIDEBAR_DEFAULT);
+    save();
+  });
+  handle.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    apply(width + (event.key === 'ArrowRight' ? WIDTH_STEP : -WIDTH_STEP));
+    save();
+  });
 }
