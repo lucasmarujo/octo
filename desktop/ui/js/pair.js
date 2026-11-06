@@ -2,7 +2,7 @@ import { $, h, svg } from './dom.js';
 import { closeDialog, confirm, openDialog } from './dialogs.js';
 import { SPINNER } from './format.js';
 import { t } from './i18n.js';
-import { ICON_PAIR, ICON_CHEVRON_RIGHT } from './icons.js';
+import { ICON_PAIR } from './icons.js';
 import { state } from './state.js';
 import { toast } from './toast.js';
 import { invoke } from './transport.js';
@@ -96,8 +96,8 @@ export function renderPhoneStatus(pairing) {
   button.dataset.state = status;
   const title = named || (status === 'connected' ? t('{count} connected', { count: pairing.phones }) : t('Pair phone'));
   const detail = { off: t('Phone access is off'), pending: t('Starting…'), failed: t('Pairing needs attention'), ready: t('Waiting for a phone'), connected: t('Live · end-to-end encrypted') }[status];
-  button.replaceChildren(svg(ICON_PAIR), h('span', { class: 'phone-text' }, h('strong', null, title), h('small', null, detail)), svg(ICON_CHEVRON_RIGHT));
   button.setAttribute('aria-label', `${title} · ${detail}`);
+  button.title = `${title} · ${detail} (ctrl P)`;
 }
 
 export function waiting(pairing) {

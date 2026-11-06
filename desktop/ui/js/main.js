@@ -500,7 +500,7 @@ function initWindow() {
   $('brand-mascot').replaceChildren(kai('idle'));
   $('open-help').replaceChildren(svg(ICON_HELP));
   $('open-settings').replaceChildren(svg(ICON_SETTINGS));
-  $('pair').replaceChildren(svg(ICON_PAIR), t('Pair phone'));
+  $('pair').replaceChildren(svg(ICON_PAIR));
   $('pair').addEventListener('click', openPairing);
   watchPhone();
   $('open-help').addEventListener('click', () => openPage('help'));

@@ -1084,7 +1084,45 @@ test('the phone button shows a phone and a green outline while a phone is connec
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /watchPhone\(\);/);
   assert.match(rust('desktop/src/pair.rs'), /#\[tauri::command\(async\)\]\npub fn pairing\(/, 'polled from the sidebar, so it stays off the window thread');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
-  assert.match(css, /\.footer-pair\.connected \{ box-shadow: inset 0 0 0 1px color-mix\(in srgb, var\(--color-done\) 70%, transparent\); \}/, 'an inset outline, so the footer does not move');
+  assert.match(css, /\.phone-status\.connected \{[^}]*box-shadow: inset 0 0 0 1px color-mix\(in srgb, var\(--color-done\) 70%, transparent\); \}/, 'an inset outline, so the footer does not move');
+});
+
+test('the phone button is a mini icon to the right of settings, and its status stays on the icon', async () => {
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  const footer = html.match(/<footer class="sidebar-footer">([\s\S]*?)<\/footer>/)[1];
+  assert.deepEqual([...footer.matchAll(/<button id="([\w-]+)" class="footer-icon[ "]/g)].map((match) => match[1]), ['open-help', 'open-settings', 'pair']);
+  assert.match(footer, /<button id="pair" [^>]*aria-label="Pair phone"[^>]*><\/button>/, 'no text child, and a name before the first status arrives');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /\$\('pair'\)\.replaceChildren\(svg\(ICON_PAIR\)\);/, 'the icon alone');
+  const pair = readFileSync(join(REPO, 'desktop/ui/js/pair.js'), 'utf8');
+  assert.doesNotMatch(pair, /phone-text|ICON_CHEVRON_RIGHT/, 'no text and no chevron come back with the status');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.phone-status\.connected \{ color: var\(--color-done\); background: color-mix\(in srgb, var\(--color-done\) 7%, transparent\);/);
+  assert.match(css, /\.phone-status\[data-state="failed"\] \{ box-shadow: inset 0 0 0 1px var\(--color-lost\); \}/);
+  assert.doesNotMatch(css, /\.footer-pair|\.phone-text/, 'the big card is gone');
+  assert.match(css, /\.sidebar-footer \{ display: flex; align-items: center;/, 'one row, nothing wraps');
+
+  const { renderPhoneStatus } = await import('../js/pair.js');
+  const button = { dataset: {}, title: '', attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } };
+  globalThis.document = { getElementById: () => button };
+  try {
+    const iphone = { agent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) Version/18.1 Mobile/15E148 Safari/604.1' };
+    const cases = [
+      [{ enabled: false, phones: 0 }, 'off', 'Pair phone · Phone access is off'],
+      [{ enabled: true, phase: 'connecting', phones: 0 }, 'pending', 'Pair phone · Starting…'],
+      [{ enabled: true, phase: 'ready', phones: 0 }, 'ready', 'Pair phone · Waiting for a phone'],
+      [{ enabled: true, phase: 'failed', phones: 0 }, 'failed', 'Pair phone · Pairing needs attention'],
+      [{ enabled: true, phase: 'ready', phones: 1, devices: [iphone] }, 'connected', 'iPhone · Live · end-to-end encrypted'],
+      [{ enabled: true, phase: 'ready', phones: 2, devices: [iphone, iphone] }, 'connected', '2 connected · Live · end-to-end encrypted'],
+    ];
+    for (const [pairing, status, words] of cases) {
+      renderPhoneStatus(pairing);
+      assert.equal(button.dataset.state, status);
+      assert.equal(button.attributes['aria-label'], words);
+      assert.equal(button.title, `${words} (ctrl P)`, 'the tooltip names the shortcut too');
+    }
+  } finally {
+    delete globalThis.document;
+  }
 });
 
 test('remote control is a yellow toggle between worktree and bypass, off until chosen and only for Claude', async () => {
@@ -1117,7 +1155,7 @@ test('every control, overlay and view moves with the same motion tokens, and red
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   for (const name of ['--ease-out', '--ease-in', '--ease-spring', '--motion-fast', '--motion-base', '--motion-slow']) assert.match(css, new RegExp(`${name}: `), name);
   const animated = css.match(/^\.button, \.toggle, \.chip, [^{]+\{/m)[0];
-  for (const control of ['.button', '.toggle', '.chip', '.filter', '.segmented button', '.tab', '.session-row', '.menu-item', '.palette-item', '.card', '.tile', '.icon-button', '.footer-pair', '.field']) {
+  for (const control of ['.button', '.toggle', '.chip', '.filter', '.segmented button', '.tab', '.session-row', '.menu-item', '.palette-item', '.card', '.tile', '.icon-button', '.footer-icon', '.field']) {
     assert.ok(animated.includes(`${control},`) || animated.includes(`${control} {`), `${control} has transitions`);
   }
   assert.match(css, /\.button:active:not\(:disabled\)[^{]*\{ transform: scale\(0\.96\)/, 'buttons sink when pressed');
