@@ -8,7 +8,7 @@ pub mod term;
 
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Shutdown, TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -413,7 +413,15 @@ fn finish(shared: &Arc<Shared>, info: ExitInfo) {
     let frame = Arc::new(HolderMsg::Exited(info).to_frame());
     lock(&shared.clients).broadcast(&frame, false);
     thread::sleep(EXIT_LINGER);
-    let _ = fsutil::remove_file_if_exists(&shared.home.runtime_file(shared.agent_id));
+    let _ = remove_own_runtime(&shared.home.runtime_file(shared.agent_id), std::process::id());
+}
+
+fn remove_own_runtime(file: &Path, holder_pid: u32) -> io::Result<()> {
+    let runtime: Option<RuntimeInfo> = fsutil::read_json_opt(file)?;
+    if runtime.is_some_and(|runtime| runtime.holder_pid == holder_pid) {
+        fsutil::remove_file_if_exists(file)?;
+    }
+    Ok(())
 }
 
 fn spawn_named<F>(name: &str, f: F) -> io::Result<()>
@@ -610,5 +618,35 @@ mod tests {
         assert_eq!(clients.resize(2, PHONE), None);
         assert_eq!(clients.remove(2), None);
         assert_eq!(clients.sized_by, Some(1));
+    }
+
+    fn runtime_of(holder_pid: u32) -> RuntimeInfo {
+        RuntimeInfo {
+            holder_pid,
+            child_pid: None,
+            port: 1,
+            token: "token".into(),
+            started_at_ms: 1,
+            protocol: PROTOCOL_VERSION,
+            version: "test".into(),
+            exe: None,
+        }
+    }
+
+    #[test]
+    fn a_holder_that_leaves_removes_only_its_own_runtime() {
+        let dir = std::env::temp_dir().join(format!("orkai-holder-runtime-{}-{}", std::process::id(), now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("runtime.json");
+
+        fsutil::write_json_atomic(&file, &runtime_of(2)).unwrap();
+        remove_own_runtime(&file, 1).unwrap();
+        assert_eq!(fsutil::read_json_opt(&file).unwrap(), Some(runtime_of(2)), "the next run keeps its runtime");
+
+        remove_own_runtime(&file, 2).unwrap();
+        assert!(!file.exists(), "the run that wrote it removes it");
+
+        remove_own_runtime(&file, 2).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
