@@ -8,7 +8,7 @@ import { showFolderSearch, showFolders } from './folders.js';
 import { $, h, svg } from './dom.js';
 import { initAgentDrag } from './drag.js';
 import { SPINNER, alive, glyph } from './format.js';
-import { deactivateGrid, peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
+import { deactivateGrid, gridAgents, peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
 import { renderHelp } from './help.js';
 import { applyStatic, hubText, language, pageToReopen, t } from './i18n.js';
 import { ICON_HELP, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS } from './icons.js';
@@ -145,7 +145,7 @@ function renderView() {
 function peek() {
   if (!state.overview || state.active !== null || shownView() !== 'grid') return;
   if (state.peekAt && Date.now() - state.peekAt < PEEK_STALE_MS) return;
-  const request = peekRequest(visible(), rowsOnScreen());
+  const request = peekRequest(gridAgents(), rowsOnScreen());
   if (!request) return;
   state.peekAt = Date.now();
   send(request);

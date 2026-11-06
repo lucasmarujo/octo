@@ -1334,6 +1334,30 @@ test('the sidebar is as wide as the user left it, within limits, on every screen
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initSidebarWidth\(\);/);
 });
 
+test('the grid keeps its tiles in place until an agent asks for attention or finishes', async () => {
+  const { arrangeGrid } = await import('../js/format.js');
+  const working = (id) => agent({ id, state: 'working' });
+  const first = arrangeGrid([], new Map(), [working(1), working(2), working(3)]);
+  assert.deepEqual(first.order, [1, 2, 3], 'the first time takes the order it gets');
+  const clicked = arrangeGrid(first.order, first.columns, [working(2), working(1), working(3)]);
+  assert.deepEqual(clicked.order, [1, 2, 3], 'the hub moving the agent someone clicked or typed into moves nothing');
+  const needs = arrangeGrid(clicked.order, clicked.columns, [working(1), working(2), agent({ id: 3, state: 'paused' })]);
+  assert.deepEqual(needs.order, [3, 1, 2], 'an agent that starts waiting comes first');
+  const done = arrangeGrid(needs.order, needs.columns, [working(1), agent({ id: 2, state: 'done' }), agent({ id: 3, state: 'paused' })]);
+  assert.deepEqual(done.order, [2, 3, 1], 'so does one that finishes');
+  const still = arrangeGrid(done.order, done.columns, [working(1), agent({ id: 2, state: 'done' }), agent({ id: 3, state: 'paused' })]);
+  assert.deepEqual(still.order, [2, 3, 1], 'it moves once, on the change');
+  const seen = arrangeGrid(still.order, still.columns, [working(1), agent({ id: 2, state: 'idle' }), working(3)]);
+  assert.deepEqual(seen.order, [2, 3, 1], 'going back to work or being seen moves nothing');
+  const reopened = arrangeGrid([2, 3, 1], new Map(), [agent({ id: 1, state: 'done' }), working(2), working(3)]);
+  assert.deepEqual(reopened.order, [2, 3, 1], 'reopening the app raises nothing');
+  const fresh = arrangeGrid(seen.order, seen.columns, [working(1), working(2), working(4)]);
+  assert.deepEqual(fresh.order, [2, 1, 4], 'a removed agent closes its gap and a new one takes the free place at the end');
+  const grid = readFileSync(join(REPO, 'desktop/ui/js/grid.js'), 'utf8');
+  assert.match(grid, /const list = gridAgents\(\);/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /peekRequest\(gridAgents\(\), rowsOnScreen\(\)\)/, 'previews follow the tiles on screen');
+});
+
 test('a double click on the title of a session renames it from the board, the list and the grid', async () => {
   const { PT } = await import('../js/i18n.js');
   const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');

@@ -1,20 +1,31 @@
-import { $, h, keep, place, svg } from './dom.js';
+import { $, h, keep, place, storage, svg } from './dom.js';
 import { tools } from './board.js';
-import { activity, alive, column, elapsed, glyph, gridShape, kindColor, label, previewRows } from './format.js';
+import { activity, alive, arrangeGrid, column, elapsed, glyph, gridShape, kindColor, label, previewRows } from './format.js';
 import { t } from './i18n.js';
 import { ICON_EXPAND, ICON_PLUS } from './icons.js';
-import { now, state, visible } from './state.js';
+import { agents, now, state, visible } from './state.js';
 import { Terminal, run } from './terminal.js';
 import { toast } from './toast.js';
 
 export const MAX_PEEK_AGENTS = 24;
 const LINE_HEIGHT = 15;
 const LIVE_FONT_SIZE = 12;
+const ORDER_KEY = 'octo.gridOrder';
 
+const savedOrder = storage.json(ORDER_KEY, []);
+let arrangement = { order: Array.isArray(savedOrder) ? savedOrder : [], columns: new Map() };
 const tiles = new Map();
 const shownPreviews = new Map();
 const live = { agent: null, host: null, terminal: null };
 let addTile = null;
+
+export function gridAgents() {
+  const next = arrangeGrid(arrangement.order, arrangement.columns, agents());
+  if (next.order.join() !== arrangement.order.join()) storage.set(ORDER_KEY, JSON.stringify(next.order));
+  arrangement = next;
+  const position = new Map(next.order.map((id, index) => [id, index]));
+  return [...visible()].sort((a, b) => position.get(a.id) - position.get(b.id));
+}
 
 export function rowsOnScreen() {
   const screen = $('grid').querySelector('.tile-screen');
@@ -137,7 +148,7 @@ function shape(grid) {
 export function renderGrid(handlers) {
   const grid = $('grid');
   shape(grid);
-  const list = visible();
+  const list = gridAgents();
   if (live.agent !== null && !list.some((agent) => agent.id === live.agent)) deactivateGrid();
   const focused = Boolean(live.host && live.host.contains(document.activeElement));
   const nodes = list.map((agent) => {

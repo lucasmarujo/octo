@@ -56,6 +56,7 @@ export function canMove(agent, session) {
   return Boolean(agent && session) && !agent.starting && agent.session !== session;
 }
 
+const GRID_RAISING_COLUMNS = new Set(['needs', 'done']);
 export const GRID_SIZES = ['4', '6', '8', '10', '12', 'all'];
 export const DEFAULT_GRID_SIZE = '6';
 export const MAX_PREVIEW_ROWS = 40;
@@ -95,6 +96,22 @@ export function column(agent) {
   if (agent.state === 'working') return 'working';
   if (agent.state === 'done') return 'done';
   return 'idle';
+}
+
+export function arrangeGrid(order, columns, agents) {
+  const raised = agents
+    .filter((agent) => {
+      const was = columns.get(agent.id);
+      const now = column(agent);
+      return was !== undefined && was !== now && GRID_RAISING_COLUMNS.has(now);
+    })
+    .map((agent) => agent.id);
+  const raisedIds = new Set(raised);
+  const present = new Set(agents.map((agent) => agent.id));
+  const kept = order.filter((id) => present.has(id) && !raisedIds.has(id));
+  const placed = new Set([...raised, ...kept]);
+  const fresh = agents.map((agent) => agent.id).filter((id) => !placed.has(id));
+  return { order: [...raised, ...kept, ...fresh], columns: new Map(agents.map((agent) => [agent.id, column(agent)])) };
 }
 
 export function idleRunning(list) {
