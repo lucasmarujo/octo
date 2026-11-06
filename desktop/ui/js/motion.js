@@ -97,7 +97,7 @@ function showTip() {
   tip.classList.add('shown');
 }
 
-function hideTip() {
+export function hideTip() {
   clearTimeout(tipTimer);
   tipTimer = null;
   tipTarget = null;
@@ -111,7 +111,7 @@ function hideTip() {
 function onOver(event) {
   const target = event.target instanceof Element ? event.target.closest('[title], [data-tip]') : null;
   if (target === tipTarget) return;
-  if (!target) {
+  if (!target || target.hasAttribute('data-tip-off')) {
     hideTip();
     return;
   }

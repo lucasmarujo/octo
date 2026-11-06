@@ -210,7 +210,11 @@ pub fn run(launcher: Launcher) -> io::Result<()> {
     let (tx, rx) = mpsc::channel();
     let notifier = Notifier::start(launcher.config());
     let ring = launcher.config().notify;
-    let player = if launcher.config().notify_sound { Player::new(launcher.store().home()) } else { None };
+    let player = if launcher.config().notify_sound {
+        Player::new(launcher.store().home(), launcher.config().notify_volume)
+    } else {
+        None
+    };
     let mut profile =
         std::env::current_exe().ok().and_then(|exe| terminal_profile::install(launcher.store().home(), &exe));
     let started = Instant::now();

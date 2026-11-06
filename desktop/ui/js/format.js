@@ -54,8 +54,10 @@ export function optionsTone({ worktree, remote, bypass }) {
   return worktree ? 'default' : 'neutral';
 }
 
-export const soundOn = (config) => Boolean(config.notify && config.notify_sound);
-export const soundFlip = (config) => (soundOn(config) ? { notify_sound: false } : { notify: true, notify_sound: true });
+export const RESTORED_VOLUME = 50;
+export const soundOn = (config) => Boolean(config.notify && config.notify_sound && config.notify_volume > 0);
+export const soundFlip = (config) => (soundOn(config) ? { notify_sound: false } : { notify: true, notify_sound: true, notify_volume: config.notify_volume || RESTORED_VOLUME });
+export const volumeChanges = (config, volume) => (volume > 0 ? { notify: true, notify_sound: true, notify_volume: volume } : { notify_volume: 0 });
 
 export function canMove(agent, session) {
   return Boolean(agent && session) && !agent.starting && agent.session !== session;

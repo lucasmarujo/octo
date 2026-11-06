@@ -1,12 +1,14 @@
 use std::io;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::fsutil;
 use crate::model::AgentKind;
 use crate::paths::Home;
 use crate::pwa::bridge;
 use crate::pwa::tunnel::TunnelKind;
+
+pub const FULL_VOLUME: u8 = 100;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(default)]
@@ -33,6 +35,8 @@ pub struct Config {
     pub pi_args: Vec<String>,
     pub notify: bool,
     pub notify_sound: bool,
+    #[serde(deserialize_with = "volume_within_range")]
+    pub notify_volume: u8,
     pub notify_command: Option<String>,
     pub notify_args: Vec<String>,
     pub pwa_tunnel: TunnelKind,
@@ -64,12 +68,18 @@ impl Default for Config {
             pi_args: Vec::new(),
             notify: true,
             notify_sound: true,
+            notify_volume: FULL_VOLUME,
             notify_command: None,
             notify_args: Vec::new(),
             pwa_tunnel: TunnelKind::default(),
             pwa_port: bridge::DEFAULT_PORT,
         }
     }
+}
+
+fn volume_within_range<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u8, D::Error> {
+    let volume = f64::deserialize(deserializer)?;
+    Ok(volume.clamp(0.0, f64::from(FULL_VOLUME)).round() as u8)
 }
 
 impl Config {
@@ -142,6 +152,22 @@ mod tests {
         assert!(!config.notify_sound);
         assert_eq!(config.notify_command.as_deref(), Some("ntfy"));
         assert_eq!(config.notify_args, vec!["publish", "orkai"]);
+    }
+
+    #[test]
+    fn the_volume_defaults_to_full_and_stays_within_its_range() {
+        assert_eq!(Config::default().notify_volume, FULL_VOLUME);
+        let old: Config = serde_json::from_str(r#"{"notify":true,"notify_sound":true}"#).unwrap();
+        assert_eq!(old.notify_volume, FULL_VOLUME, "a config written before the volume keeps today's loudness");
+        let volume = |text: &str| serde_json::from_str::<Config>(text).unwrap().notify_volume;
+        assert_eq!(volume(r#"{"notify_volume":40}"#), 40);
+        assert_eq!(volume(r#"{"notify_volume":0}"#), 0);
+        assert_eq!(volume(r#"{"notify_volume":150}"#), FULL_VOLUME);
+        assert_eq!(volume(r#"{"notify_volume":100000}"#), FULL_VOLUME);
+        assert_eq!(volume(r#"{"notify_volume":-5}"#), 0);
+        assert_eq!(volume(r#"{"notify_volume":40.6}"#), 41);
+        let saved = serde_json::to_string(&Config { notify_volume: 40, ..Config::default() }).unwrap();
+        assert_eq!(serde_json::from_str::<Config>(&saved).unwrap().notify_volume, 40);
     }
 
     #[test]

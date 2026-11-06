@@ -1,6 +1,7 @@
 use std::f64::consts::TAU;
 use std::path::{Path, PathBuf};
 
+use crate::config::FULL_VOLUME;
 use crate::fsutil::write_if_changed;
 use crate::model::AgentState;
 use crate::notify::Alert;
@@ -16,7 +17,7 @@ const MODULATION_INDEX: f64 = 2.1;
 const MODULATION_DECAY: f64 = 6.0;
 const WAV_HEADER: usize = 44;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Chime {
     Waiting,
     Done,
@@ -81,6 +82,20 @@ impl Chime {
     pub fn wav(self) -> Vec<u8> {
         wav(&self.samples())
     }
+
+    pub fn wav_at(self, volume: u8) -> Vec<u8> {
+        wav(&scaled(&self.samples(), volume))
+    }
+}
+
+pub fn gain(volume: u8) -> f64 {
+    let level = f64::from(volume.min(FULL_VOLUME)) / f64::from(FULL_VOLUME);
+    level * level
+}
+
+pub fn scaled(samples: &[i16], volume: u8) -> Vec<i16> {
+    let gain = gain(volume);
+    samples.iter().map(|sample| (f64::from(*sample) * gain).round() as i16).collect()
 }
 
 pub fn wav(samples: &[i16]) -> Vec<u8> {
@@ -118,28 +133,30 @@ pub fn plays_locally(os: &str, var: impl Fn(&str) -> Option<String>) -> bool {
 
 pub struct Player {
     dir: PathBuf,
+    volume: u8,
 }
 
 impl Player {
-    pub fn new(home: &Home) -> Option<Self> {
+    pub fn new(home: &Home, volume: u8) -> Option<Self> {
         plays_locally(std::env::consts::OS, |key| std::env::var(key).ok())
-            .then(|| Self { dir: home.root().to_path_buf() })
+            .then(|| Self { dir: home.root().to_path_buf(), volume: volume.min(FULL_VOLUME) })
     }
 
     pub fn play(&self, chime: Chime) -> bool {
-        play(chime, &self.dir)
+        self.volume == 0 || play(chime, &self.dir, self.volume)
     }
 }
 
-pub fn prepare(chime: Chime, dir: &Path) -> std::io::Result<PathBuf> {
+pub fn prepare(chime: Chime, dir: &Path, volume: u8) -> std::io::Result<PathBuf> {
     let file = dir.join(chime.file_name());
-    write_if_changed(&file, &chime.wav())?;
+    write_if_changed(&file, &chime.wav_at(volume))?;
     Ok(file)
 }
 
 #[cfg(windows)]
-fn play(chime: Chime, _dir: &Path) -> bool {
-    use std::sync::LazyLock;
+fn play(chime: Chime, _dir: &Path, volume: u8) -> bool {
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex};
 
     const SND_ASYNC: u32 = 0x0001;
     const SND_NODEFAULT: u32 = 0x0002;
@@ -150,12 +167,12 @@ fn play(chime: Chime, _dir: &Path) -> bool {
         fn PlaySoundW(sound: *const u16, module: isize, flags: u32) -> i32;
     }
 
-    static WAITING: LazyLock<Vec<u8>> = LazyLock::new(|| Chime::Waiting.wav());
-    static DONE: LazyLock<Vec<u8>> = LazyLock::new(|| Chime::Done.wav());
-    let wav: &'static [u8] = match chime {
-        Chime::Waiting => &WAITING,
-        Chime::Done => &DONE,
-    };
+    type Playable = HashMap<(Chime, u8), &'static [u8]>;
+
+    static PLAYABLE: LazyLock<Mutex<Playable>> = LazyLock::new(Mutex::default);
+    let wav: &'static [u8] = crate::util::lock(&PLAYABLE)
+        .entry((chime, volume))
+        .or_insert_with(|| Box::leak(chime.wav_at(volume).into_boxed_slice()));
     unsafe { PlaySoundW(wav.as_ptr().cast(), 0, SND_ASYNC | SND_MEMORY | SND_NODEFAULT) != 0 }
 }
 
@@ -166,7 +183,7 @@ const PLAYERS: &[(&str, &[&str])] = &[("afplay", &[])];
 const PLAYERS: &[(&str, &[&str])] = &[("paplay", &[]), ("pw-play", &[]), ("aplay", &["-q"])];
 
 #[cfg(unix)]
-fn play(chime: Chime, dir: &Path) -> bool {
+fn play(chime: Chime, dir: &Path, volume: u8) -> bool {
     use std::process::{Command, Stdio};
 
     let Some((program, args)) =
@@ -174,7 +191,7 @@ fn play(chime: Chime, dir: &Path) -> bool {
     else {
         return false;
     };
-    let Ok(file) = prepare(chime, dir) else { return false };
+    let Ok(file) = prepare(chime, dir, volume) else { return false };
     let spawned = Command::new(program)
         .args(args)
         .arg(file)
@@ -194,7 +211,7 @@ fn play(chime: Chime, dir: &Path) -> bool {
 }
 
 #[cfg(not(any(windows, unix)))]
-fn play(_chime: Chime, _dir: &Path) -> bool {
+fn play(_chime: Chime, _dir: &Path, _volume: u8) -> bool {
     false
 }
 
@@ -272,6 +289,32 @@ mod tests {
     }
 
     #[test]
+    fn the_volume_scales_the_samples_and_full_volume_changes_nothing() {
+        let samples = Chime::Done.samples();
+        let peak = |samples: &[i16]| samples.iter().map(|s| s.unsigned_abs()).max().unwrap();
+        assert_eq!(scaled(&samples, FULL_VOLUME), samples, "the default stays as loud as it always was");
+        assert_eq!(Chime::Done.wav_at(FULL_VOLUME), Chime::Done.wav());
+        assert!(scaled(&samples, 0).iter().all(|s| *s == 0));
+        assert_eq!(gain(0), 0.0);
+        assert_eq!(gain(50), 0.25, "a square curve, closer to how loudness is heard than a straight line");
+        assert_eq!(gain(FULL_VOLUME), 1.0);
+        assert_eq!(gain(250), 1.0, "nothing goes above the original");
+        assert!((f64::from(peak(&scaled(&samples, 50))) - f64::from(peak(&samples)) * 0.25).abs() <= 1.0);
+        let levels: Vec<u16> = (0..=FULL_VOLUME).map(|volume| peak(&scaled(&samples, volume))).collect();
+        assert!(levels.windows(2).all(|pair| pair[0] <= pair[1]), "louder never gets quieter");
+        assert_eq!(scaled(&[i16::MIN, i16::MAX], FULL_VOLUME), [i16::MIN, i16::MAX], "the extremes do not overflow");
+        let quiet = Chime::Waiting.wav_at(20);
+        assert_eq!(quiet.len(), Chime::Waiting.wav().len(), "the same length and header");
+        assert_eq!(&quiet[..44], &Chime::Waiting.wav()[..44]);
+    }
+
+    #[test]
+    fn volume_zero_plays_nothing_and_counts_as_handled() {
+        let player = Player { dir: std::env::temp_dir(), volume: 0 };
+        assert!(player.play(Chime::Waiting), "so the terminal interface does not fall back to its bell");
+    }
+
+    #[test]
     fn sound_plays_only_on_the_machine_in_front_of_the_user() {
         assert!(plays_locally("windows", env(&[])));
         assert!(plays_locally("macos", env(&[])));
@@ -287,11 +330,17 @@ mod tests {
     #[test]
     fn prepared_files_hold_each_chime() {
         let dir = std::env::temp_dir().join(format!("orkai-sound-{}-{}", std::process::id(), crate::util::now_ms()));
-        let waiting = prepare(Chime::Waiting, &dir).unwrap();
-        let done = prepare(Chime::Done, &dir).unwrap();
+        let waiting = prepare(Chime::Waiting, &dir, FULL_VOLUME).unwrap();
+        let done = prepare(Chime::Done, &dir, FULL_VOLUME).unwrap();
         assert_ne!(waiting, done);
         assert_eq!(std::fs::read(&waiting).unwrap(), Chime::Waiting.wav());
         assert_eq!(std::fs::read(&done).unwrap(), Chime::Done.wav());
+        prepare(Chime::Done, &dir, 50).unwrap();
+        assert_eq!(
+            std::fs::read(&done).unwrap(),
+            Chime::Done.wav_at(50),
+            "a new volume replaces the file the player reads"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

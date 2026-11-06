@@ -1517,15 +1517,18 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
 });
 
 test('the bell shows off whenever no sound would play, and a click from off makes sound play', async () => {
-  const { soundFlip, soundOn } = await import('../js/format.js');
-  assert.equal(soundOn({ notify: true, notify_sound: true }), true);
-  assert.equal(soundOn({ notify: true, notify_sound: false }), false, 'the chime is off');
-  assert.equal(soundOn({ notify: false, notify_sound: true }), false, 'every alert is off');
-  assert.equal(soundOn({ notify: false, notify_sound: false }), false);
-  assert.deepEqual(soundFlip({ notify: true, notify_sound: true }), { notify_sound: false }, 'off leaves the notifications alone');
-  assert.deepEqual(soundFlip({ notify: true, notify_sound: false }), { notify: true, notify_sound: true });
-  assert.deepEqual(soundFlip({ notify: false, notify_sound: true }), { notify: true, notify_sound: true }, 'alerts come back with the sound');
-  assert.deepEqual(soundFlip({ notify: false, notify_sound: false }), { notify: true, notify_sound: true });
+  const { RESTORED_VOLUME, soundFlip, soundOn } = await import('../js/format.js');
+  const on = { notify: true, notify_sound: true, notify_volume: 70 };
+  assert.equal(soundOn(on), true);
+  assert.equal(soundOn({ ...on, notify_sound: false }), false, 'the chime is off');
+  assert.equal(soundOn({ ...on, notify: false }), false, 'every alert is off');
+  assert.equal(soundOn({ ...on, notify: false, notify_sound: false }), false);
+  assert.equal(soundOn({ ...on, notify_volume: 0 }), false, 'volume zero is silence');
+  assert.deepEqual(soundFlip(on), { notify_sound: false }, 'off leaves the notifications and the volume alone');
+  assert.deepEqual(soundFlip({ ...on, notify_sound: false }), on, 'the volume comes back as it was');
+  assert.deepEqual(soundFlip({ ...on, notify: false }), on, 'alerts come back with the sound');
+  assert.deepEqual(soundFlip({ ...on, notify: false, notify_sound: false }), on);
+  assert.deepEqual(soundFlip({ ...on, notify_volume: 0 }), { ...on, notify_volume: RESTORED_VOLUME }, 'unmuting from zero makes a sound you can hear');
   const { ICON_BELL, ICON_BELL_OFF } = await import('../js/icons.js');
   assert.match(ICON_BELL_OFF, /M3 3l18 18/, 'the crossed bell');
   assert.doesNotMatch(ICON_BELL, /M3 3l18 18/);
@@ -1550,6 +1553,42 @@ test('the bell shows off whenever no sound would play, and a click from off make
   assert.match(i18n, /'Sound on': 'Som ligado'/);
   assert.match(i18n, /'Sound off': 'Som desligado'/);
   assert.doesNotMatch(settings, /Off uses the system bell/, 'the window has no system bell');
+});
+
+test('the volume lives in Settings and in a popover over the bell, and both stay in sync', async () => {
+  const { RESTORED_VOLUME, soundOn, volumeChanges } = await import('../js/format.js');
+  assert.ok(RESTORED_VOLUME > 0 && RESTORED_VOLUME <= 100);
+  const off = { notify: false, notify_sound: false, notify_volume: 0 };
+  assert.deepEqual(volumeChanges(off, 30), { notify: true, notify_sound: true, notify_volume: 30 }, 'moving up makes sound play again');
+  assert.equal(soundOn({ ...off, ...volumeChanges(off, 30) }), true);
+  assert.deepEqual(volumeChanges(off, 0), { notify_volume: 0 }, 'zero turns nothing else off');
+  assert.equal(soundOn({ notify: true, notify_sound: true, ...volumeChanges(off, 0) }), false);
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  const footer = html.match(/<footer class="sidebar-footer">([\s\S]*?)<\/footer>/)[1];
+  assert.match(footer, /<button id="sound"[^>]*><\/button>\s*<div id="sound-popover" class="sound-popover" role="group" aria-label="Alert volume"[^>]*hidden>\s*<input id="sound-volume" class="volume-slider" type="range" min="0" max="100" step="1"[^>]*>\s*<span class="volume-value">/, 'right after the bell, so tab reaches the slider');
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /h\('input', \{ class: 'volume-slider', type: 'range', min: '0', max: '100', step: '1'/, 'a native slider in Settings too');
+  assert.match(settings, /row\(t\('Volume'\), soundOn\(config\) \?/, 'the row says when the sound is off');
+  assert.match(settings, /for \(const slider of document\.querySelectorAll\('\.volume-slider'\)\)/, 'one paint keeps every slider in sync');
+  assert.match(settings, /slider\.addEventListener\('input', \(\) => moveVolume\(Number\(slider\.value\)\)\);/, 'moving only repaints');
+  assert.match(settings, /slider\.addEventListener\('change', \(\) => commitVolume\(Number\(slider\.value\)\)\);/, 'releasing saves');
+  assert.doesNotMatch(settings.match(/function moveVolume[\s\S]*?\n\}/)[0], /invoke|save\(/);
+  assert.match(settings, /if \(soundOn\(current\.config\) && current\.config\.notify_volume === volume\) previewChime\(\);/, 'a preview on release, unless muted or not saved');
+  assert.match(settings, /if \(!current \|\| dragging\) return;/, 'a save never replaces the slider being dragged');
+  assert.match(settings, /if \(!hovering && !dragging && !usingKeyboard\(\)\) closePopover\(\);/, 'a drag or the trip from the bell does not close it');
+  assert.match(settings, /event\.key !== 'Escape'/);
+  assert.match(settings, /Math\.max\(POPOVER_MARGIN, Math\.min\(left, window\.innerWidth - popover\.offsetWidth - POPOVER_MARGIN\)\)/, 'it stays inside the window');
+  assert.match(settings, /hideTip\(\);\n\s+\$\('sound'\)\.setAttribute\('data-tip-off', ''\);/, 'the plain tooltip does not show over it');
+  const motion = readFileSync(join(REPO, 'desktop/ui/js/motion.js'), 'utf8');
+  assert.match(motion, /if \(!target \|\| target\.hasAttribute\('data-tip-off'\)\) \{/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.sound-popover \{ position: fixed; z-index: 20;[^}]*padding: 8px 10px; border-radius: 10px; background: var\(--color-surface-raised\); border: 1px solid var\(--color-border\); box-shadow: 0 12px 32px rgba\(0, 0, 0, 0\.45\); \}/);
+  assert.match(css, /\.menu \{[^}]*box-shadow: 0 12px 32px rgba\(0, 0, 0, 0\.45\); \}/, 'the same shadow as the menus');
+  assert.match(css, /\.sound-popover \.volume-slider \{ width: 120px; \}/);
+  assert.match(css, /::-webkit-slider-runnable-track \{[^}]*var\(--color-accent\) var\(--volume\)/);
+  assert.match(css, /::-webkit-slider-thumb \{ width: 12px; height: 12px;/);
+  const i18n = readFileSync(join(REPO, 'desktop/ui/js/i18n.js'), 'utf8');
+  for (const text of ['Alert volume', 'How loud the chime plays. The volume of the system stays as it is.', 'The sound is off. Moving this turns it back on.']) assert.ok(i18n.includes(`'${text}':`), text);
 });
 
 test('settings show one section at a time, so every entry of the nav always does something', () => {

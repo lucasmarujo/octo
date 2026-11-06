@@ -658,6 +658,7 @@ A variável `ORKAI_HOME` muda esse local.
   "pi_args": [],
   "notify": true,
   "notify_sound": true,
+  "notify_volume": 100,
   "notify_command": null,
   "notify_args": [],
   "pwa_tunnel": "cloudflare",
@@ -673,7 +674,8 @@ faltam no arquivo usam o padrão, então um `config.json` antigo continua valend
 ponte, que só escuta em `127.0.0.1`.
 
 `notify: false` desliga o sininho, o sino e a notificação do terminal; `notify_sound: false` troca o sininho do
-orkai pelo sino padrão do terminal na TUI e não toca som na janela do Octo. `notify_command` funciona independente deles;
+orkai pelo sino padrão do terminal na TUI e não toca som na janela do Octo. `notify_volume` (0 a 100) define a altura do sininho sem mexer no volume do
+sistema; o sino do terminal não tem volume próprio. `notify_command` funciona independente deles;
 por exemplo, para mandar ao celular pelo [ntfy](https://ntfy.sh):
 
 ```json

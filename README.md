@@ -654,6 +654,7 @@ The `ORKAI_HOME` variable changes this location.
   "pi_args": [],
   "notify": true,
   "notify_sound": true,
+  "notify_volume": 100,
   "notify_command": null,
   "notify_args": [],
   "pwa_tunnel": "cloudflare",
@@ -669,7 +670,8 @@ missing from the file use the default, so an old `config.json` still works.
 port, which only listens on `127.0.0.1`.
 
 `notify: false` turns off the chime, the bell and the terminal notification; `notify_sound: false` swaps the orkai
-chime for the terminal's default bell in the TUI and plays no sound in the Octo window. `notify_command` works independently of them;
+chime for the terminal's default bell in the TUI and plays no sound in the Octo window. `notify_volume` (0 to 100) sets how loud the chime plays, without touching the
+system volume; the terminal's bell has no volume of its own. `notify_command` works independently of them;
 for example, to send it to your phone through [ntfy](https://ntfy.sh):
 
 ```json

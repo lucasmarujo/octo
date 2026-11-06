@@ -69,7 +69,7 @@ pub fn plan(config: &Config, alerts: &[Alert], language: Language) -> Delivery {
     if !config.notify {
         return Delivery { chime: None, notification: None };
     }
-    let chime = if config.notify_sound { Chime::for_alerts(alerts) } else { None };
+    let chime = if config.notify_sound && config.notify_volume > 0 { Chime::for_alerts(alerts) } else { None };
     Delivery { chime, notification: summary(alerts, language) }
 }
 
@@ -80,7 +80,7 @@ pub fn alert(app: AppHandle, link: State<'_, Link>, alerts: Vec<AlertView>, lang
     let alerts: Vec<Alert> = alerts.into_iter().map(Alert::from).collect();
     let delivery = plan(launcher.config(), &alerts, language.unwrap_or_default());
     if let Some(chime) = delivery.chime
-        && let Some(player) = Player::new(hub.store().home())
+        && let Some(player) = Player::new(hub.store().home(), launcher.config().notify_volume)
     {
         player.play(chime);
     }
@@ -147,6 +147,15 @@ mod tests {
         assert!(!code.contains("terminal_sequence"), "the window has no bell to fall back to");
         assert!(!code.contains(".sound("), "a notification without a sound name is silent on Windows and macOS");
         assert!(code.contains("notifier.send(alert)"), "the notify command runs whatever the sound does");
+    }
+
+    #[test]
+    fn volume_zero_is_silent_and_the_notification_still_comes() {
+        let waiting = [alert("a", AgentState::Paused)];
+        let silent = plan(&Config { notify_volume: 0, ..Config::default() }, &waiting, Language::English);
+        assert_eq!(silent, Delivery { chime: None, notification: Some("a is waiting for you".into()) });
+        let quiet = plan(&Config { notify_volume: 1, ..Config::default() }, &waiting, Language::English);
+        assert_eq!(quiet.chime, Some(Chime::Waiting));
     }
 
     #[test]

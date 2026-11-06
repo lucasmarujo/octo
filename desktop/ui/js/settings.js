@@ -1,8 +1,8 @@
 import { $, h, storage, svg } from './dom.js';
-import { joinArgs, kindColor, label, soundFlip, soundOn, splitArgs } from './format.js';
+import { joinArgs, kindColor, label, soundFlip, soundOn, splitArgs, volumeChanges } from './format.js';
 import { LANGUAGES, language, setLanguage, t } from './i18n.js';
 import { ICON_BELL, ICON_BELL_OFF } from './icons.js';
-import { choose, motion, reducedMotion, rise, settle, slideThumb } from './motion.js';
+import { choose, hideTip, motion, reducedMotion, rise, settle, slideThumb } from './motion.js';
 import { state } from './state.js';
 import { toast } from './toast.js';
 import { invoke } from './transport.js';
@@ -20,10 +20,19 @@ const TUNNELS = [
 ];
 const FIRST_AGENTS = 4;
 const CHIME_GAP_MS = 1300;
+const PREVIEW_DELAY_MS = 150;
+const POPOVER_CLOSE_MS = 220;
+const POPOVER_GAP = 6;
+const POPOVER_MARGIN = 8;
 
 let current = null;
 let acked = null;
 let saves = 0;
+let dragging = false;
+let hovering = false;
+let dismissed = false;
+let closeTimer = 0;
+let previewTimer = 0;
 let shownSection = 'Appearance';
 let showAll = false;
 let update = null;
@@ -95,6 +104,20 @@ function renderSound() {
   button.setAttribute('aria-pressed', String(on));
   button.setAttribute('aria-label', name);
   button.title = name;
+  paintVolume();
+}
+
+function paintVolume() {
+  if (!current) return;
+  const volume = current.config.notify_volume;
+  const off = !soundOn(current.config);
+  for (const slider of document.querySelectorAll('.volume-slider')) {
+    slider.value = String(volume);
+    slider.style.setProperty('--volume', `${volume}%`);
+    slider.classList.toggle('off', off);
+    slider.setAttribute('aria-valuetext', `${volume}%`);
+  }
+  for (const value of document.querySelectorAll('.volume-value')) value.textContent = `${volume}%`;
 }
 
 async function save(changes) {
@@ -104,7 +127,7 @@ async function save(changes) {
   try {
     const saved = await invoke('save_settings', { config: current.config });
     acked = saved;
-    if (turn === saves) current = saved;
+    if (turn === saves && !dragging) current = saved;
   } catch (err) {
     toast(String(err), 'error');
     if (turn === saves) current = acked;
@@ -117,6 +140,114 @@ function flipSound() {
   if (!current) return;
   save(soundFlip(current.config));
   render();
+}
+
+function moveVolume(volume) {
+  if (!current) return;
+  current = { ...current, config: { ...current.config, ...volumeChanges(current.config, volume) } };
+  renderSound();
+}
+
+function previewChime() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => invoke('play_chime', { sound: 'waiting' }).catch(() => {}), PREVIEW_DELAY_MS);
+}
+
+async function commitVolume(volume) {
+  if (!current) return;
+  dragging = false;
+  await save(volumeChanges(current.config, volume));
+  if (soundOn(current.config) && current.config.notify_volume === volume) previewChime();
+}
+
+function bindVolume(slider) {
+  slider.addEventListener('pointerdown', () => {
+    dragging = true;
+  });
+  slider.addEventListener('input', () => moveVolume(Number(slider.value)));
+  slider.addEventListener('change', () => commitVolume(Number(slider.value)));
+  return slider;
+}
+
+function volumeControl() {
+  const slider = bindVolume(h('input', { class: 'volume-slider', type: 'range', min: '0', max: '100', step: '1', 'aria-label': t('Volume') }));
+  return h('div', { class: 'volume-control' }, slider, h('span', { class: 'volume-value' }));
+}
+
+function usingKeyboard() {
+  return $('sound').matches(':focus-visible') || $('sound-volume').matches(':focus-visible');
+}
+
+function placePopover() {
+  const box = $('sound').getBoundingClientRect();
+  const popover = $('sound-popover');
+  const left = box.left + box.width / 2 - popover.offsetWidth / 2;
+  popover.style.left = `${Math.max(POPOVER_MARGIN, Math.min(left, window.innerWidth - popover.offsetWidth - POPOVER_MARGIN))}px`;
+  popover.style.top = `${box.top - popover.offsetHeight - POPOVER_GAP}px`;
+}
+
+function openPopover() {
+  clearTimeout(closeTimer);
+  const popover = $('sound-popover');
+  if (!popover.hidden || dismissed) return;
+  hideTip();
+  $('sound').setAttribute('data-tip-off', '');
+  popover.hidden = false;
+  placePopover();
+}
+
+function closePopover() {
+  clearTimeout(closeTimer);
+  $('sound-popover').hidden = true;
+  $('sound').removeAttribute('data-tip-off');
+}
+
+function closeSoon() {
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => {
+    if (!hovering && !dragging && !usingKeyboard()) closePopover();
+  }, POPOVER_CLOSE_MS);
+}
+
+function initPopover() {
+  const bell = $('sound');
+  const popover = $('sound-popover');
+  const enter = () => {
+    hovering = true;
+    dismissed = false;
+    openPopover();
+  };
+  const leave = () => {
+    hovering = false;
+    closeSoon();
+  };
+  for (const part of [bell, popover]) {
+    part.addEventListener('pointerenter', enter);
+    part.addEventListener('pointerleave', leave);
+    part.addEventListener('focusout', (event) => {
+      if (event.relatedTarget === bell || popover.contains(event.relatedTarget)) return;
+      dismissed = false;
+      if (!hovering && !dragging) closePopover();
+    });
+  }
+  bell.addEventListener('focusin', () => {
+    if (bell.matches(':focus-visible')) openPopover();
+  });
+  bindVolume($('sound-volume'));
+  window.addEventListener('pointerup', () => {
+    dragging = false;
+    if (!hovering && !popover.hidden) closeSoon();
+  });
+  window.addEventListener('resize', () => {
+    if (!popover.hidden) placePopover();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || popover.hidden) return;
+    dismissed = true;
+    const focusedInside = popover.contains(document.activeElement);
+    closePopover();
+    if (focusedInside) bell.focus();
+  });
 }
 
 function agentRow(agent) {
@@ -218,6 +349,7 @@ function alertsSection() {
       t('Falling tone when an agent waits for you, rising when it finishes. Off plays no sound.'),
       h('div', { class: 'setting-controls' }, h('button', { class: 'link-button', type: 'button', onclick: playChimes }, t('Play')), toggle(config.notify_sound, (on) => save({ notify_sound: on }), t('Octo chime'))),
     ),
+    row(t('Volume'), soundOn(config) ? t('How loud the chime plays. The volume of the system stays as it is.') : t('The sound is off. Moving this turns it back on.'), volumeControl()),
     h(
       'div',
       { class: 'setting stacked' },
@@ -282,11 +414,14 @@ function nav() {
 
 function render() {
   const host = $('settings-view');
-  if (!current) return;
+  if (!current || dragging) return;
   const scroll = host.scrollTop;
+  const onSlider = host.contains(document.activeElement) && document.activeElement.matches('.volume-slider');
   host.replaceChildren(h('div', { class: 'settings' }, nav(), h('div', { class: 'settings-content' }, SECTIONS[shownSection]())));
   host.scrollTop = scroll;
   for (const group of host.querySelectorAll('.segmented')) slideThumb(group);
+  paintVolume();
+  if (onSlider) host.querySelector('.volume-slider')?.focus();
 }
 
 async function load() {
@@ -298,6 +433,7 @@ async function load() {
 export function initSound() {
   renderSound();
   $('sound').addEventListener('click', flipSound);
+  initPopover();
   load().catch((err) => toast(t('Could not read the settings: {error}', { error: err }), 'error'));
 }
 

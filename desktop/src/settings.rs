@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use orkai::config::Config;
+use orkai::config::{Config, FULL_VOLUME};
 use orkai::fsutil;
 use orkai::hooks::parse_version;
 use orkai::launch::{default_shell, installed_kinds};
@@ -137,7 +137,12 @@ pub fn play_chime(link: State<'_, Link>, sound: Sound) -> bool {
         Sound::Waiting => Chime::Waiting,
         Sound::Done => Chime::Done,
     };
-    Player::new(link.hub().store().home()).is_some_and(|player| player.play(chime))
+    let volume = preview_volume(link.hub().launcher().config());
+    Player::new(link.hub().store().home(), volume).is_some_and(|player| player.play(chime))
+}
+
+fn preview_volume(config: &Config) -> u8 {
+    if config.notify_volume == 0 { FULL_VOLUME } else { config.notify_volume }
 }
 
 #[tauri::command]
@@ -224,6 +229,13 @@ mod tests {
         assert_eq!(fx.hub.launcher().config(), &settings.config);
         assert!(fx.hub.kinds().contains(&AgentKind::Claude), "claude now points at a program that exists");
         assert!(settings.agents.iter().any(|agent| agent.kind == AgentKind::Claude && agent.installed));
+    }
+
+    #[test]
+    fn the_preview_plays_at_the_saved_volume_and_is_heard_even_at_zero() {
+        assert_eq!(preview_volume(&Config { notify_volume: 30, ..Config::default() }), 30);
+        assert_eq!(preview_volume(&Config { notify_volume: 0, ..Config::default() }), FULL_VOLUME);
+        assert_eq!(preview_volume(&Config { notify: false, notify_sound: false, ..Config::default() }), FULL_VOLUME);
     }
 
     #[test]
