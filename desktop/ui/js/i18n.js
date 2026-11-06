@@ -195,6 +195,7 @@ export const PT = {
   'Who runs the task': 'Quem roda a tarefa',
   'Where the task runs': 'Onde a tarefa roda',
   'Each new AI agent runs in its own git worktree and octo/<name> branch': 'Cada agente de IA novo roda no próprio worktree git e na branch octo/<nome>',
+  'Task options': 'Opções da tarefa',
   Bypass: 'Bypass',
   'Remote Control': 'Remote Control',
   'New Claude agents start with Remote Control: continue them from claude.ai or the Claude app': 'Os agentes Claude novos começam com Remote Control: continue de claude.ai ou do app do Claude',

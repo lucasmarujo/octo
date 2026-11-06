@@ -4,6 +4,7 @@ import { motionMs } from './motion.js';
 import { sgrRuns } from './palette.js';
 
 let menuClosing = null;
+let menuOnClose = null;
 
 function open(title, body, actions) {
   const dialog = $('dialog');
@@ -27,9 +28,16 @@ export function menuShown() {
   return !$('menu').hidden && menuClosing === null;
 }
 
+function menuEnded() {
+  const onClose = menuOnClose;
+  menuOnClose = null;
+  if (onClose) onClose();
+}
+
 export function closeMenu() {
   const menu = $('menu');
   if (menu.hidden || menuClosing !== null) return;
+  menuEnded();
   menu.classList.add('closing');
   menuClosing = setTimeout(() => {
     menuClosing = null;
@@ -38,8 +46,10 @@ export function closeMenu() {
   }, motionMs('--motion-fast'));
 }
 
-export function openMenu(anchor, items, above) {
+export function openMenu(anchor, items, above, onClose = null) {
   const menu = $('menu');
+  menuEnded();
+  menuOnClose = onClose;
   clearTimeout(menuClosing);
   menuClosing = null;
   menu.classList.remove('closing');

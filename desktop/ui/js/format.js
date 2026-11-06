@@ -35,6 +35,12 @@ export function sidebarWidth(value) {
   return Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)));
 }
 
+export function optionsTone({ worktree, remote, bypass }) {
+  if (bypass) return 'danger';
+  if (remote) return 'caution';
+  return worktree ? 'default' : 'neutral';
+}
+
 export function canMove(agent, session) {
   return Boolean(agent && session) && !agent.starting && agent.session !== session;
 }

@@ -1083,15 +1083,92 @@ test('every provider with plan usage has its icon in the real colors of its bran
   assert.ok(existsSync(join(REPO, 'desktop/ui/vendor/lobehub-icons/LICENSE')), 'the icon set keeps its MIT notice');
 });
 
-test('the worktree toggle turns blue when on, and bypass stays red', () => {
+test('the options button tints like the most severe option that is on, so bypass is never silently on', async () => {
+  const { optionsTone } = await import('../js/format.js');
+  assert.equal(optionsTone({ worktree: false, remote: false, bypass: false }), 'neutral');
+  assert.equal(optionsTone({ worktree: true, remote: false, bypass: false }), 'default');
+  assert.equal(optionsTone({ worktree: false, remote: true, bypass: false }), 'caution');
+  assert.equal(optionsTone({ worktree: true, remote: true, bypass: false }), 'caution');
+  assert.equal(optionsTone({ worktree: false, remote: false, bypass: true }), 'danger');
+  assert.equal(optionsTone({ worktree: true, remote: true, bypass: true }), 'danger');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.match(css, /\.toggle\[aria-pressed="true"\] \{ color: var\(--color-link\); border-color: color-mix\(in srgb, var\(--color-link\) 50%, transparent\); background: color-mix\(in srgb, var\(--color-link\) 10%, transparent\); \}/);
+  assert.match(css, /\.toggle\.caution\[aria-pressed="true"\] \{ color: var\(--color-waiting\);/);
   assert.match(css, /\.toggle\.danger\[aria-pressed="true"\] \{ color: var\(--color-lost\);/);
-  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
-  assert.match(html, /<button id="worktree" class="toggle" /);
   const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
-  assert.match(composer, /bypass\.classList\.add\('danger'\)/);
-  assert.doesNotMatch(composer, /worktree\.classList\.add/);
+  assert.match(composer, /button\.classList\.toggle\('caution', tone === 'caution'\);\n\s*button\.classList\.toggle\('danger', tone === 'danger'\);\n\s*button\.setAttribute\('aria-pressed', String\(tone !== 'neutral'\)\);/);
+  assert.match(composer, /remote: state\.remote, bypass: state\.bypass/, 'remote control shows whichever agent is selected');
+  assert.match(composer, /button\.title = name;\n\s*button\.setAttribute\('aria-label', name\);/);
+  assert.match(composer, /`\$\{t\('Task options'\)\} · \$\{active\.join\(', '\)\}`/, 'the name lists what is on');
+  const { PT } = await import('../js/i18n.js');
+  assert.equal(PT['Task options'], 'Opções da tarefa');
+});
+
+test('the three options left the row of the task box for a small button right after the folder', async () => {
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.doesNotMatch(html, /id="(worktree|remote|bypass)"/);
+  const row = html.split('<div class="composer-options">')[1].split('</form>')[0];
+  const ids = [...row.matchAll(/<button id="(\w+)"/g)].map((match) => match[1]);
+  assert.deepEqual(ids, ['who', 'where', 'options', 'launch']);
+  assert.match(html, /<button id="options" class="toggle options-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-pressed="false"><\/button>/);
+  const { ICON_OPTIONS } = await import('../js/icons.js');
+  assert.match(ICON_OPTIONS, /d="M2 3h8M2 6h8M2 9h8"/, 'three horizontal bars');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.options-button \{ width: 30px; padding: 0; justify-content: center; flex-shrink: 0; \}/);
+});
+
+test('the options open above their button as rows of checkboxes with a small switch in the tone of each one', () => {
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  const order = [...composer.split('const TASK_OPTIONS = [')[1].split('];')[0].matchAll(/name: t\('([^']+)'\), icon: (\w+), tone: 'var\((--color-\w+)\)'/g)].map((match) => match.slice(1));
+  assert.deepEqual(order, [
+    ['Worktree', 'ICON_BRANCH', '--color-link'],
+    ['Remote Control', 'ICON_REMOTE', '--color-waiting'],
+    ['Bypass', 'ICON_SHIELD', '--color-lost'],
+  ]);
+  for (const title of ['Each new AI agent runs in its own git worktree', 'New Claude agents start with Remote Control', 'New AI agents run tools, commands and edits without asking']) assert.ok(composer.split('const TASK_OPTIONS = [')[1].split('];')[0].includes(title), title);
+  assert.match(composer, /role: 'menuitemcheckbox'/);
+  assert.match(composer, /h\('span', \{ class: 'switch', 'aria-hidden': 'true' \}, h\('span', \{ class: 'switch-knob' \}\)\)/);
+  assert.match(composer, /row\.setAttribute\('aria-checked', on\);\n\s*row\.querySelector\('\.switch'\)\.setAttribute\('aria-checked', on\);/);
+  assert.match(composer, /openMenu\(\$\('options'\), optionRows, true, optionsClosed\)/);
+  assert.match(composer, /\$\('options'\)\.setAttribute\('aria-expanded', 'true'\)/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.option-item \{ font-family: var\(--font-sans\); font-size: var\(--text-sm\); font-weight: 500; color: var\(--color-text-muted\); \}/, 'unlike the mono menu of agents, and muted while off');
+  assert.match(css, /\.option-item\[aria-checked="true"\] \{ color: var\(--tone\); \}/);
+  assert.match(css, /\.option-item \.switch\[aria-checked="true"\] \{ background: var\(--tone\); \}/);
+  assert.ok(css.indexOf('.option-item .switch-knob') > css.indexOf('.switch[aria-checked="true"]:active .switch-knob'), 'the small switch comes after the rules it overrides');
+});
+
+test('flipping an option keeps the menu open: the rows change in place, so no click lands on a detached node', () => {
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  const flip = composer.slice(composer.indexOf('function flipOption'), composer.indexOf('function optionRow'));
+  assert.doesNotMatch(flip, /closeMenu|openMenu|replaceChildren/);
+  const rows = composer.slice(composer.indexOf('function renderOptionRows'), composer.indexOf('function optionsClosed'));
+  assert.doesNotMatch(rows, /replaceChildren|openMenu/, 'an overview arriving mid-click must not swap the row under the mouse');
+  assert.match(composer.split('export function renderComposer')[1], /renderOptionRows\(\);\n\}/, 'any change of state refreshes an open menu');
+  assert.match(composer, /if \(!\$\('menu'\)\.contains\(event\.target\)\) closeMenu\(\);/);
+  assert.match(composer, /\$\('options'\)\.addEventListener\('click', \(event\) => \{\n\s*event\.stopPropagation\(\);\n\s*if \(!menuShown\(\)\) openOptionsMenu\(event\);\n\s*else closeMenu\(\);/);
+});
+
+test('a menu tells who opened it when it goes away, by closing or by giving way to another menu', () => {
+  const dialogs = readFileSync(join(REPO, 'desktop/ui/js/dialogs.js'), 'utf8');
+  assert.match(dialogs, /export function openMenu\(anchor, items, above, onClose = null\) \{\n\s*const menu = \$\('menu'\);\n\s*menuEnded\(\);\n\s*menuOnClose = onClose;/);
+  assert.match(dialogs, /if \(menu\.hidden \|\| menuClosing !== null\) return;\n\s*menuEnded\(\);/);
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  const closed = composer.slice(composer.indexOf('function optionsClosed'), composer.indexOf('function openOptionsMenu'));
+  assert.match(closed, /optionRows = null;/);
+  assert.match(closed, /\$\('options'\)\.setAttribute\('aria-expanded', 'false'\)/);
+  assert.match(closed, /\$\('task'\)\.focus\(\)/);
+  assert.match(closed, /focused === document\.body \|\| focused === \$\('options'\) \|\| \$\('menu'\)\.contains\(focused\)/, 'a click on another field keeps its focus');
+});
+
+test('ctrl T flips the worktree through the state, not through a button that left the page', () => {
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /else if \(plain && key === 't'\) toggleWorktree\(\);/);
+  assert.match(main, /import \{ initComposer, renderComposer, renderPalette, setCommandRunner, toggleWorktree \} from '\.\/composer\.js';/);
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  assert.match(composer, /export function toggleWorktree\(\) \{\n\s*setWorktree\(!worktreeOn\(\)\);\n\s*renderComposer\(\);\n\}/);
+  const ui = join(REPO, 'desktop/ui/js');
+  for (const file of readdirSync(ui)) assert.doesNotMatch(readFileSync(join(ui, file), 'utf8'), /\$\('(worktree|remote|bypass)'\)|#(worktree|remote|bypass)\b/, file);
 });
 
 test('the phone button shows a phone and a green outline while a phone is connected', async () => {
@@ -1151,10 +1228,7 @@ test('the phone button is a mini icon to the right of settings, and its status s
   }
 });
 
-test('remote control is a yellow toggle between worktree and bypass, off until chosen and only for Claude', async () => {
-  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
-  const order = [...html.matchAll(/<button id="(worktree|remote|bypass)" class="toggle"/g)].map((match) => match[1]);
-  assert.deepEqual(order, ['worktree', 'remote', 'bypass']);
+test('remote control is off until chosen and only for Claude', async () => {
   const { state, setRemote } = await import('../js/state.js');
   assert.equal(state.remote, false, 'off by default');
   setRemote(true);
@@ -1165,12 +1239,9 @@ test('remote control is a yellow toggle between worktree and bypass, off until c
   assert.match(source, /storage\.set\(REMOTE_KEY, on \? 'on' : null\)/);
   const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
   assert.match(composer, /remoteControl: state\.remote && kind === 'claude'/);
-  assert.match(composer, /remote\.classList\.add\('caution'\);\n\s*remote\.setAttribute\('aria-pressed', String\(state\.remote\)\)/);
   const commands = readFileSync(join(REPO, 'desktop/ui/js/commands.js'), 'utf8');
   assert.match(commands, /type: 'race'[^}]*remoteControl: state\.remote/);
   assert.match(commands, /type: 'skill'[^}]*remoteControl: state\.remote/);
-  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
-  assert.match(css, /\.toggle\.caution\[aria-pressed="true"\] \{ color: var\(--color-waiting\);/);
   const actions = rust('src/pwa/actions.rs');
   assert.match(actions, /let remote_control = remote_control && kind == AgentKind::Claude;/);
   assert.match(actions, /let remote_control = remote_control && draft\.kind == AgentKind::Claude;/);

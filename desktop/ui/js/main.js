@@ -1,7 +1,7 @@
 import { nextAttention, rename, renderAgent, renderAgentHead, renderStatus, restartWhenStopped } from './agent.js';
 import { detectAlerts, notice, windowTitle } from './alerts.js';
 import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tickBoard } from './board.js';
-import { initComposer, renderComposer, renderPalette, setCommandRunner } from './composer.js';
+import { initComposer, renderComposer, renderPalette, setCommandRunner, toggleWorktree } from './composer.js';
 import { runCommand } from './commands.js';
 import { closeMenu, confirm, menuShown, showCompare, showDiff, showTests } from './dialogs.js';
 import { showFolderSearch, showFolders } from './folders.js';
@@ -426,7 +426,7 @@ function overviewShortcut(event) {
   const focused = focusedAgent();
   if (plain && key === 'n') promptNewSession(onSelect);
   else if (plain && key === 'l') $('where').click();
-  else if (plain && key === 't') $('worktree').click();
+  else if (plain && key === 't') toggleWorktree();
   else if (plain && key === 'r') send({ type: 'recover', session: state.session });
   else if (plain && key === 'p') openPairing();
   else if (plain && key === 'e' && focused) rename(focused);

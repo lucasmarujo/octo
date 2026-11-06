@@ -2,9 +2,9 @@ import { $, h, svg } from './dom.js';
 import { acceptedSuggestion, matchingCommands, nextSuggestion, parseCommand } from './commands.js';
 import { closeMenu, menuShown, openMenu } from './dialogs.js';
 import { pickFolder } from './folders.js';
-import { kindColor, label } from './format.js';
+import { kindColor, label, optionsTone } from './format.js';
 import { t } from './i18n.js';
-import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_REMOTE, ICON_SHIELD } from './icons.js';
+import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_OPTIONS, ICON_REMOTE, ICON_SHIELD } from './icons.js';
 import { flash } from './motion.js';
 import {
   currentWhere,
@@ -24,11 +24,17 @@ import { send } from './transport.js';
 const MAX_HEIGHT = 160;
 const MAX_SUGGESTIONS = 8;
 const SKILLS_TTL_MS = 5000;
+const TASK_OPTIONS = [
+  { name: t('Worktree'), icon: ICON_BRANCH, tone: 'var(--color-link)', title: t('Each new AI agent runs in its own git worktree and octo/<name> branch'), on: worktreeOn, set: setWorktree },
+  { name: t('Remote Control'), icon: ICON_REMOTE, tone: 'var(--color-waiting)', title: t('New Claude agents start with Remote Control: continue them from claude.ai or the Claude app'), on: () => state.remote, set: setRemote },
+  { name: t('Bypass'), icon: ICON_SHIELD, tone: 'var(--color-lost)', title: t('New AI agents run tools, commands and edits without asking. Only in folders you trust.'), on: () => state.bypass, set: setBypass },
+];
 
 let runCommand = () => false;
 let paletteItems = [];
 let paletteIndex = 0;
 let paletteWord = null;
+let optionRows = null;
 
 export function setCommandRunner(run) {
   runCommand = run;
@@ -142,6 +148,69 @@ function openWhoMenu() {
   openMenu($('who'), items, true);
 }
 
+export function toggleWorktree() {
+  setWorktree(!worktreeOn());
+  renderComposer();
+}
+
+function flipOption(option) {
+  option.set(!option.on());
+  renderComposer();
+}
+
+function optionRow(option) {
+  return h(
+    'button',
+    {
+      class: 'menu-item option-item',
+      type: 'button',
+      role: 'menuitemcheckbox',
+      title: option.title,
+      style: `--tone:${option.tone}`,
+      onclick: () => flipOption(option),
+    },
+    svg(option.icon),
+    h('span', null, option.name),
+    h('span', { class: 'switch', 'aria-hidden': 'true' }, h('span', { class: 'switch-knob' })),
+  );
+}
+
+function renderOptionRows() {
+  if (!optionRows) return;
+  optionRows.forEach((row, index) => {
+    const on = String(TASK_OPTIONS[index].on());
+    row.setAttribute('aria-checked', on);
+    row.querySelector('.switch').setAttribute('aria-checked', on);
+  });
+}
+
+function optionsClosed() {
+  optionRows = null;
+  $('options').setAttribute('aria-expanded', 'false');
+  const focused = document.activeElement;
+  if (focused === document.body || focused === $('options') || $('menu').contains(focused)) $('task').focus();
+}
+
+function openOptionsMenu(event) {
+  optionRows = TASK_OPTIONS.map(optionRow);
+  renderOptionRows();
+  openMenu($('options'), optionRows, true, optionsClosed);
+  $('options').setAttribute('aria-expanded', 'true');
+  if (event.detail === 0) optionRows[0].focus();
+}
+
+function renderOptionsButton() {
+  const tone = optionsTone({ worktree: worktreeOn(), remote: state.remote, bypass: state.bypass });
+  const active = TASK_OPTIONS.filter((option) => option.on()).map((option) => option.name);
+  const name = active.length ? `${t('Task options')} · ${active.join(', ')}` : t('Task options');
+  const button = $('options');
+  button.classList.toggle('caution', tone === 'caution');
+  button.classList.toggle('danger', tone === 'danger');
+  button.setAttribute('aria-pressed', String(tone !== 'neutral'));
+  button.title = name;
+  button.setAttribute('aria-label', name);
+}
+
 function cycleWho(step) {
   const kinds = installedKinds();
   if (!kinds.length) return;
@@ -243,20 +312,8 @@ export function renderComposer() {
   $('where').replaceChildren(h('span', { class: 'value path' }, currentWhere()));
   $('where').setAttribute('aria-label', `${t('Where the task runs')}: ${currentWhere()}`);
   $('where').title = currentWhere();
-  const worktree = $('worktree');
-  worktree.setAttribute('aria-pressed', String(worktreeOn()));
-  worktree.replaceChildren(svg(ICON_BRANCH), t('Worktree'));
-  worktree.title = t('Each new AI agent runs in its own git worktree and octo/<name> branch');
-  const remote = $('remote');
-  remote.classList.add('caution');
-  remote.setAttribute('aria-pressed', String(state.remote));
-  remote.replaceChildren(svg(ICON_REMOTE), t('Remote Control'));
-  remote.title = t('New Claude agents start with Remote Control: continue them from claude.ai or the Claude app');
-  const bypass = $('bypass');
-  bypass.classList.add('danger');
-  bypass.setAttribute('aria-pressed', String(state.bypass));
-  bypass.replaceChildren(svg(ICON_SHIELD), t('Bypass'));
-  bypass.title = t('New AI agents run tools, commands and edits without asking. Only in folders you trust.');
+  renderOptionsButton();
+  renderOptionRows();
 }
 
 export function initComposer() {
@@ -277,17 +334,11 @@ export function initComposer() {
       renderComposer();
     }),
   );
-  $('worktree').addEventListener('click', () => {
-    setWorktree(!worktreeOn());
-    renderComposer();
-  });
-  $('remote').addEventListener('click', () => {
-    setRemote(!state.remote);
-    renderComposer();
-  });
-  $('bypass').addEventListener('click', () => {
-    setBypass(!state.bypass);
-    renderComposer();
+  $('options').replaceChildren(svg(ICON_OPTIONS));
+  $('options').addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (!menuShown()) openOptionsMenu(event);
+    else closeMenu();
   });
   document.addEventListener('click', (event) => {
     if (!$('menu').contains(event.target)) closeMenu();
