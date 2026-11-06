@@ -641,6 +641,18 @@ test('tab fills the suggestion selected in the palette and the arrows move the s
   assert.match(css, /\.palette-item:hover, \.palette-item\.active \{ background: var\(--color-border\); \}/);
 });
 
+test('a skill in the palette takes the color of the selected agent and a command keeps the text color', () => {
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  assert.match(composer, /kind: 'skill', color: kindColor\(currentWho\(\)\) \}/);
+  assert.match(composer, /h\('span', \{ class: 'palette-usage', style: item\.color && `color:\$\{item\.color\}` \}, item\.text\)/);
+  assert.doesNotMatch(composer, /kind: 'command', color/);
+  assert.match(composer, /setWho\(kinds\[[^\n]*\n\s*renderComposer\(\);\n\s*renderPalette\(\);/, 'shift+tab with the palette open repaints the skills');
+  assert.match(composer, /setWho\(kind\);\n\s*closeMenu\(\);\n\s*renderComposer\(\);\n\s*renderPalette\(\);/, 'the who menu with the palette open repaints the skills');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.doesNotMatch(css, /\.palette-item\.skill/, 'the accent no longer paints a skill');
+  assert.match(css, /\.palette-usage \{[^}]*color: var\(--color-text\); \}/);
+});
+
 test('a slash command is read with its argument, and agent names take the TUI aliases', async () => {
   const { parseCommand, parseKind } = await import('../js/commands.js');
   assert.deepEqual(parseCommand('/race cc,codex fix the login'), { name: 'race', word: 'race', arg: 'cc,codex fix the login' });

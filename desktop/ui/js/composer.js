@@ -70,7 +70,7 @@ export function renderPalette() {
   const commands = matchingCommands(word).map(([usage, about]) => ({ text: usage, about, kind: 'command' }));
   const skills = skillNames()
     .filter((skill) => `/${skill}`.startsWith(word))
-    .map((skill) => ({ text: `/${skill}`, about: `skill · ${label(currentWho())}`, kind: 'skill' }));
+    .map((skill) => ({ text: `/${skill}`, about: `skill · ${label(currentWho())}`, kind: 'skill', color: kindColor(currentWho()) }));
   paletteItems = [...commands, ...skills].slice(0, MAX_SUGGESTIONS);
   paletteIndex = Math.min(paletteIndex, Math.max(paletteItems.length - 1, 0));
   palette.hidden = paletteItems.length === 0;
@@ -86,7 +86,7 @@ export function renderPalette() {
           onmousedown: (event) => event.preventDefault(),
           onclick: () => acceptSuggestion(item),
         },
-        h('span', { class: 'palette-usage' }, item.text),
+        h('span', { class: 'palette-usage', style: item.color && `color:${item.color}` }, item.text),
         h('span', { class: 'palette-about' }, item.about),
       ),
     ),
@@ -131,6 +131,7 @@ function openWhoMenu() {
           setWho(kind);
           closeMenu();
           renderComposer();
+          renderPalette();
           $('task').focus();
         },
       },
@@ -147,6 +148,7 @@ function cycleWho(step) {
   const at = kinds.indexOf(currentWho());
   setWho(kinds[(at + step + kinds.length) % kinds.length]);
   renderComposer();
+  renderPalette();
 }
 
 function recall(step) {
