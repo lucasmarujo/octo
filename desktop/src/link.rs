@@ -173,6 +173,8 @@ pub fn run() -> io::Result<()> {
             settings::save_settings,
             settings::play_chime,
             settings::check_update,
+            settings::install_agent,
+            settings::recheck_agents,
             alerts::alert,
             pair::pairing,
             pair::set_phone,

@@ -62,7 +62,7 @@ export function openMenu(anchor, items, above, onClose = null) {
   menu.style.top = above ? `${Math.max(MENU_MARGIN, box.top - menu.offsetHeight - MENU_GAP)}px` : `${box.bottom + MENU_GAP}px`;
 }
 
-export function confirm({ title, text, action, danger }) {
+export function confirm({ title, text, code, action, danger }) {
   return new Promise((resolve) => {
     const dialog = $('dialog');
     const done = (answer) => {
@@ -72,7 +72,7 @@ export function confirm({ title, text, action, danger }) {
     };
     const cancel = () => done(false);
     const yes = h('button', { class: danger ? 'button warn' : 'button primary', type: 'button', onclick: () => done(true) }, action);
-    open(title, h('p', { class: 'dialog-text' }, text), [
+    open(title, [h('p', { class: 'dialog-text' }, text), code ? h('pre', { class: 'dialog-command selectable' }, code) : null], [
       h('button', { class: 'button', type: 'button', onclick: cancel }, t('Cancel')),
       yes,
     ]);

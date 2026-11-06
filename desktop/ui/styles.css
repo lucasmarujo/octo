@@ -500,6 +500,7 @@ h1, p { margin: 0; }
 .dialog-body { display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; }
 .dialog-title { font-size: var(--text-lg); font-weight: 700; }
 .dialog-text { color: var(--color-text-muted); line-height: 20px; }
+.dialog-command { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--color-border); }
 .field { width: 100%; height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-sm); user-select: text; }
 .field:focus { outline: none; border-color: var(--color-accent); }
@@ -765,10 +766,11 @@ h1, p { margin: 0; }
 .agents-head { display: flex; align-items: center; gap: 12px; height: 28px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); }
 .agents-row { display: flex; align-items: center; gap: 12px; height: 48px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); }
 .agents-name { width: 110px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 700; line-height: 16px; }
-.agents-command { width: 150px; flex-shrink: 0; }
+.agents-command { width: clamp(110px, 20%, 150px); flex-shrink: 0; }
 .agents-args { flex: 1; min-width: 0; }
 .agents-row .field { height: 30px; padding: 0 10px; border-radius: 7px; font-size: var(--text-xs); }
 .agent-status { display: flex; align-items: center; justify-content: flex-end; gap: 6px; width: 96px; flex-shrink: 0; color: var(--color-text-muted); font-size: var(--text-xs); line-height: 16px; }
+.agent-install { display: flex; justify-content: flex-end; width: 84px; flex-shrink: 0; }
 .agents-head .caps { font-size: 11px; font-weight: 400; color: var(--color-text-faint); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-faint); flex-shrink: 0; }
 .status-dot.on { background: var(--color-done); }

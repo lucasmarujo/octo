@@ -1602,6 +1602,50 @@ test('Settings lists every agent at once, and the plan usage keeps its own foldi
   assert.match(i18n, /'Show \{count\} more':/);
 });
 
+test('an install terminal is told apart by its name, the same way the core names it', async () => {
+  const { installKind } = await import('../js/format.js');
+  const terminal = (name) => agent({ kind: 'terminal', name });
+  assert.equal(installKind(terminal('install-kilo')), 'kilo');
+  assert.equal(installKind(terminal('install-kilo-2')), 'kilo', 'a new try after a failed one');
+  assert.equal(installKind(terminal('install-agy')), 'antigravity', 'the label of the core');
+  assert.equal(installKind(terminal('install-pi')), 'pi');
+  assert.equal(installKind(terminal('install-nothing')), null);
+  assert.equal(installKind(terminal('install-terminal')), null);
+  assert.equal(installKind(terminal('install-kilo-x')), null);
+  assert.equal(installKind(terminal('term-1')), null);
+  assert.equal(installKind(agent({ kind: 'claude', name: 'install-kilo' })), null, 'an AI agent named like that is not an installer');
+  assert.ok(rust('desktop/src/install.rs').includes('const NAME_PREFIX: &str = "install-";'));
+});
+
+test('installing asks first, sends only the kind and is out of reach of the phone', () => {
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /invoke\('install_agent', \{ kind: agent\.kind, session: state\.session \}\)/, 'the window names a kind, never a command');
+  const install = settings.match(/async function install\(agent\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(install.indexOf('await confirm(') < install.indexOf("invoke('install_agent'"), 'nothing runs before the answer');
+  assert.match(install, /code: agent\.install,/, 'the dialog shows the line the core sent');
+  assert.match(install, /title: t\('Install \{name\}\?', \{ name: label\(agent\.kind\) \}\)/);
+  assert.match(install, /action: t\('Install'\)/);
+  assert.match(settings, /disabled: busy, onclick: \(\) => install\(agent\) \}, busy \? t\('Installing…'\) : t\('Install'\)/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/dialogs.js'), 'utf8'), /code \? h\('pre', \{ class: 'dialog-command selectable' \}, code\) : null/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8'), /\.dialog-command \{[^}]*font-family: var\(--font-mono\);/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /watchInstalls\(message\.agents\);/);
+  assert.match(settings, /await load\(\);\n\s+render\(\);\n\s+recheck\(\);/, 'opening Settings checks again');
+  assert.match(settings, /if \(ended\.length\) installsEnded\(ended\);/, 'and so does the end of the terminal');
+
+  const link = rust('desktop/src/link.rs');
+  assert.match(link, /settings::install_agent,/);
+  const files = (dir) => readdirSync(join(REPO, dir), { withFileTypes: true }).flatMap((entry) => (entry.isDirectory() ? files(join(dir, entry.name)) : [join(dir, entry.name)]));
+  for (const file of files('src').filter((name) => /\.(rs|js)$/.test(name))) {
+    assert.doesNotMatch(rust(file).split('#[cfg(test)]')[0], /install_agent|recheck_agents/, `${file} is reachable from a phone`);
+  }
+  const core = rust('Cargo.toml');
+  assert.doesNotMatch(core, /orkai-desktop|path = "desktop"/, 'the core, and with it the phone bridge, cannot call into the desktop crate');
+  assert.match(rust('desktop/src/install.rs'), /pub const fn command\(kind: AgentKind, os: Os\) -> Option<&'static str>/, 'a fixed table');
+  const i18n = readFileSync(join(REPO, 'desktop/ui/js/i18n.js'), 'utf8');
+  for (const text of ['Installing…', 'Install {name}?', 'This downloads and runs software from the vendor.', '{name} is installed.']) assert.ok(i18n.includes(`'${text}':`), text);
+});
+
 test('settings show one section at a time, so every entry of the nav always does something', () => {
   const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
   assert.match(settings, /const SECTIONS = \{ Appearance: appearanceSection, Agents: agentsSection, Alerts: alertsSection, Phone: phoneSection, Updates: updatesSection \};/);

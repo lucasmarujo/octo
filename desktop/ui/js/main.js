@@ -16,7 +16,7 @@ import { glyph as kai, moodOf } from './kai.js';
 import { initTooltips } from './motion.js';
 import { renderList, tickList } from './list.js';
 import { openPairing, watchPhone } from './pair.js';
-import { applyTheme, initSound, renderSettings } from './settings.js';
+import { applyTheme, initSound, renderSettings, setAgentOpener, watchInstalls } from './settings.js';
 import { initDetailsWidth, initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
 import { Terminal } from './terminal.js';
@@ -334,6 +334,7 @@ function onMessage(message) {
       settleTabs();
       markSeenWhileWatching();
       restartWhenStopped(message.agents);
+      watchInstalls(message.agents);
       raiseAlerts(message.agents);
       render();
       reopenTerminal();
@@ -544,6 +545,7 @@ function start() {
   initComposer();
   initTooltips();
   setCommandRunner((text) => runCommand(text, commands));
+  setAgentOpener(openAgent);
   $('recover').addEventListener('click', () => send({ type: 'recover', session: state.session }));
   $('session-title').addEventListener('dblclick', () => state.session && renameSession(state.session));
   $('project').addEventListener('click', (event) => {

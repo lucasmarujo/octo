@@ -4,7 +4,7 @@ use orkai::config::{Config, FULL_VOLUME};
 use orkai::fsutil;
 use orkai::hooks::parse_version;
 use orkai::launch::{default_shell, installed_kinds};
-use orkai::model::AgentKind;
+use orkai::model::{AgentId, AgentKind};
 use orkai::paths::user_home;
 use orkai::pwa::hub::Hub;
 use orkai::sound::{Chime, Player};
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::link::Link;
-use crate::updates;
+use crate::{install, login_path, updates};
 
 pub const MIN_PORT: u16 = 1024;
 
@@ -35,6 +35,7 @@ pub const SHELL_RULE: &str = if cfg!(windows) { "pwsh, then powershell" } else {
 pub struct AgentStatus {
     pub kind: AgentKind,
     pub installed: bool,
+    pub install: Option<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
@@ -54,16 +55,19 @@ pub enum Sound {
 
 pub fn read(hub: &Hub) -> Settings {
     let config = hub.launcher().config().clone();
-    let installed = installed_kinds(&config);
-    let agents = AgentKind::ALL
-        .into_iter()
-        .filter(|kind| kind.is_ai())
-        .map(|kind| AgentStatus { kind, installed: installed.contains(&kind) })
-        .collect();
+    let agents = statuses(&installed_kinds(&config));
     let default_shell = default_shell(&Config { shell: None, ..config.clone() }).0;
     let local = std::env::var_os("LOCALAPPDATA").filter(|_| cfg!(windows)).map(PathBuf::from);
     let path = shown(&hub.store().home().config_file(), local.as_deref(), user_home().as_deref());
     Settings { config, path, agents, default_shell, shell_rule: SHELL_RULE }
+}
+
+fn statuses(installed: &[AgentKind]) -> Vec<AgentStatus> {
+    AgentKind::ALL
+        .into_iter()
+        .filter(|kind| kind.is_ai())
+        .map(|kind| AgentStatus { kind, installed: installed.contains(&kind), install: install::shown(kind) })
+        .collect()
 }
 
 fn shown(path: &Path, local_app_data: Option<&Path>, home: Option<&Path>) -> String {
@@ -145,6 +149,19 @@ fn preview_volume(config: &Config) -> u8 {
     if config.notify_volume == 0 { FULL_VOLUME } else { config.notify_volume }
 }
 
+#[tauri::command(async)]
+pub fn install_agent(link: State<'_, Link>, kind: AgentKind, session: String) -> Result<AgentId, String> {
+    install::start(link.hub(), kind, &session)
+}
+
+#[tauri::command(async)]
+pub fn recheck_agents(link: State<'_, Link>) -> Vec<AgentStatus> {
+    login_path::refresh();
+    let hub = link.hub();
+    hub.recheck_kinds();
+    statuses(&hub.kinds())
+}
+
 #[tauri::command]
 pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateCheck, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -203,8 +220,27 @@ mod tests {
         for agent in &settings.agents {
             assert_eq!(agent.installed, fx.hub.kinds().contains(&agent.kind), "{:?}", agent.kind);
         }
+        for agent in &settings.agents {
+            assert_eq!(agent.install, install::shown(agent.kind), "the dialog shows the line of the table");
+            assert!(agent.install.is_some(), "{:?}", agent.kind);
+        }
         assert!(settings.path.ends_with("config.json"), "{}", settings.path);
         assert!(!settings.default_shell.is_empty());
+    }
+
+    #[test]
+    fn a_program_that_appears_after_the_app_started_shows_up_on_recheck_with_the_config_untouched() {
+        let fx = fixture("recheck");
+        let program = fx.dir.join(if cfg!(windows) { "newcli.exe" } else { "newcli" });
+        let config = Config { grok_command: program.display().to_string(), ..Config::default() };
+        fx.hub.reconfigure(config.clone()).unwrap();
+        assert!(!fx.hub.kinds().contains(&AgentKind::Grok));
+        std::fs::write(&program, b"").unwrap();
+        assert!(!fx.hub.kinds().contains(&AgentKind::Grok), "the kinds are a snapshot until someone rechecks");
+        fx.hub.recheck_kinds();
+        assert!(fx.hub.kinds().contains(&AgentKind::Grok), "the task box lists it without a restart");
+        assert!(statuses(&fx.hub.kinds()).iter().any(|agent| agent.kind == AgentKind::Grok && agent.installed));
+        assert_eq!(fx.hub.launcher().config(), &config);
     }
 
     #[test]

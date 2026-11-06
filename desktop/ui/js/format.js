@@ -59,6 +59,14 @@ export const soundOn = (config) => Boolean(config.notify && config.notify_sound 
 export const soundFlip = (config) => (soundOn(config) ? { notify_sound: false } : { notify: true, notify_sound: true, notify_volume: config.notify_volume || RESTORED_VOLUME });
 export const volumeChanges = (config, volume) => (volume > 0 ? { notify: true, notify_sound: true, notify_volume: volume } : { notify_volume: 0 });
 
+export function installKind(agent) {
+  if (agent.kind !== 'terminal') return null;
+  const match = /^install-([a-z]+)(?:-\d+)?$/.exec(agent.name);
+  if (!match) return null;
+  const kind = Object.keys(LABELS).find((key) => LABELS[key] === match[1]) || match[1];
+  return kind !== 'terminal' && Object.hasOwn(KIND_COLORS, kind) ? kind : null;
+}
+
 export function canMove(agent, session) {
   return Boolean(agent && session) && !agent.starting && agent.session !== session;
 }

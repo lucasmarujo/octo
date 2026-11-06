@@ -283,6 +283,18 @@ impl Hub {
         Ok(())
     }
 
+    pub fn recheck_kinds(&self) {
+        let launcher = self.launcher();
+        let kinds = launch::installed_kinds(launcher.config());
+        {
+            let mut tools = lock(&self.tools);
+            if Arc::ptr_eq(&tools.launcher, &launcher) {
+                tools.kinds = kinds;
+            }
+        }
+        self.nudge();
+    }
+
     pub fn host(&self) -> &str {
         &self.host
     }

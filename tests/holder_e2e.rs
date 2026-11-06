@@ -280,6 +280,44 @@ fn connection_with_wrong_token_is_rejected() {
 }
 
 #[test]
+fn a_terminal_with_an_explicit_interpreter_runs_its_command_keeps_the_output_and_ends() {
+    let fx = fixture("interpreter");
+    let (program, args): (&str, Vec<&str>) = if cfg!(windows) {
+        (
+            "powershell.exe",
+            vec![
+                "-NoLogo",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "powershell -NoProfile -c \"Write-Output 'install | went fine'\"",
+            ],
+        )
+    } else {
+        ("/bin/sh", vec!["-c", "sh -c \"echo 'install | went fine'\""])
+    };
+    let config = Config {
+        shell: Some(program.to_string()),
+        shell_args: args.into_iter().map(str::to_string).collect(),
+        ..Config::default()
+    };
+    let launcher = Launcher::new(fx.store.clone(), config, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let draft = NewAgent {
+        session: "default".into(),
+        name: "install-kilo".into(),
+        kind: AgentKind::Terminal,
+        cwd: fx.dir.join("work"),
+        task: String::new(),
+    };
+    let record = launcher.create(draft, TermSize::new(24, 100), false, false, false).unwrap();
+    wait_until(|| fx.store.read_exit(record.id).ok().flatten().is_some());
+    assert_eq!(fx.store.read_exit(record.id).unwrap().unwrap().code, Some(0));
+    let parser = oplog::replay(&fx.store.home().output_log(record.id)).unwrap().unwrap();
+    assert!(parser.screen().contents().contains("install | went fine"), "{}", parser.screen().contents());
+}
+
+#[test]
 fn failing_program_records_error() {
     let fx = fixture("fail");
     let cwd = fx.dir.join("work");

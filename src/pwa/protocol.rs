@@ -456,6 +456,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_phone_has_no_message_that_installs_an_agent() {
+        for text in [
+            r#"{"type":"install","kind":"kilo"}"#,
+            r#"{"type":"installAgent","kind":"kilo","session":"default"}"#,
+            r#"{"type":"install_agent","kind":"kilo","session":"default"}"#,
+            r#"{"type":"recheckAgents"}"#,
+        ] {
+            assert!(serde_json::from_str::<PhoneMsg>(text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
     fn the_greeting_is_plain_camel_case_json() {
         let hello = Greeting::Hello { version: VERSION, key: "pk".into() };
         assert_eq!(serde_json::to_string(&hello).unwrap(), r#"{"type":"hello","version":2,"key":"pk"}"#);

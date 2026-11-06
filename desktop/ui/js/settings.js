@@ -1,9 +1,10 @@
 import { $, h, storage, svg } from './dom.js';
-import { joinArgs, kindColor, label, soundFlip, soundOn, splitArgs, volumeChanges } from './format.js';
+import { confirm } from './dialogs.js';
+import { alive, installKind, joinArgs, kindColor, label, soundFlip, soundOn, splitArgs, volumeChanges } from './format.js';
 import { LANGUAGES, language, setLanguage, t } from './i18n.js';
 import { ICON_BELL, ICON_BELL_OFF } from './icons.js';
 import { choose, hideTip, motion, reducedMotion, rise, settle, slideThumb } from './motion.js';
-import { state } from './state.js';
+import { agents, state } from './state.js';
 import { toast } from './toast.js';
 import { invoke } from './transport.js';
 
@@ -32,6 +33,9 @@ let hovering = false;
 let dismissed = false;
 let closeTimer = 0;
 let previewTimer = 0;
+let liveInstalls = new Map();
+let openAgent = () => {};
+const pendingInstalls = new Map();
 let shownSection = 'Appearance';
 let update = null;
 
@@ -248,6 +252,78 @@ function initPopover() {
   });
 }
 
+const installing = (kind) => pendingInstalls.has(kind) || agents().some((agent) => alive(agent) && installKind(agent) === kind);
+
+export function setAgentOpener(open) {
+  openAgent = open;
+}
+
+async function recheck() {
+  try {
+    const statuses = await invoke('recheck_agents');
+    if (current && JSON.stringify(statuses) !== JSON.stringify(current.agents)) {
+      current = { ...current, agents: statuses };
+      acked = { ...acked, agents: statuses };
+      render();
+    }
+    return statuses;
+  } catch {
+    return null;
+  }
+}
+
+async function installsEnded(kinds) {
+  const statuses = await recheck();
+  if (!statuses) return;
+  for (const kind of kinds) {
+    const name = label(kind);
+    if (statuses.some((agent) => agent.kind === kind && agent.installed)) toast(t('{name} is installed.', { name }), 'success');
+    else toast(t('{name} is still not on PATH. If the install worked, check that its folder is on PATH and restart Octo.', { name }), 'warn');
+  }
+}
+
+export function watchInstalls(list) {
+  for (const [kind, id] of pendingInstalls) {
+    const agent = list.find((item) => item.id === id);
+    if (!agent) continue;
+    pendingInstalls.delete(kind);
+    liveInstalls.set(id, kind);
+    openAgent(agent);
+  }
+  const live = new Map(list.filter((agent) => alive(agent) && installKind(agent)).map((agent) => [agent.id, installKind(agent)]));
+  const ended = [...liveInstalls].filter(([id]) => !live.has(id)).map(([, kind]) => kind);
+  const changed = ended.length > 0 || live.size !== liveInstalls.size;
+  liveInstalls = live;
+  if (changed) render();
+  if (ended.length) installsEnded(ended);
+}
+
+async function install(agent) {
+  const sure = await confirm({
+    title: t('Install {name}?', { name: label(agent.kind) }),
+    text: t('This downloads and runs software from the vendor.'),
+    code: agent.install,
+    action: t('Install'),
+  });
+  if (!sure) return;
+  pendingInstalls.set(agent.kind, null);
+  render();
+  try {
+    pendingInstalls.set(agent.kind, await invoke('install_agent', { kind: agent.kind, session: state.session }));
+    watchInstalls(agents());
+  } catch (err) {
+    pendingInstalls.delete(agent.kind);
+    toast(String(err), 'error');
+    render();
+  }
+}
+
+function installCell(agent) {
+  if (agent.installed || !agent.install) return h('span', { class: 'agent-install' });
+  const busy = installing(agent.kind);
+  return h('span', { class: 'agent-install' }, h('button', { class: 'button tiny', type: 'button', disabled: busy, onclick: () => install(agent) }, busy ? t('Installing…') : t('Install')));
+}
+
 function agentRow(agent) {
   const { config } = current;
   const status = agent.installed
@@ -260,6 +336,7 @@ function agentRow(agent) {
     field(config[commandKey(agent.kind)], label(agent.kind), (value) => save({ [commandKey(agent.kind)]: value }), 'agents-command'),
     field(joinArgs(config[argsKey(agent.kind)]), t('No extra arguments'), (value) => save({ [argsKey(agent.kind)]: splitArgs(value) }), 'agents-args'),
     status,
+    installCell(agent),
   );
 }
 
@@ -271,7 +348,7 @@ function agentsSection() {
       h('h2', null, t('Agents')),
       h('p', null, t('The program Octo runs for each agent and the extra arguments it passes. Only installed agents can be picked in the task box.')),
     ),
-    h('div', { class: 'agents-head' }, h('span', { class: 'caps agents-name' }, t('Agent')), h('span', { class: 'caps agents-command' }, t('Command')), h('span', { class: 'caps agents-args' }, t('Arguments')), h('span', { class: 'caps agent-status' }, t('Status'))),
+    h('div', { class: 'agents-head' }, h('span', { class: 'caps agents-name' }, t('Agent')), h('span', { class: 'caps agents-command' }, t('Command')), h('span', { class: 'caps agents-args' }, t('Arguments')), h('span', { class: 'caps agent-status' }, t('Status')), h('span', { class: 'agent-install' })),
     ...current.agents.map(agentRow),
   );
 }
@@ -428,6 +505,7 @@ export async function renderSettings() {
   try {
     await load();
     render();
+    recheck();
   } catch (err) {
     toast(t('Could not read the settings: {error}', { error: err }), 'error');
   }

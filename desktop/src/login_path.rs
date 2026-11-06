@@ -20,9 +20,137 @@ pub fn adopt() {
         return;
     };
     let current = env::var_os("PATH").unwrap_or_default();
-    if let Some(path) = merge(&login, &current) {
+    if let Some(path) = merge(&login, &current).filter(|path| *path != current) {
         unsafe {
             env::set_var("PATH", path);
+        }
+    }
+}
+
+#[cfg(unix)]
+pub fn refresh() {
+    adopt();
+}
+
+#[cfg(windows)]
+pub fn refresh() {
+    let stored: Vec<OsString> = registry::paths().into_iter().flatten().collect();
+    let current = env::var_os("PATH").unwrap_or_default();
+    if let Some(path) = with_new_entries(&current, &stored) {
+        unsafe {
+            env::set_var("PATH", path);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn with_new_entries(current: &OsStr, stored: &[OsString]) -> Option<OsString> {
+    use orkai::paths::normalize_for_compare;
+
+    let mut entries: Vec<PathBuf> = env::split_paths(current).collect();
+    let mut known: Vec<String> = entries.iter().map(|entry| normalize_for_compare(entry)).collect();
+    let before = entries.len();
+    for entry in stored.iter().flat_map(env::split_paths).filter(|entry| entry.is_absolute()) {
+        let key = normalize_for_compare(&entry);
+        if !known.contains(&key) {
+            known.push(key);
+            entries.push(entry);
+        }
+    }
+    if entries.len() == before { None } else { env::join_paths(entries).ok() }
+}
+
+#[cfg(windows)]
+mod registry {
+    use std::ffi::{OsStr, OsString, c_void};
+    use std::iter;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use std::ptr;
+
+    const HKEY_CURRENT_USER: isize = 0x8000_0001u32 as i32 as isize;
+    const HKEY_LOCAL_MACHINE: isize = 0x8000_0002u32 as i32 as isize;
+    const USER_ENVIRONMENT: &str = "Environment";
+    const MACHINE_ENVIRONMENT: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
+    const PATH_VALUE: &str = "Path";
+    const RRF_RT_REG_SZ: u32 = 0x0000_0002;
+    const ERROR_SUCCESS: i32 = 0;
+    const ERROR_MORE_DATA: i32 = 234;
+    const READ_TRIES: usize = 3;
+
+    #[link(name = "advapi32")]
+    unsafe extern "system" {
+        fn RegGetValueW(
+            key: isize,
+            subkey: *const u16,
+            value: *const u16,
+            flags: u32,
+            kind: *mut u32,
+            data: *mut c_void,
+            size: *mut u32,
+        ) -> i32;
+    }
+
+    fn wide(text: &str) -> Vec<u16> {
+        OsStr::new(text).encode_wide().chain(iter::once(0)).collect()
+    }
+
+    fn read(key: isize, subkey: &str) -> Option<OsString> {
+        let (subkey, value) = (wide(subkey), wide(PATH_VALUE));
+        let mut size = 0u32;
+        for _ in 0..READ_TRIES {
+            let found = unsafe {
+                RegGetValueW(
+                    key,
+                    subkey.as_ptr(),
+                    value.as_ptr(),
+                    RRF_RT_REG_SZ,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    &mut size,
+                )
+            };
+            if found != ERROR_SUCCESS {
+                return None;
+            }
+            let mut buffer = vec![0u16; (size as usize).div_ceil(2)];
+            let read = unsafe {
+                RegGetValueW(
+                    key,
+                    subkey.as_ptr(),
+                    value.as_ptr(),
+                    RRF_RT_REG_SZ,
+                    ptr::null_mut(),
+                    buffer.as_mut_ptr().cast(),
+                    &mut size,
+                )
+            };
+            match read {
+                ERROR_SUCCESS => {
+                    let text = buffer.split(|unit| *unit == 0).next().unwrap_or_default();
+                    return Some(OsString::from_wide(text));
+                }
+                ERROR_MORE_DATA => {}
+                _ => return None,
+            }
+        }
+        None
+    }
+
+    pub fn paths() -> [Option<OsString>; 2] {
+        [read(HKEY_LOCAL_MACHINE, MACHINE_ENVIRONMENT), read(HKEY_CURRENT_USER, USER_ENVIRONMENT)]
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn the_machine_path_is_read_from_the_registry_with_its_variables_expanded() {
+            let machine = paths()[0].clone().expect("every Windows has a machine PATH");
+            let text = machine.to_string_lossy().to_lowercase();
+            assert!(text.contains(r"\system32"), "{text}");
+            assert!(!text.contains('%'), "{text}");
+            assert_eq!(read(HKEY_LOCAL_MACHINE, "SYSTEM\\NoSuchKey\\ForOcto"), None);
         }
     }
 }
@@ -89,6 +217,23 @@ mod tests {
         assert_eq!(parse(&format!("{MARK}{MARK}")), None);
         assert_eq!(parse("no marks at all"), None);
         assert_eq!(parse(MARK), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_folder_added_to_the_stored_path_joins_the_end_and_nothing_else_moves() {
+        let current = OsStr::new(r"C:\Windows\System32;C:\Program Files\Git\cmd");
+        let same = [OsString::from(r"c:\windows\system32\;C:\Program Files\Git\cmd")];
+        assert_eq!(with_new_entries(current, &same), None, "case and a final slash are the same folder");
+        let added = [
+            OsString::from(r"C:\Windows\System32"),
+            OsString::from(r"C:\Users\ana\AppData\Local\agy\bin;relative\dir"),
+        ];
+        assert_eq!(
+            with_new_entries(current, &added),
+            Some(OsString::from(r"C:\Windows\System32;C:\Program Files\Git\cmd;C:\Users\ana\AppData\Local\agy\bin"))
+        );
+        assert_eq!(with_new_entries(current, &[]), None);
     }
 
     #[cfg(unix)]
