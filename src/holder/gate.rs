@@ -116,7 +116,7 @@ impl Gate {
                     let _ = child.wait();
                     if let Ok(mut log) = File::options().append(true).open(self.home.test_log(self.id)) {
                         let limit = duration_short(u64::try_from(self.timeout.as_millis()).unwrap_or(u64::MAX));
-                        let _ = writeln!(log, "\norkai stopped {command} after {limit}");
+                        let _ = writeln!(log, "\nOcto stopped {command} after {limit}");
                     }
                     break None;
                 }
@@ -309,7 +309,7 @@ mod tests {
         let report = settled(&slow);
         assert_eq!((report.state, report.code), (TestState::Failed, None));
         let log = std::fs::read_to_string(fx.home.test_log(1)).unwrap();
-        assert!(log.contains("orkai stopped"), "{log}");
+        assert!(log.contains("Octo stopped"), "{log}");
 
         configure(&fx, long_command(), true);
         gate.start();

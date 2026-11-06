@@ -9,6 +9,7 @@ pub mod holder;
 pub mod hooks;
 pub mod launch;
 pub mod mcp;
+pub mod migrate;
 pub mod model;
 pub mod notify;
 pub mod paths;

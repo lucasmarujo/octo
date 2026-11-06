@@ -522,7 +522,7 @@ impl Phone {
                     let plain = self.channel.open(&frame).map_err(io::Error::other)?;
                     match serde_json::from_slice::<PhoneMsg>(&plain) {
                         Ok(message) => peer.handle(message, self)?,
-                        Err(_) => peer.notice(self, Tone::Warn, "this orkai does not know that action; update it")?,
+                        Err(_) => peer.notice(self, Tone::Warn, "this Octo does not know that action; update it")?,
                     }
                 }
                 Ok(Message::Ping(_) | Message::Pong(_)) => self.heard = Instant::now(),

@@ -21,7 +21,8 @@ use crate::util::{civil_date_from_ms, fnv1a64, is_uuid, new_uuid_v4};
 use crate::worktree;
 
 pub const HOLDER_COMMAND: &str = "__holder";
-pub const HOLDER_PREFIX: &str = "orkai-holder-";
+pub const HOLDER_PREFIX: &str = "octo-holder-";
+const LEGACY_HOLDER_PREFIX: &str = "orkai-holder-";
 pub const AGENT_ID_ENV: &str = "ORKAI_AGENT_ID";
 const RUNTIME_POLL: Duration = Duration::from_millis(25);
 const DAY_MS: u64 = 86_400_000;
@@ -841,7 +842,7 @@ fn holder_binaries_in_use(home: &Home) -> HashSet<String> {
         .filter_map(|id| fsutil::read_json_opt::<RuntimeInfo>(&home.runtime_file(id)).ok().flatten())
         .filter_map(|runtime| runtime.exe)
         .chain(bridge)
-        .map(|exe| normalize_for_compare(staged_entry(&exe)))
+        .filter_map(|exe| staged_entry(&exe).file_name().map(|name| normalize_for_compare(Path::new(name))))
         .collect()
 }
 
@@ -852,9 +853,10 @@ pub fn prune_holder_binaries(home: &Home, keep: &Path) {
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        if (name.starts_with(HOLDER_PREFIX) || name.starts_with(".staging-"))
+        let staged = name.starts_with(HOLDER_PREFIX) || name.starts_with(LEGACY_HOLDER_PREFIX);
+        if (staged || name.starts_with(".staging-"))
             && path != keep
-            && !in_use.contains(&normalize_for_compare(&path))
+            && !in_use.contains(&normalize_for_compare(Path::new(&name)))
         {
             remove_staged(&path);
         }
@@ -971,7 +973,7 @@ pub fn process_is_holder(pid: u32) -> bool {
     output
         .map(|o| {
             let text = String::from_utf8_lossy(&o.stdout).to_ascii_lowercase();
-            text.contains(HOLDER_PREFIX)
+            text.contains(HOLDER_PREFIX) || text.contains(LEGACY_HOLDER_PREFIX)
         })
         .unwrap_or(false)
 }

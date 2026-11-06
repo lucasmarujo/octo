@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use crate::model::AgentId;
 
 pub const HOME_ENV: &str = "ORKAI_HOME";
+pub const HOME_DIR: &str = "Octo";
+pub const LEGACY_HOME_DIR: &str = "orkai";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Home {
@@ -17,7 +19,7 @@ impl Home {
         }
         let base = dirs::data_local_dir()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "could not determine the local data directory"))?;
-        Ok(Self::at(base.join("orkai")))
+        Ok(Self::at(located_in(&base)))
     }
 
     pub fn at(root: impl Into<PathBuf>) -> Self {
@@ -45,6 +47,15 @@ impl Home {
 
     pub fn worktrees_dir(&self) -> PathBuf {
         self.root.join("worktrees")
+    }
+
+    pub fn worktree_roots(&self) -> Vec<PathBuf> {
+        let legacy = self
+            .root
+            .parent()
+            .filter(|_| self.root.file_name().is_some_and(|name| name == HOME_DIR))
+            .map(|base| Self::at(base.join(LEGACY_HOME_DIR)).worktrees_dir());
+        std::iter::once(self.worktrees_dir()).chain(legacy).collect()
     }
 
     pub fn worktree_dir(&self, id: AgentId) -> PathBuf {
@@ -100,7 +111,7 @@ impl Home {
     }
 
     pub fn plugin_file(&self, id: AgentId) -> PathBuf {
-        self.agent_dir(id).join("orkai-plugin.js")
+        self.agent_dir(id).join("octo-plugin.js")
     }
 
     pub fn sessions_file(&self) -> PathBuf {
@@ -122,6 +133,11 @@ impl Home {
     pub fn icon_file(&self) -> PathBuf {
         self.root.join("orkai.png")
     }
+}
+
+pub fn located_in(base: &Path) -> PathBuf {
+    let (home, legacy) = (base.join(HOME_DIR), base.join(LEGACY_HOME_DIR));
+    if !home.exists() && legacy.is_dir() { legacy } else { home }
 }
 
 pub fn create_private_dir(path: &Path) -> io::Result<()> {
@@ -270,6 +286,15 @@ mod tests {
         assert_eq!(home.runtime_file(7), PathBuf::from("/tmp/orkai-test/agents/7/runtime.json"));
         assert_eq!(home.sessions_file(), PathBuf::from("/tmp/orkai-test/sessions.json"));
         assert_eq!(home.icon_file(), PathBuf::from("/tmp/orkai-test/orkai.png"));
+    }
+
+    #[test]
+    fn worktrees_made_before_the_folder_was_renamed_still_belong_to_octo() {
+        let base = Path::new("/data");
+        let roots = Home::at(base.join(HOME_DIR)).worktree_roots();
+        assert_eq!(roots, [base.join(HOME_DIR).join("worktrees"), base.join(LEGACY_HOME_DIR).join("worktrees")]);
+        let scratch = Path::new("/tmp/scratch");
+        assert_eq!(Home::at(scratch).worktree_roots(), [scratch.join("worktrees")], "a chosen home has no old name");
     }
 
     #[test]

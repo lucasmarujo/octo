@@ -10,7 +10,8 @@ use crate::model::{AgentId, AgentRecord, Worktree};
 use crate::paths::{Home, create_private_dir, normalize_for_compare};
 use crate::project;
 
-pub const BRANCH_PREFIX: &str = "orkai/";
+pub const BRANCH_PREFIX: &str = "octo/";
+const LEGACY_BRANCH_PREFIX: &str = "orkai/";
 pub const MAX_UNTRACKED_FILES: usize = 200;
 pub const MAX_COUNTED_BYTES: u64 = 1024 * 1024;
 pub const MAX_DIFF_BYTES: usize = 4 * 1024 * 1024;
@@ -498,13 +499,15 @@ pub fn commit(folder: &Folder, message: &str) -> io::Result<Option<Committed>> {
 }
 
 fn owned_by_orkai(home: &Home, worktree: &Worktree) -> bool {
-    let root = normalize_for_compare(&home.worktrees_dir());
-    normalize_for_compare(&worktree.path).starts_with(&format!("{root}/")) && worktree.branch.starts_with(BRANCH_PREFIX)
+    let path = normalize_for_compare(&worktree.path);
+    let inside =
+        home.worktree_roots().iter().any(|root| path.starts_with(&format!("{}/", normalize_for_compare(root))));
+    inside && (worktree.branch.starts_with(BRANCH_PREFIX) || worktree.branch.starts_with(LEGACY_BRANCH_PREFIX))
 }
 
 pub fn discard(home: &Home, worktree: &Worktree) -> io::Result<()> {
     if !owned_by_orkai(home, worktree) {
-        return Err(invalid(format!("{} was not created by orkai", worktree.path.display())));
+        return Err(invalid(format!("{} was not created by Octo", worktree.path.display())));
     }
     let removed = run(&worktree.repo, &["worktree", "remove", "--force", &worktree.path.to_string_lossy()]);
     if removed.is_err() && worktree.path.exists() {
@@ -638,7 +641,7 @@ mod tests {
         let r = repo();
         let source = r.repo.join("app");
         let (worktree, cwd) = create(&r.home, 7, "Fix Login", &source).unwrap();
-        assert_eq!(worktree.branch, "orkai/fix-login");
+        assert_eq!(worktree.branch, "octo/fix-login");
         assert_eq!(worktree.path, r.home.worktree_dir(7));
         assert_eq!(worktree.source, source);
         assert_eq!(worktree.base, git_in(&r.repo, &["rev-parse", "HEAD"]));
@@ -646,10 +649,10 @@ mod tests {
         assert_eq!(git_in(&worktree.repo, &["branch", "--show-current"]), "main");
         assert_eq!(cwd, worktree.path.join("app"));
         assert!(cwd.join("lib.txt").is_file());
-        assert_eq!(git_in(&cwd, &["branch", "--show-current"]), "orkai/fix-login");
+        assert_eq!(git_in(&cwd, &["branch", "--show-current"]), "octo/fix-login");
 
         let (second, root) = create(&r.home, 8, "Fix Login", &r.repo).unwrap();
-        assert_eq!(second.branch, "orkai/fix-login-2");
+        assert_eq!(second.branch, "octo/fix-login-2");
         assert_eq!(root, second.path);
         let nested = r.repo.join("app").join("deep");
         fs::create_dir_all(&nested).unwrap();
@@ -772,7 +775,7 @@ mod tests {
         fs::write(r.repo.join("app").join("lib.txt"), "human\n").unwrap();
         git_in(&r.repo, &["commit", "-q", "-am", "human edit"]);
         let err = merge(&worktree, "clash").unwrap_err().to_string();
-        assert!(err.contains("1 file(s) conflict with main") && err.contains("git merge orkai/clash"), "{err}");
+        assert!(err.contains("1 file(s) conflict with main") && err.contains("git merge octo/clash"), "{err}");
         assert!(git_in(&r.repo, &["status", "--porcelain"]).is_empty(), "the repository must be left as it was");
         assert_eq!(fs::read_to_string(r.repo.join("app").join("lib.txt")).unwrap(), "human\n");
     }
@@ -865,7 +868,7 @@ mod tests {
         fs::write(cwd.join("scratch.txt"), "x").unwrap();
         discard(&r.home, &worktree).unwrap();
         assert!(!worktree.path.exists());
-        assert!(!branch_exists(&r.repo, "orkai/throwaway").unwrap());
+        assert!(!branch_exists(&r.repo, "octo/throwaway").unwrap());
         assert!(!git_in(&r.repo, &["worktree", "list"]).contains("throwaway"));
 
         let foreign = Worktree { path: r.repo.clone(), branch: "main".into(), ..worktree.clone() };
@@ -877,12 +880,27 @@ mod tests {
     }
 
     #[test]
+    fn a_worktree_from_before_the_rename_is_still_discarded_with_its_branch() {
+        let r = repo();
+        let base = r.dir.join("data");
+        let legacy = Home::at(base.join(crate::paths::LEGACY_HOME_DIR));
+        let (mut worktree, _) = create(&legacy, 1, "old", &r.repo).unwrap();
+        git_in(&r.repo, &["branch", "-m", "octo/old", "orkai/old"]);
+        worktree.branch = "orkai/old".into();
+        let home = Home::at(base.join(crate::paths::HOME_DIR));
+
+        discard(&home, &worktree).unwrap();
+        assert!(!worktree.path.exists());
+        assert!(!branch_exists(&r.repo, "orkai/old").unwrap());
+    }
+
+    #[test]
     fn a_worktree_deleted_by_hand_is_still_discarded_cleanly() {
         let r = repo();
         let (worktree, _) = create(&r.home, 1, "gone", &r.repo).unwrap();
         fs::remove_dir_all(&worktree.path).unwrap();
         discard(&r.home, &worktree).unwrap();
-        assert!(!branch_exists(&r.repo, "orkai/gone").unwrap());
+        assert!(!branch_exists(&r.repo, "octo/gone").unwrap());
         assert!(!git_in(&r.repo, &["worktree", "list"]).contains("gone"));
     }
 

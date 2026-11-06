@@ -624,9 +624,9 @@ Os dados ficam em `orkai home`:
 
 | Sistema | Pasta |
 | --- | --- |
-| Windows | `%LOCALAPPDATA%\orkai` |
-| Linux | `~/.local/share/orkai` |
-| macOS | `~/Library/Application Support/orkai` |
+| Windows | `%LOCALAPPDATA%\Octo` |
+| Linux | `~/.local/share/Octo` |
+| macOS | `~/Library/Application Support/Octo` |
 
 A variável `ORKAI_HOME` muda esse local.
 

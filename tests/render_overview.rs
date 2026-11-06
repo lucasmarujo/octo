@@ -1834,7 +1834,7 @@ fn a_failed_launch_in_a_new_worktree_leaves_nothing_behind() {
     assert!(error.contains("orkai-missing-claude"), "{error}");
     let left: Vec<_> = std::fs::read_dir(home.worktrees_dir()).map(|d| d.flatten().collect()).unwrap_or_default();
     assert!(left.is_empty(), "{left:?}");
-    assert!(git(&repo, &["branch", "--list", "orkai/*"]).is_empty());
+    assert!(git(&repo, &["branch", "--list", "octo/*"]).is_empty());
     assert!(!git(&repo, &["worktree", "list"]).contains("worktrees"));
 }
 

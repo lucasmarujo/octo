@@ -824,7 +824,7 @@ fn agents_of_a_race_each_get_their_own_worktree_and_share_the_race() {
         wait_until(|| fx.store.read_runtime(record.id).unwrap().is_none());
         orkai::cli::remove(&fx.store, record.id).unwrap();
     }
-    assert!(git(&repo, &["branch", "--list", "orkai/*"]).is_empty());
+    assert!(git(&repo, &["branch", "--list", "octo/*"]).is_empty());
 }
 
 #[test]
@@ -851,7 +851,7 @@ fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
     };
     let record = launcher.create(draft, TermSize { rows: 24, cols: 100 }, true, false, false).unwrap();
     let worktree = record.worktree.clone().expect("the agent must get a worktree");
-    assert_eq!(worktree.branch, "orkai/branch-check");
+    assert_eq!(worktree.branch, "octo/branch-check");
     assert_eq!(record.cwd, worktree.path.join("app"));
     assert_eq!(fx.store.load_agent(record.id).unwrap(), record);
     assert_eq!(record.project_dir(), repo.join("app"));
@@ -860,7 +860,7 @@ fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
     let (conn, rx) = open(&runtime);
     conn.send(&ClientMsg::Attach(TermSize { rows: 24, cols: 100 })).unwrap();
     let mut screen = vt100::Parser::new(24, 100, 500);
-    wait_for_text(&rx, &mut screen, "orkai/branch-check");
+    wait_for_text(&rx, &mut screen, "octo/branch-check");
     assert_eq!(git(&repo, &["branch", "--show-current"]), "main");
 
     let inside = NewAgent {
@@ -886,7 +886,7 @@ fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
     wait_until(|| fx.store.read_runtime(record.id).unwrap().is_none());
     orkai::cli::remove(&fx.store, record.id).unwrap();
     assert!(!worktree.path.exists());
-    assert!(git(&repo, &["branch", "--list", "orkai/*"]).is_empty());
+    assert!(git(&repo, &["branch", "--list", "octo/*"]).is_empty());
     assert!(fx.store.list_agents().unwrap().is_empty());
 }
 

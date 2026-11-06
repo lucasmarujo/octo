@@ -139,6 +139,7 @@ fn open_link(url: String) -> Result<(), String> {
 }
 
 pub fn run() -> io::Result<()> {
+    orkai::migrate::adopt_on_launch();
     let hub = Hub::open(&Home::resolve()?)?;
     pair::keep_alive(Arc::clone(&hub));
     recover::on_launch(Arc::clone(&hub));

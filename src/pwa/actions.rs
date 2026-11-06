@@ -515,7 +515,7 @@ fn trust(hub: &Hub, cwd: &str, confirmed: Option<String>, reply: &Sender<Event>)
         return notice(reply, Tone::Info, format!("the {} of {shown} has no test command", project::FILE));
     };
     if project::is_trusted(hub.store().home(), &loaded) {
-        return notice(reply, Tone::Info, format!("orkai already runs {command} for {shown}"));
+        return notice(reply, Tone::Info, format!("Octo already runs {command} for {shown}"));
     }
     match confirmed {
         None => {

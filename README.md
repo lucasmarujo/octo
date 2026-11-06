@@ -620,9 +620,9 @@ The data lives in `orkai home`:
 
 | System | Folder |
 | --- | --- |
-| Windows | `%LOCALAPPDATA%\orkai` |
-| Linux | `~/.local/share/orkai` |
-| macOS | `~/Library/Application Support/orkai` |
+| Windows | `%LOCALAPPDATA%\Octo` |
+| Linux | `~/.local/share/Octo` |
+| macOS | `~/Library/Application Support/Octo` |
 
 The `ORKAI_HOME` variable changes this location.
 

@@ -43,7 +43,7 @@ export const COMMANDS = [
   ['/compare', t('Compare the agents of a race')],
   ['/pick', t('Merge the winner, delete the others')],
   ['/pwa [off|new]', t('Pair your phone')],
-  ['/help', t('How to use orkai')],
+  ['/help', t('How to use Octo')],
   ['/quit', t('Close the window, agents keep going')],
 ];
 

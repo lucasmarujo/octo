@@ -239,10 +239,10 @@ mod tests {
     #[test]
     fn the_config_file_is_named_the_way_the_system_names_its_folder() {
         let local = Path::new("C:/Users/ana/AppData/Local");
-        let file = local.join("orkai").join("config.json");
+        let file = local.join("Octo").join("config.json");
         let text = shown(&file, Some(local), None);
         assert!(text.starts_with("%LOCALAPPDATA%"), "{text}");
-        assert!(text.ends_with("config.json") && text.contains("orkai"), "{text}");
+        assert!(text.ends_with("config.json") && text.contains("Octo"), "{text}");
         let home = Path::new("/home/ana");
         assert_eq!(shown(&home.join(".orkai/config.json"), None, Some(home)), "~/.orkai/config.json");
     }

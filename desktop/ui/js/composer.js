@@ -242,7 +242,7 @@ export function renderComposer() {
   const worktree = $('worktree');
   worktree.setAttribute('aria-pressed', String(worktreeOn()));
   worktree.replaceChildren(svg(ICON_BRANCH), t('Worktree'));
-  worktree.title = t('Each new AI agent runs in its own git worktree and orkai/<name> branch');
+  worktree.title = t('Each new AI agent runs in its own git worktree and octo/<name> branch');
   const remote = $('remote');
   remote.classList.add('caution');
   remote.setAttribute('aria-pressed', String(state.remote));
