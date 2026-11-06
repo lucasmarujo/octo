@@ -346,18 +346,31 @@ fn ctrl_arrows_and_clicks_move_the_cursor_in_the_task() {
     tui.wait_for_exit();
 }
 
+const FAKE_TURN_PS1: &str = r#"
+Add-Type -Namespace Orkai -Name Console -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int handle);
+[DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr handle, int mode);
+'@
+[void][Orkai.Console]::SetConsoleMode([Orkai.Console]::GetStdHandle(-10), 0x200)
+[void][Orkai.Console]::SetConsoleMode([Orkai.Console]::GetStdHandle(-11), 0x7)
+$e = [char]27
+[Console]::Write("$e[?2004h> ")
+while (($c = [char][Console]::In.Read()) -ne [char]13) { [Console]::Write($c) }
+[Console]::Write("$e[2J$e[999;1Hworking (esc to interrupt)")
+Start-Sleep -Seconds 5
+[Console]::Write("$e[2J$e[Hall done")
+Start-Sleep -Seconds 120
+"#;
+
 fn fake_agent(dir: &Path) -> PathBuf {
     if cfg!(windows) {
+        let turn = dir.join("fake-claude.ps1");
+        std::fs::write(&turn, FAKE_TURN_PS1).unwrap();
         let script = dir.join("fake-claude.cmd");
         let body = [
-            "@echo off",
-            "if \"%1\"==\"--version\" exit /b 0",
-            "for /l %%i in (1,1,60) do echo.",
-            "echo working (esc to interrupt)",
-            "ping -n 6 127.0.0.1 >nul",
-            "cls",
-            "echo all done",
-            "ping -n 120 127.0.0.1 >nul",
+            "@echo off".to_string(),
+            "if \"%1\"==\"--version\" exit /b 0".to_string(),
+            format!("powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"{}\"", turn.display()),
         ];
         std::fs::write(&script, body.join("\r\n")).unwrap();
         script
@@ -366,6 +379,8 @@ fn fake_agent(dir: &Path) -> PathBuf {
         let body = [
             "#!/bin/sh",
             "[ \"$1\" = --version ] && exit 0",
+            "printf '\\033[?2004h> '",
+            "read orkai_task",
             "i=0; while [ $i -lt 60 ]; do echo; i=$((i+1)); done",
             "echo 'working (esc to interrupt)'",
             "sleep 5",

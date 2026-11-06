@@ -3,6 +3,7 @@ use crate::model::{AgentKind, AgentState};
 
 pub const DONE_GRACE_MS: u64 = 2_500;
 pub const TERMINAL_ACTIVE_MS: u64 = 1_500;
+pub const LAUNCH_HOLD_MS: u64 = 30_000;
 pub const TAIL_ROWS: usize = 24;
 
 const BUSY_MARKERS: &[&str] = &["esc to interrupt", "esc to cancel", "ctrl+c to interrupt"];
@@ -202,6 +203,12 @@ enum Lease {
     Finished { screen_settled: bool },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Launch {
+    TaskPending,
+    TaskSent,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Detector {
     state: AgentState,
@@ -210,6 +217,7 @@ pub struct Detector {
     last_turn_ms: Option<u64>,
     last_signal_at: u64,
     lease: Option<Lease>,
+    launch: Option<Launch>,
 }
 
 impl Detector {
@@ -221,6 +229,36 @@ impl Detector {
             last_turn_ms: None,
             last_signal_at: 0,
             lease: None,
+            launch: None,
+        }
+    }
+
+    pub fn launching(now: u64) -> Self {
+        Self {
+            state: AgentState::Working,
+            turn_started: Some(now),
+            last_signal_at: now,
+            launch: Some(Launch::TaskPending),
+            ..Self::new(now)
+        }
+    }
+
+    pub fn task_typed(&mut self, now: u64) {
+        if self.launch.is_some() {
+            self.last_signal_at = self.last_signal_at.max(now);
+        }
+    }
+
+    pub fn task_sent(&mut self, now: u64) {
+        if self.launch.is_some() {
+            self.launch = Some(Launch::TaskSent);
+            self.last_signal_at = self.last_signal_at.max(now);
+        }
+    }
+
+    fn turn_began(&mut self) {
+        if self.launch == Some(Launch::TaskSent) {
+            self.launch = None;
         }
     }
 
@@ -268,6 +306,7 @@ impl Detector {
         match signal {
             HookSignal::Busy => {
                 self.lease = None;
+                self.turn_began();
                 self.begin_turn(at);
                 self.set(AgentState::Working, at)
             }
@@ -277,6 +316,10 @@ impl Detector {
                 self.set(AgentState::Paused, at)
             }
             HookSignal::Finished => {
+                if self.launch == Some(Launch::TaskPending) {
+                    return false;
+                }
+                self.launch = None;
                 self.lease = Some(Lease::Finished { screen_settled: false });
                 if !self.is_busy_or_waiting() {
                     return false;
@@ -320,11 +363,15 @@ impl Detector {
             return self.set(AgentState::Paused, now);
         }
         if signals.busy {
+            self.turn_began();
             self.last_signal_at = now;
             if !self.is_busy_or_waiting() {
                 self.turn_started = Some(now);
             }
             return self.set(AgentState::Working, now);
+        }
+        if self.launch.is_some() {
+            return self.hold_launch(now);
         }
         if self.is_busy_or_waiting() && now.saturating_sub(self.last_signal_at) >= DONE_GRACE_MS {
             self.last_turn_ms = self.turn_started.map(|start| self.last_signal_at.saturating_sub(start));
@@ -334,7 +381,20 @@ impl Detector {
         false
     }
 
+    fn hold_launch(&mut self, now: u64) -> bool {
+        if now.saturating_sub(self.last_signal_at) >= LAUNCH_HOLD_MS {
+            self.launch = None;
+            self.turn_started = None;
+            return self.set(AgentState::Idle, now);
+        }
+        self.set(AgentState::Working, now)
+    }
+
     fn observe_terminal(&mut self, last_output_at: u64, now: u64) -> bool {
+        if self.launch == Some(Launch::TaskPending) && now.saturating_sub(self.last_signal_at) < LAUNCH_HOLD_MS {
+            return false;
+        }
+        self.launch = None;
         let active = last_output_at > 0 && now.saturating_sub(last_output_at) < TERMINAL_ACTIVE_MS;
         if active && self.state != AgentState::Working {
             self.turn_started = Some(now);

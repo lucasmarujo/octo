@@ -32,7 +32,7 @@ use crate::worktree::{ChangeWatcher, Changes};
 pub const WATCH_EVERY: Duration = Duration::from_millis(500);
 const RESCAN_EVERY: Duration = Duration::from_secs(1);
 const SCAN_EVERY: Duration = Duration::from_secs(2);
-const FRESH_RECORD_MS: u64 = 15_000;
+const FRESH_RECORD_MS: u64 = 60_000;
 const STARTING: &str = "starting…";
 const INTERRUPTED: &str = "interrupted";
 
@@ -76,9 +76,21 @@ impl Tracked {
         }
     }
 
+    fn launching(&self) -> bool {
+        self.record.launches <= 1 && now_ms().saturating_sub(self.record.created_at_ms) < FRESH_RECORD_MS
+    }
+
+    fn starting(&self) -> bool {
+        self.launching() && self.status.is_none() && !self.is_dead()
+    }
+
+    fn attaching(&self) -> bool {
+        matches!(self.link, Link::Connecting | Link::Live(_)) && self.status.is_none()
+    }
+
     fn view(&self) -> AgentView {
         let live = self.status.as_ref().filter(|_| !self.is_dead());
-        let starting = matches!(self.link, Link::Pending | Link::Connecting) && self.status.is_none();
+        let starting = self.starting();
         let activity = match &self.link {
             _ if starting => STARTING.to_string(),
             Link::Lost(_) => INTERRUPTED.to_string(),
@@ -538,15 +550,19 @@ impl Hub {
                     Some(Check::Exited(exit)) => tracked.link = Link::Exited(exit.clone()),
                     Some(Check::Running(runtime)) if !matches!(tracked.link, Link::Lost(Some(failed)) if failed == runtime.started_at_ms) =>
                     {
+                        if tracked.status.as_ref().is_some_and(|old| old.started_at_ms != runtime.started_at_ms) {
+                            tracked.status = None;
+                        }
                         tracked.generation += 1;
                         tracked.link = Link::Connecting;
                         connect.push((id, tracked.generation, runtime.clone()));
                     }
                     Some(Check::Running(_)) => {}
-                    Some(Check::Absent) if fresh => tracked.link = Link::Pending,
                     Some(Check::Absent) => {
                         tracked.status = None;
-                        if !matches!(tracked.link, Link::Lost(_)) {
+                        if fresh {
+                            tracked.link = Link::Pending;
+                        } else if !matches!(tracked.link, Link::Lost(_)) {
                             tracked.link = Link::Lost(None);
                         }
                     }
@@ -575,8 +591,10 @@ impl Hub {
                 let hub = Arc::clone(&self);
                 let _ = client::spawn_reader(reader, move |message| hub.on_holder(id, generation, message));
             }
-            Err(_) => {
-                tracked.link = Link::Lost(Some(runtime.started_at_ms));
+            Err(err) => {
+                let slow = matches!(err.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock);
+                tracked.link =
+                    if slow && tracked.launching() { Link::Pending } else { Link::Lost(Some(runtime.started_at_ms)) };
                 inner.due = true;
                 drop(inner);
                 self.wake.notify_all();
@@ -661,6 +679,9 @@ impl Hub {
     fn publish(&self) {
         let overview = {
             let mut inner = self.inner();
+            if inner.published.is_none() && inner.agents.values().any(Tracked::attaching) {
+                return;
+            }
             let overview = self.overview(&inner);
             if inner.published.as_ref() == Some(&overview) {
                 return;
@@ -801,7 +822,10 @@ mod tests {
                 task: String::new(),
             };
             store.create_session(session).ok();
-            store.create_agent(draft).unwrap()
+            let mut record = store.create_agent(draft).unwrap();
+            record.created_at_ms = 1;
+            store.save_agent(&record).unwrap();
+            record
         };
         let interrupted = agent("interrupted", "default");
         let finished = agent("finished", "other");
@@ -910,6 +934,190 @@ mod tests {
         assert_eq!(tracked.view().model, None);
         tracked.model = Some("claude-opus-5-5".into());
         assert_eq!(tracked.view().model.as_deref(), Some("claude-opus-5-5"));
+    }
+
+    fn tracked_agent(record: AgentRecord, link: Link, status: Option<StatusReport>) -> Tracked {
+        Tracked {
+            record,
+            link,
+            status,
+            generation: 1,
+            changes: None,
+            subagents: Vec::new(),
+            model: None,
+            launch_model: None,
+        }
+    }
+
+    fn record_of(dir: &std::path::Path, launches: u32, created_at_ms: u64) -> (Store, AgentRecord) {
+        use crate::model::NewAgent;
+        let store = Store::open(Home::at(dir.join("home"))).unwrap();
+        let draft = NewAgent {
+            session: "default".into(),
+            name: "agent".into(),
+            kind: AgentKind::Claude,
+            cwd: dir.to_path_buf(),
+            task: "fix the login".into(),
+        };
+        let mut record = store.create_agent(draft).unwrap();
+        record.launches = launches;
+        record.created_at_ms = created_at_ms;
+        store.save_agent(&record).unwrap();
+        (store, record)
+    }
+
+    fn report_of_a_run(started_at: u64, state: AgentState) -> StatusReport {
+        use crate::holder::term::TermState;
+        use crate::protocol::TermSize;
+        let term = TermState::new(AgentKind::Claude, TermSize::new(24, 80), started_at, String::new(), None);
+        StatusReport { state, ..term.report(None) }
+    }
+
+    fn live_link() -> Link {
+        use crate::model::RuntimeInfo;
+        use crate::protocol::{PROTOCOL_VERSION, Welcome};
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            ClientMsg::read(&mut stream).unwrap();
+            let welcome = Welcome { agent_id: 1, protocol: PROTOCOL_VERSION, version: "test".into(), holder_pid: 1 };
+            std::io::Write::write_all(&mut stream, &HolderMsg::Welcome(welcome).to_frame()).unwrap();
+            let _ = ClientMsg::read(&mut stream);
+        });
+        let runtime = RuntimeInfo {
+            holder_pid: 1,
+            child_pid: None,
+            port,
+            token: "test".into(),
+            started_at_ms: 1,
+            protocol: PROTOCOL_VERSION,
+            version: "test".into(),
+            exe: None,
+        };
+        let (conn, _, _) = client::connect(&runtime).unwrap();
+        Link::Live(Arc::new(conn))
+    }
+
+    #[test]
+    fn a_launch_is_starting_until_the_first_status_arrives_even_once_it_is_linked() {
+        let dir = std::env::temp_dir().join(format!("orkai-hub-starting-{}-{}", std::process::id(), now_ms()));
+        let (_store, record) = record_of(&dir, 1, now_ms());
+        for link in [Link::Pending, Link::Connecting, live_link()] {
+            let view = tracked_agent(record.clone(), link, None).view();
+            assert!(view.starting, "nothing has reported yet");
+            assert_eq!(view.activity, STARTING);
+        }
+        let reported = report_of_a_run(now_ms(), AgentState::Working);
+        let view = tracked_agent(record.clone(), Link::Connecting, Some(reported)).view();
+        assert!(!view.starting);
+        assert_eq!(view.state, AgentState::Working);
+        let info = ExitInfo { code: Some(3), error: None, at_ms: now_ms() };
+        assert!(!tracked_agent(record.clone(), Link::Exited(info), None).view().starting, "a crash ends it");
+        assert!(!tracked_agent(record, Link::Lost(None), None).view().starting);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recovered_restarted_and_old_agents_are_not_shown_as_starting() {
+        let dir = std::env::temp_dir().join(format!("orkai-hub-not-starting-{}-{}", std::process::id(), now_ms()));
+        let (_store, restarted) = record_of(&dir, 2, now_ms());
+        let (_store, old) = record_of(&dir, 1, now_ms().saturating_sub(FRESH_RECORD_MS));
+        for record in [restarted, old] {
+            for link in [Link::Pending, Link::Connecting, live_link()] {
+                let view = tracked_agent(record.clone(), link, None).view();
+                assert!(!view.starting, "launch {} of a record from {}", record.launches, record.created_at_ms);
+                assert_ne!(view.state, AgentState::Working);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_new_run_forgets_the_status_of_the_last_one_and_a_reconnection_keeps_its_own() {
+        use crate::model::RuntimeInfo;
+        use crate::protocol::PROTOCOL_VERSION;
+
+        let dir = std::env::temp_dir().join(format!("orkai-hub-new-run-{}-{}", std::process::id(), now_ms()));
+        let (store, record) = record_of(&dir, 2, now_ms());
+        let dead_port =
+            std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap().local_addr().unwrap().port();
+        let runtime = RuntimeInfo {
+            holder_pid: 1,
+            child_pid: None,
+            port: dead_port,
+            token: "gone".into(),
+            started_at_ms: 500,
+            protocol: PROTOCOL_VERSION,
+            version: "test".into(),
+            exe: None,
+        };
+        crate::fsutil::write_json_atomic(&store.home().runtime_file(record.id), &runtime).unwrap();
+        let launcher = Launcher::new(store, Config::default(), &std::env::current_exe().unwrap()).unwrap();
+        let hub = Hub::new(launcher, "host".into());
+        let run_status = |started: u64| {
+            let report = report_of_a_run(started, AgentState::Working);
+            let tracked = tracked_agent(record.clone(), Link::Pending, Some(report));
+            hub.inner().agents.insert(record.id, tracked);
+            hub.rescan();
+            hub.inner().agents[&record.id].status.as_ref().map(|status| status.started_at_ms)
+        };
+        assert_eq!(run_status(400), None, "the run that was stopped while working says nothing about this one");
+        assert_eq!(run_status(500), Some(500), "a dropped link to the same run keeps what it reported");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_first_overview_waits_for_the_agents_being_linked_to_report() {
+        let dir = std::env::temp_dir().join(format!("orkai-hub-first-{}-{}", std::process::id(), now_ms()));
+        let (store, record) = record_of(&dir, 1, 1);
+        let id = record.id;
+        let launcher = Launcher::new(store, Config::default(), &std::env::current_exe().unwrap()).unwrap();
+        let hub = Hub::new(launcher, "host".into());
+        hub.inner().agents.insert(id, tracked_agent(record, Link::Connecting, None));
+        hub.publish();
+        assert!(hub.inner().published.is_none(), "the board does not open on a state nobody reported");
+        hub.on_holder(id, 1, Some(HolderMsg::Status(report_of_a_run(1, AgentState::Working))));
+        hub.publish();
+        let published = hub.inner().published.clone().expect("every linked agent has reported");
+        assert_eq!(published.agents[0].state, AgentState::Working);
+        hub.inner().agents.get_mut(&id).unwrap().status = None;
+        hub.publish();
+        assert!(hub.inner().published.is_some(), "only the first overview waits");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_holder_too_busy_to_answer_a_launch_is_asked_again_and_only_an_old_agent_is_lost() {
+        use crate::model::RuntimeInfo;
+        use crate::protocol::PROTOCOL_VERSION;
+
+        let dir = std::env::temp_dir().join(format!("orkai-hub-slow-{}-{}", std::process::id(), now_ms()));
+        let (store, record) = record_of(&dir, 1, now_ms());
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let runtime = RuntimeInfo {
+            holder_pid: 1,
+            child_pid: None,
+            port: listener.local_addr().unwrap().port(),
+            token: "test".into(),
+            started_at_ms: 500,
+            protocol: PROTOCOL_VERSION,
+            version: "test".into(),
+            exe: None,
+        };
+        let launcher = Launcher::new(store, Config::default(), &std::env::current_exe().unwrap()).unwrap();
+        let hub = Hub::new(launcher, "host".into());
+        let after_a_silent_holder = |record: AgentRecord| {
+            let id = record.id;
+            hub.inner().agents.insert(id, tracked_agent(record, Link::Connecting, None));
+            Arc::clone(&hub).link(id, 1, &runtime);
+            matches!(hub.inner().agents[&id].link, Link::Pending)
+        };
+        assert!(after_a_silent_holder(record.clone()), "a launch stays starting and the next scan links it");
+        let old = AgentRecord { created_at_ms: 1, ..record };
+        assert!(!after_a_silent_holder(old), "an old agent that does not answer is lost");
+        drop(listener);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -772,6 +772,12 @@ pub fn build_spec(
     })
 }
 
+pub fn has_task_in_args(spec: &LaunchSpec) -> bool {
+    spec.initial_input.is_none()
+        && matches!(spec.kind, AgentKind::Kilo | AgentKind::Opencode)
+        && spec.args.iter().any(|arg| arg == PROMPT_OPTION)
+}
+
 static STAGED: OnceLock<Mutex<Option<(PathBuf, PathBuf)>>> = OnceLock::new();
 
 pub fn holder_executable(home: &Home, source: &Path) -> io::Result<PathBuf> {
@@ -1947,11 +1953,13 @@ mod tests {
             let typed = if prompted { None } else { Some("task") };
             assert_eq!(fresh.initial_input.as_deref(), typed, "{kind:?}");
             assert_eq!(fresh.args.ends_with(&["--prompt".to_string(), "task".to_string()]), prompted, "{kind:?}");
+            assert_eq!(has_task_in_args(&fresh), prompted, "{kind:?}");
             assert_eq!(r.conversation_id, None, "{kind:?} never invents a session id");
             r.conversation_id = Some(id.into());
             let resumed = spec_for(&config, &mut r, LaunchMode::Resume, &Homes::default());
             assert_eq!(resumed.args, expected, "{kind:?}");
             assert_eq!(resumed.initial_input, None, "{kind:?}");
+            assert!(!has_task_in_args(&resumed), "{kind:?} resumes a conversation without a new task");
             let restarted = spec_for(&config, &mut r, LaunchMode::Fresh, &Homes::default());
             assert!(!restarted.args.iter().any(|arg| arg.contains(id)), "{kind:?}");
             r.conversation_id = Some("a&b".into());

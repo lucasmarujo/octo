@@ -2,6 +2,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -918,4 +919,376 @@ fn an_agent_is_never_started_twice_at_the_same_time() {
     assert!(hub.try_relaunch(8).is_some(), "other agents are not held back");
     drop(first);
     assert!(hub.try_relaunch(7).is_some(), "once the first start ends, the agent can start again");
+}
+
+const LAUNCH_TIMEOUT: Duration = Duration::from_secs(60);
+const TURN_ENDED: &str = "turn-ended";
+const TASK: &str = "fix the login";
+const BUSY_SCREEN: &str = "Working (esc to interrupt)";
+const OPENCODE_BUSY_SCREEN: &str = "esc interrupt";
+const TRUST_QUESTION: &str = "Do you trust the files in this folder?";
+static ONE_LAUNCH_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+const FAKE_PS1_HEAD: &str = r#"
+Add-Type -Namespace Orkai -Name Console -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int handle);
+[DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr handle, int mode);
+'@
+[void][Orkai.Console]::SetConsoleMode([Orkai.Console]::GetStdHandle(-10), 0x200)
+[void][Orkai.Console]::SetConsoleMode([Orkai.Console]::GetStdHandle(-11), 0x7)
+$e = [char]27
+"#;
+
+#[derive(Clone, Copy)]
+enum Fake {
+    Prompt,
+    ReadLine,
+    Say(&'static str),
+    Hook(&'static str),
+    Sleep(u32),
+    EndTurn,
+    Hang,
+    Crash,
+}
+
+fn fake_ps1(fx: &Fixture, step: Fake) -> String {
+    let home = fx.store.home().root().display();
+    let exe = env!("CARGO_BIN_EXE_orkai");
+    let command = orkai::hooks::HOOK_COMMAND;
+    let id = orkai::launch::AGENT_ID_ENV;
+    match step {
+        Fake::Prompt => "[Console]::Write(\"$e[2J$e[H$e[?2004h> ready`r`n\")".to_string(),
+        Fake::ReadLine => "while (($c = [char][Console]::In.Read()) -ne [char]13) { [Console]::Write($c) }".to_string(),
+        Fake::Say(text) => format!("[Console]::Write(\"$e[2J$e[999;1H{text}\")"),
+        Fake::Hook(event) => format!(
+            "$env:{}='{home}'; [IO.File]::WriteAllText(\"$PWD\\{event}.json\", '{{\"hook_event_name\":\"{event}\"}}'); cmd /c \"{exe} {command} claude %{id}% < {event}.json\"",
+            orkai::paths::HOME_ENV
+        ),
+        Fake::Sleep(ms) => format!("Start-Sleep -Milliseconds {ms}"),
+        Fake::EndTurn => format!("[void](New-Item {TURN_ENDED} -Force)"),
+        Fake::Hang => "Start-Sleep -Seconds 120".to_string(),
+        Fake::Crash => "exit 3".to_string(),
+    }
+}
+
+fn fake_sh(fx: &Fixture, step: Fake) -> String {
+    let home = fx.store.home().root().display();
+    let exe = env!("CARGO_BIN_EXE_orkai");
+    let command = orkai::hooks::HOOK_COMMAND;
+    let id = orkai::launch::AGENT_ID_ENV;
+    match step {
+        Fake::Prompt => r"printf '\033[2J\033[H\033[?2004h> ready\r\n'".to_string(),
+        Fake::ReadLine => "read orkai_line".to_string(),
+        Fake::Say(text) => format!(r"printf '\033[2J\033[999;1H{text}'"),
+        Fake::Hook(event) => format!(
+            "printf '%s' '{{\"hook_event_name\":\"{event}\"}}' | {}='{home}' '{exe}' {command} claude \"${id}\"",
+            orkai::paths::HOME_ENV
+        ),
+        Fake::Sleep(ms) => format!("sleep {}.{:03}", ms / 1_000, ms % 1_000),
+        Fake::EndTurn => format!(": > {TURN_ENDED}"),
+        Fake::Hang => "sleep 120".to_string(),
+        Fake::Crash => "exit 3".to_string(),
+    }
+}
+
+fn fake_agent(fx: &Fixture, name: &str, steps: &[Fake]) -> (String, Vec<String>) {
+    if cfg!(windows) {
+        let lines: Vec<String> = steps.iter().map(|step| fake_ps1(fx, *step)).collect();
+        let script = fx.dir.join(format!("{name}.ps1"));
+        std::fs::write(&script, format!("{FAKE_PS1_HEAD}{}\n", lines.join("\n"))).unwrap();
+        let args = ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"].map(String::from);
+        ("powershell.exe".to_string(), [args.to_vec(), vec![script.to_string_lossy().into_owned()]].concat())
+    } else {
+        let lines: Vec<String> = steps.iter().map(|step| fake_sh(fx, *step)).collect();
+        let script = fx.dir.join(format!("{name}.sh"));
+        std::fs::write(&script, format!("{}\n", lines.join("\n"))).unwrap();
+        ("/bin/sh".to_string(), vec![script.to_string_lossy().into_owned()])
+    }
+}
+
+fn shell_config() -> Config {
+    let (shell, args) = if cfg!(windows) { ("cmd.exe", vec!["/q".to_string()]) } else { ("/bin/sh", Vec::new()) };
+    Config { shell: Some(shell.to_string()), shell_args: args, ..Config::default() }
+}
+
+fn config_running(kind: AgentKind, (command, args): (String, Vec<String>)) -> Config {
+    let mut config = Config::default();
+    match kind {
+        AgentKind::Claude => (config.claude_command, config.claude_args) = (command, args),
+        AgentKind::Kimi => (config.kimi_command, config.kimi_args) = (command, args),
+        AgentKind::Opencode => (config.opencode_command, config.opencode_args) = (command, args),
+        other => panic!("{other:?} is not faked here"),
+    }
+    config
+}
+
+fn column(starting: bool, state: AgentState) -> &'static str {
+    if starting {
+        return "working";
+    }
+    match state {
+        AgentState::Paused => "needs",
+        AgentState::Working => "working",
+        AgentState::Done => "done",
+        AgentState::Idle | AgentState::Exited | AgentState::Lost => "idle",
+    }
+}
+
+struct Trace {
+    started: Instant,
+    seen: Vec<(u128, bool, AgentState)>,
+}
+
+impl Trace {
+    fn new() -> Self {
+        Self { started: Instant::now(), seen: Vec::new() }
+    }
+
+    fn note(&mut self, view: &AgentView) {
+        if self.seen.last().is_none_or(|last| (last.1, last.2) != (view.starting, view.state)) {
+            self.seen.push((self.started.elapsed().as_millis(), view.starting, view.state));
+        }
+    }
+
+    fn columns(&self) -> Vec<&'static str> {
+        let mut columns: Vec<&'static str> = self.seen.iter().map(|step| column(step.1, step.2)).collect();
+        columns.dedup();
+        columns
+    }
+
+    fn text(&self) -> String {
+        let steps: Vec<String> = self
+            .seen
+            .iter()
+            .map(|(at, starting, state)| {
+                format!("{at}ms starting={starting} state={state:?} column={}", column(*starting, *state))
+            })
+            .collect();
+        steps.join("; ")
+    }
+}
+
+fn follow(phone: &mut Phone, dir: &str, trace: &mut Trace, done: impl Fn(&AgentView) -> bool) -> AgentId {
+    let deadline = Instant::now() + LAUNCH_TIMEOUT;
+    while Instant::now() < deadline {
+        if let BridgeMsg::State(overview) = phone.read()
+            && let Some(view) = overview.agents.iter().find(|agent| agent.cwd.ends_with(dir))
+        {
+            trace.note(view);
+            if done(view) {
+                return view.id;
+            }
+        }
+    }
+    panic!("the agent in {dir} did not get there in time: {}", trace.text());
+}
+
+fn launch(fx: &Fixture, phone: &mut Phone, kind: AgentKind, dir: &str, task: &str, config: Config) -> PathBuf {
+    let cwd = fx.dir.join(dir);
+    std::fs::create_dir_all(&cwd).unwrap();
+    fx.hub.reconfigure(config).unwrap();
+    phone.send(&PhoneMsg::Start(StartRequest {
+        kind,
+        session: "default".into(),
+        cwd: cwd.to_string_lossy().into_owned(),
+        task: task.into(),
+        worktree: false,
+        bypass: false,
+        remote_control: false,
+    }));
+    cwd
+}
+
+fn assert_one_turn_without_flicker(kind: AgentKind, steps: &[Fake]) {
+    let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    let config = config_running(kind, fake_agent(&fx, "agent", steps));
+    let cwd = launch(&fx, &mut phone, kind, "turn", TASK, config);
+    let mut trace = Trace::new();
+    follow(&mut phone, "turn", &mut trace, |view| view.state == AgentState::Done);
+    assert!(cwd.join(TURN_ENDED).exists(), "Done came before the turn ended: {}", trace.text());
+    assert_eq!(trace.columns(), ["working", "done"], "{}", trace.text());
+}
+
+#[test]
+fn a_launched_agent_with_hooks_stays_in_working_until_its_turn_is_done() {
+    assert_one_turn_without_flicker(
+        AgentKind::Claude,
+        &[
+            Fake::Prompt,
+            Fake::ReadLine,
+            Fake::Hook("UserPromptSubmit"),
+            Fake::EndTurn,
+            Fake::Sleep(500),
+            Fake::Hook("Stop"),
+            Fake::Hang,
+        ],
+    );
+}
+
+#[test]
+fn a_launched_agent_whose_turn_ends_at_once_still_goes_from_working_to_done() {
+    assert_one_turn_without_flicker(
+        AgentKind::Claude,
+        &[Fake::Prompt, Fake::ReadLine, Fake::EndTurn, Fake::Hook("Stop"), Fake::Hang],
+    );
+}
+
+#[test]
+fn a_launched_agent_without_hooks_stays_in_working_until_its_screen_settles() {
+    assert_one_turn_without_flicker(
+        AgentKind::Kimi,
+        &[
+            Fake::Prompt,
+            Fake::ReadLine,
+            Fake::Say(BUSY_SCREEN),
+            Fake::EndTurn,
+            Fake::Sleep(2_000),
+            Fake::Prompt,
+            Fake::Hang,
+        ],
+    );
+}
+
+#[test]
+fn an_agent_given_its_task_in_the_arguments_stays_in_working_until_its_turn_is_done() {
+    assert_one_turn_without_flicker(
+        AgentKind::Opencode,
+        &[
+            Fake::Sleep(1_000),
+            Fake::Say(OPENCODE_BUSY_SCREEN),
+            Fake::EndTurn,
+            Fake::Sleep(2_000),
+            Fake::Prompt,
+            Fake::Hang,
+        ],
+    );
+}
+
+#[test]
+fn a_terminal_given_a_command_stays_in_working_until_the_command_settles() {
+    let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    launch(&fx, &mut phone, AgentKind::Terminal, "terminal", "echo hi", shell_config());
+    let mut trace = Trace::new();
+    follow(&mut phone, "terminal", &mut trace, |view| !view.starting && view.state == AgentState::Idle);
+    assert_eq!(trace.columns(), ["working", "idle"], "{}", trace.text());
+}
+
+#[test]
+fn an_agent_launched_without_a_task_goes_to_idle_and_stays_there() {
+    let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    let config = config_running(AgentKind::Kimi, fake_agent(&fx, "agent", &[Fake::Prompt, Fake::Hang]));
+    launch(&fx, &mut phone, AgentKind::Kimi, "no-task", "", config);
+    let mut trace = Trace::new();
+    let id = follow(&mut phone, "no-task", &mut trace, |view| !view.starting && view.state == AgentState::Idle);
+    assert_eq!(trace.columns(), ["working", "idle"], "{}", trace.text());
+    std::thread::sleep(Duration::from_millis(1_000));
+    assert_eq!(fx.hub.state(id), Some(AgentState::Idle), "{}", trace.text());
+}
+
+#[test]
+fn a_terminal_launched_without_a_command_ends_in_idle() {
+    let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    launch(&fx, &mut phone, AgentKind::Terminal, "shell", "", shell_config());
+    let mut trace = Trace::new();
+    follow(&mut phone, "shell", &mut trace, |view| {
+        !view.starting && view.state == AgentState::Idle && view.state_since != view.started_at
+    });
+    assert_eq!(trace.columns().last(), Some(&"idle"), "{}", trace.text());
+}
+
+#[test]
+fn a_launched_agent_that_crashes_does_not_stay_in_working() {
+    let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    let steps = [Fake::Prompt, Fake::Sleep(300), Fake::Crash];
+    let config = config_running(AgentKind::Claude, fake_agent(&fx, "agent", &steps));
+    launch(&fx, &mut phone, AgentKind::Claude, "crash", TASK, config);
+    let mut trace = Trace::new();
+    follow(&mut phone, "crash", &mut trace, |view| view.state == AgentState::Exited);
+    assert_eq!(trace.columns(), ["working", "idle"], "{}", trace.text());
+}
+
+#[test]
+fn a_launched_agent_asking_something_while_it_starts_goes_to_needs_you_and_back() {
+    let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    let steps = [
+        Fake::Say(TRUST_QUESTION),
+        Fake::ReadLine,
+        Fake::Prompt,
+        Fake::ReadLine,
+        Fake::Hook("UserPromptSubmit"),
+        Fake::Sleep(500),
+        Fake::EndTurn,
+        Fake::Hook("Stop"),
+        Fake::Hang,
+    ];
+    let config = config_running(AgentKind::Claude, fake_agent(&fx, "agent", &steps));
+    launch(&fx, &mut phone, AgentKind::Claude, "asks", TASK, config);
+    let mut trace = Trace::new();
+    let id = follow(&mut phone, "asks", &mut trace, |view| view.state == AgentState::Paused);
+    fx.hub.send(id, &ClientMsg::Input(b"\r".to_vec())).unwrap();
+    follow(&mut phone, "asks", &mut trace, |view| view.state == AgentState::Done);
+    assert_eq!(trace.columns(), ["working", "needs", "working", "done"], "{}", trace.text());
+}
+
+fn backdate(store: &Store, id: AgentId) {
+    let mut record = store.load_agent(id).unwrap();
+    record.created_at_ms = 1;
+    store.save_agent(&record).unwrap();
+}
+
+#[test]
+fn agents_found_running_when_the_app_reopens_show_their_real_state_from_the_first_message() {
+    let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    let idle_agent = fake_agent(&fx, "idle", &[Fake::Prompt, Fake::Hang]);
+    let working_agent = fake_agent(&fx, "working", &[Fake::Say(BUSY_SCREEN), Fake::Hang]);
+    launch(&fx, &mut phone, AgentKind::Kimi, "was-idle", "", config_running(AgentKind::Kimi, idle_agent));
+    let mut trace = Trace::new();
+    let idle = follow(&mut phone, "was-idle", &mut trace, |view| !view.starting);
+    launch(&fx, &mut phone, AgentKind::Kimi, "was-working", "", config_running(AgentKind::Kimi, working_agent));
+    let working = follow(&mut phone, "was-working", &mut trace, |view| view.state == AgentState::Working);
+    backdate(&fx.store, idle);
+    backdate(&fx.store, working);
+
+    let launcher = Launcher::new(fx.store.clone(), Config::default(), Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let hub = Hub::new(launcher, HOST.to_string());
+    let mut peer = Peer::join(&hub);
+    let mut window = Window(Vec::new());
+    let first = pump_until(&mut peer, &mut window, |message| match message {
+        BridgeMsg::State(overview) => Some(overview.clone()),
+        _ => None,
+    });
+    let shown = |id| agent(&first, id).map(|view| (view.starting, view.state));
+    assert_eq!(shown(idle), Some((false, AgentState::Idle)), "an idle agent is not shown as starting");
+    assert_eq!(shown(working), Some((false, AgentState::Working)), "a working agent is not shown as idle");
+}
+
+#[test]
+fn restarting_a_stopped_agent_does_not_show_it_working_before_it_reports() {
+    let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    let config = config_running(AgentKind::Kimi, fake_agent(&fx, "agent", &[Fake::Prompt, Fake::Hang]));
+    launch(&fx, &mut phone, AgentKind::Kimi, "restart", "", config);
+    let mut trace = Trace::new();
+    let id = follow(&mut phone, "restart", &mut trace, |view| !view.starting);
+    phone.send(&PhoneMsg::Stop { agent: id });
+    follow(&mut phone, "restart", &mut trace, |view| view.state == AgentState::Exited);
+    let mut restarted = Trace::new();
+    phone.send(&PhoneMsg::Restart { agent: id });
+    follow(&mut phone, "restart", &mut restarted, |view| view.state == AgentState::Idle && view.started_at.is_some());
+    assert!(!restarted.columns().contains(&"working"), "{}", restarted.text());
 }

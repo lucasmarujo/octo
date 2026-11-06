@@ -93,12 +93,14 @@ impl TermState {
         {
             tracker.set_last(command);
         }
+        let detector =
+            if pending_input.is_some() { Detector::launching(started_at) } else { Detector::new(started_at) };
         Self {
             parser: vt100::Parser::new_with_callbacks(size.rows, size.cols, HOLDER_SCROLLBACK, Responder::default()),
             links: LinkTracker::default(),
             kind,
             nested: None,
-            detector: Detector::new(started_at),
+            detector,
             signals: Signals::default(),
             dirty: false,
             started_at,
@@ -184,6 +186,11 @@ impl TermState {
         self.detector.hook(signal, at)
     }
 
+    pub fn expect_turn(&mut self) {
+        self.detector = Detector::launching(self.started_at);
+        self.detector.task_sent(self.started_at);
+    }
+
     pub fn mark_seen(&mut self) -> bool {
         self.detector.mark_seen()
     }
@@ -244,6 +251,7 @@ impl TermState {
         }
         let text = self.pending_input.take()?;
         self.submit_after = Some(now);
+        self.detector.task_typed(now);
         Some(encode_typed_text(&text, self.parser.screen().bracketed_paste()))
     }
 
@@ -271,6 +279,7 @@ impl TermState {
         if ready {
             self.submit_after = None;
             self.echoed_at = None;
+            self.detector.task_sent(now);
         }
         ready
     }
@@ -300,6 +309,7 @@ pub fn encode_typed_text(text: &str, bracketed_paste: bool) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::holder::detect::{DONE_GRACE_MS, LAUNCH_HOLD_MS};
     use crate::model::AgentState;
 
     fn state(kind: AgentKind) -> TermState {
@@ -569,8 +579,7 @@ mod tests {
 
     #[test]
     fn a_terminal_running_an_agent_is_tracked_as_that_agent() {
-        let mut t =
-            TermState::new(AgentKind::Terminal, TermSize { rows: 6, cols: 40 }, 0, String::new(), Some("ls".into()));
+        let mut t = TermState::new(AgentKind::Terminal, TermSize { rows: 6, cols: 40 }, 0, String::new(), None);
         t.note_input(b"claude\r", 50);
         t.process(b"thinking (esc to interrupt)", 100);
         t.evaluate(200);
@@ -660,5 +669,261 @@ mod tests {
         t.resize(TermSize { rows: 30, cols: 100 });
         let report = t.report(None);
         assert_eq!((report.rows, report.cols), (30, 100));
+    }
+
+    const TICK_MS: u64 = 200;
+    const WORKING: &str = "working";
+    const NEEDS: &str = "needs";
+    const DONE: &str = "done";
+    const IDLE: &str = "idle";
+    const PROMPT: &[u8] = b"\x1b[?2004h> ";
+    const CLEAN_PROMPT: &[u8] = b"\x1b[2J\x1b[H\x1b[?2004h> ";
+    const BUSY_SCREEN: &[u8] = b"\x1b[2J\x1b[HWorking (esc to interrupt)";
+    const SPINNER_TITLE: &[u8] = b"\x1b]0;\xe2\xa0\x8b Claude Code\x07";
+    const PLAIN_TITLE: &[u8] = b"\x1b]0;\xe2\x9c\xb3 Claude Code\x07";
+    const TRUST: &[u8] = b"Do you trust the files in this folder?";
+    const FINAL_TICK: u64 = 300_000;
+
+    #[derive(Clone, Copy)]
+    enum Step {
+        Out(&'static [u8]),
+        Hook(HookSignal),
+        Key(&'static [u8]),
+    }
+
+    use Step::{Hook, Key, Out};
+
+    #[derive(Default)]
+    struct Script {
+        from_start: Vec<(u64, Step)>,
+        after_submit: Vec<(u64, Step)>,
+        silent: bool,
+    }
+
+    fn column(state: AgentState) -> &'static str {
+        match state {
+            AgentState::Working => WORKING,
+            AgentState::Paused => NEEDS,
+            AgentState::Done => DONE,
+            _ => IDLE,
+        }
+    }
+
+    fn play(t: &mut TermState, script: Script) -> Vec<(u64, &'static str)> {
+        let mut seen = vec![(0, WORKING)];
+        let mut note = |at: u64, state: AgentState| {
+            if seen.last().is_none_or(|last| last.1 != column(state)) {
+                seen.push((at, column(state)));
+            }
+        };
+        note(0, t.report(None).state);
+        let mut steps = script.from_start;
+        for now in (TICK_MS..=FINAL_TICK).step_by(TICK_MS as usize) {
+            steps.sort_by_key(|step| step.0);
+            let due = steps.iter().take_while(|step| step.0 <= now).count();
+            for (at, step) in steps.drain(..due) {
+                match step {
+                    Out(bytes) => {
+                        t.process(bytes, at);
+                    }
+                    Hook(signal) => {
+                        t.apply_hook(signal, at);
+                    }
+                    Key(bytes) => t.note_input(bytes, at),
+                }
+                note(at, t.report(None).state);
+            }
+            t.evaluate(now);
+            if let Some(typed) = t.take_ready_input(now)
+                && !script.silent
+            {
+                t.process(&typed, now);
+            }
+            if t.take_submit(now) {
+                steps.extend(script.after_submit.iter().map(|(after, step)| (now + after, *step)));
+            }
+            note(now, t.report(None).state);
+        }
+        seen
+    }
+
+    fn columns(seen: &[(u64, &'static str)]) -> Vec<&'static str> {
+        seen.iter().map(|step| step.1).collect()
+    }
+
+    fn with_task(kind: AgentKind) -> TermState {
+        TermState::new(kind, TermSize { rows: 24, cols: 80 }, 0, "fix".into(), Some("fix the bug".into()))
+    }
+
+    fn without_task(kind: AgentKind) -> TermState {
+        TermState::new(kind, TermSize { rows: 24, cols: 80 }, 0, String::new(), None)
+    }
+
+    #[test]
+    fn a_launched_agent_with_hooks_goes_from_working_to_done_only() {
+        let script = Script {
+            from_start: vec![(1_000, Out(PROMPT))],
+            after_submit: vec![(100, Hook(HookSignal::Busy)), (5_000, Hook(HookSignal::Finished))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut with_task(AgentKind::Claude), script)), [WORKING, DONE]);
+    }
+
+    #[test]
+    fn a_launched_agent_without_hooks_goes_from_working_to_done_only() {
+        let script = Script {
+            from_start: vec![(1_000, Out(PROMPT))],
+            after_submit: vec![(100, Out(BUSY_SCREEN)), (5_000, Out(CLEAN_PROMPT))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut with_task(AgentKind::Codex), script)), [WORKING, DONE]);
+    }
+
+    #[test]
+    fn a_turn_that_ends_at_once_still_goes_from_working_to_done() {
+        let script = Script {
+            from_start: vec![(1_000, Out(PROMPT))],
+            after_submit: vec![(10, Hook(HookSignal::Busy)), (20, Hook(HookSignal::Finished))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut with_task(AgentKind::Claude), script)), [WORKING, DONE]);
+        let unseen_busy = Script {
+            from_start: vec![(1_000, Out(PROMPT))],
+            after_submit: vec![(10, Hook(HookSignal::Finished))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut with_task(AgentKind::Claude), unseen_busy)), [WORKING, DONE]);
+    }
+
+    #[test]
+    fn a_spinner_while_the_agent_loads_does_not_end_the_launch_before_the_task_is_sent() {
+        let script = Script {
+            from_start: vec![(300, Out(SPINNER_TITLE)), (1_000, Out(PLAIN_TITLE)), (6_000, Out(PROMPT))],
+            after_submit: vec![(100, Hook(HookSignal::Busy)), (5_000, Hook(HookSignal::Finished))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut with_task(AgentKind::Claude), script)), [WORKING, DONE]);
+    }
+
+    #[test]
+    fn a_report_of_idle_while_the_agent_loads_is_not_the_end_of_its_turn() {
+        let script = Script {
+            from_start: vec![(300, Out(b"\x1b]7501;state=idle\x07")), (1_000, Out(PROMPT))],
+            after_submit: vec![(100, Out(b"\x1b]7501;state=working\x07")), (5_000, Out(b"\x1b]7501;state=done\x07"))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut with_task(AgentKind::Antigravity), script)), [WORKING, DONE]);
+    }
+
+    #[test]
+    fn an_agent_slow_to_show_work_after_its_task_stays_in_working() {
+        let script = Script {
+            from_start: vec![(1_000, Out(PROMPT))],
+            after_submit: vec![(DONE_GRACE_MS * 4, Out(BUSY_SCREEN)), (DONE_GRACE_MS * 8, Out(CLEAN_PROMPT))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut with_task(AgentKind::Codex), script)), [WORKING, DONE]);
+    }
+
+    #[test]
+    fn a_task_in_the_arguments_counts_as_sent_from_the_start() {
+        let mut t = without_task(AgentKind::Opencode);
+        t.expect_turn();
+        assert_eq!(t.report(None).state, AgentState::Working);
+        let script = Script {
+            from_start: vec![(2_000, Out(b"esc interrupt")), (6_000, Out(b"\x1b[2J\x1b[Hdone"))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut t, script)), [WORKING, DONE]);
+        let mut silent = without_task(AgentKind::Opencode);
+        silent.expect_turn();
+        let seen = play(&mut silent, Script::default());
+        assert_eq!(seen, [(0, WORKING), (LAUNCH_HOLD_MS, IDLE)]);
+    }
+
+    #[test]
+    fn a_terminal_given_a_command_stays_in_working_until_the_command_settles() {
+        let script = Script {
+            from_start: vec![(500, Out(b"banner\r\n")), (3_000, Out(b"C:\\work>"))],
+            after_submit: vec![(10, Out(b"\r\nok\r\nC:\\work>"))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut with_task(AgentKind::Terminal), script)), [WORKING, IDLE]);
+    }
+
+    #[test]
+    fn without_a_task_an_agent_goes_to_idle_and_stays_there() {
+        for kind in [AgentKind::Claude, AgentKind::Codex, AgentKind::Kimi] {
+            let script = Script { from_start: vec![(1_000, Out(PROMPT))], ..Script::default() };
+            let mut t = without_task(kind);
+            assert_eq!(t.report(None).state, AgentState::Idle, "{kind:?}");
+            assert_eq!(columns(&play(&mut t, script)), [WORKING, IDLE], "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn a_terminal_without_a_command_ends_in_idle() {
+        let script = Script { from_start: vec![(1_000, Out(b"C:\\work>"))], ..Script::default() };
+        let seen = play(&mut without_task(AgentKind::Terminal), script);
+        assert_eq!(seen.last().map(|step| step.1), Some(IDLE));
+    }
+
+    #[test]
+    fn an_agent_that_never_shows_work_leaves_working_within_the_bound() {
+        let drawn_and_echoed = Script { from_start: vec![(1_000, Out(PROMPT))], ..Script::default() };
+        let seen = play(&mut with_task(AgentKind::Claude), drawn_and_echoed);
+        assert_eq!(columns(&seen), [WORKING, IDLE]);
+        assert!(
+            seen[1].0 <= 1_000 + INPUT_QUIET_MS + SUBMIT_MIN_MS + SUBMIT_QUIET_MS + LAUNCH_HOLD_MS + TICK_MS,
+            "{seen:?}"
+        );
+
+        let silent = Script { silent: true, ..Script::default() };
+        let seen = play(&mut with_task(AgentKind::Claude), silent);
+        assert_eq!(columns(&seen), [WORKING, IDLE]);
+        assert!(
+            seen[1].0 <= INPUT_READY_TIMEOUT_MS + SUBMIT_NO_ECHO_TIMEOUT_MS + LAUNCH_HOLD_MS + 2 * TICK_MS,
+            "{seen:?}"
+        );
+
+        let noisy: Vec<(u64, Step)> =
+            (0..FINAL_TICK / TICK_MS).map(|tick| (tick * TICK_MS, Out(b"\x1b[Hloading"))).collect();
+        let seen = play(&mut with_task(AgentKind::Claude), Script { from_start: noisy, ..Script::default() });
+        assert_eq!(seen, [(0, WORKING), (LAUNCH_HOLD_MS, IDLE)]);
+    }
+
+    #[test]
+    fn a_question_while_the_agent_starts_goes_to_needs_you_and_keeps_the_launch_when_answered() {
+        let script = Script {
+            from_start: vec![
+                (1_000, Out(TRUST)),
+                (LAUNCH_HOLD_MS * 3, Key(b"\r")),
+                (LAUNCH_HOLD_MS * 3 + 100, Out(CLEAN_PROMPT)),
+            ],
+            after_submit: vec![(100, Hook(HookSignal::Busy)), (5_000, Hook(HookSignal::Finished))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut with_task(AgentKind::Claude), script)), [WORKING, NEEDS, WORKING, DONE]);
+    }
+
+    #[test]
+    fn a_waiting_hook_while_the_agent_starts_goes_to_needs_you_and_keeps_the_launch_when_answered() {
+        let script = Script {
+            from_start: vec![
+                (500, Hook(HookSignal::Waiting)),
+                (LAUNCH_HOLD_MS * 3, Key(b"\r")),
+                (LAUNCH_HOLD_MS * 3 + 100, Out(CLEAN_PROMPT)),
+            ],
+            after_submit: vec![(100, Hook(HookSignal::Busy)), (5_000, Hook(HookSignal::Finished))],
+            ..Script::default()
+        };
+        assert_eq!(columns(&play(&mut with_task(AgentKind::Claude), script)), [WORKING, NEEDS, WORKING, DONE]);
+    }
+
+    #[test]
+    fn a_program_found_in_a_terminal_does_not_inherit_the_launch() {
+        let mut t = with_task(AgentKind::Terminal);
+        assert!(t.set_nested(nested(AgentKind::Claude, 42, 500), 500));
+        assert_eq!(t.report(None).state, AgentState::Idle);
     }
 }

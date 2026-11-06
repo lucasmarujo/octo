@@ -189,6 +189,33 @@ test('every agent state lands in exactly one board column', () => {
   assert.equal(column(agent({ state: 'paused', starting: true })), 'working', 'an agent still starting is busy');
 });
 
+function leavesWorkingAndComesBack(published) {
+  const columns = published.map(([state, starting = false]) => column(agent({ state, starting })));
+  const left = columns.findIndex((name, index) => index > 0 && columns[index - 1] === 'working' && !['working', 'needs'].includes(name));
+  return left >= 0 && columns.slice(left).includes('working');
+}
+
+test('a launch never goes from Working to another column and back to Working', () => {
+  assert.equal(leavesWorkingAndComesBack([['idle', true], ['idle'], ['working'], ['done']]), true, 'the flicker this rule exists for');
+  assert.equal(leavesWorkingAndComesBack([['idle', true], ['lost'], ['idle', true], ['working'], ['done']]), true, 'a slow start shown as lost');
+  assert.equal(leavesWorkingAndComesBack([['idle', true], ['working'], ['done'], ['working'], ['done']]), true, 'a spinner read as a whole turn');
+  assert.equal(leavesWorkingAndComesBack([['idle', true], ['working'], ['done']]), false);
+  assert.equal(leavesWorkingAndComesBack([['idle', true], ['working'], ['paused'], ['working'], ['done']]), false, 'asking you something is not leaving the launch');
+  assert.equal(leavesWorkingAndComesBack([['idle', true], ['idle']]), false, 'without a task it rests in Idle');
+  assert.equal(leavesWorkingAndComesBack([['idle', true], ['working'], ['idle']]), false, 'a launch that never starts working gets out');
+  assert.equal(leavesWorkingAndComesBack([['idle', true], ['exited']]), false, 'a crash gets out');
+});
+
+test('the column the core tests assert over is the one the board computes', () => {
+  const source = rust('tests/pwa_e2e.rs').match(/fn column\(starting: bool, state: AgentState\)[\s\S]*?\n}\n/)[0];
+  assert.match(source, /if starting \{\s*return "working";/);
+  assert.equal(column(agent({ state: 'idle', starting: true })), 'working');
+  const arms = [...source.matchAll(/((?:AgentState::\w+(?: \| )?)+) => "(\w+)"/g)];
+  const mapped = arms.flatMap(([, states, name]) => states.split(' | ').map((state) => [state.slice('AgentState::'.length).toLowerCase(), name]));
+  assert.equal(mapped.length, 6, 'every state of the core');
+  for (const [state, name] of mapped) assert.equal(column(agent({ state })), name, state);
+});
+
 test('glyphs match the symbols of the TUI', () => {
   assert.equal(glyph(agent({ state: 'paused' }), 0).text, '‖');
   assert.equal(glyph(agent({ state: 'done' }), 0).text, '✓');

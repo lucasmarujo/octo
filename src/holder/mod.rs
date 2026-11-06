@@ -326,11 +326,15 @@ pub fn run(home: &Home, id: AgentId) -> io::Result<()> {
         }
     };
 
+    let mut term = TermState::new(spec.kind, size, started_at, task_of(&spec), spec.initial_input.clone());
+    if launch::has_task_in_args(&spec) {
+        term.expect_turn();
+    }
     let shared = Arc::new(Shared {
         home: home.clone(),
         agent_id: id,
         token: token.clone(),
-        term: Mutex::new(TermState::new(spec.kind, size, started_at, task_of(&spec), spec.initial_input.clone())),
+        term: Mutex::new(term),
         pty_writer: Mutex::new(writer),
         master: Mutex::new(pty.master),
         killer: Mutex::new(killer),
