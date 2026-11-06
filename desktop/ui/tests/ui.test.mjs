@@ -475,6 +475,20 @@ test('the help and the settings no longer point at the who and where labels of t
   assert.ok(!Object.hasOwn(PT, 'The program Octo runs for each agent and the extra arguments it passes. Only installed agents show up in'));
 });
 
+test('the accent of every surface is the pink of Kai', () => {
+  const pink = '#e85eb6';
+  assert.match(readFileSync(join(REPO, 'desktop/ui/kai/idle.svg'), 'utf8').toLowerCase(), new RegExp(pink));
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.equal(css.match(/--color-accent: #[0-9a-f]{6};/g).length, 2);
+  assert.ok(css.match(/--color-accent: #[0-9a-f]{6};/g).every((rule) => rule.includes(pink)));
+  assert.match(readFileSync(join(REPO, 'src/pwa/web/style.css'), 'utf8'), new RegExp(`--pink: ${pink};`));
+  assert.match(readFileSync(join(REPO, 'site/assets/site.css'), 'utf8'), new RegExp(`--pink: ${pink};`));
+  assert.match(rust('src/tui/theme.rs'), /ACCENT: Color = Color::Rgb\(232, 94, 182\);/);
+  for (const file of ['desktop/ui/styles.css', 'src/pwa/web/style.css', 'site/assets/site.css', 'site/index.html']) {
+    assert.doesNotMatch(readFileSync(join(REPO, file), 'utf8'), /ff5f87/i, file);
+  }
+});
+
 test('a long line of the help wraps inside its column instead of running over the next one', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   const rule = (selector) => css.split(`\n${selector} {`)[1].split('}')[0];
