@@ -41,6 +41,8 @@ const PURE_ON: &str = "1";
 const KILO_NO_DAEMON: &str = "KILO_NO_DAEMON";
 const NO_DAEMON_ON: &str = "1";
 const PROMPT_OPTION: &str = "--prompt";
+const MODEL_OPTION: &str = "--model";
+const MODEL_SHORT_OPTION: &str = "-m";
 const AGY_STATUS_ENV: &str = "AGY_CLI_OSC7501";
 const AGY_STATUS_ON: &str = "on";
 const AGY_CONVERSATIONS: [&str; 2] = ["cache", "last_conversations.json"];
@@ -484,6 +486,33 @@ impl HookLaunch {
 
 fn names_option(args: &[String], option: &str) -> bool {
     args.iter().any(|arg| arg == option || arg.starts_with(&format!("{option}=")))
+}
+
+fn model_options(kind: AgentKind) -> &'static [&'static str] {
+    match kind {
+        AgentKind::Codex | AgentKind::Kilo | AgentKind::Opencode | AgentKind::Qwen => {
+            &[MODEL_OPTION, MODEL_SHORT_OPTION]
+        }
+        AgentKind::Claude | AgentKind::Antigravity | AgentKind::Grok | AgentKind::Kimi | AgentKind::Pi => {
+            &[MODEL_OPTION]
+        }
+        AgentKind::Terminal => &[],
+    }
+}
+
+pub fn launch_model(spec: &LaunchSpec) -> Option<String> {
+    let options = model_options(spec.kind);
+    let mut chosen = None;
+    let mut args = spec.args.iter();
+    while let Some(arg) = args.next() {
+        let inline = arg.split_once('=').filter(|(option, _)| options.contains(option)).map(|(_, value)| value);
+        if inline.is_some() {
+            chosen = inline;
+        } else if options.contains(&arg.as_str()) {
+            chosen = args.next().map(String::as_str).filter(|value| !value.starts_with('-')).or(chosen);
+        }
+    }
+    chosen.and_then(non_empty)
 }
 
 fn env_is_set(name: &str) -> bool {
@@ -1751,6 +1780,50 @@ mod tests {
         .unwrap();
         assert!(spec.args.iter().any(|a| a.starts_with("notify=")));
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn launched(kind: AgentKind, args: &[&str]) -> Option<String> {
+        let spec = LaunchSpec {
+            kind,
+            program: PathBuf::from("agent"),
+            args: args.iter().map(ToString::to_string).collect(),
+            cwd: PathBuf::from("."),
+            env: Vec::new(),
+            env_remove: Vec::new(),
+            initial_input: None,
+            rows: 24,
+            cols: 80,
+            test: None,
+        };
+        launch_model(&spec)
+    }
+
+    #[test]
+    fn the_launch_model_is_only_what_the_arguments_state() {
+        assert_eq!(launched(AgentKind::Claude, &["--model", "opus", "--session-id", "x"]).as_deref(), Some("opus"));
+        assert_eq!(launched(AgentKind::Claude, &["--model=sonnet[1m]"]).as_deref(), Some("sonnet[1m]"));
+        assert_eq!(launched(AgentKind::Claude, &["--model", "opus", "--model", "haiku"]).as_deref(), Some("haiku"));
+        assert_eq!(launched(AgentKind::Codex, &["-m", "gpt-5"]).as_deref(), Some("gpt-5"));
+        assert_eq!(
+            launched(AgentKind::Opencode, &["-m", "opencode/big-pickle"]).as_deref(),
+            Some("opencode/big-pickle")
+        );
+        assert_eq!(launched(AgentKind::Kilo, &["--model", "x/y"]).as_deref(), Some("x/y"));
+        assert_eq!(launched(AgentKind::Qwen, &["-m", "qwen3-coder"]).as_deref(), Some("qwen3-coder"));
+
+        assert_eq!(launched(AgentKind::Claude, &[]), None);
+        assert_eq!(launched(AgentKind::Claude, &["--session-id", "x"]), None);
+        assert_eq!(
+            launched(AgentKind::Claude, &["-m", "not-claude-syntax"]),
+            None,
+            "-m is only read where it means model"
+        );
+        assert_eq!(launched(AgentKind::Claude, &["--model"]), None);
+        assert_eq!(launched(AgentKind::Claude, &["--model", "--session-id", "x"]), None);
+        assert_eq!(launched(AgentKind::Claude, &["--model="]), None);
+        assert_eq!(launched(AgentKind::Codex, &["-c", "model=gpt-5"]), None);
+        assert_eq!(launched(AgentKind::Terminal, &["--model", "opus"]), None);
+        assert_eq!(launched(AgentKind::Opencode, &["--prompt", "use --model opus"]), None);
     }
 
     fn every_agent(program: &Path) -> Config {

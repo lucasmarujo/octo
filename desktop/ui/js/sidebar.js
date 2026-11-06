@@ -1,9 +1,9 @@
 import { deleteSession, renameSession } from './commands.js';
 import { $, h, keep, place, storage, svg } from './dom.js';
 import { ask, closeMenu, openMenu } from './dialogs.js';
-import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, detailsWidth, USAGE_FOLDED, USAGE_WARN, duration, kindColor, label, sidebarWidth, usageColor, usageOrder, usageShown } from './format.js';
+import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentsTip, detailsWidth, duration, kindColor, kindMark, label, shortModel, sidebarWidth, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
-import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_PLUS, PROVIDER_ICONS } from './icons.js';
+import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_PLUS, providerIcon } from './icons.js';
 import { agents, inSession, now, selectSession, state, toggleExpanded, toggleUsage } from './state.js';
 import { send } from './transport.js';
 
@@ -17,15 +17,24 @@ const SUMMARY = [
   { state: 'done', glyph: '✓', tone: 't-green' },
 ];
 
+function summaryIcon(kind) {
+  const icon = providerIcon(kind);
+  return h('span', { class: 'summary-icon' }, icon ? svg(icon) : h('span', { class: 'summary-mark', style: `color:${kindColor(kind)}` }, kindMark(kind)));
+}
+
 function summaryLine(entry, list, onOpen) {
   if (!list.length) return null;
   const glyph = entry.glyph || SPINNER[state.frame % SPINNER.length];
-  const rest = list.length > 1 ? h('span', { class: 't-faint' }, ` +${list.length - 1}`) : null;
+  const rest = list.length > 1 ? h('span', { class: 'summary-rest' }, `+${list.length - 1}`) : null;
+  const model = shortModel(list[0].model);
   return h(
     'div',
-    { class: `summary${entry.waiting ? ' waiting' : ''}`, dataset: { agent: String(list[0].id) }, onclick: () => onOpen(list[0]) },
+    { class: `summary${entry.waiting ? ' waiting' : ''}`, dataset: { agent: String(list[0].id) }, title: agentsTip(list), onclick: () => onOpen(list[0]) },
     h('span', { class: `glyph ${entry.tone}`, dataset: entry.glyph ? {} : { spin: '1' } }, glyph),
-    h('span', { class: 'summary-text' }, list[0].name, rest),
+    summaryIcon(list[0].kind),
+    h('span', { class: 'summary-text' }, list[0].name),
+    rest,
+    model ? h('span', { class: 'summary-model' }, model) : null,
   );
 }
 
@@ -113,7 +122,7 @@ function usageRow(window) {
 }
 
 function usageCard(entry) {
-  const icon = PROVIDER_ICONS[entry.kind];
+  const icon = providerIcon(entry.kind);
   const funds = entry.credits !== null && entry.credits !== undefined
     ? h('span', { class: 'usage-funds' }, t('funds {amount}', { amount: `$${entry.credits.toFixed(2)}` }))
     : null;
@@ -189,7 +198,7 @@ export function renderSidebar(onSelect, onOpen) {
     ? JSON.stringify([
         state.session,
         [...state.expanded],
-        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map((agent) => [agent.id, agent.name, agent.state, agent.starting])]),
+        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map((agent) => [agent.id, agent.name, agent.state, agent.starting, agent.kind, agent.model])]),
       ])
     : '';
   if (overview && host.dataset.signature !== signature) {

@@ -12,6 +12,8 @@ export const DETAILS_MIN = 220;
 export const DETAILS_MAX = 560;
 
 const LABELS = { antigravity: 'agy' };
+const TERMINAL_KIND = 'terminal';
+const TERMINAL_MARK = '$';
 const KIND_COLORS = {
   claude: '#de805c',
   codex: '#78afff',
@@ -75,6 +77,17 @@ export function previewRows(height, lineHeight) {
 export const label = (kind) => LABELS[kind] || kind;
 export const kindHex = (kind) => KIND_COLORS[kind] || '#9a9aa8';
 export const kindColor = (kind) => `var(--kind-${Object.hasOwn(KIND_COLORS, kind) ? kind : 'other'})`;
+export const kindMark = (kind) => (kind === TERMINAL_KIND ? TERMINAL_MARK : label(kind).charAt(0).toUpperCase());
+
+export function shortModel(id) {
+  if (!id) return '';
+  const name = id.split('/').pop().replace(/\[.*\]$/, '').replace(/-\d{8}$/, '');
+  const claude = name.match(/claude-[\d.-]*([a-z]+)/);
+  return claude ? claude[1] : name.split('-').slice(0, 2).join('-');
+}
+
+export const agentTip = (agent) => [agent.name, label(agent.kind), agent.model].filter(Boolean).join(' · ');
+export const agentsTip = (list) => list.map(agentTip).join('\n');
 
 const pad2 = (value) => String(value).padStart(2, '0');
 

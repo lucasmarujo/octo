@@ -209,6 +209,10 @@ impl Store {
         fsutil::write_json_atomic(&self.home.launch_file(id), spec)
     }
 
+    pub fn read_launch(&self, id: AgentId) -> io::Result<Option<LaunchSpec>> {
+        fsutil::read_json_opt(&self.home.launch_file(id))
+    }
+
     pub fn read_runtime(&self, id: AgentId) -> io::Result<Option<RuntimeInfo>> {
         fsutil::read_json_opt(&self.home.runtime_file(id))
     }

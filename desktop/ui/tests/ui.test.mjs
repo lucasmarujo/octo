@@ -1083,6 +1083,78 @@ test('every provider with plan usage has its icon in the real colors of its bran
   assert.ok(existsSync(join(REPO, 'desktop/ui/vendor/lobehub-icons/LICENSE')), 'the icon set keeps its MIT notice');
 });
 
+test('a line of the sidebar shows the provider of its agent, with a mark for those without an icon', async () => {
+  const { PROVIDER_ICONS, providerIcon } = await import('../js/icons.js');
+  const { kindMark } = await import('../js/format.js');
+  for (const kind of Object.keys(PROVIDER_ICONS)) assert.match(providerIcon(kind), /^<svg /, kind);
+  for (const kind of ['terminal', 'not-a-kind', 'constructor']) assert.equal(providerIcon(kind), null, kind);
+  assert.equal(kindMark('terminal'), '$');
+  assert.equal(kindMark('qwen'), 'Q');
+  assert.equal(kindMark('pi'), 'P');
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /icon \? svg\(icon\) : h\('span', \{ class: 'summary-mark', style: `color:\$\{kindColor\(kind\)\}` \}, kindMark\(kind\)\)/);
+  assert.match(sidebar, /summaryIcon\(list\[0\]\.kind\)/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.summary-icon \{[^}]*width: 12px; height: 12px; flex-shrink: 0;/, 'every line keeps the text in the same column');
+  assert.match(css, /\.summary-text \{ flex: 1; min-width: 0;[^}]*text-overflow: ellipsis;/, 'the name gives way first');
+  assert.match(css, /\.summary-model \{ flex-shrink: 0; max-width: \d+px;[^}]*text-overflow: ellipsis;/, 'the model keeps its place up to a limit');
+  assert.match(css, /\.session-list \{[^}]*container-type: inline-size;/);
+  assert.match(css, /@container \(max-width: \d+px\) \{ \.summary-model \{ display: none; \} \}/, 'a narrow sidebar leaves the model to the tooltip');
+});
+
+test('every copy of a provider icon gets its own ids, so hiding one never blanks another', async () => {
+  const { PROVIDER_ICONS, providerIcon } = await import('../js/icons.js');
+  const idsOf = (icon) => [...icon.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+  const refsOf = (icon) => [...icon.matchAll(/url\(#([^)]+)\)/g)].map((match) => match[1]);
+  for (const kind of ['codex', 'antigravity']) {
+    assert.ok(idsOf(PROVIDER_ICONS[kind]).length > 0, kind);
+    const [first, second] = [providerIcon(kind), providerIcon(kind)];
+    assert.equal(idsOf(first).filter((id) => idsOf(second).includes(id)).length, 0, `${kind} repeats no id`);
+    for (const icon of [first, second]) {
+      for (const ref of refsOf(icon)) assert.ok(idsOf(icon).includes(ref), `${kind} points inside itself: ${ref}`);
+    }
+    const sameLook = (icon) => icon.replace(/\b(id="|url\(#)[^")]+/g, '$1');
+    assert.equal(sameLook(first), sameLook(PROVIDER_ICONS[kind]), `${kind} looks the same`);
+  }
+  assert.equal(providerIcon('claude'), PROVIDER_ICONS.claude, 'an icon without ids stays as it is');
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.doesNotMatch(sidebar, /PROVIDER_ICONS/, 'the sidebar never repeats an id');
+});
+
+test('a model becomes a short name by one rule and the tooltip keeps the full id', async () => {
+  const { agentTip, agentsTip, shortModel } = await import('../js/format.js');
+  const cases = {
+    'claude-opus-5-5': 'opus',
+    'claude-sonnet-4-5-20250929': 'sonnet',
+    'claude-3-5-haiku-20241022': 'haiku',
+    'anthropic/claude-sonnet-4-5': 'sonnet',
+    'us.anthropic.claude-opus-4-1-20250805-v1:0': 'opus',
+    opus: 'opus',
+    'sonnet[1m]': 'sonnet',
+    'gpt-5': 'gpt-5',
+    'gpt-5-codex': 'gpt-5',
+    'gpt-5.1-codex-max': 'gpt-5.1',
+    'opencode/big-pickle': 'big-pickle',
+    'qwen3-coder-plus': 'qwen3-coder',
+    o3: 'o3',
+  };
+  for (const [id, short] of Object.entries(cases)) assert.equal(shortModel(id), short, id);
+  for (const missing of [undefined, null, '']) assert.equal(shortModel(missing), '', 'no model, no text');
+
+  const claude = agent({ name: 'one', kind: 'claude', model: 'claude-opus-5-5' });
+  const codex = agent({ name: 'two', kind: 'codex', model: 'gpt-5.1-codex-max' });
+  const qwen = agent({ name: 'three', kind: 'qwen' });
+  const shell = agent({ name: 'four', kind: 'terminal', model: null });
+  const agy = agent({ name: 'five', kind: 'antigravity' });
+  assert.equal(agentTip(claude), 'one · claude · claude-opus-5-5');
+  assert.equal(agentTip(qwen), 'three · qwen', 'a missing model is left out');
+  assert.equal(agentTip(agy), 'five · agy');
+  assert.equal(agentsTip([claude, codex, qwen, shell]), 'one · claude · claude-opus-5-5\ntwo · codex · gpt-5.1-codex-max\nthree · qwen\nfour · terminal');
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /title: agentsTip\(list\)/, 'the +N of a line are in its tooltip');
+  assert.match(sidebar, /model \? h\('span', \{ class: 'summary-model' \}, model\) : null/, 'no element for a missing model');
+});
+
 test('the options button tints like the most severe option that is on, so bypass is never silently on', async () => {
   const { optionsTone } = await import('../js/format.js');
   assert.equal(optionsTone({ worktree: false, remote: false, bypass: false }), 'neutral');
@@ -1408,7 +1480,7 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.doesNotMatch(drag, /addEventListener\('blur'/, 'the capture of the pointer says when a drag is lost');
   const sidebarCode = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebarCode, /class: `summary\$\{entry\.waiting \? ' waiting' : ''\}`, dataset: \{ agent: String\(list\[0\]\.id\) \}/, 'an agent listed in the sidebar drags from there too');
-  assert.match(sidebarCode, /\[agent\.id, agent\.name, agent\.state, agent\.starting\]/, 'a line never keeps the id of another agent with the same name');
+  assert.match(sidebarCode, /\[agent\.id, agent\.name, agent\.state, agent\.starting, agent\.kind, agent\.model\]/, 'a line never keeps the id of another agent with the same name, nor an old provider or model');
   assert.match(drag, /\.xterm/, 'nothing drags out of a terminal');
   assert.match(drag, /addEventListener\('click', swallow, \{ capture: true, once: true \}\)/);
   assert.match(drag, /event\.key === 'Escape'/, 'a drag can be called off');

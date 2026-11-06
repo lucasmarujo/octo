@@ -59,6 +59,8 @@ struct Tracked {
     generation: u64,
     changes: Option<Changes>,
     subagents: Vec<Subagent>,
+    model: Option<String>,
+    launch_model: Option<String>,
 }
 
 impl Tracked {
@@ -124,7 +126,13 @@ impl Tracked {
                     started_at: sub.started_at_ms,
                 })
                 .collect(),
+            model: live.and_then(|status| self.running_model(status)),
         }
+    }
+
+    fn running_model(&self, status: &StatusReport) -> Option<String> {
+        let launched = self.launch_model.clone().filter(|_| status.nested.is_none());
+        self.model.clone().or(launched)
     }
 
     fn parent(&self) -> Option<subagents::Parent> {
@@ -521,6 +529,8 @@ impl Hub {
                     generation: 0,
                     changes: None,
                     subagents: Vec::new(),
+                    model: None,
+                    launch_model: None,
                 });
                 tracked.record = record;
                 match checks.get(&id) {
@@ -552,6 +562,7 @@ impl Hub {
 
     fn link(self: Arc<Self>, id: AgentId, generation: u64, runtime: &RuntimeInfo) {
         let result = client::connect(runtime);
+        let launch_model = self.store.read_launch(id).ok().flatten().and_then(|spec| launch::launch_model(&spec));
         let mut inner = self.inner();
         let Some(tracked) = inner.agents.get_mut(&id).filter(|tracked| tracked.generation == generation) else {
             return;
@@ -559,6 +570,7 @@ impl Hub {
         match result {
             Ok((conn, reader, _)) => {
                 tracked.link = Link::Live(Arc::new(conn));
+                tracked.launch_model = launch_model;
                 drop(inner);
                 let hub = Arc::clone(&self);
                 let _ = client::spawn_reader(reader, move |message| hub.on_holder(id, generation, message));
@@ -676,10 +688,13 @@ impl Hub {
         };
         let hub = Arc::clone(self);
         let spawned = thread::Builder::new().name("orkai-pwa-scan".into()).spawn(move || {
-            let (changes, mut found) = {
+            let (changes, mut found, mut models) = {
                 let mut scanners = lock(&hub.scanners);
                 let now = now_ms();
-                (scanners.changes.scan(&targets, now), scanners.subagents.scan(&parents, now))
+                let changes = scanners.changes.scan(&targets, now);
+                let found = scanners.subagents.scan(&parents, now);
+                let models = scanners.subagents.models(&parents);
+                (changes, found, models)
             };
             let mut inner = hub.inner();
             for tracked in inner.agents.values_mut() {
@@ -688,6 +703,7 @@ impl Hub {
                     tracked.changes = Some(changed.clone());
                 }
                 tracked.subagents = found.remove(&id).unwrap_or_default();
+                tracked.model = models.remove(&id);
             }
             inner.scan_busy = false;
             inner.scan_at = Some(Instant::now());
@@ -820,6 +836,80 @@ mod tests {
         assert_eq!(hub.lost_in("default").len(), 1);
         assert!(hub.lost_in("other").is_empty(), "a finished agent is not recovered");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn tracked_with_status(nested: Option<crate::model::NestedAgent>) -> Tracked {
+        let record = AgentRecord {
+            id: 1,
+            session: "default".into(),
+            name: "a".into(),
+            kind: AgentKind::Claude,
+            cwd: "/work".into(),
+            task: String::new(),
+            created_at_ms: 0,
+            conversation_id: None,
+            launches: 1,
+            worktree: None,
+            bypass: false,
+            remote_control: false,
+            project: None,
+            parent: None,
+            race: None,
+        };
+        let status = StatusReport {
+            state: AgentState::Working,
+            state_since_ms: 0,
+            turn_started_ms: None,
+            last_turn_ms: None,
+            started_at_ms: 0,
+            title: String::new(),
+            activity: String::new(),
+            rows: 24,
+            cols: 80,
+            exit: None,
+            nested,
+            viewers: None,
+            test: None,
+            input_at_ms: 0,
+        };
+        Tracked {
+            record,
+            link: Link::Pending,
+            status: Some(status),
+            generation: 0,
+            changes: None,
+            subagents: Vec::new(),
+            model: None,
+            launch_model: None,
+        }
+    }
+
+    #[test]
+    fn an_agent_shows_the_model_its_session_reports_before_the_one_it_was_launched_with() {
+        let mut tracked = tracked_with_status(None);
+        assert_eq!(tracked.view().model, None, "nothing known means nothing shown");
+        tracked.launch_model = Some("opus".into());
+        assert_eq!(tracked.view().model.as_deref(), Some("opus"));
+        tracked.model = Some("claude-sonnet-4-5".into());
+        assert_eq!(tracked.view().model.as_deref(), Some("claude-sonnet-4-5"), "/model wins over the launch");
+        tracked.link = Link::Lost(None);
+        assert_eq!(tracked.view().model, None, "a dead agent runs no model");
+    }
+
+    #[test]
+    fn a_tool_started_by_hand_in_a_terminal_never_takes_the_launch_model() {
+        let nested = crate::model::NestedAgent {
+            kind: AgentKind::Claude,
+            pid: 2,
+            conversation_id: None,
+            cwd: None,
+            since_ms: 0,
+        };
+        let mut tracked = tracked_with_status(Some(nested));
+        tracked.launch_model = Some("opus".into());
+        assert_eq!(tracked.view().model, None);
+        tracked.model = Some("claude-opus-5-5".into());
+        assert_eq!(tracked.view().model.as_deref(), Some("claude-opus-5-5"));
     }
 
     #[test]

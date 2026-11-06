@@ -26,6 +26,11 @@ const CLAUDE_HANDBACK_TOOL: &str = "SubagentHandback";
 const CLAUDE_STOP_HOOK: &str = "SubagentStop";
 const CLAUDE_END_TURN: &str = "end_turn";
 const CLAUDE_DEFAULT_ROLE: &str = "subagent";
+const CLAUDE_ASSISTANT: &str = "assistant";
+const CLAUDE_SYNTHETIC_MODEL: &str = "<synthetic>";
+const CODEX_TURN_CONTEXT: &str = "turn_context";
+const MODEL_FIELD: &str = "\"model\"";
+const MODEL_WINDOW_BYTES: u64 = 1024 * 1024;
 const CODEX_DEFAULT_ROLE: &str = "subagent";
 const CODEX_STARTED_EVENTS: &[&str] = &["task_started"];
 const CODEX_FINISHED_EVENTS: &[&str] = &["task_complete", "turn_aborted", "shutdown_complete"];
@@ -80,6 +85,36 @@ struct CachedTail {
     len: u64,
     modified: u64,
     tail: Tail,
+}
+
+struct CachedModel {
+    len: u64,
+    modified: u64,
+    model: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct ModelField {
+    model: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct ClaudeModelLine {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(rename = "isSidechain")]
+    sidechain: bool,
+    message: ModelField,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct CodexModelLine {
+    #[serde(rename = "type")]
+    kind: String,
+    payload: ModelField,
 }
 
 #[derive(Deserialize, Default, Clone)]
@@ -164,6 +199,8 @@ pub struct SubagentWatcher {
     codex_threads: HashMap<(AgentId, u64), String>,
     codex_spawns: HashMap<PathBuf, Option<CodexSpawn>>,
     tails: HashMap<PathBuf, CachedTail>,
+    codex_rollouts: HashMap<String, Option<PathBuf>>,
+    models: HashMap<PathBuf, CachedModel>,
 }
 
 impl SubagentWatcher {
@@ -204,6 +241,75 @@ impl SubagentWatcher {
             self.codex_threads.clear();
         }
         found
+    }
+
+    pub fn models(&mut self, parents: &[Parent]) -> BTreeMap<AgentId, String> {
+        let mut found = BTreeMap::new();
+        for parent in parents {
+            let model = match parent.kind {
+                AgentKind::Claude => self.claude_model(parent),
+                AgentKind::Codex => self.codex_model(parent),
+                AgentKind::Kilo
+                | AgentKind::Opencode
+                | AgentKind::Antigravity
+                | AgentKind::Grok
+                | AgentKind::Qwen
+                | AgentKind::Kimi
+                | AgentKind::Pi
+                | AgentKind::Terminal => None,
+            };
+            if let Some(model) = model {
+                found.insert(parent.id, model);
+            }
+        }
+        if self.models.len() > MAX_CACHE_ENTRIES {
+            self.models.clear();
+        }
+        if self.codex_rollouts.len() > MAX_CACHE_ENTRIES {
+            self.codex_rollouts.clear();
+        }
+        found
+    }
+
+    fn claude_model(&mut self, parent: &Parent) -> Option<String> {
+        let session_id = parent.conversation_id.as_deref().filter(|id| is_uuid(id))?;
+        let session = self.claude_dirs.get(session_id)?.parent()?;
+        let path = session.with_file_name(format!("{session_id}{CLAUDE_TRANSCRIPT_SUFFIX}"));
+        self.last_model(&path, claude_model)
+    }
+
+    fn codex_model(&mut self, parent: &Parent) -> Option<String> {
+        let codex_home = self.codex_home.clone()?;
+        let key = (parent.id, parent.created_at_ms);
+        let thread = parent
+            .conversation_id
+            .clone()
+            .or_else(|| self.codex_threads.get(&key).cloned())
+            .filter(|id| is_safe_session_id(id))?;
+        let rollout = self.codex_rollouts.entry(thread).or_insert_with_key(|thread| {
+            let name = format!("-{thread}.jsonl");
+            recent_codex_rollouts(&codex_home, parent.created_at_ms)
+                .into_iter()
+                .find(|path| path.to_string_lossy().ends_with(&name))
+        });
+        let path = rollout.clone()?;
+        self.last_model(&path, codex_model)
+    }
+
+    fn last_model(&mut self, path: &Path, parse: fn(&str) -> Option<String>) -> Option<String> {
+        let (len, modified, _) = stamp(path)?;
+        let known = self.models.get(path);
+        if let Some(cached) = known.filter(|c| c.len == len && c.modified == modified) {
+            return cached.model.clone();
+        }
+        let previous = known.and_then(|cached| cached.model.clone());
+        let seen = known.map_or(0, |cached| if cached.len <= len { cached.len } else { 0 });
+        let start = seen.saturating_sub(1).max(len.saturating_sub(MODEL_WINDOW_BYTES));
+        let Some(text) = read_window(path, start, MODEL_WINDOW_BYTES) else { return previous };
+        let read = parse(&text).map(|model| single_line(&model)).filter(|model| !model.is_empty());
+        let model = read.or(previous);
+        self.models.insert(path.to_path_buf(), CachedModel { len, modified, model: model.clone() });
+        model
     }
 
     fn claude_dir(&mut self, session_id: &str, cwd: &Path) -> Option<PathBuf> {
@@ -343,11 +449,14 @@ fn stamp(path: &Path) -> Option<(u64, u64, u64)> {
 }
 
 fn read_tail(path: &Path, len: u64) -> Option<String> {
+    read_window(path, len.saturating_sub(TAIL_BYTES), TAIL_BYTES)
+}
+
+fn read_window(path: &Path, start: u64, limit: u64) -> Option<String> {
     let mut file = File::open(path).ok()?;
-    let start = len.saturating_sub(TAIL_BYTES);
     file.seek(SeekFrom::Start(start)).ok()?;
     let mut bytes = Vec::new();
-    file.take(TAIL_BYTES).read_to_end(&mut bytes).ok()?;
+    file.take(limit).read_to_end(&mut bytes).ok()?;
     let text = String::from_utf8_lossy(&bytes).into_owned();
     Some(if start > 0 { text.split_once('\n').map(|(_, rest)| rest.to_string()).unwrap_or_default() } else { text })
 }
@@ -403,6 +512,23 @@ fn claude_tail(text: &str) -> Tail {
         }
     }
     tail
+}
+
+fn claude_model(text: &str) -> Option<String> {
+    text.lines().rev().filter(|line| line.contains(MODEL_FIELD)).find_map(|line| {
+        let record: ClaudeModelLine = serde_json::from_str(line).ok()?;
+        if record.kind != CLAUDE_ASSISTANT || record.sidechain {
+            return None;
+        }
+        record.message.model.filter(|model| model != CLAUDE_SYNTHETIC_MODEL)
+    })
+}
+
+fn codex_model(text: &str) -> Option<String> {
+    text.lines().rev().filter(|line| line.contains(MODEL_FIELD)).find_map(|line| {
+        let record: CodexModelLine = serde_json::from_str(line).ok()?;
+        record.payload.model.filter(|_| record.kind == CODEX_TURN_CONTEXT)
+    })
 }
 
 fn codex_spawn(path: &Path) -> Option<CodexSpawn> {
@@ -740,6 +866,171 @@ mod tests {
         std::io::Write::write_all(&mut file, big.as_bytes()).unwrap();
         drop(file);
         assert_eq!(watcher.scan(&[claude_parent(&cwd, true)], crate::util::now_ms())[&7][0].activity, "Grep · fn draw");
+    }
+
+    fn assistant_said(model: &str) -> Value {
+        serde_json::json!({"type":"assistant","message":{"model":model,"role":"assistant","content":[{"type":"text","text":"hi"}]}})
+    }
+
+    fn append(path: &Path, text: &str) {
+        let mut file = fs::OpenOptions::new().append(true).open(path).unwrap();
+        std::io::Write::write_all(&mut file, text.as_bytes()).unwrap();
+    }
+
+    fn claude_transcript(t: &Tree, records: &[Value]) -> (PathBuf, PathBuf, PathBuf) {
+        let home = t.0.join("claude-home");
+        let cwd = t.0.join("project");
+        fs::create_dir_all(&cwd).unwrap();
+        let path = home.join("projects").join(claude_project_slug(&cwd)).join(format!("{SESSION}.jsonl"));
+        write(&path, &lines(records));
+        (home, cwd, path)
+    }
+
+    fn claude_model_after_scan(watcher: &mut SubagentWatcher, cwd: &Path) -> Option<String> {
+        let parents = [claude_parent(cwd, true)];
+        watcher.scan(&parents, crate::util::now_ms());
+        watcher.models(&parents).remove(&7)
+    }
+
+    #[test]
+    fn the_model_of_a_claude_session_is_the_last_one_that_really_answered() {
+        let t = tree("model-claude");
+        let (home, cwd, path) = claude_transcript(
+            &t,
+            &[
+                assistant_said("claude-sonnet-4-5"),
+                assistant_said("claude-opus-5-5"),
+                assistant_said(CLAUDE_SYNTHETIC_MODEL),
+                serde_json::json!({"type":"assistant","isSidechain":true,"message":{"model":"claude-haiku-4-5"}}),
+                serde_json::json!({"type":"user","message":{"role":"user","model":"not-an-answer"}}),
+                tool_result(),
+            ],
+        );
+        let mut watcher = SubagentWatcher::new(Some(home), None);
+        assert_eq!(claude_model_after_scan(&mut watcher, &cwd).as_deref(), Some("claude-opus-5-5"));
+
+        append(&path, &lines(&[assistant_said("claude-sonnet-4-5")]));
+        assert_eq!(
+            claude_model_after_scan(&mut watcher, &cwd).as_deref(),
+            Some("claude-sonnet-4-5"),
+            "/model shows up"
+        );
+    }
+
+    #[test]
+    fn a_claude_session_that_has_not_answered_has_no_model() {
+        let t = tree("model-none");
+        let (home, cwd, _) = claude_transcript(&t, &[tool_result(), assistant_said(CLAUDE_SYNTHETIC_MODEL)]);
+        let mut watcher = SubagentWatcher::new(Some(home), None);
+        assert_eq!(claude_model_after_scan(&mut watcher, &cwd), None);
+        let unknown = Parent { conversation_id: None, ..claude_parent(&cwd, true) };
+        assert!(watcher.models(&[unknown]).is_empty());
+    }
+
+    #[test]
+    fn reading_the_model_is_bounded_and_only_looks_at_what_was_written_since() {
+        let t = tree("model-bounded");
+        let (home, cwd, path) = claude_transcript(&t, &[assistant_said("claude-too-far")]);
+        let filler = format!("{}\n", "x".repeat(usize::try_from(MODEL_WINDOW_BYTES).unwrap() + 1));
+        append(&path, &filler);
+        let mut watcher = SubagentWatcher::new(Some(home), None);
+        assert_eq!(claude_model_after_scan(&mut watcher, &cwd), None, "a cold start never reads past its window");
+
+        append(&path, &lines(&[assistant_said("claude-opus-5-5")]));
+        assert_eq!(claude_model_after_scan(&mut watcher, &cwd).as_deref(), Some("claude-opus-5-5"));
+        assert_eq!(watcher.models[&path].len, fs::metadata(&path).unwrap().len());
+
+        append(&path, &filler);
+        append(&path, &filler);
+        assert_eq!(
+            claude_model_after_scan(&mut watcher, &cwd).as_deref(),
+            Some("claude-opus-5-5"),
+            "kept without news"
+        );
+
+        let len = fs::metadata(&path).unwrap().len();
+        let window = read_window(&path, len.saturating_sub(MODEL_WINDOW_BYTES), MODEL_WINDOW_BYTES).unwrap();
+        assert!(u64::try_from(window.len()).unwrap() <= MODEL_WINDOW_BYTES);
+    }
+
+    #[test]
+    fn a_change_is_read_from_where_the_last_read_stopped_and_not_again_from_the_tail() {
+        let t = tree("model-delta");
+        let (home, cwd, path) = claude_transcript(&t, &[assistant_said("claude-opus-5-5")]);
+        let mut watcher = SubagentWatcher::new(Some(home), None);
+        assert_eq!(claude_model_after_scan(&mut watcher, &cwd).as_deref(), Some("claude-opus-5-5"));
+
+        let cached = watcher.models.get_mut(&path).unwrap();
+        cached.model = Some("from-the-cache".into());
+        append(&path, &lines(&[tool_result()]));
+        assert_eq!(
+            claude_model_after_scan(&mut watcher, &cwd).as_deref(),
+            Some("from-the-cache"),
+            "old bytes stay unread"
+        );
+    }
+
+    #[test]
+    fn an_answer_longer_than_the_tail_of_the_subagents_is_still_read_on_a_cold_start() {
+        let t = tree("model-large");
+        let text = "y".repeat(usize::try_from(TAIL_BYTES).unwrap() * 3);
+        let large = serde_json::json!({"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":text}]}});
+        let (home, cwd, _) = claude_transcript(&t, &[large]);
+        let mut watcher = SubagentWatcher::new(Some(home), None);
+        assert_eq!(claude_model_after_scan(&mut watcher, &cwd).as_deref(), Some("claude-opus-5-5"));
+    }
+
+    #[test]
+    fn the_model_of_a_codex_session_comes_from_the_turn_context_of_its_own_rollout() {
+        let t = tree("model-codex");
+        let codex = t.0.join("codex-home");
+        let now = crate::util::now_ms();
+        let (y, m, d) = civil_date_from_ms(now);
+        let day = codex.join("sessions").join(format!("{y:04}")).join(format!("{m:02}")).join(format!("{d:02}"));
+        let turn = |model: &str| serde_json::json!({"type":"turn_context","payload":{"cwd":"/work","model":model,"effort":"high"}});
+        let own = codex_rollout(
+            &day,
+            "2026-11-06T10-00-00-parent-1",
+            &[
+                session_meta("parent-1", Value::String("cli".into())),
+                turn("gpt-5-codex"),
+                turn("gpt-5.1-codex-max"),
+                serde_json::json!({"type":"response_item","payload":{"type":"message","model":"not-a-turn"}}),
+                event("task_started"),
+            ],
+        );
+        codex_rollout(
+            &day,
+            "2026-11-06T10-00-01-parent-2",
+            &[session_meta("parent-2", Value::String("cli".into())), turn("o3")],
+        );
+        let parent = Parent {
+            id: 3,
+            kind: AgentKind::Codex,
+            conversation_id: Some("parent-1".into()),
+            cwd: PathBuf::from("/work"),
+            created_at_ms: now.saturating_sub(60_000),
+            busy: true,
+        };
+        let without_rollout = Parent { id: 4, conversation_id: Some("parent-3".into()), ..parent.clone() };
+        let mut watcher = SubagentWatcher::new(None, Some(codex));
+        let found = watcher.models(&[parent.clone(), without_rollout]);
+        assert_eq!(found.get(&3).map(String::as_str), Some("gpt-5.1-codex-max"));
+        assert!(!found.contains_key(&4));
+
+        append(&own, &lines(&[turn("gpt-5")]));
+        assert_eq!(watcher.models(&[parent]).get(&3).map(String::as_str), Some("gpt-5"));
+    }
+
+    #[test]
+    fn kinds_without_a_reliable_source_report_no_model() {
+        let t = tree("model-kinds");
+        let (home, cwd, _) = claude_transcript(&t, &[assistant_said("claude-opus-5-5")]);
+        let mut watcher = SubagentWatcher::new(Some(home), None);
+        claude_model_after_scan(&mut watcher, &cwd);
+        for kind in AgentKind::ALL.into_iter().filter(|kind| !matches!(kind, AgentKind::Claude | AgentKind::Codex)) {
+            assert!(watcher.models(&[Parent { kind, ..claude_parent(&cwd, true) }]).is_empty(), "{kind:?}");
+        }
     }
 
     #[test]

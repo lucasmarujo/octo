@@ -321,6 +321,8 @@ pub struct AgentView {
     pub test: Option<TestState>,
     #[serde(default)]
     pub subagents: Vec<SubagentView>,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -591,6 +593,15 @@ mod tests {
         assert_eq!(value["type"], "state");
         assert_eq!(value["host"], "pc");
         assert_eq!(value["whereDir"], "/w");
+    }
+
+    #[test]
+    fn an_agent_sent_without_a_model_still_reads() {
+        let old = r#"{"id":1,"session":"s","name":"n","kind":"claude","state":"idle","starting":false,"activity":"","task":"","cwd":"/","project":"p","color":"red","startedAt":null,"stateSince":null,"turnStarted":null,"lastTurn":null,"branch":null,"exit":null}"#;
+        let agent: AgentView = serde_json::from_str(old).unwrap();
+        assert_eq!(agent.model, None);
+        let sent = serde_json::to_value(AgentView { model: Some("gpt-5".into()), ..agent }).unwrap();
+        assert_eq!(sent["model"], "gpt-5");
     }
 
     #[test]
