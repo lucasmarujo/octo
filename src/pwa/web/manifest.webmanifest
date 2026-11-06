@@ -11,7 +11,7 @@
   "theme_color": "#121218",
   "icons": [
     {
-      "src": "/octo.png",
+      "src": "/octo-eye.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
