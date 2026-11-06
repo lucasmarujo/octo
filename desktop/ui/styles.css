@@ -284,7 +284,7 @@ h1, p { margin: 0; }
 .card-top { display: flex; align-items: center; gap: 8px; }
 .card-top .glyph { width: 14px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--text-base); font-weight: 700; }
 .card-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-base); font-weight: 600; }
-.card-time { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-muted); }
+.card-time { font-family: var(--font-mono); font-size: var(--text-xs); }
 .card-meta { display: flex; align-items: center; gap: 6px; padding-left: 22px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-muted); min-width: 0; }
 .card-meta .swatch { width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0; }
 .card-meta .project { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -415,7 +415,7 @@ h1, p { margin: 0; }
 .tile-head .glyph { width: 14px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 700; }
 .tile-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 600; color: var(--tile-tone); }
 .tile-kind { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
-.tile-time { font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--color-text-muted); }
+.tile-time { font-family: var(--font-mono); font-size: 11px; line-height: 14px; }
 .tile-screen { display: flex; flex-direction: column; justify-content: flex-end; flex: 1; min-height: 0; overflow: hidden; padding: 6px 12px 8px; font-family: var(--font-mono); font-size: 11.5px; line-height: 15px; color: var(--term-fg); }
 .tile-line { min-height: 15px; overflow: hidden; white-space: pre; flex-shrink: 0; }
 .tile.live { z-index: 1; outline: 1px solid var(--color-accent); outline-offset: -1px; cursor: default; }

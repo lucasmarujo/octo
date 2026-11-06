@@ -392,6 +392,16 @@ test('the changes and the test of an agent stay on one line in the list', () => 
   assert.ok(Number(rule.match(/ width: (\d+)px/)[1]) >= longest * monoWidth - 3 * monoWidth + gaps, 'room for four digit counts');
 });
 
+test('the time on a card and on a tile takes the color of the state of the agent', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  for (const selector of ['.card-time', '.tile-time']) {
+    assert.doesNotMatch(css.split(`\n${selector} {`)[1].split('}')[0], /[^-]color:/, selector);
+  }
+  assert.equal(elapsed(agent({ state: 'paused', lastTurn: 1 }), NOW).tone, 't-yellow');
+  assert.equal(elapsed(agent({ state: 'idle', lastTurn: 1 }), NOW).tone, 't-muted');
+  assert.equal(elapsed(agent({ state: 'idle', kind: 'terminal' }), NOW).tone, 't-muted');
+});
+
 test('an agent that starts waiting or finishes raises one alert, like in the TUI', async () => {
   const { ALERT_REPEAT_MS, detectAlerts } = await import('../js/alerts.js');
   const app = rust('src/tui/app.rs');
