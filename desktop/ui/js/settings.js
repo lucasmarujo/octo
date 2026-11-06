@@ -9,6 +9,7 @@ import { invoke } from './transport.js';
 const THEME_KEY = 'orkai.theme';
 const THEMES = [
   ['dark', t('Dark')],
+  ['gray', t('Gray')],
   ['light', t('Light')],
   ['system', t('System')],
 ];
@@ -35,8 +36,8 @@ export function themeChoice() {
 
 export function applyTheme() {
   const choice = themeChoice();
-  const light = choice === 'light' || (choice === 'system' && window.matchMedia('(prefers-color-scheme: light)').matches);
-  document.documentElement.dataset.theme = light ? 'light' : 'dark';
+  const system = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  document.documentElement.dataset.theme = choice === 'system' ? system : choice;
 }
 
 function setTheme(choice) {

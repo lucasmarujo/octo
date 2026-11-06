@@ -74,6 +74,79 @@ test('the dark theme keeps the colors of the TUI and the light theme redefines e
   for (const token of ['--color-bg', '--color-text', '--term-bg', '--term-fg']) assert.ok(light.includes(`${token}:`), token);
 });
 
+const grayTheme = () => readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8').split(':root[data-theme="gray"] {')[1].split('}')[0];
+const grayTokens = () => Object.fromEntries([...grayTheme().matchAll(/(--[\w-]+): (#[0-9a-f]{6});/g)].map(([, name, color]) => [name, color]));
+
+function contrast(first, second) {
+  const luminance = (color) => {
+    const [r, g, b] = [1, 3, 5].map((at) => Number.parseInt(color.slice(at, at + 2), 16) / 255).map((value) => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [high, low] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (high + 0.05) / (low + 0.05);
+}
+
+test('the gray theme is dark, on neutral grays with no tint, and keeps the brand colors of the dark theme', () => {
+  const tokens = grayTokens();
+  assert.match(grayTheme(), /color-scheme: dark;/);
+  assert.equal(tokens['--color-bg'], '#282828');
+  assert.equal(tokens['--term-bg'], '#1e1e1e');
+  assert.equal(Object.keys(tokens).length, 20, 'every other token is inherited from the dark theme');
+  for (const brand of ['--color-accent', '--color-accent-ink', '--color-waiting', '--color-waiting-ink', '--color-done', '--color-link', '--kind-claude', '--ansi-2', '--ansi-15']) assert.ok(!(brand in tokens), brand);
+  for (const [name, color] of Object.entries(tokens)) {
+    if (name === '--color-lost' || name === '--ansi-1') continue;
+    assert.ok(color.slice(1, 3) === color.slice(3, 5) && color.slice(3, 5) === color.slice(5, 7), `${name} ${color} has a tint`);
+  }
+});
+
+test('the red of the gray theme stays readable on its background and its surface', () => {
+  const tokens = grayTokens();
+  assert.ok(contrast(tokens['--color-lost'], tokens['--color-bg']) >= 4.5, 'on the background');
+  assert.ok(contrast(tokens['--color-lost'], tokens['--color-surface']) >= 4.5, 'on the surface');
+  assert.ok(contrast('#f04e5c', tokens['--color-surface']) < 4.5, 'the red of the dark theme is the reason gray has its own');
+});
+
+test('the theme picker offers dark, gray, light and system, and only those reach the page', async (context) => {
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  const offered = [...settings.match(/const THEMES = \[([\s\S]*?)\];/)[1].matchAll(/\['(\w+)', t\('(\w+)'\)\]/g)].map(([, value, text]) => [value, text]);
+  assert.deepEqual(offered, [['dark', 'Dark'], ['gray', 'Gray'], ['light', 'Light'], ['system', 'System']]);
+  const stored = new Map();
+  let systemIsLight = false;
+  globalThis.window = {
+    localStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: (key) => stored.delete(key) },
+    matchMedia: () => ({ matches: systemIsLight }),
+  };
+  globalThis.document = { documentElement: { dataset: {} } };
+  context.after(() => {
+    delete globalThis.window;
+    delete globalThis.document;
+  });
+  const { applyTheme, themeChoice } = await import('../js/settings.js');
+  const applied = (choice, light = false) => {
+    if (choice === null) stored.delete('orkai.theme');
+    else stored.set('orkai.theme', choice);
+    systemIsLight = light;
+    applyTheme();
+    return document.documentElement.dataset.theme;
+  };
+  assert.equal(applied('gray'), 'gray');
+  assert.equal(themeChoice(), 'gray');
+  assert.equal(applied('gray', true), 'gray', 'gray does not follow the system');
+  assert.equal(applied(null), 'dark', 'nothing stored is the dark theme');
+  assert.equal(applied('light'), 'light');
+  assert.equal(applied('dark', true), 'dark');
+  assert.equal(applied('system', false), 'dark', 'the system resolves to dark');
+  assert.equal(applied('system', true), 'light', 'the system resolves to light');
+  assert.equal(applied('sepia'), 'dark', 'an unknown choice falls back to dark');
+  assert.match(settings, /const THEME_KEY = 'orkai\.theme';/, 'the choice of older versions keeps working');
+});
+
+test('the gray theme has its name in Portuguese', async () => {
+  const { translate } = await import('../js/i18n.js');
+  assert.equal(translate('pt-BR', 'Gray'), 'Cinza');
+  assert.equal(translate('en', 'Gray'), 'Gray');
+});
+
 test('the agent screen leaves the agent title to the cards and keeps its status bar for alerts', () => {
   const source = readFileSync(join(REPO, 'desktop/ui/js/agent.js'), 'utf8');
   const status = source.slice(source.indexOf('export function renderStatus'), source.indexOf('\n}\n', source.indexOf('export function renderStatus')));

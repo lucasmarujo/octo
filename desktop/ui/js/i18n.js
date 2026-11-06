@@ -270,6 +270,7 @@ export const PT = {
   'api key · no plan limits': 'chave de API · sem limites de plano',
   unavailable: 'indisponível',
   Dark: 'Escuro',
+  Gray: 'Cinza',
   Light: 'Claro',
   System: 'Sistema',
   Appearance: 'Aparência',
