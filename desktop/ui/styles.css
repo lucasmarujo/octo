@@ -297,7 +297,7 @@ h1, p { margin: 0; }
 .card-foot .branch.counts { flex-shrink: 0; overflow: visible; }
 .card-foot .grow { flex: 1; }
 .card-foot-actions { display: flex; gap: 6px; margin-left: auto; }
-.button.tiny { height: 22px; padding: 0 8px; border-radius: 5px; font-size: var(--text-xs); }
+.button.tiny { height: 22px; padding: 0 8px; border-radius: 5px; font-family: var(--font-sans); font-size: var(--text-xs); }
 .card-subs { display: flex; flex-direction: column; gap: 2px; padding-left: 22px; }
 .card-sub { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-faint); }
 .card-sub-role { color: var(--color-text-muted); }

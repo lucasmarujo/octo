@@ -402,6 +402,12 @@ test('the time on a card and on a tile takes the color of the state of the agent
   assert.equal(elapsed(agent({ state: 'idle', kind: 'terminal' }), NOW).tone, 't-muted');
 });
 
+test('the small buttons keep the font of the buttons inside the monospaced foot of a card', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css.split('\n.card-foot {')[1].split('}')[0], /font-family: var\(--font-mono\)/);
+  assert.match(css.split('\n.button.tiny {')[1].split('}')[0], /font-family: var\(--font-sans\)/);
+});
+
 test('an agent that starts waiting or finishes raises one alert, like in the TUI', async () => {
   const { ALERT_REPEAT_MS, detectAlerts } = await import('../js/alerts.js');
   const app = rust('src/tui/app.rs');
