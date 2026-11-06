@@ -1292,7 +1292,7 @@ test('the phone button shows a phone and a green outline while a phone is connec
 test('the phone button is a mini icon to the right of settings, and its status stays on the icon', async () => {
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
   const footer = html.match(/<footer class="sidebar-footer">([\s\S]*?)<\/footer>/)[1];
-  assert.deepEqual([...footer.matchAll(/<button id="([\w-]+)" class="footer-icon[ "]/g)].map((match) => match[1]), ['open-help', 'open-settings', 'pair']);
+  assert.deepEqual([...footer.matchAll(/<button id="([\w-]+)" class="footer-icon[ "]/g)].map((match) => match[1]), ['open-help', 'open-settings', 'pair', 'sound']);
   assert.match(footer, /<button id="pair" [^>]*aria-label="Pair phone"[^>]*><\/button>/, 'no text child, and a name before the first status arrives');
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /\$\('pair'\)\.replaceChildren\(svg\(ICON_PAIR\)\);/, 'the icon alone');
   const pair = readFileSync(join(REPO, 'desktop/ui/js/pair.js'), 'utf8');
@@ -1514,6 +1514,42 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8'), /class: 'session-row', type: 'button', dataset: \{ session: session\.name \}/);
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initAgentDrag\(\);/);
   assert.match(rust('src/pwa/actions.rs'), /PhoneMsg::MoveAgent \{ agent, session \} => move_agent\(hub, agent, &session, reply\)/);
+});
+
+test('the bell shows off whenever no sound would play, and a click from off makes sound play', async () => {
+  const { soundFlip, soundOn } = await import('../js/format.js');
+  assert.equal(soundOn({ notify: true, notify_sound: true }), true);
+  assert.equal(soundOn({ notify: true, notify_sound: false }), false, 'the chime is off');
+  assert.equal(soundOn({ notify: false, notify_sound: true }), false, 'every alert is off');
+  assert.equal(soundOn({ notify: false, notify_sound: false }), false);
+  assert.deepEqual(soundFlip({ notify: true, notify_sound: true }), { notify_sound: false }, 'off leaves the notifications alone');
+  assert.deepEqual(soundFlip({ notify: true, notify_sound: false }), { notify: true, notify_sound: true });
+  assert.deepEqual(soundFlip({ notify: false, notify_sound: true }), { notify: true, notify_sound: true }, 'alerts come back with the sound');
+  assert.deepEqual(soundFlip({ notify: false, notify_sound: false }), { notify: true, notify_sound: true });
+  const { ICON_BELL, ICON_BELL_OFF } = await import('../js/icons.js');
+  assert.match(ICON_BELL_OFF, /M3 3l18 18/, 'the crossed bell');
+  assert.doesNotMatch(ICON_BELL, /M3 3l18 18/);
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /button\.replaceChildren\(svg\(on \? ICON_BELL : ICON_BELL_OFF\)\);/);
+  assert.match(settings, /button\.setAttribute\('aria-pressed', String\(on\)\);/);
+  assert.match(settings, /button\.setAttribute\('aria-label', name\);\n\s+button\.title = name;/);
+  assert.match(settings, /const name = on \? t\('Sound on'\) : t\('Sound off'\);/);
+  const save = settings.match(/async function save\(changes\) \{[\s\S]*?\n\}/)[0];
+  assert.ok(save.indexOf('renderSound();') < save.indexOf("invoke('save_settings'"), 'the bell answers before the disk does');
+  assert.match(save, /toast\(String\(err\), 'error'\);\n\s+if \(turn === saves\) current = acked;/, 'a failed save goes back to what was saved');
+  assert.match(settings, /function flipSound\(\) \{[\s\S]*?save\(soundFlip\(current\.config\)\);\n\s+render\(\);/, 'Settings follows the bell right away');
+  assert.match(settings, /toggle\(config\.notify_sound, \(on\) => save\(\{ notify_sound: on \}\), t\('Octo chime'\)\)/, 'and the bell follows Settings through the same save');
+  assert.match(settings, /toggle\(config\.notify, \(on\) => save\(\{ notify: on \}\), t\('Alerts'\)\)/);
+  assert.match(settings, /onclick: playChimes \}, t\('Play'\)\)/, 'the preview stays');
+  const settingsRust = rust('desktop/src/settings.rs');
+  assert.doesNotMatch(settingsRust.match(/pub fn play_chime[\s\S]*?\n\}/)[0], /notify/, 'the preview plays whatever the bell says');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initSound\(\);/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.footer-icon\[aria-pressed="false"\] \{ color: var\(--color-text-faint\); \}\n\.footer-icon:hover \{ color: var\(--color-text\); \}/, 'faint when off, and hover still answers');
+  const i18n = readFileSync(join(REPO, 'desktop/ui/js/i18n.js'), 'utf8');
+  assert.match(i18n, /'Sound on': 'Som ligado'/);
+  assert.match(i18n, /'Sound off': 'Som desligado'/);
+  assert.doesNotMatch(settings, /Off uses the system bell/, 'the window has no system bell');
 });
 
 test('settings show one section at a time, so every entry of the nav always does something', () => {

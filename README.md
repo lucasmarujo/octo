@@ -669,7 +669,7 @@ missing from the file use the default, so an old `config.json` still works.
 port, which only listens on `127.0.0.1`.
 
 `notify: false` turns off the chime, the bell and the terminal notification; `notify_sound: false` swaps the orkai
-chime for the terminal's default bell. `notify_command` works independently of them;
+chime for the terminal's default bell in the TUI and plays no sound in the Octo window. `notify_command` works independently of them;
 for example, to send it to your phone through [ntfy](https://ntfy.sh):
 
 ```json

@@ -1,6 +1,7 @@
-import { $, h, storage } from './dom.js';
-import { joinArgs, kindColor, label, splitArgs } from './format.js';
+import { $, h, storage, svg } from './dom.js';
+import { joinArgs, kindColor, label, soundFlip, soundOn, splitArgs } from './format.js';
 import { LANGUAGES, language, setLanguage, t } from './i18n.js';
+import { ICON_BELL, ICON_BELL_OFF } from './icons.js';
 import { choose, motion, reducedMotion, rise, settle, slideThumb } from './motion.js';
 import { state } from './state.js';
 import { toast } from './toast.js';
@@ -21,6 +22,8 @@ const FIRST_AGENTS = 4;
 const CHIME_GAP_MS = 1300;
 
 let current = null;
+let acked = null;
+let saves = 0;
 let shownSection = 'Appearance';
 let showAll = false;
 let update = null;
@@ -84,12 +87,35 @@ function section(...body) {
   return h('section', { class: 'settings-section' }, ...body);
 }
 
+function renderSound() {
+  const on = !current || soundOn(current.config);
+  const button = $('sound');
+  const name = on ? t('Sound on') : t('Sound off');
+  button.replaceChildren(svg(on ? ICON_BELL : ICON_BELL_OFF));
+  button.setAttribute('aria-pressed', String(on));
+  button.setAttribute('aria-label', name);
+  button.title = name;
+}
+
 async function save(changes) {
+  const turn = ++saves;
+  current = { ...current, config: { ...current.config, ...changes } };
+  renderSound();
   try {
-    current = await invoke('save_settings', { config: { ...current.config, ...changes } });
+    const saved = await invoke('save_settings', { config: current.config });
+    acked = saved;
+    if (turn === saves) current = saved;
   } catch (err) {
     toast(String(err), 'error');
+    if (turn === saves) current = acked;
   }
+  renderSound();
+  render();
+}
+
+function flipSound() {
+  if (!current) return;
+  save(soundFlip(current.config));
   render();
 }
 
@@ -189,7 +215,7 @@ function alertsSection() {
     row(t('Alert when an agent needs you or finishes'), t('Sound, desktop notification and the count in the taskbar title.'), toggle(config.notify, (on) => save({ notify: on }), t('Alerts'))),
     row(
       t('Octo chime'),
-      t('Falling tone when an agent waits for you, rising when it finishes. Off uses the system bell.'),
+      t('Falling tone when an agent waits for you, rising when it finishes. Off plays no sound.'),
       h('div', { class: 'setting-controls' }, h('button', { class: 'link-button', type: 'button', onclick: playChimes }, t('Play')), toggle(config.notify_sound, (on) => save({ notify_sound: on }), t('Octo chime'))),
     ),
     h(
@@ -263,9 +289,21 @@ function render() {
   for (const group of host.querySelectorAll('.segmented')) slideThumb(group);
 }
 
+async function load() {
+  current = await invoke('settings');
+  acked = current;
+  renderSound();
+}
+
+export function initSound() {
+  renderSound();
+  $('sound').addEventListener('click', flipSound);
+  load().catch((err) => toast(t('Could not read the settings: {error}', { error: err }), 'error'));
+}
+
 export async function renderSettings() {
   try {
-    current = await invoke('settings');
+    await load();
     render();
   } catch (err) {
     toast(t('Could not read the settings: {error}', { error: err }), 'error');

@@ -691,6 +691,7 @@ h1, p { margin: 0; }
 .pair-badge-failed { color: var(--color-lost); }
 @media (max-width: 700px) { .pair-state { flex-direction: column; align-items: flex-start; } }
 .footer-icon { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; color: var(--color-text-muted); }
+.footer-icon[aria-pressed="false"] { color: var(--color-text-faint); }
 .footer-icon:hover { color: var(--color-text); }
 .footer-icon:hover, .footer-icon[aria-current="true"] { background: var(--color-surface-raised); }
 .tab svg { flex-shrink: 0; }

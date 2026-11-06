@@ -673,7 +673,7 @@ faltam no arquivo usam o padrão, então um `config.json` antigo continua valend
 ponte, que só escuta em `127.0.0.1`.
 
 `notify: false` desliga o sininho, o sino e a notificação do terminal; `notify_sound: false` troca o sininho do
-orkai pelo sino padrão do terminal. `notify_command` funciona independente deles;
+orkai pelo sino padrão do terminal na TUI e não toca som na janela do Octo. `notify_command` funciona independente deles;
 por exemplo, para mandar ao celular pelo [ntfy](https://ntfy.sh):
 
 ```json

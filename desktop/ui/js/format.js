@@ -54,6 +54,9 @@ export function optionsTone({ worktree, remote, bypass }) {
   return worktree ? 'default' : 'neutral';
 }
 
+export const soundOn = (config) => Boolean(config.notify && config.notify_sound);
+export const soundFlip = (config) => (soundOn(config) ? { notify_sound: false } : { notify: true, notify_sound: true });
+
 export function canMove(agent, session) {
   return Boolean(agent && session) && !agent.starting && agent.session !== session;
 }

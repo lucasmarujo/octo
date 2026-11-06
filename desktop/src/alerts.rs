@@ -139,6 +139,24 @@ mod tests {
     }
 
     #[test]
+    fn with_the_sound_off_nothing_plays_and_the_notification_still_comes() {
+        let waiting = [alert("a", AgentState::Paused)];
+        let muted = plan(&Config { notify_sound: false, ..Config::default() }, &waiting, Language::English);
+        assert_eq!(muted, Delivery { chime: None, notification: Some("a is waiting for you".into()) });
+        let code = include_str!("alerts.rs").split("#[cfg(test)]").next().unwrap();
+        assert!(!code.contains("terminal_sequence"), "the window has no bell to fall back to");
+        assert!(!code.contains(".sound("), "a notification without a sound name is silent on Windows and macOS");
+        assert!(code.contains("notifier.send(alert)"), "the notify command runs whatever the sound does");
+    }
+
+    #[test]
+    fn a_config_written_before_the_sound_button_keeps_playing() {
+        let old: Config = serde_json::from_str(r#"{"claude_command":"claude","notify":true}"#).unwrap();
+        let waiting = [alert("a", AgentState::Paused)];
+        assert_eq!(plan(&old, &waiting, Language::English).chime, Some(Chime::Waiting));
+    }
+
+    #[test]
     fn the_desktop_notification_speaks_the_language_the_window_picked() {
         let waiting = [alert("fix-login", AgentState::Paused)];
         let pt = |alerts: &[Alert]| summary(alerts, Language::Portuguese);
