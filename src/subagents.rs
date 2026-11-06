@@ -14,7 +14,7 @@ use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, NestedAgent};
 use crate::util::is_uuid;
 
 pub const SUBAGENT_STALE_MS: u64 = 10 * 60 * 1_000;
-pub const MAX_SUBAGENTS: usize = 16;
+pub const MAX_SUBAGENTS: usize = 64;
 pub const ACTIVITY_MAX_CHARS: usize = 120;
 const TAIL_BYTES: u64 = 64 * 1024;
 const MAX_CACHE_ENTRIES: usize = 4_096;
@@ -44,6 +44,12 @@ pub struct Subagent {
     pub description: String,
     pub activity: String,
     pub started_at_ms: u64,
+}
+
+fn most_recent(mut subagents: Vec<Subagent>) -> Vec<Subagent> {
+    subagents.sort_by(|a, b| a.started_at_ms.cmp(&b.started_at_ms).then_with(|| a.id.cmp(&b.id)));
+    subagents.drain(..subagents.len().saturating_sub(MAX_SUBAGENTS));
+    subagents
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -211,7 +217,7 @@ impl SubagentWatcher {
     pub fn scan(&mut self, parents: &[Parent], now: u64) -> BTreeMap<AgentId, Vec<Subagent>> {
         let mut found = BTreeMap::new();
         for parent in parents {
-            let mut subagents = match parent.kind {
+            let subagents = match parent.kind {
                 AgentKind::Claude => self.claude(parent, now),
                 AgentKind::Codex => self.codex(parent, now),
                 AgentKind::Kilo
@@ -226,9 +232,7 @@ impl SubagentWatcher {
             if subagents.is_empty() {
                 continue;
             }
-            subagents.sort_by(|a, b| a.started_at_ms.cmp(&b.started_at_ms).then_with(|| a.id.cmp(&b.id)));
-            subagents.truncate(MAX_SUBAGENTS);
-            found.insert(parent.id, subagents);
+            found.insert(parent.id, most_recent(subagents));
         }
         self.tails.retain(|_, cached| now.saturating_sub(cached.modified) <= SUBAGENT_STALE_MS);
         if self.claude_metas.len() > MAX_CACHE_ENTRIES {
@@ -681,6 +685,25 @@ mod tests {
         std::io::Write::write_all(&mut file, lines(&[tool_use(CLAUDE_HANDBACK_TOOL, Value::Null)]).as_bytes()).unwrap();
         drop(file);
         assert!(watcher.scan(&[claude_parent(&cwd, true)], crate::util::now_ms()).is_empty());
+    }
+
+    #[test]
+    fn a_long_list_of_subagents_keeps_the_most_recent_in_the_order_they_started() {
+        let subagent = |started_at_ms: u64| Subagent {
+            id: format!("a{started_at_ms}"),
+            role: "Explore".into(),
+            description: String::new(),
+            activity: String::new(),
+            started_at_ms,
+        };
+        let total = u64::try_from(MAX_SUBAGENTS).unwrap() + 3;
+        let kept = most_recent((1..=total).rev().map(subagent).collect());
+        assert_eq!(kept.len(), MAX_SUBAGENTS);
+        assert_eq!(kept.first().map(|s| s.started_at_ms), Some(4), "the oldest ones leave first");
+        assert_eq!(kept.last().map(|s| s.started_at_ms), Some(total), "the newest stays");
+
+        let few = most_recent(vec![subagent(2), subagent(1)]);
+        assert_eq!(few.iter().map(|s| s.started_at_ms).collect::<Vec<_>>(), [1, 2]);
     }
 
     #[test]
