@@ -772,8 +772,6 @@ h1, p { margin: 0; }
 .agents-head .caps { font-size: 11px; font-weight: 400; color: var(--color-text-faint); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-faint); flex-shrink: 0; }
 .status-dot.on { background: var(--color-done); }
-.agents-more { display: flex; align-items: center; gap: 8px; height: 40px; }
-.agents-hidden { color: var(--color-text-faint); font-family: var(--font-mono); font-size: var(--text-xs); }
 .link-button { color: var(--color-link); font-size: var(--text-sm); font-weight: 600; line-height: 16px; }
 .link-button:hover { text-decoration: underline; }
 .switch { display: flex; justify-content: flex-start; width: 36px; height: 20px; padding: 2px; flex-shrink: 0; border-radius: 10px; background: var(--color-border-strong); transition: background-color var(--motion-base) var(--ease-out); }

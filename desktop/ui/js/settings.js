@@ -18,7 +18,6 @@ const TUNNELS = [
   ['cloudflare', 'Cloudflare'],
   ['tailscale', 'Tailscale'],
 ];
-const FIRST_AGENTS = 4;
 const CHIME_GAP_MS = 1300;
 const PREVIEW_DELAY_MS = 150;
 const POPOVER_CLOSE_MS = 220;
@@ -34,7 +33,6 @@ let dismissed = false;
 let closeTimer = 0;
 let previewTimer = 0;
 let shownSection = 'Appearance';
-let showAll = false;
 let update = null;
 
 const commandKey = (kind) => `${kind === 'antigravity' ? 'agy' : kind}_command`;
@@ -266,16 +264,6 @@ function agentRow(agent) {
 }
 
 function agentsSection() {
-  const agents = showAll ? current.agents : current.agents.slice(0, FIRST_AGENTS);
-  const hidden = current.agents.slice(FIRST_AGENTS);
-  const more = hidden.length
-    ? h(
-        'div',
-        { class: 'agents-more' },
-        h('button', { class: 'link-button', type: 'button', onclick: () => ((showAll = !showAll), render()) }, showAll ? t('Show fewer') : t('Show {count} more', { count: hidden.length })),
-        showAll ? null : h('span', { class: 'agents-hidden' }, hidden.map((agent) => label(agent.kind)).join(' · ')),
-      )
-    : null;
   return section(
     h(
       'div',
@@ -284,8 +272,7 @@ function agentsSection() {
       h('p', null, t('The program Octo runs for each agent and the extra arguments it passes. Only installed agents can be picked in the task box.')),
     ),
     h('div', { class: 'agents-head' }, h('span', { class: 'caps agents-name' }, t('Agent')), h('span', { class: 'caps agents-command' }, t('Command')), h('span', { class: 'caps agents-args' }, t('Arguments')), h('span', { class: 'caps agent-status' }, t('Status'))),
-    ...agents.map(agentRow),
-    more,
+    ...current.agents.map(agentRow),
   );
 }
 

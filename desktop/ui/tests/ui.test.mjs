@@ -1591,6 +1591,17 @@ test('the volume lives in Settings and in a popover over the bell, and both stay
   for (const text of ['Alert volume', 'How loud the chime plays. The volume of the system stays as it is.', 'The sound is off. Moving this turns it back on.']) assert.ok(i18n.includes(`'${text}':`), text);
 });
 
+test('Settings lists every agent at once, and the plan usage keeps its own folding', () => {
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.doesNotMatch(settings, /FIRST_AGENTS|showAll|agents-more|agents-hidden|Show fewer|Show \{count\} more/);
+  assert.match(settings, /\.\.\.current\.agents\.map\(agentRow\),/, 'every row the core sends');
+  assert.doesNotMatch(readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8'), /agents-more|agents-hidden/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8'), /open \? t\('Show fewer'\) : t\('Show \{count\} more', \{ count: hidden \}\)/);
+  const i18n = readFileSync(join(REPO, 'desktop/ui/js/i18n.js'), 'utf8');
+  assert.match(i18n, /'Show fewer':/);
+  assert.match(i18n, /'Show \{count\} more':/);
+});
+
 test('settings show one section at a time, so every entry of the nav always does something', () => {
   const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
   assert.match(settings, /const SECTIONS = \{ Appearance: appearanceSection, Agents: agentsSection, Alerts: alertsSection, Phone: phoneSection, Updates: updatesSection \};/);
