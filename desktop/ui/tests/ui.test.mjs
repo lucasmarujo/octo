@@ -1328,10 +1328,36 @@ test('the sidebar is as wide as the user left it, within limits, on every screen
   assert.match(html, /<\/aside>\s*<div id="sidebar-resize"[^>]*role="separator"[^>]*tabindex="0"[^>]*><\/div>\s*<main class="main">/, 'beside the sidebar, outside of any one view');
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebar, /handle\.setPointerCapture\(event\.pointerId\)/, 'a drag over a terminal keeps resizing');
-  assert.match(sidebar, /storage\.set\(WIDTH_KEY, width === SIDEBAR_DEFAULT \? null : String\(width\)\)/);
-  assert.match(sidebar, /handle\.addEventListener\('dblclick', \(\) => \{\n\s*apply\(SIDEBAR_DEFAULT\);/);
+  assert.match(sidebar, /storage\.set\(key, width === fallback \? null : String\(width\)\)/);
+  assert.match(sidebar, /handle\.addEventListener\('dblclick', \(\) => \{\n\s*apply\(fallback\);/);
   assert.match(sidebar, /event\.key !== 'ArrowLeft' && event\.key !== 'ArrowRight'/, 'it also works from the keyboard');
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initSidebarWidth\(\);/);
+});
+
+test('the panel of an agent is as wide as the user left it and never scrolls sideways', async () => {
+  const { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, detailsWidth } = await import('../js/format.js');
+  const { PT } = await import('../js/i18n.js');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const rule = (selector) => css.split(`\n${selector} {`)[1].split('}')[0];
+  assert.equal(DETAILS_DEFAULT, Number(css.match(/--details: (\d+)px;/)[1]), 'the first paint has the same width');
+  assert.equal(detailsWidth(null), DETAILS_DEFAULT);
+  assert.equal(detailsWidth('not a number'), DETAILS_DEFAULT);
+  assert.equal(detailsWidth('320'), 320);
+  assert.equal(detailsWidth(0), DETAILS_MIN);
+  assert.equal(detailsWidth(9999), DETAILS_MAX);
+  assert.match(rule('.details'), /width: var\(--details\)/);
+  assert.match(rule('.details'), /max-width: 55%/, 'the terminal keeps its room on a small window');
+  assert.match(rule('.details'), /overflow-x: hidden/);
+  assert.match(rule('.subagent-meta'), /min-width: 0/, 'a long activity shrinks instead of pushing the panel');
+  assert.match(rule('.subagent-meta'), /text-overflow: ellipsis/);
+  assert.match(rule('.subagent-text'), /overflow-wrap: anywhere/, 'a long path wraps');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<div id="terminal"[^>]*><\/div>\s*<div id="details-resize"[^>]*role="separator"[^>]*tabindex="0"[^>]*><\/div>\s*<aside id="details"/, 'between the terminal and the panel');
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.equal(sidebar.match(/setPointerCapture/g).length, 1, 'both panels resize through the same code');
+  assert.match(sidebar, /growKey: 'ArrowLeft'/, 'this panel grows to the left');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initDetailsWidth\(\);/);
+  assert.equal(PT['Resize the agent panel'], 'Redimensionar o painel do agente');
 });
 
 test('an agent moves by dragging it onto a session of the sidebar, and a drag never opens it', async () => {

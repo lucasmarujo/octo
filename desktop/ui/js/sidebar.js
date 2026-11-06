@@ -1,14 +1,16 @@
 import { deleteSession, renameSession } from './commands.js';
 import { $, h, keep, place, storage, svg } from './dom.js';
 import { ask, closeMenu, openMenu } from './dialogs.js';
-import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, duration, kindColor, label, sidebarWidth, usageColor, usageOrder, usageShown } from './format.js';
+import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, detailsWidth, USAGE_FOLDED, USAGE_WARN, duration, kindColor, label, sidebarWidth, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
 import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_PLUS, PROVIDER_ICONS } from './icons.js';
 import { agents, inSession, now, selectSession, state, toggleExpanded, toggleUsage } from './state.js';
 import { send } from './transport.js';
 
 const WIDTH_KEY = 'octo.sidebar';
+const DETAILS_WIDTH_KEY = 'octo.details';
 const WIDTH_STEP = 16;
+const DETAILS_HANDLE_GAP = 8;
 const SUMMARY = [
   { state: 'paused', glyph: '‖', tone: 't-yellow', waiting: true },
   { state: 'working', glyph: null, tone: 't-text' },
@@ -213,39 +215,68 @@ export function promptNewSession(onSelect) {
   return newSession(onSelect);
 }
 
-export function initSidebarWidth() {
-  const handle = $('sidebar-resize');
-  let width = sidebarWidth(storage.get(WIDTH_KEY));
+function initPanelWidth({ handle, key, property, clamp, fallback, min, max, fromPointer, growKey }) {
+  let width = clamp(storage.get(key));
   const apply = (value) => {
-    width = sidebarWidth(value);
-    document.documentElement.style.setProperty('--sidebar', `${width}px`);
+    width = clamp(value);
+    document.documentElement.style.setProperty(property, `${width}px`);
     handle.setAttribute('aria-valuenow', String(width));
   };
-  const save = () => storage.set(WIDTH_KEY, width === SIDEBAR_DEFAULT ? null : String(width));
-  handle.setAttribute('aria-valuemin', String(SIDEBAR_MIN));
-  handle.setAttribute('aria-valuemax', String(SIDEBAR_MAX));
+  const save = () => storage.set(key, width === fallback ? null : String(width));
+  handle.setAttribute('aria-valuemin', String(min));
+  handle.setAttribute('aria-valuemax', String(max));
   apply(width);
   handle.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
     event.preventDefault();
     handle.setPointerCapture(event.pointerId);
-    document.documentElement.classList.add('resizing-sidebar');
+    handle.classList.add('resizing');
+    document.documentElement.classList.add('resizing-panel');
   });
   handle.addEventListener('pointermove', (event) => {
-    if (handle.hasPointerCapture(event.pointerId)) apply(event.clientX);
+    if (handle.hasPointerCapture(event.pointerId)) apply(fromPointer(event));
   });
   handle.addEventListener('lostpointercapture', () => {
-    document.documentElement.classList.remove('resizing-sidebar');
+    handle.classList.remove('resizing');
+    document.documentElement.classList.remove('resizing-panel');
     save();
   });
   handle.addEventListener('dblclick', () => {
-    apply(SIDEBAR_DEFAULT);
+    apply(fallback);
     save();
   });
   handle.addEventListener('keydown', (event) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
-    apply(width + (event.key === 'ArrowRight' ? WIDTH_STEP : -WIDTH_STEP));
+    apply(width + (event.key === growKey ? WIDTH_STEP : -WIDTH_STEP));
     save();
+  });
+}
+
+export function initSidebarWidth() {
+  initPanelWidth({
+    handle: $('sidebar-resize'),
+    key: WIDTH_KEY,
+    property: '--sidebar',
+    clamp: sidebarWidth,
+    fallback: SIDEBAR_DEFAULT,
+    min: SIDEBAR_MIN,
+    max: SIDEBAR_MAX,
+    fromPointer: (event) => event.clientX,
+    growKey: 'ArrowRight',
+  });
+}
+
+export function initDetailsWidth() {
+  initPanelWidth({
+    handle: $('details-resize'),
+    key: DETAILS_WIDTH_KEY,
+    property: '--details',
+    clamp: detailsWidth,
+    fallback: DETAILS_DEFAULT,
+    min: DETAILS_MIN,
+    max: DETAILS_MAX,
+    fromPointer: (event) => $('details').getBoundingClientRect().right - event.clientX - DETAILS_HANDLE_GAP,
+    growKey: 'ArrowLeft',
   });
 }

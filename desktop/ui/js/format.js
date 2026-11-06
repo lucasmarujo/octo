@@ -7,6 +7,9 @@ export const USAGE_FOLDED = 2;
 export const SIDEBAR_DEFAULT = 248;
 export const SIDEBAR_MIN = 200;
 export const SIDEBAR_MAX = 480;
+export const DETAILS_DEFAULT = 280;
+export const DETAILS_MIN = 220;
+export const DETAILS_MAX = 560;
 
 const LABELS = { antigravity: 'agy' };
 const KIND_COLORS = {
@@ -29,10 +32,18 @@ export const COLUMNS = [
   { key: 'idle', title: t('Idle'), empty: t('No idle agents.') },
 ];
 
-export function sidebarWidth(value) {
+function panelWidth(value, fallback, min, max) {
   const width = value === null || value === '' ? Number.NaN : Number(value);
-  if (!Number.isFinite(width)) return SIDEBAR_DEFAULT;
-  return Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)));
+  if (!Number.isFinite(width)) return fallback;
+  return Math.round(Math.min(max, Math.max(min, width)));
+}
+
+export function sidebarWidth(value) {
+  return panelWidth(value, SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX);
+}
+
+export function detailsWidth(value) {
+  return panelWidth(value, DETAILS_DEFAULT, DETAILS_MIN, DETAILS_MAX);
 }
 
 export function optionsTone({ worktree, remote, bypass }) {
