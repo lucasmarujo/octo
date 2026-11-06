@@ -7,7 +7,7 @@ tem a própria seção no fim da página: a simulação da TUI em `assets/tui.js
 cores por projeto, glifos, título da janela e avisos) e mostra o sprite de `src/tui/sprite.rs`, como o CLI. Os
 mascotes do resto da página e a imagem de compartilhamento são o Kai pixel do Octo: as tiras em
 `assets/kai/` são cópias exatas das de `desktop/ui/kai/`, uma pose por quadro, que só animam `transform` para rodar a 60 fps.
-O favicon e os ícones são o olho do polvo, o mesmo ícone do app, e `favicon.svg` é a fonte vetorial de todos eles.
+O favicon e os ícones são o olho do polvo em pixel art, o mesmo ícone do app. `favicon.svg` é a grade de 32 pixels, de onde saem os tamanhos múltiplos de 32 sem suavização; 16, 24 e 48 têm grades próprias, guardadas nos quadros de 16 e 24 pixels de `desktop/icons/icon.ico`.
 
 ## Testes
 

@@ -142,7 +142,7 @@ pub fn run() -> io::Result<()> {
     orkai::migrate::adopt_on_launch();
     let home = Home::resolve()?;
     let hub = Hub::open(&home)?;
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     crate::shell_icon::refresh(&home);
     pair::keep_alive(Arc::clone(&hub));
     recover::on_launch(Arc::clone(&hub));

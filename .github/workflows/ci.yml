@@ -200,6 +200,7 @@ jobs:
         run: |
           version=$(grep -m1 '^version' desktop/Cargo.toml | cut -d'"' -f2)
           app="target/bundle/Octo.app"
+          rm -rf "$app"
           mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
           cp "target/$TARGET/release/octo" "$app/Contents/MacOS/octo"
           cp desktop/icons/icon.icns "$app/Contents/Resources/icon.icns"

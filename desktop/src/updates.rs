@@ -53,7 +53,7 @@ fn replaces_its_bundle(exe: &Path) -> bool {
     cfg!(target_os = "macos") && update::app_bundle(exe).is_some()
 }
 
-fn runs_translocated(exe: &Path) -> bool {
+pub fn runs_translocated(exe: &Path) -> bool {
     cfg!(target_os = "macos") && exe.components().any(|part| part.as_os_str() == TRANSLOCATION_FOLDER)
 }
 
