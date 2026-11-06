@@ -113,6 +113,19 @@ impl Store {
         self.save_sessions(&sessions)
     }
 
+    pub fn move_agent(&self, id: AgentId, session: &str) -> io::Result<AgentRecord> {
+        let mut record = self.load_agent(id)?;
+        if record.session == session {
+            return Ok(record);
+        }
+        if !self.load_sessions()?.iter().any(|s| s.name == session) {
+            return Err(io::Error::new(io::ErrorKind::NotFound, format!("session '{session}' not found")));
+        }
+        record.session = session.to_string();
+        self.save_agent(&record)?;
+        Ok(record)
+    }
+
     pub fn list_agents(&self) -> io::Result<Vec<AgentRecord>> {
         let mut records = Vec::new();
         let entries = match fs::read_dir(self.home.agents_dir()) {
@@ -267,6 +280,34 @@ mod tests {
         store.delete_session("café 2026").unwrap();
         let names: Vec<_> = store.load_sessions().unwrap().into_iter().map(|s| s.name).collect();
         assert_eq!(names, vec![DEFAULT_SESSION]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_agent_moves_to_another_session_and_keeps_everything_else() {
+        let (store, dir) = temp_store("move");
+        store.create_session("work").unwrap();
+        let mut agent = store.create_agent(draft(DEFAULT_SESSION, "a")).unwrap();
+        agent.conversation_id = Some("conversation".into());
+        agent.launches = 3;
+        store.save_agent(&agent).unwrap();
+
+        let moved = store.move_agent(agent.id, "work").unwrap();
+        assert_eq!(moved.session, "work");
+        assert_eq!(store.load_agent(agent.id).unwrap(), AgentRecord { session: "work".into(), ..agent.clone() });
+        assert_eq!(
+            store.move_agent(agent.id, "work").unwrap().session,
+            "work",
+            "moving it where it is changes nothing"
+        );
+
+        let err = store.move_agent(agent.id, "gone").unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        assert_eq!(store.load_agent(agent.id).unwrap().session, "work", "a session that does not exist moves nothing");
+        assert!(!store.load_sessions().unwrap().iter().any(|s| s.name == "gone"));
+        assert!(store.move_agent(agent.id + 1, "work").is_err(), "an agent that does not exist moves nothing");
+
+        store.delete_session(DEFAULT_SESSION).unwrap();
         fs::remove_dir_all(dir).unwrap();
     }
 

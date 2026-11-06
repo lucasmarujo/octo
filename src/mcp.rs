@@ -248,9 +248,14 @@ impl Server {
         }
     }
 
+    fn caller_session(&self) -> Option<String> {
+        let caller = self.caller.as_ref()?;
+        Some(self.store().load_agent(caller.id).map_or_else(|_| caller.session.clone(), |record| record.session))
+    }
+
     fn list_agents(&self, args: ListArgs) -> Result<Value, String> {
-        let session = self.caller.as_ref().filter(|_| !args.all_sessions).map(|caller| caller.session.as_str());
-        let agents = cli::listing(self.store(), session).map_err(|err| err.to_string())?;
+        let session = self.caller_session().filter(|_| !args.all_sessions);
+        let agents = cli::listing(self.store(), session.as_deref()).map_err(|err| err.to_string())?;
         serde_json::to_value(agents).map_err(|err| err.to_string())
     }
 
@@ -319,7 +324,7 @@ impl Server {
             Some(name) => name,
             None => default_agent_name(kind, &task, |candidate| names.iter().any(|n| n == candidate)),
         };
-        let session = caller.map_or_else(|| DEFAULT_SESSION.to_string(), |caller| caller.session.clone());
+        let session = self.caller_session().unwrap_or_else(|| DEFAULT_SESSION.to_string());
         let bypass = kind.is_ai() && caller.is_some_and(|caller| caller.bypass);
         let draft = NewAgent { session, name, kind, cwd: cli::strip_verbatim(folder), task };
         let record = self
@@ -467,6 +472,20 @@ mod tests {
         let reply = call(server, &request.to_string());
         let result = &reply["result"];
         (result["isError"].as_bool().unwrap(), result["content"][0]["text"].as_str().unwrap().to_string())
+    }
+
+    #[test]
+    fn an_agent_moved_to_another_session_works_from_there() {
+        let fx = fixture();
+        let caller = agent(&fx, "lead", None);
+        let colleague = agent(&fx, "colleague", None);
+        fx.store.create_session("elsewhere").unwrap();
+        let server = server(&fx, Some(caller.clone()));
+        assert_eq!(fx.store.move_agent(caller.id, "elsewhere").unwrap().session, "elsewhere");
+
+        let (failed, listed) = tool(&server, "list_agents", json!({}));
+        assert!(!failed, "{listed}");
+        assert!(listed.contains("lead") && !listed.contains(&colleague.name), "{listed}");
     }
 
     #[test]

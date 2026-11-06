@@ -163,6 +163,10 @@ pub enum PhoneMsg {
     DeleteSession {
         name: String,
     },
+    MoveAgent {
+        agent: AgentId,
+        session: String,
+    },
     Trust {
         cwd: String,
         #[serde(default)]
@@ -498,6 +502,10 @@ mod tests {
             (
                 r#"{"type":"renameSession","name":"a","to":"b"}"#,
                 PhoneMsg::RenameSession { name: "a".into(), to: "b".into() },
+            ),
+            (
+                r#"{"type":"moveAgent","agent":4,"session":"work"}"#,
+                PhoneMsg::MoveAgent { agent: 4, session: "work".into() },
             ),
             (r#"{"type":"crossReview","agent":4}"#, PhoneMsg::CrossReview { agent: 4, reviewer: String::new() }),
             (

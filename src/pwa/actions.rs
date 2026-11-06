@@ -90,6 +90,7 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
             }
             Err(err) => notice(reply, Tone::Error, err.to_string()),
         },
+        PhoneMsg::MoveAgent { agent, session } => move_agent(hub, agent, &session, reply),
         PhoneMsg::Trust { cwd, command } => trust(hub, &cwd, command, reply),
         PhoneMsg::Sync
         | PhoneMsg::Device { .. }
@@ -151,6 +152,16 @@ fn rename(hub: &Hub, agent: AgentId, name: &str, reply: &Sender<Event>) {
             notice(reply, Tone::Success, format!("{old} is now {name}"));
         }
         Err(err) => notice(reply, Tone::Error, format!("rename failed: {err}")),
+    }
+}
+
+fn move_agent(hub: &Hub, agent: AgentId, session: &str, reply: &Sender<Event>) {
+    match hub.store().move_agent(agent, session) {
+        Ok(record) => {
+            hub.nudge();
+            notice(reply, Tone::Success, format!("{} moved to {session}", record.name));
+        }
+        Err(err) => notice(reply, Tone::Error, format!("could not move the agent: {err}")),
     }
 }
 

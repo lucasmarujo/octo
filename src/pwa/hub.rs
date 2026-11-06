@@ -381,12 +381,11 @@ impl Hub {
         let inner = self.inner();
         let Some(record) = inner.agents.get(&id).map(|tracked| &tracked.record) else { return Vec::new() };
         let Some(race) = record.race else { return Vec::new() };
-        let session = record.session.clone();
         inner
             .agents
             .values()
             .map(|tracked| &tracked.record)
-            .filter(|other| other.race == Some(race) && other.session == session && other.worktree.is_some())
+            .filter(|other| other.race == Some(race) && other.worktree.is_some())
             .cloned()
             .collect()
     }
@@ -827,6 +826,44 @@ mod tests {
     fn colors_become_css_hex() {
         assert_eq!(hex(Color::Rgb(255, 95, 135)), "#ff5f87");
         assert_eq!(hex(Color::Reset), "#9696a0");
+    }
+
+    #[test]
+    fn a_racer_moved_to_another_session_stays_in_its_race() {
+        use crate::model::NewAgent;
+
+        let dir = std::env::temp_dir().join(format!("orkai-hub-race-{}-{}", std::process::id(), now_ms()));
+        let store = Store::open(Home::at(dir.join("home"))).unwrap();
+        store.create_session("work").unwrap();
+        let racer = |name: &str| {
+            let draft = NewAgent {
+                session: "default".into(),
+                name: name.into(),
+                kind: AgentKind::Claude,
+                cwd: dir.clone(),
+                task: String::new(),
+            };
+            let mut record = store.create_agent(draft).unwrap();
+            record.race = Some(7);
+            record.worktree = Some(Worktree {
+                repo: dir.clone(),
+                path: dir.join(name),
+                branch: name.into(),
+                base: "HEAD".into(),
+                source: dir.clone(),
+            });
+            store.save_agent(&record).unwrap();
+            record
+        };
+        let (first, second) = (racer("first"), racer("second"));
+        let launcher = Launcher::new(store.clone(), Config::default(), &std::env::current_exe().unwrap()).unwrap();
+        let hub = Hub::new(launcher, "host".into());
+        store.move_agent(second.id, "work").unwrap();
+        hub.rescan();
+        let ids = |of| hub.race_members(of).into_iter().map(|record| record.id).collect::<Vec<_>>();
+        assert_eq!(ids(first.id), [first.id, second.id]);
+        assert_eq!(ids(second.id), [first.id, second.id]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

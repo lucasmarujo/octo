@@ -367,7 +367,7 @@ test('the help says the same in English and in Portuguese, and English comes fir
   assert.equal(pt.legend.length, en.legend.length);
   assert.deepEqual(pt.legend.map(([mark]) => mark), en.legend.map(([mark]) => mark));
   assert.equal(pt.groups.length, en.groups.length);
-  const translated = { '!command': '!comando', 'ctrl click': 'ctrl clique' };
+  const translated = { '!command': '!comando', 'ctrl click': 'ctrl clique', drag: 'arrastar' };
   en.groups.forEach(([, rows], index) => {
     const keys = pt.groups[index][1].map(([key]) => key);
     assert.deepEqual(keys, rows.map(([key]) => translated[key] || key));
@@ -1057,6 +1057,25 @@ test('the sidebar is as wide as the user left it, within limits, on every screen
   assert.match(sidebar, /handle\.addEventListener\('dblclick', \(\) => \{\n\s*apply\(SIDEBAR_DEFAULT\);/);
   assert.match(sidebar, /event\.key !== 'ArrowLeft' && event\.key !== 'ArrowRight'/, 'it also works from the keyboard');
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initSidebarWidth\(\);/);
+});
+
+test('an agent moves by dragging it onto a session of the sidebar, and a drag never opens it', async () => {
+  const { canMove } = await import('../js/format.js');
+  assert.equal(canMove(agent({ session: 'default' }), 'work'), true);
+  assert.equal(canMove(agent({ session: 'work' }), 'work'), false, 'it is already there');
+  assert.equal(canMove(agent({ session: 'default', starting: true }), 'work'), false, 'the launcher still holds its own copy of the record');
+  assert.equal(canMove(agent({ session: 'default', state: 'exited' }), 'work'), true, 'a stopped agent moves too');
+  assert.equal(canMove(null, 'work'), false);
+  assert.equal(canMove(agent({}), null), false);
+  const drag = readFileSync(join(REPO, 'desktop/ui/js/drag.js'), 'utf8');
+  assert.match(drag, /send\(\{ type: 'moveAgent', agent: moving\.agent\.id, session \}\)/);
+  assert.match(drag, /#board \.card, #list-body \.row, #grid \.tile-head/, 'a tile drags by its head: its screen is a terminal to select from');
+  assert.match(drag, /\.xterm/, 'nothing drags out of a terminal');
+  assert.match(drag, /addEventListener\('click', swallow, \{ capture: true, once: true \}\)/);
+  assert.match(drag, /event\.key === 'Escape'/, 'a drag can be called off');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8'), /class: 'session-row', type: 'button', dataset: \{ session: session\.name \}/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initAgentDrag\(\);/);
+  assert.match(rust('src/pwa/actions.rs'), /PhoneMsg::MoveAgent \{ agent, session \} => move_agent\(hub, agent, &session, reply\)/);
 });
 
 test('the folder picker ranks matches like src/folders.rs and keeps the matched letters', async () => {

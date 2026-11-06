@@ -35,6 +35,10 @@ export function sidebarWidth(value) {
   return Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)));
 }
 
+export function canMove(agent, session) {
+  return Boolean(agent && session) && !agent.starting && agent.session !== session;
+}
+
 export const GRID_SIZES = ['4', '6', '8', '10', '12', 'all'];
 export const DEFAULT_GRID_SIZE = '6';
 export const MAX_PREVIEW_ROWS = 40;

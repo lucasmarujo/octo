@@ -68,7 +68,7 @@ function sessionItem(session, onSelect, onOpen) {
   const hint = !expanded && working ? h('span', { class: 'session-hint' }, `${SPINNER[1]}${working}`) : null;
   const row = h(
     'button',
-    { class: 'session-row', type: 'button', onclick: () => onSelect(session.name), oncontextmenu: (event) => sessionMenu(event, session.name) },
+    { class: 'session-row', type: 'button', dataset: { session: session.name }, onclick: () => onSelect(session.name), oncontextmenu: (event) => sessionMenu(event, session.name) },
     chevron,
     h('span', { class: 'session-name' }, session.name),
     hint,

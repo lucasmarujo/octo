@@ -6,6 +6,7 @@ import { runCommand } from './commands.js';
 import { closeMenu, confirm, menuShown, showCompare, showDiff, showTests } from './dialogs.js';
 import { showFolderSearch, showFolders } from './folders.js';
 import { $, h, svg } from './dom.js';
+import { initAgentDrag } from './drag.js';
 import { SPINNER, alive, glyph } from './format.js';
 import { deactivateGrid, peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
 import { renderHelp } from './help.js';
@@ -536,6 +537,7 @@ function start() {
   window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
   initWindow();
   initSidebarWidth();
+  initAgentDrag();
   initTerminal();
   initComposer();
   initTooltips();

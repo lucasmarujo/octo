@@ -507,6 +507,39 @@ fn a_bad_request_from_the_phone_gets_a_notice_and_changes_nothing() {
 }
 
 #[test]
+fn a_running_agent_moves_to_another_session_without_noticing() {
+    let fx = fixture();
+    fx.store.create_session("work").unwrap();
+    let id = start_terminal(&fx, "shell");
+    let holder = fx.store.read_runtime(id).unwrap().unwrap();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.overview_where(|overview| agent(overview, id).is_some_and(running));
+    phone.send(&PhoneMsg::Open { agent: id, rows: 30, cols: 60 });
+    phone.screen_where(|screen, _| screen.full && screen.agent == id);
+
+    phone.send(&PhoneMsg::MoveAgent { agent: id, session: "work".into() });
+    let overview = phone.overview_where(|overview| agent(overview, id).is_some_and(|agent| agent.session == "work"));
+    assert!(running(agent(&overview, id).unwrap()));
+    assert_eq!(overview.sessions.iter().find(|s| s.name == "work").map(|s| s.agents), Some(1));
+    assert_eq!(overview.sessions.iter().find(|s| s.name == "default").map(|s| s.agents), Some(0));
+    assert_eq!(fx.store.load_agent(id).unwrap().session, "work");
+    assert_eq!(fx.store.read_runtime(id).unwrap().unwrap(), holder, "the same holder keeps running");
+    assert_eq!(fx.store.read_exit(id).unwrap(), None);
+
+    phone.send(&PhoneMsg::Send { text: "echo moved-$((40+2))".into() });
+    let marker = if cfg!(windows) { "moved-$((40+2))" } else { "moved-42" };
+    phone.screen_where(|_, text| text.lines().any(|line| line.trim() == marker));
+
+    phone.send(&PhoneMsg::MoveAgent { agent: id, session: "nowhere".into() });
+    let text = phone.until(|message| match message {
+        BridgeMsg::Notice { text, tone: Tone::Error } => Some(text),
+        _ => None,
+    });
+    assert!(text.contains("could not move the agent") && text.contains("nowhere"), "{text}");
+    assert_eq!(fx.store.load_agent(id).unwrap().session, "work");
+}
+
+#[test]
 fn the_phone_creates_sessions_and_browses_folders() {
     let fx = fixture();
     std::fs::create_dir_all(fx.dir.join("alpha")).unwrap();
