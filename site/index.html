@@ -69,7 +69,7 @@
       "downloadUrl": "https://github.com/lucasmarujo/octo/releases/latest",
       "installUrl": "https://octo.marujo.dev/#instalar",
       "image": "https://octo.marujo.dev/og-octo-kai.png",
-      "screenshot": "https://octo.marujo.dev/assets/octo-board-kai.webp",
+      "screenshot": "https://octo.marujo.dev/assets/octo-board.webp",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "BRL" },
       "author": { "@id": "https://marujo.dev/#person" },
       "sameAs": ["https://github.com/lucasmarujo/octo"]
@@ -150,7 +150,7 @@
   <div class="wrap">
     <figure class="stage" data-rise="7" data-tilt>
       <div class="shot" data-screen>
-        <img src="/assets/octo-board-kai.webp" srcset="/assets/octo-board-kai.webp 1x, /assets/octo-board-kai-2x.webp 2x" width="1440" height="900" decoding="async" alt="The Octo board: sessions and plan usage on the left, and the agents of the session in four columns, needs you, working, done and idle.">
+        <img src="/assets/octo-board.webp" srcset="/assets/octo-board.webp 1x, /assets/octo-board-2x.webp 2x" width="1440" height="900" decoding="async" alt="The Octo board: sessions and plan usage on the left, and the agents of the session in four columns, needs you, working, done and idle.">
       </div>
       <figcaption class="stage-cap"><span class="kicker-dim">the board</span><span class="hide-sm">every agent of the session by status, with time, project and what each one is doing</span></figcaption>
     </figure>
@@ -178,32 +178,24 @@
       <div class="chaos-field" data-chaos-field>
         <div class="chaos-wins" aria-hidden="true">
           <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-claude">claude</span> · checkout-redesign</div><div class="win-b">Committing changes…<br>git commit -m "checkout"</div></div>
-          <div class="win is-ask"><div class="win-h"><span class="win-bell"></span><span class="k-codex">codex</span> · payment-tests</div><div class="win-b">Run the migrations now?<br><span class="t-yellow">(y/n) ▌</span></div></div>
+          <div class="win is-ask"><div class="win-h"><span class="win-bell"></span><span class="k-claude">claude</span> · sidebar-sessions</div><div class="win-b">Do you want to make this edit?<br><span class="t-yellow">❯ 1. Yes ▌</span></div></div>
           <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-claude">claude</span> · simulator-builds</div><div class="win-b">Compiling SimulatorKit<br>(12/48)</div></div>
-          <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-opencode">opencode</span> · physics-merge</div><div class="win-b">Merging the new physics<br>engine</div></div>
+          <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-claude">claude</span> · physics-merge</div><div class="win-b">Merging the new physics<br>engine</div></div>
           <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-terminal">bash</span> · localhost-server</div><div class="win-b">ready on localhost:5173<br>GET / 200 in 12ms</div></div>
-          <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-agy">agy</span> · container-ssh</div><div class="win-b">docker exec -it api sh<br>…</div></div>
-          <div class="win is-done"><div class="win-h"><span class="win-bell"></span><span class="k-kimi">kimi</span> · folder-icon-update</div><div class="win-b">Done.<br>3 files changed</div></div>
+          <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-codex">codex</span> · npm-start-error</div><div class="win-b">Killing stale server<br>restarting npm start</div></div>
+          <div class="win is-done"><div class="win-h"><span class="win-bell"></span><span class="k-claude">claude</span> · folder-icon-update</div><div class="win-b">Done.<br>3 files changed</div></div>
           <div class="win"><div class="win-h"><span class="win-bell"></span><span class="k-claude">claude</span> · docker-install</div><div class="win-b">Installing docker-ce…<br>apt-get install -y</div></div>
         </div>
-        <div class="chaos-list tui" data-chaos-list>
-          <div class="tui-title chaos-fade"><span class="tui-bell is-on"></span><span>‖1 ✔2 · Octo</span></div>
-          <div class="chaos-rows">
-            <div class="r r-head chaos-fade"><span class="p6">acme/web</span><span class="t-dim"> › </span><span class="t-faint">2</span></div>
-            <div class="r" data-row="0"><span class="c-num">1</span><span class="c-sel"> </span><span class="c-g t-green">✔</span><span class="c-name t-green">checkout-redesign</span><span class="c-kind k-claude">claude</span><span class="c-act t-muted">Running design update and committing changes</span></div>
-            <div class="r" data-row="1"><span class="c-num">2</span><span class="c-sel">▸</span><span class="c-g t-yellow">‖</span><span class="c-name t-yellow">payment-tests</span><span class="c-kind k-codex">codex</span><span class="c-act t-yellow">waiting for you · Run the migrations now?</span></div>
-            <div class="r r-head chaos-fade"><span class="p2">acme/mobile</span><span class="t-dim"> › </span><span class="t-faint">1</span></div>
-            <div class="r" data-row="2"><span class="c-num">3</span><span class="c-sel"> </span><span class="c-g t-yellow" data-spin>⠋</span><span class="c-name t-text">simulator-builds</span><span class="c-kind k-claude">claude</span><span class="c-act t-text">Building and launching both apps in simulators</span></div>
-            <div class="r r-head chaos-fade"><span class="p6">studio/game</span><span class="t-dim"> › </span><span class="t-faint">2</span></div>
-            <div class="r" data-row="3"><span class="c-num">4</span><span class="c-sel"> </span><span class="c-g t-yellow" data-spin>⠋</span><span class="c-name t-text">physics-merge</span><span class="c-kind k-opencode">opencode</span><span class="c-act t-text">Merging the new physics engine</span></div>
-            <div class="r" data-row="4"><span class="c-num">5</span><span class="c-sel"> </span><span class="c-g">$</span><span class="c-name t-text">localhost-server</span><span class="c-kind k-terminal">terminal</span><span class="c-act t-text">npm run dev</span></div>
-            <div class="r r-head chaos-fade"><span class="p1">lab/infra</span><span class="t-dim"> › </span><span class="t-faint">1</span></div>
-            <div class="r" data-row="5"><span class="c-num">6</span><span class="c-sel"> </span><span class="c-g t-dim">●</span><span class="c-name t-muted">container-ssh</span><span class="c-kind k-agy">agy</span><span class="c-act t-muted">Retrieving container SSH credentials</span></div>
-            <div class="r r-head chaos-fade"><span class="p2">octo/app</span><span class="t-dim"> › </span><span class="t-faint">2</span></div>
-            <div class="r" data-row="6"><span class="c-num">7</span><span class="c-sel"> </span><span class="c-g t-green">✔</span><span class="c-name t-green">folder-icon-update</span><span class="c-kind k-kimi">kimi</span><span class="c-act t-muted">Folder icon update</span></div>
-            <div class="r" data-row="7"><span class="c-num">8</span><span class="c-sel"> </span><span class="c-g t-yellow" data-spin>⠋</span><span class="c-name t-text">docker-install</span><span class="c-kind k-claude">claude</span><span class="c-act t-text">Installing Docker inside the container</span></div>
-          </div>
-          <div class="tui-hint is-warn chaos-fade">payment-tests is waiting for you · alt+n opens it</div>
+        <div class="chaos-list shot">
+          <img src="/assets/octo-list.webp" srcset="/assets/octo-list.webp 1x, /assets/octo-list-2x.webp 2x" width="1440" height="900" loading="lazy" decoding="async" alt="The Octo list view: ten agents grouped by project folder, each with its type, how long it has been in its state, how long it has been alive and what it's doing. sidebar-sessions is highlighted, waiting for you.">
+          <span class="chaos-row" data-row="0" aria-hidden="true"></span>
+          <span class="chaos-row" data-row="1" aria-hidden="true"></span>
+          <span class="chaos-row" data-row="2" aria-hidden="true"></span>
+          <span class="chaos-row" data-row="3" aria-hidden="true"></span>
+          <span class="chaos-row" data-row="4" aria-hidden="true"></span>
+          <span class="chaos-row" data-row="5" aria-hidden="true"></span>
+          <span class="chaos-row" data-row="6" aria-hidden="true"></span>
+          <span class="chaos-row" data-row="7" aria-hidden="true"></span>
         </div>
       </div>
       <div class="chaos-copy">
@@ -240,7 +232,7 @@
       <article class="tour-step" data-step="3">
         <span class="spot-num">02.4</span>
         <h3 class="h3">two agents. one repo.</h3>
-        <p>With <kbd>ctrl</kbd><kbd>t</kbd>, each agent spawns in its own git worktree, on the <code>orkai/&lt;name&gt;</code> branch. Multiple agents work on the same repository without stepping on each other. <code>/diff</code> shows what changed; <code>/merge</code> brings it into your branch.</p>
+        <p>With <kbd>ctrl</kbd><kbd>t</kbd>, each agent spawns in its own git worktree, on the <code>octo/&lt;name&gt;</code> branch. Multiple agents work on the same repository without stepping on each other. <code>/diff</code> shows what changed; <code>/merge</code> brings it into your branch.</p>
       </article>
       <article class="tour-step" data-step="4">
         <span class="spot-num">02.5</span>
@@ -250,18 +242,13 @@
     </div>
     <div class="tour-pin">
       <div class="tour-screen">
-        <div class="tui tour-tui" aria-hidden="true" data-tour-tui>
-          <div class="tui-title"><span class="tui-bell" data-t-bell></span><span data-t-title>Octo</span></div>
-          <div class="tour-body">
-            <div class="r r-head"><span class="p6">acme/web</span><span class="t-dim"> › </span><span class="t-faint" data-t-count>3</span></div>
-            <div data-t-list></div>
-          </div>
-          <div class="tui-foot">
-            <div class="tui-input" data-t-input></div>
-            <div class="tui-status"><span class="t-muted">pc</span> <span class="t-link">workstation</span><span class="gap"></span><span class="t-muted">who</span> <span class="k-claude">claude</span><span class="gap"></span><span class="t-muted">worktree</span> <span class="t-dim" data-t-wt>off</span></div>
-            <div class="tui-hint t-dim" data-t-hint></div>
-          </div>
-          <div class="tui-key" data-t-key></div>
+        <div class="shot tour-shots" data-tour-shots>
+          <img class="tour-shot" data-shot="0" src="/assets/octo-list.webp" srcset="/assets/octo-list.webp 1x, /assets/octo-list-2x.webp 2x" width="1440" height="900" loading="lazy" decoding="async" alt="The Octo list view, with each agent in its project group, its timer and a line saying what it is doing.">
+          <img class="tour-shot" data-shot="1" src="/assets/octo-board.webp" srcset="/assets/octo-board.webp 1x, /assets/octo-board-2x.webp 2x" width="1440" height="900" loading="lazy" decoding="async" alt="The Octo board, with sidebar-sessions in the needs you column, waiting for your answer.">
+          <img class="tour-shot" data-shot="2" src="/assets/octo-pair.webp" srcset="/assets/octo-pair.webp 1x, /assets/octo-pair-2x.webp 2x" width="1440" height="900" loading="lazy" decoding="async" alt="The pair your phone dialog in Octo, with the QR code, the tunnel ready and one phone connected.">
+          <img class="tour-shot" data-shot="3" src="/assets/octo-agent.webp" srcset="/assets/octo-agent.webp 1x, /assets/octo-agent-2x.webp 2x" width="1440" height="900" loading="lazy" decoding="async" alt="The physics-merge agent tab in Octo, on its own octo/physics-merge worktree, with its changes, commits and merge button.">
+          <img class="tour-shot" data-shot="4" src="/assets/octo-grid.webp" srcset="/assets/octo-grid.webp 1x, /assets/octo-grid-2x.webp 2x" width="1440" height="900" loading="lazy" decoding="async" alt="The Octo grid view, with the terminal of every agent still running side by side.">
+          <span class="tour-key" aria-hidden="true" data-tour-key></span>
         </div>
         <ol class="tour-dots" aria-hidden="true"><li></li><li></li><li></li><li></li><li></li></ol>
       </div>
@@ -299,13 +286,27 @@
         <h3 class="h3">plan usage at a glance.</h3>
         <p>The 5-hour, weekly and monthly windows (or the balance) of every agent you're logged into, with a countdown to the reset. Green, yellow from 70%, red from 90%. Agents you're not logged into don't show up.</p>
       </div>
-      <div class="panel spot-visual usage-visual" data-usage-demo>
-        <div class="t-muted">usage <span class="t-faint">· updated 34s ago</span></div>
-        <div class="u-row"><span class="k-claude">claude</span><span class="t-muted">5h</span><span class="bar" data-pct="62"><span class="t-green">━━━━━━━</span><span class="t-rule">─────</span></span><span class="t-green b">62%</span><span class="t-dim hide-sm">resets 2h14m</span></div>
-        <div class="u-row"><span></span><span class="t-muted">week</span><span class="bar" data-pct="23"><span class="t-green">━━━</span><span class="t-rule">─────────</span></span><span class="t-green b">23%</span><span class="t-dim hide-sm">resets 4d05h</span></div>
-        <div class="u-row"><span class="k-codex">codex</span><span class="t-muted">5h</span><span class="bar" data-pct="12"><span class="t-green">━</span><span class="t-rule">───────────</span></span><span class="t-green b">12%</span><span class="t-dim hide-sm">resets 3h41m</span></div>
-        <div class="u-row"><span></span><span class="t-muted">week</span><span class="bar" data-pct="76"><span class="t-yellow">━━━━━━━━━</span><span class="t-rule">───</span></span><span class="t-yellow b">76%</span><span class="t-dim hide-sm">resets 58h00m</span></div>
-        <div class="u-row"><span class="k-kimi">kimi</span><span class="t-muted">5h</span><span class="bar" data-pct="93"><span class="t-red">━━━━━━━━━━━</span><span class="t-rule">─</span></span><span class="t-red b">93%</span><span class="t-dim hide-sm">resets 48m00s</span></div>
+      <div class="spot-visual usage-visual">
+        <div class="usage-head">plan usage <span>34s ago</span></div>
+        <div class="usage-card">
+          <div class="usage-provider"><span class="usage-icon"><svg focusable="false" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" fill-rule="nonzero"></path></svg></span><span class="usage-kind k-claude">claude</span></div>
+          <div class="usage-line"><span class="usage-label">5h</span><span class="usage-reset">resets in 2h14m</span><span class="usage-pct">62%</span></div>
+          <div class="usage-bar"><span class="usage-fill is-green" data-pct="62"></span></div>
+          <div class="usage-line"><span class="usage-label">week</span><span class="usage-reset">resets in 4d05h</span><span class="usage-pct">23%</span></div>
+          <div class="usage-bar"><span class="usage-fill is-green" data-pct="23"></span></div>
+        </div>
+        <div class="usage-card">
+          <div class="usage-provider"><span class="usage-icon"><svg focusable="false" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="url(#lobe-icons-codex-_R_0_-usage)"></path><defs><linearGradient gradientUnits="userSpaceOnUse" id="lobe-icons-codex-_R_0_-usage" x1="12" x2="12" y1="3" y2="21"><stop stop-color="#B1A7FF"></stop><stop offset=".5" stop-color="#7A9DFF"></stop><stop offset="1" stop-color="#3941FF"></stop></linearGradient></defs></svg></span><span class="usage-kind k-codex">codex</span></div>
+          <div class="usage-line"><span class="usage-label">5h</span><span class="usage-reset">resets in 3h41m</span><span class="usage-pct">12%</span></div>
+          <div class="usage-bar"><span class="usage-fill is-green" data-pct="12"></span></div>
+          <div class="usage-line"><span class="usage-label">week</span><span class="usage-reset">resets in 2d10h</span><span class="usage-pct t-yellow">76%</span></div>
+          <div class="usage-bar"><span class="usage-fill is-yellow" data-pct="76"></span></div>
+        </div>
+        <div class="usage-card">
+          <div class="usage-provider"><span class="usage-icon"><svg focusable="false" width="14" height="14" viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true"><path d="M21.846 0a1.923 1.923 0 110 3.846H20.15a.226.226 0 01-.227-.226V1.923C19.923.861 20.784 0 21.846 0z" fill="#1783FF"></path><path d="M11.065 11.199l7.257-7.2c.137-.136.06-.41-.116-.41H14.3a.164.164 0 00-.117.051l-7.82 7.756c-.122.12-.302.013-.302-.179V3.82c0-.127-.083-.23-.185-.23H3.186c-.103 0-.186.103-.186.23V19.77c0 .128.083.23.186.23h2.69c.103 0 .186-.102.186-.23v-3.25c0-.069.025-.135.069-.178l2.424-2.406a.158.158 0 01.205-.023l6.484 4.772a7.677 7.677 0 003.453 1.283c.108.012.2-.095.2-.23v-3.06c0-.117-.07-.212-.164-.227a5.028 5.028 0 01-2.027-.807l-5.613-4.064c-.117-.078-.132-.279-.028-.381z" fill="currentColor"></path></svg></span><span class="usage-kind k-kimi">kimi</span></div>
+          <div class="usage-line"><span class="usage-label">5h</span><span class="usage-reset">resets in 48m00s</span><span class="usage-pct t-red">93%</span></div>
+          <div class="usage-bar"><span class="usage-fill is-red" data-pct="93"></span></div>
+        </div>
       </div>
     </article>
     <ul class="grid-cards" data-reveal>
@@ -477,6 +478,7 @@
 
 <section class="finale" aria-labelledby="finale-title" data-finale>
   <canvas class="finale-pixels" data-pixels aria-hidden="true"></canvas>
+  <canvas class="finale-trail" data-trail aria-hidden="true"></canvas>
   <div class="wrap finale-in">
     <span class="kai finale-mascot" aria-hidden="true" data-mood="idle" data-walk><span class="kai-sprite"><span class="kai-strip"></span></span></span>
     <div class="finale-copy">
@@ -492,33 +494,40 @@
 
 </main>
 
-<footer class="foot">
-  <div class="wrap foot-in">
-    <div class="foot-brand">
-      <a class="brand" href="#topo" aria-label="OctoAI, back to top">
-        <span class="kai brand-mascot" aria-hidden="true" data-mood="idle"><span class="kai-sprite"><span class="kai-strip"></span></span></span>
-        <span class="wordmark">OctoAI</span>
-      </a>
-      <p>Octo is the desktop app for running AI coding agents across all your projects. Made by OctoAI, built in Rust by <a href="https://marujo.dev/">Lucas Marujo</a>.</p>
+<span class="kai diver" aria-hidden="true" data-diver data-mood="idle"><span class="kai-sprite"><span class="kai-strip"></span></span></span>
+
+<footer class="foot" data-ink>
+  <div class="foot-stage" data-ink-stage>
+    <span class="foot-scene" aria-hidden="true" data-scene></span>
+    <div class="foot-info" data-foot-info>
+      <div class="wrap foot-in">
+        <div class="foot-brand">
+          <a class="brand" href="#topo" aria-label="OctoAI, back to top">
+            <span class="kai brand-mascot" aria-hidden="true" data-mood="idle"><span class="kai-sprite"><span class="kai-strip"></span></span></span>
+            <span class="wordmark">OctoAI</span>
+          </a>
+          <p>Octo is the desktop app for running AI coding agents across all your projects. Made by OctoAI, built in Rust by <a href="https://marujo.dev/">Lucas Marujo</a>.</p>
+        </div>
+        <nav class="foot-nav" aria-label="Footer">
+          <div>
+            <h2 class="kicker-dim">product</h2>
+            <a href="#recursos">features</a>
+            <a href="#agentes">agents</a>
+            <a href="#instalar">download</a>
+          </div>
+          <div>
+            <h2 class="kicker-dim">project</h2>
+            <a href="https://github.com/lucasmarujo/octo">github</a>
+            <a href="https://github.com/lucasmarujo/octo/releases/latest">latest version</a>
+            <a href="https://github.com/lucasmarujo/octo/issues">report an issue</a>
+            <a href="https://github.com/lucasmarujo/octo#readme">documentation</a>
+            <a href="https://github.com/lucasmarujo/octo#code-signing-policy">code signing policy</a>
+          </div>
+        </nav>
+      </div>
+      <div class="wrap foot-base"><span>© 2026 OctoAI · Lucas Marujo</span><span class="t-dim">octo.marujo.dev</span></div>
     </div>
-    <nav class="foot-nav" aria-label="Footer">
-      <div>
-        <h2 class="kicker-dim">product</h2>
-        <a href="#recursos">features</a>
-        <a href="#agentes">agents</a>
-        <a href="#instalar">download</a>
-      </div>
-      <div>
-        <h2 class="kicker-dim">project</h2>
-        <a href="https://github.com/lucasmarujo/octo">github</a>
-        <a href="https://github.com/lucasmarujo/octo/releases/latest">latest version</a>
-        <a href="https://github.com/lucasmarujo/octo/issues">report an issue</a>
-        <a href="https://github.com/lucasmarujo/octo#readme">documentation</a>
-        <a href="https://github.com/lucasmarujo/octo#code-signing-policy">code signing policy</a>
-      </div>
-    </nav>
   </div>
-  <div class="wrap foot-base"><span>© 2026 OctoAI · Lucas Marujo</span><span class="t-dim">octo.marujo.dev</span></div>
 </footer>
 </body>
 </html>

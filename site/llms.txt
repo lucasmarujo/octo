@@ -8,7 +8,7 @@ Octo shows every agent on a board by status (needs you, working, done, idle), wi
 
 - Alerts when an agent is waiting for you or finishes: chime, a notification on Windows or a bouncing Dock icon on macOS, window title and alt+n to jump straight to the agent; ctrl+p pairs your phone, end-to-end encrypted, and `notify_command` sends the alert anywhere.
 - Tabs you drag, pin and choose, and side panels that collapse.
-- One git worktree per agent (ctrl+t), on the `orkai/<name>` branch, with diff and merge.
+- One git worktree per agent (ctrl+t), on the `octo/<name>` branch, with diff and merge.
 - Plan usage (5-hour, weekly and monthly windows, or balance) for the agents you're logged into, with a countdown to the reset.
 - Each agent runs in its own holder process: closing, crashing or updating Octo takes down no agent; after a reboot, ctrl+r resumes every conversation.
 - Each agent's skills in the `/` autocomplete.

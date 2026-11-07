@@ -178,7 +178,7 @@ test('a página, os metadados e os textos do app.js estão em inglês', () => {
 
 test('os outros mascotes da página são o Kai pixel do app, com as mesmas tiras', () => {
   const mascots = [...html.matchAll(/<span class="kai ([^"]*)"([^>]*)>/g)].map((m) => ({ place: m[1], attrs: m[2] }));
-  for (const place of ['brand-mascot', 'top-runner', 'kai-hero hero-mascot', 'finale-mascot']) assert.ok(mascots.some((kai) => kai.place === place), place);
+  for (const place of ['brand-mascot', 'top-runner', 'kai-hero hero-mascot', 'finale-mascot', 'diver']) assert.ok(mascots.some((kai) => kai.place === place), place);
   assert.equal(mascots.filter((kai) => kai.place === 'brand-mascot').length, 2, 'no cabeçalho e no rodapé');
   const sprite = '<span class="kai-sprite"><span class="kai-strip"></span></span>';
   const moods = new Set();
@@ -192,7 +192,7 @@ test('os outros mascotes da página são o Kai pixel do app, com as mesmas tiras
   assert.deepEqual([...moods].sort(), ['idle', 'working']);
   assert.match(html, /<span class="kai kai-hero hero-mascot" data-kai data-mood="working"/, 'o Kai do hero digita nos terminais');
   assert.doesNotMatch(html, /kai-(?:leg|head|face|body|pupils)/, 'nada do Kai antigo em camadas');
-  for (const mood of ['idle', 'working', 'done']) {
+  for (const mood of ['idle', 'working', 'done', 'needs', 'sleep', 'lost']) {
     assert.deepEqual(readFileSync(join(ROOT, `assets/kai/${mood}.svg`)), readFileSync(join(REPO, `desktop/ui/kai/${mood}.svg`)), `assets/kai/${mood}.svg`);
     assert.ok(css.includes(`url("/assets/kai/${mood}.svg")`), mood);
   }
@@ -322,8 +322,7 @@ test('ícones e imagens trocados ganham nome novo, porque o nginx guarda png e i
 test('a marca é OctoAI, o produto é Octo e a página não oferece mais o orkai CLI', () => {
   const wordmarks = [...html.matchAll(/<span class="wordmark">([^<]+)<\/span>/g)].map((m) => m[1]);
   assert.deepEqual(wordmarks, ['OctoAI', 'OctoAI']);
-  const page = html.slice(html.indexOf('<main')).replace(/<code>orkai\/&lt;name&gt;<\/code>/g, '');
-  assert.doesNotMatch(stripTags(page), /\borkai\b/i, 'só a branch orkai/<name> das worktrees cita o orkai');
+  assert.doesNotMatch(stripTags(html.slice(html.indexOf('<main'))), /\borkai\b/i);
   assert.doesNotMatch(html, /id="cli"|href="#cli"|data-tui\b|data-install=/);
   assert.doesNotMatch(read('llms.txt'), /orkai CLI|orkai-setup/);
 });
@@ -331,12 +330,234 @@ test('a marca é OctoAI, o produto é Octo e a página não oferece mais o orkai
 test('o hero mostra a tela real do Octo, com 1x e 2x', () => {
   const hero = html.slice(html.indexOf('<section class="hero"'), html.indexOf('</section>'));
   const img = hero.match(/<div class="shot" data-screen>\s*<img ([^>]+)>/)[1];
-  assert.match(img, /src="\/assets\/octo-board-kai\.webp"/);
+  assert.match(img, /src="\/assets\/octo-board\.webp"/);
+  assert.ok(!existsSync(join(ROOT, 'assets/octo-board-kai.webp')), 'o board antigo ficou para trás');
+  assert.equal(jsonLd().find((node) => node['@type'] === 'SoftwareApplication').screenshot, `${SITE}assets/octo-board.webp`);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*?\.hide-sm \{ display: none; \}/, 'a legenda longa do hero some no celular');
   assert.match(img, /width="1440" height="900"/);
   const srcset = img.match(/srcset="([^"]+)"/)[1].split(', ').map((entry) => entry.split(' '));
   assert.deepEqual(srcset.map(([, density]) => density), ['1x', '2x']);
   srcset.forEach(([file]) => assert.ok(existsSync(join(ROOT, file)), file));
   assert.match(app, /stage\.querySelector\('\[data-screen\]'\)/);
+});
+
+test('o problema e o tour mostram as telas reais do Octo, com 1x e 2x, e não a TUI do orkai', () => {
+  const chaos = html.match(/<section class="chaos"[\s\S]*?<\/section>/)[0];
+  const tour = html.match(/<div class="wrap tour" data-tour>[\s\S]*?<ol class="tour-dots"/)[0];
+  const images = (part) => [...part.matchAll(/<img ([^>]+)>/g)].map((m) => m[1]);
+  const shots = [...images(chaos), ...images(tour)];
+  assert.deepEqual(shots.map((img) => img.match(/src="\/assets\/([^"]+)\.webp"/)[1]), ['octo-list', 'octo-list', 'octo-board', 'octo-pair', 'octo-agent', 'octo-grid']);
+  shots.forEach((img) => {
+    assert.match(img, /width="1440" height="900"/);
+    assert.match(img, /loading="lazy"/);
+    assert.match(img, /alt="[^"]{40,}"/);
+    const srcset = img.match(/srcset="([^"]+)"/)[1].split(', ').map((entry) => entry.split(' '));
+    assert.deepEqual(srcset.map(([, density]) => density), ['1x', '2x']);
+    srcset.forEach(([file]) => assert.ok(existsSync(join(ROOT, file)), file));
+  });
+  assert.doesNotMatch(chaos + tour, /class="tui\b|class="r\b|data-t-/);
+  assert.doesNotMatch(css, /\.tui\b|\.c-name|\.tour-tui/);
+  assert.doesNotMatch(app, /\bglyph\b|\bslugify\b|\bdurationShort\b|\bHINT\b/);
+});
+
+test('a branch das worktrees na página e no llms.txt é a do src/worktree.rs', () => {
+  const prefix = readFileSync(join(REPO, 'src/worktree.rs'), 'utf8').match(/pub const BRANCH_PREFIX: &str = "([^"]+)";/)[1];
+  assert.ok(html.includes(`<code>${prefix}&lt;name&gt;</code>`), prefix);
+  assert.ok(read('llms.txt').includes(`\`${prefix}<name>\``), prefix);
+});
+
+test('o uso dos planos segue as cores do app: verde, amarelo a partir de 70% e vermelho a partir de 90%', () => {
+  const fills = [...html.matchAll(/<span class="usage-fill is-(\w+)" data-pct="(\d+)"><\/span>/g)].map(([, tone, pct]) => [tone, Number(pct)]);
+  assert.ok(fills.length >= 3);
+  fills.forEach(([tone, pct]) => assert.equal(tone, pct >= 90 ? 'red' : pct >= 70 ? 'yellow' : 'green', `${pct}%`));
+  assert.match(app, /fill\.style\.width = `\$\{fill\.dataset\.pct\}%`/);
+});
+
+test('o uso dos planos mostra o ícone de cada agente, o mesmo do app', () => {
+  const icons = readFileSync(join(REPO, 'desktop/ui/js/icons.js'), 'utf8');
+  const cards = [...html.matchAll(/<div class="usage-provider"><span class="usage-icon">(<svg[\s\S]*?<\/svg>)<\/span><span class="usage-kind k-(\w+)">\2<\/span><\/div>/g)];
+  assert.deepEqual(cards.map(([, , kind]) => kind), ['claude', 'codex', 'kimi']);
+  cards.forEach(([, svg, kind]) => {
+    const source = icons.match(new RegExp(`\\n  ${kind}: \`(<svg[^\`]+)\``))[1];
+    const paths = (markup) => [...markup.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(paths(svg), paths(source), kind);
+    assert.match(svg, /aria-hidden="true"/);
+  });
+});
+
+test('sem animação o footer é preto com as infos à mostra; com animação ele continua o rosa até a tinta', () => {
+  assert.match(css, /\.finale \{[^}]*background: var\(--pink\);/);
+  assert.match(css, /\.foot \{ background: var\(--ink\); color: var\(--text\); \}/);
+  assert.match(css, /\.foot\.is-live \{ height: 360vh; background: var\(--pink\); \}/);
+  assert.match(css, /\.foot\.is-live \.foot-stage \{ position: sticky; top: 0; height: 100vh;/);
+  assert.match(css, /\.foot\.is-live:focus-within \.foot-info \{ opacity: 1; transform: none; pointer-events: auto; \}/, 'quem navega pelo teclado vê os links');
+  assert.match(css, /\.foot\.is-live \.foot-info \{[^}]*pointer-events: none;/, 'link invisível não recebe clique');
+  const footer = html.match(/<footer class="foot" data-ink>[\s\S]*?<\/footer>/)[0];
+  assert.match(footer, /<span class="foot-scene" aria-hidden="true" data-scene><\/span>/);
+  assert.equal((footer.match(/<div class="foot-brand">/g) || []).length, 1);
+  assert.equal((footer.match(/<h2 class="kicker-dim">/g) || []).length, 2);
+  assert.equal((footer.match(/<div class="wrap foot-base"><span>[^<]+<\/span><span[^>]*>[^<]+<\/span><\/div>/g) || []).length, 1);
+  assert.match(css, /\.finale-mascot\.kai::before \{[^}]*background: var\(--ink\);/, 'o círculo do Kai do finale é preto, sem o azul');
+});
+
+test('o texto escuro do finale vira rosa sobre o rastro, porque a cor de blend é o rosa menos o fundo', () => {
+  const color = (name) => css.match(new RegExp(`--${name}: #([0-9a-f]{6});`))[1].match(/../g).map((c) => parseInt(c, 16));
+  const [pink, ink, blend] = ['pink', 'ink', 'ink-blend'].map(color);
+  assert.deepEqual(blend, pink.map((value, i) => value - ink[i]));
+  assert.match(css, /\.finale-title, \.finale-lead \{ color: var\(--ink-blend\); mix-blend-mode: difference; \}/);
+  assert.match(css, /\.btn-ink-ghost \{[^}]*background: var\(--pink\);/, 'o botão vazado não some sobre o rastro');
+});
+
+test('o rastro pixelado do finale usa a grade da transição, a cor do fundo escuro e respeita quem não quer movimento', () => {
+  assert.match(html, /<section class="finale"[^>]*>\s*<canvas class="finale-pixels" data-pixels aria-hidden="true"><\/canvas>\s*<canvas class="finale-trail" data-trail aria-hidden="true"><\/canvas>/);
+  const trail = app.slice(app.indexOf('function mountTrail'), app.indexOf('mountReveal();'));
+  assert.match(trail, /if \(REDUCED_MOTION \|\| !FINE_POINTER\) return;/);
+  assert.match(trail, /getPropertyValue\('--ink'\)/);
+  assert.match(trail, /PIXEL_CELL/);
+  assert.match(app, /const cell = PIXEL_CELL;/);
+  assert.match(trail, /if \(cells\.size\) requestAnimationFrame\(draw\);\s*else running = false;/, 'o laço para quando o rastro some');
+  assert.match(trail, /Math\.min\(TRAIL_MAX_STEPS,/, 'movimento rápido não pinta sem limite');
+  assert.match(css, /\.finale-trail \{[^}]*pointer-events: none;/);
+  assert.match(trail, /canvas\.style\.top = `\$\{-above\}px`;/, 'cobre a transição de pixels acima do finale');
+  assert.match(trail, /canvas\.style\.height = `\$\{above \+ section\.offsetHeight\}px`;/, 'e para no fim do finale, onde começa a cena da tinta');
+  assert.match(trail, /Math\.ceil\(pixels\.offsetHeight \/ PIXEL_CELL\) \* PIXEL_CELL/, 'na mesma grade do finale');
+  assert.match(trail, /addEventListener\('pointermove'/);
+  assert.match(app, /mountTrail\(document\.querySelector\('\[data-finale\]'\)\);/);
+});
+
+const appConst = (name) => new Function(`return ${app.match(new RegExp(`const ${name} = ([^;]+);`))[1]}`)();
+
+test('o Kai mergulhador tem o tamanho do Kai do finale, desce com a página e pula de lado a cada seção', () => {
+  assert.match(html, /<span class="kai diver" aria-hidden="true" data-diver data-mood="idle">/);
+  const finaleSize = css.match(/\.finale-mascot\.kai \{ width: (\d+)px; height: \1px; \}/)[1];
+  assert.match(css, new RegExp(`\\.diver\\.kai \\{ position: fixed;[^}]*width: ${finaleSize}px; height: ${finaleSize}px;[^}]*pointer-events: none;`));
+  const mobileFinale = css.match(/ {2}\.finale-mascot\.kai \{ width: (\d+)px; height: \1px; \}/)[1];
+  assert.match(css, new RegExp(` {2}\\.diver\\.kai \\{ width: ${mobileFinale}px; height: ${mobileFinale}px; \\}`));
+  const moods = appConst('DIVER_MOODS');
+  const ids = Object.keys(moods);
+  ids.forEach((id) => assert.match(html, new RegExp(`<section[^>]+id="${id}"`), id));
+  Object.values(moods).forEach((mood) => assert.ok(css.includes(`.kai[data-mood="${mood}"] .kai-strip`), mood));
+  const working = ids.filter((id) => moods[id] === 'working');
+  assert.deepEqual(working, ['recursos', 'agentes'], 'o Kai com os terminais só aparece nas primeiras seções');
+  const diver = app.slice(app.indexOf('function mountDiver'), app.indexOf('function sceneFrame'));
+  assert.match(diver, /if \(REDUCED_MOTION\) return null;/);
+  assert.match(diver, /sections\.indexOf\(entry\.target\.id\) % 2 \? -1 : 1/, 'alterna esquerda e direita');
+  assert.match(diver, /hop = Math\.sin\(Math\.PI \* t\) \* DIVER_HOP;/, 'o pulo faz um arco');
+  assert.match(diver, /y = top \+ progress \* \(viewport\.h - top - size - DIVER_EDGE\);/, 'desce até o fundo da tela quando chega o footer');
+  assert.match(diver, /scroll < footerItem\.top/, 'some quando o Kai da cena da tinta assume');
+});
+
+function sceneFrames() {
+  const { width, height, pixels } = decodePng(readFileSync(join(ROOT, 'assets/kai/ink.png')));
+  const w = appConst('SCENE_W');
+  const h = appConst('SCENE_H');
+  assert.equal(height, h);
+  assert.equal(width, w * appConst('SCENE_FRAMES'));
+  return Array.from({ length: width / w }, (_, f) => (x, y) => {
+    const at = (y * width + f * w + x) * 4;
+    return pixels[at + 3] ? hex(pixels[at], pixels[at + 1], pixels[at + 2]) : null;
+  });
+}
+
+test('a cena final é uma tira de pixel art própria, com o susto, os oito tentáculos agarrando a tela e a tinta', () => {
+  const frames = sceneFrames();
+  const w = appConst('SCENE_W');
+  const h = appConst('SCENE_H');
+  const kai = new Set(['idle', 'working', 'done', 'needs', 'sleep', 'lost'].flatMap((mood) => [...read(`assets/kai/${mood}.svg`).matchAll(/fill="(#[0-9A-Fa-f]{6})"/g)].map((m) => m[1].toLowerCase())));
+  const extras = new Set([css.match(/--ink: (#[0-9a-f]{6});/)[1]]);
+  const [ox, oy] = appConst('SCENE_KAI');
+  const idle = read('assets/kai/idle.svg');
+  const idleFrames = [...idle.matchAll(/<svg x="\d+" width="48" height="48" viewBox="0 0 48 48">([\s\S]*?)<\/svg>/g)].map(([, body]) => {
+    const grid = Array.from({ length: 48 }, () => Array(48).fill(null));
+    for (const [, d, color] of body.matchAll(/<path d="([^"]+)" fill="(#[0-9A-Fa-f]+)"/g)) {
+      for (const [, x, y, run] of d.matchAll(/M(\d+) (\d+)h(\d+)v1h-\d+z/g)) for (let i = 0; i < Number(run); i += 1) grid[Number(y)][Number(x) + i] = color.toLowerCase();
+    }
+    return grid;
+  });
+  assert.equal(appConst('SCENE_IDLE_FRAMES'), idleFrames.length);
+  idleFrames.forEach((grid, f) => {
+    for (let y = 0; y < 48; y += 1) for (let x = 0; x < 48; x += 1) assert.equal(frames[f](ox + x, oy + y), grid[y][x], `o quadro ${f} da aproximação é o idle ${f} do app, igual ao Kai que desce a página`);
+  });
+  const firstInk = appConst('SCENE_STEPS').find(([start]) => start >= appConst('SCENE_GRAB') + appConst('SCENE_GRAB_LENGTH') + 0.04)[1] + 1;
+  let hatPixels = 0;
+  for (let y = 4; y <= 12; y += 1) for (let x = 13; x <= 34; x += 1) if (idleFrames[0][y][x]) hatPixels += 1;
+  for (let f = idleFrames.length; f < firstInk; f += 1) {
+    const hat = Math.max(...[0, 1, 2, 3, 4].flatMap((lift) => [0, 1].map((shift) => {
+      let same = 0;
+      for (let y = 4; y <= 12; y += 1) for (let x = 13; x <= 34; x += 1) if (idleFrames[0][y][x] && frames[f](ox + x + shift, oy + y - lift) === idleFrames[0][y][x]) same += 1;
+      return same;
+    })));
+    assert.equal(hat, hatPixels, `o quadro ${f} mantém o boné do Kai do app, com o símbolo`);
+  }
+  frames.forEach((pixel, f) => {
+    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+      const c = pixel(x, y);
+      assert.ok(!c || kai.has(c) || extras.has(c), `quadro ${f} usa ${c}, fora da paleta do Kai`);
+    }
+  });
+  const edges = (pixel) => {
+    const hit = { left: false, right: false, top: false, bottom: false };
+    for (let y = 0; y < h; y += 1) {
+      hit.left ||= Boolean(pixel(0, y));
+      hit.right ||= Boolean(pixel(w - 1, y));
+    }
+    for (let x = 0; x < w; x += 1) {
+      hit.top ||= Boolean(pixel(x, 0));
+      hit.bottom ||= Boolean(pixel(x, h - 1));
+    }
+    return hit;
+  };
+  assert.deepEqual(edges(frames[0]), { left: false, right: false, top: false, bottom: false }, 'calmo, longe das bordas');
+  const steps = appConst('SCENE_STEPS');
+  const grab = steps.find(([start]) => start === appConst('SCENE_GRAB'))[1];
+  const reach = edges(frames[grab]);
+  assert.ok(reach.left && reach.right && reach.bottom, 'na agarrada os tentáculos chegam às bordas');
+  const yellow = css.match(/--yellow: (#[0-9a-f]{6});/)[1];
+  [idleFrames.length, idleFrames.length + 1].forEach((f) => {
+    let alarm = false;
+    for (let y = 0; y < h && !alarm; y += 1) for (let x = 0; x < w; x += 1) if (frames[f](x, y) === yellow) alarm = true;
+    assert.ok(alarm, `quadro ${f} é o susto, com o alerta amarelo`);
+  });
+  const ink = css.match(/--ink: (#[0-9a-f]{6});/)[1];
+  const last = frames[frames.length - 1];
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) assert.equal(last(x, y), ink, 'o último quadro é a tela toda de tinta');
+  assert.equal(steps[steps.length - 1][1], frames.length - 1);
+  steps.slice(1).forEach(([start, frame], i) => assert.ok(start > steps[i][0] && frame === steps[i][1] + 1, 'os quadros seguem em ordem'));
+  assert.match(css, new RegExp(`url\\("\\/assets\\/kai\\/ink\\.png"\\) no-repeat 0 0 \\/ ${frames.length * 100}% 100%; image-rendering: pixelated;`));
+  assert.doesNotMatch(app, /drawArms|INK_ARMS|kai-strip.*grab/, 'nada é desenhado por cima de um sprite pronto');
+});
+
+test('a tinta cobre a tela com a cor do fundo e só então aparecem as infos do footer, com o som de pronto do app', () => {
+  const phases = ['SCENE_GROW_END', 'SCENE_STARTLE', 'SCENE_GRAB', 'SCENE_INKED', 'SCENE_INFO'].map(appConst);
+  phases.slice(1).forEach((value, i) => assert.ok(value >= phases[i], `fase ${i + 1} fora de ordem`));
+  assert.ok(appConst('SCENE_INFO') + appConst('SCENE_INFO_LENGTH') < 1, 'as infos ficam paradas no fim');
+  assert.equal(appConst('SCENE_STEPS').at(-1)[0], appConst('SCENE_INKED'), 'a tela fica preta no quadro da tinta toda');
+  const ink = app.slice(app.indexOf('function mountInk'), app.indexOf('mountReveal();'));
+  assert.match(css, /\.foot\.is-live\.is-inked \.foot-stage \{ background: var\(--ink\); \}/);
+  assert.match(ink, /if \(p >= SCENE_INFO \+ SCENE_INFO_LENGTH \/ 2 && !rang\) \{\s*rang = true;\s*play\('done'\);/, 'o som de pronto toca uma vez quando as infos aparecem');
+  assert.match(ink, /footer\.classList\.toggle\('is-inked', p >= SCENE_INKED\);/);
+  assert.match(app, /import \{ CHIME_DONE, chimeSamples, spitSamples \} from '\.\/chime\.js';/);
+  const sound = app.slice(app.indexOf('function mountSound'), app.indexOf('function mountDiver'));
+  assert.match(sound, /\['pointerdown', 'keydown', 'touchend'\]\.forEach\(\(type\) => addEventListener\(type, unlock, \{ once: true, passive: true \}\)\)/, 'o áudio só liga depois de um gesto do usuário');
+  assert.match(sound, /if \(!audio \|\| audio\.state !== 'running'\) return;/);
+  assert.match(sound, /const sounds = \{ done: \(rate\) => chimeSamples\(CHIME_DONE, rate\), spit: spitSamples \};/);
+  assert.match(sound, /if \(!buffers\.has\(name\)\)/, 'cada som é gerado uma vez só');
+  assert.match(app, /mountInk\(document\.querySelector\('\[data-ink\]'\), mountDiver\([^;]*mountSound\(\)\);/);
+});
+
+test('o cuspe de tinta tem som próprio, no quadro em que a tinta sai da boca do Kai', () => {
+  const frames = sceneFrames();
+  const ink = css.match(/--ink: (#[0-9a-f]{6});/)[1];
+  const w = appConst('SCENE_W');
+  const h = appConst('SCENE_H');
+  const firstInk = frames.findIndex((pixel) => {
+    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) if (pixel(x, y) === ink) return true;
+    return false;
+  });
+  assert.equal(appConst('SCENE_STEPS').find(([, frame]) => frame === firstInk)[0], appConst('SCENE_SPIT'));
+  const scene = app.slice(app.indexOf('function mountInk'), app.indexOf('mountReveal();'));
+  assert.match(scene, /if \(p >= SCENE_SPIT && !spat\) \{\s*spat = true;\s*play\('spit'\);/, 'toca uma vez por passagem');
+  assert.match(scene, /if \(p < SCENE_STARTLE\) \{\s*spat = false;\s*rang = false;/, 'volta a tocar se a pessoa subir e descer de novo');
 });
 
 test('a URL do ícone do perfil do Windows Terminal existe no site com o mesmo nome de arquivo', () => {
@@ -515,10 +736,12 @@ test('animações: a cena caos→ordem e o tour têm as peças que o app.js espe
   assert.equal(scatter, windows);
   const steps = (html.match(/class="tour-step"/g) || []).length;
   const dots = html.match(/<ol class="tour-dots"[^>]*>([\s\S]*?)<\/ol>/)[1].match(/<li>/g).length;
-  const scenes = app.match(/const scenes = \[([\s\S]*?)\n  \];/)[1].match(/^    async \(mine\) => \{/gm).length;
+  const shots = [...html.matchAll(/data-shot="(\d+)"/g)].map((m) => Number(m[1]));
+  const keys = app.match(/const TOUR_KEYS = (\[.*\]);/)[1];
   assert.equal(steps, 5);
   assert.equal(dots, steps);
-  assert.equal(scenes, steps);
+  assert.deepEqual(shots, [...Array(steps).keys()]);
+  assert.equal(JSON.parse(keys.replace(/'/g, '"')).length, steps);
 });
 
 test('o vídeo só baixa quando o usuário pede e tem poster', () => {
@@ -547,14 +770,17 @@ test('o player, o JSON-LD e o arquivo do vídeo têm a mesma duração', () => {
 
 test('orçamento de peso para carregar rápido', () => {
   assert.ok(size('index.html') < 120 * 1024, `index.html ${size('index.html')}`);
-  assert.ok(size('assets/site.css') + size('assets/app.js') + size('assets/tui.js') < 120 * 1024, 'css + js');
+  assert.ok(size('assets/site.css') + size('assets/app.js') + size('assets/tui.js') + size('assets/chime.js') < 120 * 1024, 'css + js');
+  assert.ok(size('assets/kai/ink.png') < 20 * 1024, 'cena da tinta');
   const fonts = readdirSync(join(ROOT, 'assets/fonts')).reduce((sum, file) => sum + size(`assets/fonts/${file}`), 0);
   assert.ok(fonts < 220 * 1024, `fontes ${fonts}`);
   assert.ok(size('assets/octo-launch.mp4') < 12 * 1024 * 1024, 'vídeo');
   assert.ok(size('assets/octo-launch-poster.webp') < 50 * 1024, 'poster');
   assert.ok(size('assets/overview.webp') < 120 * 1024, 'overview');
-  assert.ok(size('assets/octo-board-kai.webp') < 100 * 1024, 'octo-board');
-  assert.ok(size('assets/octo-board-kai-2x.webp') < 180 * 1024, 'octo-board-2x');
+  ['octo-board', 'octo-list', 'octo-pair', 'octo-agent', 'octo-grid'].forEach((name) => {
+    assert.ok(size(`assets/${name}.webp`) < 100 * 1024, name);
+    assert.ok(size(`assets/${name}-2x.webp`) < 180 * 1024, `${name}-2x`);
+  });
 });
 
 test('nginx: CSP estrita, bloqueio de arquivos internos e compose no padrão da VPS', () => {

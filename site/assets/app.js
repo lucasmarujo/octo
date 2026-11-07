@@ -1,15 +1,46 @@
-import { HINT, SPINNER, durationShort, glyph, slugify } from './tui.js';
+import { CHIME_DONE, chimeSamples, spitSamples } from './chime.js';
+import { SPINNER } from './tui.js';
 
 const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FINE_POINTER = matchMedia('(hover: hover) and (pointer: fine)').matches;
 const TICK_MS = 100;
 const KEY_MS = 1_100;
-const BELL_MS = 1_800;
-const TOUR_TASK = 'fix the flaky login test';
+const KEY_GAP_MS = 600;
+const TOUR_KEYS = [['enter'], [], ['alt+n', 'ctrl+p'], ['ctrl+t'], ['ctrl+r']];
+const PIXEL_CELL = 22;
+const TRAIL_FADE_MS = 650;
+const TRAIL_STEPS = 4;
+const TRAIL_SPREAD = 0.35;
+const TRAIL_MAX_STEPS = 64;
+const TRAIL_NEIGHBORS = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]];
+const DIVER_MOODS = { topo: 'idle', problema: 'needs', recursos: 'working', agentes: 'working', 'como-funciona': 'sleep', teclado: 'idle', seguranca: 'idle', instalar: 'done', video: 'idle' };
+const DIVER_DIZZY_SPEED = 6;
+const DIVER_DIZZY_MS = 900;
+const DIVER_TILT = 14;
+const DIVER_EDGE = 12;
+const DIVER_HOP = 150;
+const DIVER_JUMP_MS = 720;
+const SCENE_W = 128;
+const SCENE_H = 96;
+const SCENE_FRAMES = 14;
+const SCENE_KAI = [40, 26, 48];
+const SCENE_IDLE_FRAMES = 4;
+const SCENE_GROW_END = 0.3;
+const SCENE_STARTLE = 0.3;
+const SCENE_IDLE_MS = 900;
+const SCENE_SHIVER_MS = 90;
+const SCENE_STEPS = [[0.4, 6], [0.47, 7], [0.54, 8], [0.62, 9], [0.67, 10], [0.71, 11], [0.75, 12], [0.79, 13]];
+const SCENE_SPIT = 0.67;
+const SCENE_GRAB = 0.54;
+const SCENE_GRAB_LENGTH = 0.08;
+const SCENE_SHAKE = 9;
+const SCENE_INKED = 0.79;
+const SCENE_INFO = 0.82;
+const SCENE_INFO_LENGTH = 0.1;
 const SCRAMBLE_GLYPHS = '0123456789abcdef#%&*+=';
 const CHAOS_SCATTER = [[0.02, 0.06, -7], [0.62, 0, 5], [0.3, 0.34, -3], [0.76, 0.4, 8], [0.05, 0.66, 4], [0.47, 0.7, -6], [0.84, 0.8, -9], [0.2, 0.16, 3]];
 
 let frame = 0;
-const tickers = new Set();
 const tracked = [];
 const scrollers = [];
 const layouts = [];
@@ -30,12 +61,12 @@ function el(tag, className, text) {
   return node;
 }
 
-function setText(node, text) {
-  if (node.textContent !== text) node.textContent = text;
+function topHeight() {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top-h')) || 64;
 }
 
-function setClass(node, className) {
-  if (node.className !== className) node.className = className;
+function setText(node, text) {
+  if (node.textContent !== text) node.textContent = text;
 }
 
 function whenVisible(node, onChange, rootMargin = '120px 0px') {
@@ -97,49 +128,13 @@ function startClock() {
     if (document.hidden) return;
     if (!REDUCED_MOTION) frame += 1;
     for (const node of document.querySelectorAll('[data-spin]')) setText(node, SPINNER[frame % SPINNER.length]);
-    tickers.forEach((tick) => tick(Date.now()));
   }, TICK_MS);
-}
-
-function syncChildren(parent, items, key, create, update) {
-  const existing = new Map([...parent.children].map((child) => [child.dataset.key, child]));
-  items.forEach((item, index) => {
-    const id = key(item);
-    let node = existing.get(id);
-    if (node) {
-      existing.delete(id);
-    } else {
-      node = create(item);
-      node.dataset.key = id;
-    }
-    update(node, item);
-    if (parent.children[index] !== node) parent.insertBefore(node, parent.children[index] || null);
-  });
-  existing.forEach((node) => node.remove());
-}
-
-function flash(row) {
-  if (!row || REDUCED_MOTION) return;
-  row.animate([{ backgroundColor: 'rgb(255 95 135 / 0.22)' }, { backgroundColor: 'rgb(255 95 135 / 0)' }], { duration: 1_800, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
-}
-
-function ringBell(bell) {
-  bell.classList.remove('is-ringing');
-  void bell.offsetWidth;
-  bell.classList.add('is-ringing');
-  setTimeout(() => bell.classList.remove('is-ringing'), BELL_MS);
 }
 
 function showKey(keycap, key) {
   setText(keycap, key);
   keycap.classList.add('is-shown');
   setTimeout(() => keycap.classList.remove('is-shown'), KEY_MS);
-}
-
-function agentRow() {
-  const row = el('div', 'r');
-  row.append(el('span', 'c-num'), el('span', 'c-sel'), el('span', 'c-g'), el('span', 'c-name'), el('span', 'c-t1'), el('span', 'c-t2'), el('span', 'c-kind'), el('span', 'c-act'));
-  return row;
 }
 
 function splitWords(node) {
@@ -317,7 +312,7 @@ function mountChaos(section) {
   section.classList.add('is-live');
   const field = section.querySelector('[data-chaos-field]');
   const wins = [...section.querySelectorAll('.win')];
-  const rows = [...section.querySelectorAll('.chaos-rows [data-row]')];
+  const rows = [...section.querySelectorAll('.chaos-row')];
   const question = section.querySelector('.chaos-q');
   const answer = section.querySelector('.chaos-a');
   const before = section.querySelector('.chaos-before');
@@ -339,10 +334,9 @@ function mountChaos(section) {
       };
     });
   });
-  const topOffset = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top-h')) || 64;
   let offset = 64;
   layouts.push(() => {
-    offset = topOffset();
+    offset = topHeight();
   });
   scrollers.push((y) => {
     if (!poses.length) return;
@@ -360,7 +354,6 @@ function mountChaos(section) {
       win.style.transform = `translate3d(${x}px, ${yy}px, 0) rotate(${rotate}deg) scale(${scale})`;
       win.style.opacity = String(appear * (1 - span(converge, 0.62, 0.38)));
       win.classList.toggle('is-ringing', converge === 0 && p > 0.2 + (i % 3) * 0.04 && (win.classList.contains('is-ask') || win.classList.contains('is-done')));
-      rows[i].style.opacity = String(span(converge, 0.72, 0.28));
     });
     section.style.setProperty('--built', String(span(p, 0.48, 0.14)));
     const swap = span(p, 0.7, 0.08);
@@ -375,180 +368,21 @@ function mountChaos(section) {
 
 function mountTour(root) {
   root.classList.add('is-live');
-  const screen = root.querySelector('[data-tour-tui]');
-  const part = (name) => screen.querySelector(`[data-t-${name}]`);
-  const title = part('title');
-  const bell = part('bell');
-  const count = part('count');
-  const list = part('list');
-  const input = part('input');
-  const worktree = part('wt');
-  const hint = part('hint');
-  const keycap = part('key');
+  const shots = [...root.querySelectorAll('[data-shot]')];
+  const keycap = root.querySelector('[data-tour-key]');
   const steps = [...root.querySelectorAll('.tour-step')];
   const dots = [...root.querySelectorAll('.tour-dots li')];
-  const state = { rows: [], selected: 0, input: null, worktree: false, notice: null };
   let token = 0;
   let active = -1;
-  let visible = false;
 
-  const base = (now) => [
-    { id: 1, name: 'checkout-redesign', kind: 'claude', state: 'done', activity: 'Running design update and committing changes', since: now - 32_000 },
-    { id: 2, name: 'payment-tests', kind: 'codex', state: 'working', activity: 'Writing integration tests for the payment flow', since: now - 64_000 },
-    { id: 3, name: 'simulator-builds', kind: 'claude', state: 'working', activity: 'Building and launching both apps in simulators', since: now - 145_000 },
-  ];
-  const spawned = (now) => ({ id: 4, name: slugify(TOUR_TASK), kind: 'claude', state: 'working', activity: 'Reading src/auth/login.test.ts', since: now - 9_000 });
-  const row = (id) => state.rows.find((r) => r.id === id);
-
-  function describe(r, now) {
-    if (r.state === 'lost') return { mark: '↻', markTone: 'red', nameTone: 'faint', time: '', timeTone: 'dim', activity: 'interrupted — ctrl+r to recover', activityTone: 'red' };
-    if (r.starting) return { mark: '◌', markTone: 'dim', nameTone: 'text', time: durationShort(now - r.since), timeTone: 'yellow', activity: 'starting…', activityTone: 'dim' };
-    const [mark, markTone] = glyph(r.kind, r.state, frame);
-    const nameTone = { done: 'green', paused: 'yellow' }[r.state] || 'text';
-    const timeTone = r.state === 'done' ? 'dim' : 'yellow';
-    const activity = r.state === 'paused' ? `waiting for you · ${r.activity}` : r.activity;
-    const activityTone = { done: 'muted', paused: 'yellow' }[r.state] || 'text';
-    return { mark, markTone, nameTone, time: durationShort(now - r.since), timeTone, activity, activityTone };
-  }
-
-  function render(now) {
-    const waiting = state.rows.filter((r) => r.state === 'paused').length;
-    const done = state.rows.filter((r) => r.state === 'done').length;
-    const parts = [waiting && `‖${waiting}`, done && `✔${done}`].filter(Boolean);
-    setText(title, parts.length ? `${parts.join(' ')} · Octo` : 'Octo');
-    setText(count, String(state.rows.length));
-    setText(worktree, state.worktree ? 'on' : 'off');
-    setClass(worktree, state.worktree ? 't-pink' : 't-dim');
-    setText(hint, state.notice ? state.notice.text : HINT);
-    setClass(hint, state.notice ? `tui-hint is-${state.notice.tone}` : 'tui-hint t-dim');
-    syncChildren(list, state.rows, (r) => `t:${r.id}`, () => {
-      const node = agentRow();
-      node.children[5].remove();
-      node.children[5].after(el('span', 'c-wt'));
-      return node;
-    }, (node, r) => {
-      const d = describe(r, now);
-      const [num, sel, mark, name, time, kind, wt, activity] = node.children;
-      node.classList.toggle('is-lost', r.state === 'lost');
-      setText(num, String(r.id));
-      setText(sel, state.selected === r.id ? '▸' : ' ');
-      setText(mark, d.mark);
-      setClass(mark, `c-g t-${d.markTone}`);
-      setText(name, r.name);
-      setClass(name, `c-name t-${d.nameTone}`);
-      setText(time, d.time);
-      setClass(time, `c-t1 t-${d.timeTone}`);
-      setText(kind, r.kind);
-      setClass(kind, `c-kind k-${r.kind}`);
-      const badge = r.wt ? `${r.wt.files}|${r.wt.plus}|${r.wt.minus}` : '';
-      if (wt.dataset.badge !== badge) {
-        wt.dataset.badge = badge;
-        wt.replaceChildren(...(r.wt ? [el('span', 't-link', '⎇ '), el('span', 't-dim', `${r.wt.files} files`), el('span', 't-green', ` +${r.wt.plus}`), el('span', 't-red', ` −${r.wt.minus}`)] : []));
-      }
-      setText(activity, d.activity);
-      setClass(activity, `c-act t-${d.activityTone}`);
-    });
-    input.replaceChildren(state.input ? el('span', '', state.input) : el('span', 't-faint', 'write a task'));
-    if (state.input !== null) input.append(el('span', 'caret'));
-  }
-
-  const now = () => Date.now();
-  const alive = (mine) => mine === token;
-
-  async function wait(mine, ms) {
-    await sleep(REDUCED_MOTION ? Math.min(ms, 300) : ms);
-    return alive(mine);
-  }
-
-  async function type(mine, text) {
-    for (let i = 1; i <= text.length; i += 1) {
-      if (!alive(mine)) return false;
-      state.input = text.slice(0, i);
-      render(now());
-      if (!REDUCED_MOTION) await sleep(45);
+  async function press(mine, keys) {
+    for (const key of keys) {
+      await sleep(KEY_GAP_MS);
+      if (mine !== token) return;
+      showKey(keycap, key);
+      await sleep(KEY_MS);
     }
-    return alive(mine);
   }
-
-  function focus(id) {
-    state.selected = id;
-    render(now());
-    flash(list.querySelector(`[data-key="t:${id}"]`));
-  }
-
-  const scenes = [
-    async (mine) => {
-      Object.assign(state, { rows: base(now()), selected: 3, input: '', worktree: false, notice: null });
-      render(now());
-      if (!(await wait(mine, 500)) || !(await type(mine, TOUR_TASK)) || !(await wait(mine, 380))) return;
-      showKey(keycap, 'enter');
-      state.input = null;
-      state.rows.push({ ...spawned(now()), since: now(), starting: true });
-      focus(4);
-      if (!(await wait(mine, 1_000))) return;
-      row(4).starting = false;
-    },
-    async (mine) => {
-      Object.assign(state, { rows: [...base(now()), spawned(now())], selected: 4, input: null, worktree: false, notice: null });
-      render(now());
-      if (!(await wait(mine, 700))) return;
-      Object.assign(row(2), { state: 'paused', activity: 'Run the migrations now?', since: now() });
-      state.notice = { tone: 'warn', text: 'payment-tests is waiting for you · alt+n opens it' };
-      ringBell(bell);
-      render(now());
-      if (!(await wait(mine, 1_800))) return;
-      Object.assign(row(3), { state: 'done', since: now() });
-      ringBell(bell);
-      render(now());
-    },
-    async (mine) => {
-      const rows = [...base(now()), spawned(now())];
-      Object.assign(rows[1], { state: 'paused', activity: 'Run the migrations now?', since: now() - 6_000 });
-      Object.assign(rows[2], { state: 'done', since: now() - 3_000 });
-      Object.assign(state, { rows, selected: 4, input: null, worktree: false, notice: { tone: 'warn', text: 'payment-tests is waiting for you · alt+n opens it' } });
-      render(now());
-      if (!(await wait(mine, 1_000))) return;
-      showKey(keycap, 'alt+n');
-      Object.assign(row(2), { state: 'working', activity: 'Running the migrations', since: now() });
-      state.notice = null;
-      focus(2);
-    },
-    async (mine) => {
-      const rows = [...base(now()), spawned(now())];
-      Object.assign(rows[1], { activity: 'Running the migrations', since: now() - 12_000 });
-      Object.assign(state, { rows, selected: 2, input: null, worktree: false, notice: null });
-      render(now());
-      if (!(await wait(mine, 500))) return;
-      showKey(keycap, 'ctrl+t');
-      state.worktree = true;
-      render(now());
-      if (!(await wait(mine, 700))) return;
-      row(4).wt = { files: 4, plus: 12, minus: 3 };
-      flash(list.querySelector('[data-key="t:4"]'));
-      render(now());
-      if (!(await wait(mine, 600))) return;
-      row(2).wt = { files: 2, plus: 31, minus: 0 };
-      flash(list.querySelector('[data-key="t:2"]'));
-      render(now());
-      if (!(await wait(mine, 900))) return;
-      await type(mine, '/diff');
-    },
-    async (mine) => {
-      const rows = [...base(now()), spawned(now())].map((r) => ({ ...r, state: 'lost' }));
-      Object.assign(state, { rows, selected: 2, input: null, worktree: false, notice: null });
-      render(now());
-      if (!(await wait(mine, 1_400))) return;
-      showKey(keycap, 'ctrl+r');
-      const restored = base(now());
-      for (const r of state.rows) {
-        if (!(await wait(mine, 320))) return;
-        const original = restored.find((o) => o.id === r.id);
-        Object.assign(r, { state: r.id === 1 ? 'done' : 'working', activity: original ? original.activity : 'Reading src/auth/login.test.ts', since: now() });
-        render(now());
-        flash(list.querySelector(`[data-key="t:${r.id}"]`));
-      }
-    },
-  ];
 
   function activate(index) {
     if (index === active) return;
@@ -556,16 +390,12 @@ function mountTour(root) {
     token += 1;
     steps.forEach((s, i) => s.classList.toggle('is-active', i === index));
     dots.forEach((d, i) => d.classList.toggle('is-on', i <= index));
-    scenes[index](token);
+    shots.forEach((shot, i) => shot.classList.toggle('is-on', i === index));
+    press(token, TOUR_KEYS[index]);
   }
 
-  tickers.add((time) => {
-    if (visible) render(time);
-  });
-  screen.classList.add('is-ready');
   whenVisible(root, (isVisible) => {
-    visible = isVisible;
-    if (visible && active < 0) activate(0);
+    if (isVisible && active < 0) activate(0);
   }, '0px');
   if (!('IntersectionObserver' in window)) return;
   const observer = new IntersectionObserver((entries) => {
@@ -574,6 +404,12 @@ function mountTour(root) {
     }
   }, { rootMargin: '-48% 0px -48% 0px' });
   steps.forEach((s) => observer.observe(s));
+}
+
+function mountUsage(root) {
+  root.querySelectorAll('[data-pct]').forEach((fill) => {
+    fill.style.width = `${fill.dataset.pct}%`;
+  });
 }
 
 function mountPlayer(root) {
@@ -647,7 +483,7 @@ function mountFinale(section) {
   const context = canvas.getContext('2d');
   const mascot = section.querySelector('[data-walk]');
   const item = track(section);
-  const cell = 22;
+  const cell = PIXEL_CELL;
   const pink = getComputedStyle(document.documentElement).getPropertyValue('--pink').trim();
   let columns = 0;
   let rowsCount = 0;
@@ -694,6 +530,279 @@ function mountFinale(section) {
   });
 }
 
+function mountTrail(section) {
+  if (REDUCED_MOTION || !FINE_POINTER) return;
+  const canvas = section.querySelector('[data-trail]');
+  const pixels = section.querySelector('[data-pixels]');
+  const context = canvas.getContext('2d');
+  const ink = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim();
+  const cells = new Map();
+  let columns = 0;
+  let last = null;
+  let running = false;
+  layouts.push(() => {
+    const above = Math.ceil(pixels.offsetHeight / PIXEL_CELL) * PIXEL_CELL;
+    canvas.style.top = `${-above}px`;
+    canvas.style.height = `${above + section.offsetHeight}px`;
+    const ratio = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = Math.round(canvas.clientWidth * ratio);
+    canvas.height = Math.round(canvas.clientHeight * ratio);
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    columns = Math.ceil(canvas.clientWidth / PIXEL_CELL);
+    cells.clear();
+  });
+  const stamp = (c, r, now) => {
+    if (c >= 0 && r >= 0 && c < columns) cells.set(r * columns + c, now);
+  };
+  const paint = (x, y, now) => {
+    const c = Math.floor(x / PIXEL_CELL);
+    const r = Math.floor(y / PIXEL_CELL);
+    stamp(c, r, now);
+    for (const [dc, dr] of TRAIL_NEIGHBORS) {
+      if (Math.random() < TRAIL_SPREAD) stamp(c + dc, r + dr, now);
+    }
+  };
+  const draw = (now) => {
+    context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    context.fillStyle = ink;
+    for (const [key, born] of cells) {
+      const life = 1 - (now - born) / TRAIL_FADE_MS;
+      if (life <= 0) {
+        cells.delete(key);
+        continue;
+      }
+      context.globalAlpha = Math.ceil(life * TRAIL_STEPS) / TRAIL_STEPS;
+      context.fillRect((key % columns) * PIXEL_CELL, Math.floor(key / columns) * PIXEL_CELL, PIXEL_CELL, PIXEL_CELL);
+    }
+    context.globalAlpha = 1;
+    if (cells.size) requestAnimationFrame(draw);
+    else running = false;
+  };
+  addEventListener('pointermove', (event) => {
+    if (!columns) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) {
+      last = null;
+      return;
+    }
+    const from = last || { x, y };
+    const steps = Math.min(TRAIL_MAX_STEPS, Math.max(1, Math.ceil(Math.hypot(x - from.x, y - from.y) / (PIXEL_CELL / 2))));
+    const now = performance.now();
+    for (let i = 1; i <= steps; i += 1) paint(lerp(from.x, x, i / steps), lerp(from.y, y, i / steps), now);
+    last = { x, y };
+    if (running) return;
+    running = true;
+    requestAnimationFrame(draw);
+  });
+  document.documentElement.addEventListener('pointerleave', () => {
+    last = null;
+  });
+}
+
+function mountSound() {
+  const Context = window.AudioContext || window.webkitAudioContext;
+  const sounds = { done: (rate) => chimeSamples(CHIME_DONE, rate), spit: spitSamples };
+  const buffers = new Map();
+  let audio = null;
+  const unlock = () => {
+    if (audio || !Context) return;
+    audio = new Context();
+  };
+  ['pointerdown', 'keydown', 'touchend'].forEach((type) => addEventListener(type, unlock, { once: true, passive: true }));
+  return (name) => {
+    if (!audio || audio.state !== 'running') return;
+    if (!buffers.has(name)) {
+      const samples = sounds[name](audio.sampleRate);
+      const buffer = audio.createBuffer(1, samples.length, audio.sampleRate);
+      buffer.copyToChannel(samples, 0);
+      buffers.set(name, buffer);
+    }
+    const source = audio.createBufferSource();
+    source.buffer = buffers.get(name);
+    source.connect(audio.destination);
+    source.start();
+  };
+}
+
+function mountDiver(diver, footer) {
+  if (REDUCED_MOTION) return null;
+  const sprite = diver.querySelector('.kai-sprite');
+  const footerItem = track(footer);
+  const sections = Object.keys(DIVER_MOODS);
+  let size = 192;
+  let top = 64;
+  let side = 1;
+  let x = 0;
+  let y = 0;
+  let jump = null;
+  let mood = 'idle';
+  let dizzy = 0;
+  let lastY = scrollY;
+  let lastTime = performance.now();
+  let settle = 0;
+  const sideX = (which) => (which < 0 ? DIVER_EDGE : viewport.w - size - DIVER_EDGE);
+  const show = () => {
+    const next = dizzy ? 'lost' : mood;
+    if (diver.dataset.mood !== next) diver.dataset.mood = next;
+  };
+  const place = (now) => {
+    let hop = 0;
+    let lean = 0;
+    if (jump) {
+      const t = clamp((now - jump.start) / DIVER_JUMP_MS);
+      x = lerp(jump.from, sideX(side), easeInOut(t));
+      hop = Math.sin(Math.PI * t) * DIVER_HOP;
+      lean = Math.sin(Math.PI * t) * -side * DIVER_TILT;
+      sprite.style.scale = t < 0.12 ? '1.08 0.9' : t > 0.9 ? '1.06 0.92' : '0.94 1.06';
+      if (t >= 1) {
+        jump = null;
+        sprite.style.scale = '1 1';
+      }
+    } else {
+      x = sideX(side);
+    }
+    diver.style.transform = `translate3d(${x}px, ${y - hop}px, 0) rotate(${lean}deg)`;
+  };
+  const leap = () => {
+    if (!jump) return;
+    place(performance.now());
+    if (jump) requestAnimationFrame(leap);
+  };
+  layouts.push(() => {
+    size = diver.offsetWidth;
+    top = topHeight() + DIVER_EDGE;
+    place(performance.now());
+  });
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        mood = DIVER_MOODS[entry.target.id];
+        show();
+        const next = sections.indexOf(entry.target.id) % 2 ? -1 : 1;
+        if (next === side) continue;
+        side = next;
+        const running = Boolean(jump);
+        jump = { from: x, start: performance.now() };
+        if (!running) requestAnimationFrame(leap);
+      }
+    }, { rootMargin: '-50% 0px -50% 0px' });
+    sections.forEach((id) => {
+      const section = document.getElementById(id);
+      if (section) observer.observe(section);
+    });
+  }
+  scrollers.push((scroll) => {
+    const now = performance.now();
+    const delta = scroll - lastY;
+    const speed = Math.abs(delta) / Math.max(1, now - lastTime);
+    lastY = scroll;
+    lastTime = now;
+    if (speed > DIVER_DIZZY_SPEED) {
+      clearTimeout(dizzy);
+      dizzy = setTimeout(() => {
+        dizzy = 0;
+        show();
+      }, DIVER_DIZZY_MS);
+    }
+    show();
+    const progress = clamp(scroll / Math.max(1, footerItem.top - viewport.h));
+    y = top + progress * (viewport.h - top - size - DIVER_EDGE);
+    place(now);
+    diver.classList.toggle('is-on', scroll > viewport.h * 0.6 && scroll < footerItem.top);
+    sprite.style.rotate = `${clamp(delta * 0.4, -DIVER_TILT, DIVER_TILT)}deg`;
+    clearTimeout(settle);
+    settle = setTimeout(() => {
+      sprite.style.rotate = '0deg';
+    }, 140);
+  });
+  return { end: () => ({ x, y: viewport.h - size - DIVER_EDGE, size }) };
+}
+
+function sceneFrame(p, time) {
+  if (p < SCENE_STARTLE) return Math.floor(time / SCENE_IDLE_MS) % SCENE_IDLE_FRAMES;
+  if (p < SCENE_STEPS[0][0]) return SCENE_IDLE_FRAMES + (Math.floor(time / SCENE_SHIVER_MS) % 2);
+  let frame = SCENE_STEPS[0][1];
+  for (const [start, index] of SCENE_STEPS) if (p >= start) frame = index;
+  return frame;
+}
+
+function mountInk(footer, diver, play) {
+  if (!diver) return;
+  footer.classList.add('is-live');
+  const stage = footer.querySelector('[data-ink-stage]');
+  const scene = footer.querySelector('[data-scene]');
+  const item = track(footer);
+  let width = 0;
+  let height = 0;
+  let header = 64;
+  let p = 0;
+  let shown = -1;
+  let visible = false;
+  let spat = false;
+  let rang = false;
+
+  layouts.push(() => {
+    width = stage.clientWidth;
+    height = stage.clientHeight;
+    header = topHeight();
+  });
+
+  const show = (time) => {
+    const frame = sceneFrame(p, time);
+    if (frame === shown) return;
+    shown = frame;
+    scene.style.backgroundPosition = `${(frame / (SCENE_FRAMES - 1)) * 100}% 0`;
+  };
+
+  const loop = (time) => {
+    if (!visible) return;
+    show(time);
+    requestAnimationFrame(loop);
+  };
+  whenVisible(footer, (isVisible) => {
+    const wasVisible = visible;
+    visible = isVisible;
+    if (visible && !wasVisible) requestAnimationFrame(loop);
+  }, '0px');
+
+  scrollers.push((y) => {
+    if (!width) return;
+    p = pinned(item, y, 0);
+    const from = diver.end();
+    const grow = easeInOut(span(p, 0, SCENE_GROW_END));
+    const start = from.size / SCENE_KAI[2];
+    const end = Math.max(width / SCENE_W, height / SCENE_H);
+    const scale = lerp(start, end, grow);
+    const x = lerp(from.x - SCENE_KAI[0] * start, (width - SCENE_W * end) / 2, grow);
+    const top = lerp(from.y - SCENE_KAI[1] * start, Math.min(0, (height - SCENE_H * end) / 2 + header / 2), grow);
+    scene.style.width = `${Math.round(SCENE_W * scale)}px`;
+    scene.style.height = `${Math.round(SCENE_H * scale)}px`;
+    scene.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(top)}px, 0)`;
+    scene.style.opacity = p > 0 ? '1' : '0';
+    show(performance.now());
+    const grab = span(p, SCENE_GRAB, SCENE_GRAB_LENGTH);
+    const shake = grab > 0 && grab < 1 ? Math.sin(grab * 46) * (1 - grab) * SCENE_SHAKE : 0;
+    stage.style.translate = `${shake}px ${shake * -0.6}px`;
+    footer.classList.toggle('is-inked', p >= SCENE_INKED);
+    footer.style.setProperty('--info', String(easeOut(span(p, SCENE_INFO, SCENE_INFO_LENGTH))));
+    if (p >= SCENE_SPIT && !spat) {
+      spat = true;
+      play('spit');
+    }
+    if (p >= SCENE_INFO + SCENE_INFO_LENGTH / 2 && !rang) {
+      rang = true;
+      play('done');
+    }
+    if (p < SCENE_STARTLE) {
+      spat = false;
+      rang = false;
+    }
+  });
+}
+
 mountReveal();
 mountHeader(document.querySelector('[data-top]'));
 mountHero(document.querySelector('.hero'));
@@ -701,9 +810,12 @@ mountKai(document.querySelector('[data-kai]'));
 mountMarquee(document.querySelectorAll('[data-marquee]'));
 mountChaos(document.querySelector('[data-chaos]'));
 mountTour(document.querySelector('[data-tour]'));
+mountUsage(document.querySelector('.usage-visual'));
 mountPlayer(document.querySelector('[data-player]'));
 mountArch(document.querySelector('[data-arch]'));
 mountKeys(document.querySelector('[data-keys]'));
 mountFinale(document.querySelector('[data-finale]'));
+mountTrail(document.querySelector('[data-finale]'));
+mountInk(document.querySelector('[data-ink]'), mountDiver(document.querySelector('[data-diver]'), document.querySelector('[data-ink]')), mountSound());
 startClock();
 startScroll();
