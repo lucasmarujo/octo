@@ -58,4 +58,9 @@ export const ICON_CODE = tabler('<path d="M7 8l-4 4l4 4" /><path d="M17 8l4 4l-4
 export const ICON_DRIVE = tabler('<path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3z" /><path d="M3 15a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3z" /><path d="M7 8v.01" /><path d="M7 16v.01" />');
 export const ICON_BELL = tabler('<path d="M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6" /><path d="M9 17v1a3 3 0 0 0 6 0v-1" />');
 export const ICON_BELL_OFF = tabler('<path d="M9.346 5.353c.21 -.129 .428 -.246 .654 -.353a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3m-1 3h-13a4 4 0 0 0 2 -3v-3a6.996 6.996 0 0 1 1.273 -3.707" /><path d="M9 17v1a3 3 0 0 0 6 0v-1" /><path d="M3 3l18 18" />');
+const PANEL_FRAME = '<path d="M4 6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" />';
+export const ICON_SIDEBAR_COLLAPSE = tabler(`${PANEL_FRAME}<path d="M9 4v16" /><path d="M15 10l-2 2l2 2" />`);
+export const ICON_SIDEBAR_EXPAND = tabler(`${PANEL_FRAME}<path d="M9 4v16" /><path d="M14 10l2 2l-2 2" />`);
+export const ICON_DETAILS_COLLAPSE = tabler(`${PANEL_FRAME}<path d="M15 4v16" /><path d="M9 10l2 2l-2 2" />`);
+export const ICON_DETAILS_EXPAND = tabler(`${PANEL_FRAME}<path d="M15 4v16" /><path d="M10 10l-2 2l2 2" />`);
 export const ICON_EYE = tabler('<path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6" />');

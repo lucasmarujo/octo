@@ -3,12 +3,14 @@ import { $, h, keep, place, storage, svg } from './dom.js';
 import { ask, closeMenu, openMenu } from './dialogs.js';
 import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentsTip, detailsWidth, duration, kindColor, kindMark, label, shortModel, sidebarWidth, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
-import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_PLUS, providerIcon } from './icons.js';
+import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_DETAILS_COLLAPSE, ICON_DETAILS_EXPAND, ICON_PLUS, ICON_SIDEBAR_COLLAPSE, ICON_SIDEBAR_EXPAND, providerIcon } from './icons.js';
 import { agents, inSession, now, selectSession, state, toggleExpanded, toggleUsage } from './state.js';
 import { send } from './transport.js';
 
 const WIDTH_KEY = 'octo.sidebar';
 const DETAILS_WIDTH_KEY = 'octo.details';
+const SIDEBAR_COLLAPSED_KEY = 'octo.sidebarCollapsed';
+const DETAILS_COLLAPSED_KEY = 'octo.detailsCollapsed';
 const WIDTH_STEP = 16;
 const DETAILS_HANDLE_GAP = 8;
 const SUMMARY = [
@@ -259,6 +261,48 @@ function initPanelWidth({ handle, key, property, clamp, fallback, min, max, from
     event.preventDefault();
     apply(width + (event.key === growKey ? WIDTH_STEP : -WIDTH_STEP));
     save();
+  });
+}
+
+function initPanelToggle({ button, key, name, collapseText, expandText, collapseIcon, expandIcon, onToggle }) {
+  let collapsed = storage.get(key) === 'on';
+  const paint = () => {
+    const text = collapsed ? expandText : collapseText;
+    document.documentElement.dataset[name] = collapsed ? 'collapsed' : 'open';
+    button.setAttribute('aria-expanded', String(!collapsed));
+    button.setAttribute('aria-label', text);
+    button.title = text;
+    button.replaceChildren(svg(collapsed ? expandIcon : collapseIcon));
+  };
+  paint();
+  button.addEventListener('click', () => {
+    collapsed = !collapsed;
+    storage.set(key, collapsed ? 'on' : null);
+    paint();
+    onToggle();
+  });
+}
+
+export function initPanelToggles(onToggle) {
+  initPanelToggle({
+    button: $('sidebar-toggle'),
+    key: SIDEBAR_COLLAPSED_KEY,
+    name: 'sidebar',
+    collapseText: t('Collapse the sidebar'),
+    expandText: t('Expand the sidebar'),
+    collapseIcon: ICON_SIDEBAR_COLLAPSE,
+    expandIcon: ICON_SIDEBAR_EXPAND,
+    onToggle,
+  });
+  initPanelToggle({
+    button: $('details-toggle'),
+    key: DETAILS_COLLAPSED_KEY,
+    name: 'details',
+    collapseText: t('Collapse the agent panel'),
+    expandText: t('Expand the agent panel'),
+    collapseIcon: ICON_DETAILS_COLLAPSE,
+    expandIcon: ICON_DETAILS_EXPAND,
+    onToggle,
   });
 }
 

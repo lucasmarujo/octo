@@ -17,7 +17,7 @@ import { initTooltips } from './motion.js';
 import { renderList, tickList } from './list.js';
 import { openPairing, watchPhone } from './pair.js';
 import { applyTheme, initSound, renderSettings, setAgentOpener, watchInstalls } from './settings.js';
-import { initDetailsWidth, initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
+import { initDetailsWidth, initPanelToggles, initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
@@ -540,6 +540,9 @@ function start() {
   initWindow();
   initSidebarWidth();
   initDetailsWidth();
+  initPanelToggles(() => {
+    if (watching()) terminal.focus();
+  });
   initAgentDrag();
   initTerminal();
   initComposer();

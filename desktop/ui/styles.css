@@ -600,7 +600,7 @@ h1, p { margin: 0; }
 .tab:hover .tab-close, .tab.active .tab-close { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
 .tab .tab-close:hover { background: var(--color-border); color: var(--color-text); }
 
-.agent-view { display: flex; flex-direction: column; gap: 16px; flex: 1; min-height: 0; padding: 20px 24px 14px; }
+.agent-view { position: relative; display: flex; flex-direction: column; gap: 16px; flex: 1; min-height: 0; padding: 20px 24px 14px; }
 .agent-head { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-shrink: 0; }
 .agent-heading { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
 .agent-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -632,7 +632,7 @@ h1, p { margin: 0; }
 .detail-actions .button { flex: 1; justify-content: center; }
 .detail-note { font-size: var(--text-xs); line-height: 16px; color: var(--color-text-faint); }
 
-.tab-status { display: flex; align-items: center; gap: 16px; height: 20px; flex-shrink: 0; font-size: var(--text-sm); }
+.tab-status { display: flex; align-items: center; gap: 16px; height: 20px; flex-shrink: 0; padding-right: 40px; font-size: var(--text-sm); }
 .status-alert { display: inline-flex; align-items: center; gap: 8px; color: var(--color-waiting); }
 .status-alert .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-waiting); }
 .status-done { display: inline-flex; align-items: center; gap: 8px; color: var(--color-done); }
@@ -660,7 +660,14 @@ h1, p { margin: 0; }
 
 .connecting { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; flex: 1; color: var(--color-text-muted); }
 
-.sidebar-footer { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.sidebar-footer { display: flex; align-items: center; gap: 4px; flex-shrink: 0; position: sticky; bottom: 0; background: var(--color-bg); box-shadow: 0 16px 0 var(--color-bg); }
+.sidebar-toggle { margin-left: auto; }
+.details-toggle { position: absolute; right: 24px; bottom: 16px; }
+:root[data-sidebar="collapsed"] .sidebar { width: 56px; }
+:root[data-sidebar="collapsed"] .brand, :root[data-sidebar="collapsed"] .sessions, :root[data-sidebar="collapsed"] .usage, :root[data-sidebar="collapsed"] #sidebar-resize { display: none; }
+:root[data-sidebar="collapsed"] .sidebar-footer { flex-direction: column; }
+:root[data-sidebar="collapsed"] .sidebar-toggle { margin-left: 0; }
+:root[data-details="collapsed"] .details, :root[data-details="collapsed"] .details-resize { display: none; }
 .phone-status.connected { color: var(--color-done); background: color-mix(in srgb, var(--color-done) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-done) 70%, transparent); }
 .phone-status[data-state="failed"] { box-shadow: inset 0 0 0 1px var(--color-lost); }
 .dialog.pairing { width: min(760px, 92vw); }

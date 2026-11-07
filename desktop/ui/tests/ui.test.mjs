@@ -1292,7 +1292,7 @@ test('the phone button shows a phone and a green outline while a phone is connec
 test('the phone button is a mini icon to the right of settings, and its status stays on the icon', async () => {
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
   const footer = html.match(/<footer class="sidebar-footer">([\s\S]*?)<\/footer>/)[1];
-  assert.deepEqual([...footer.matchAll(/<button id="([\w-]+)" class="footer-icon[ "]/g)].map((match) => match[1]), ['open-help', 'open-settings', 'pair', 'sound']);
+  assert.deepEqual([...footer.matchAll(/<button id="([\w-]+)" class="footer-icon[ "]/g)].map((match) => match[1]), ['open-help', 'open-settings', 'pair', 'sound', 'sidebar-toggle']);
   assert.match(footer, /<button id="pair" [^>]*aria-label="Pair phone"[^>]*><\/button>/, 'no text child, and a name before the first status arrives');
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /\$\('pair'\)\.replaceChildren\(svg\(ICON_PAIR\)\);/, 'the icon alone');
   const pair = readFileSync(join(REPO, 'desktop/ui/js/pair.js'), 'utf8');
@@ -1548,6 +1548,21 @@ test('a kept node with a button held down survives a new signature until the but
 test('an agent on screen only stays silent while the window has the focus', () => {
   const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
   assert.match(main, /detectAlerts\(alerting\.previous, agents, watching\(\) && document\.hasFocus\(\) \? state\.active : null,/, 'with the app in the background the person is not watching it');
+});
+
+test('both side panels collapse from a button at the same height, and remember it', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  const sidebarBottom = Number(css.match(/\.sidebar \{[^}]*padding: \d+px \d+px (\d+)px;/)[1]);
+  const detailsBottom = Number(css.match(/\.details-toggle \{ position: absolute; right: \d+px; bottom: (\d+)px; \}/)[1]);
+  assert.equal(detailsBottom, sidebarBottom, 'one button mirrors the other');
+  assert.match(css, /\.sidebar-footer \{[^}]*position: sticky; bottom: 0;/, 'a long list of sessions never pushes the button away');
+  assert.match(html, /<footer id="tab-status" class="tab-status"><\/footer>\s*<button id="details-toggle"/, 'outside the panel, so it is still there to expand it');
+  assert.match(css, /:root\[data-details="collapsed"\] \.details, :root\[data-details="collapsed"\] \.details-resize \{ display: none; \}/);
+  assert.match(css, /:root\[data-sidebar="collapsed"\] \.sidebar \{ width: 56px; \}/);
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /storage\.set\(key, collapsed \? 'on' : null\);/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initPanelToggles\(\(\) => \{\n\s*if \(watching\(\)\) terminal\.focus\(\);/, 'the keyboard goes back to the terminal');
 });
 
 test('the bell shows off whenever no sound would play, and a click from off makes sound play', async () => {
