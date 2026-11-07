@@ -166,7 +166,8 @@ mod tests {
     #[test]
     fn the_dock_bounces_with_every_notification_until_the_app_is_opened() {
         let code = include_str!("alerts.rs").split("#[cfg(test)]").next().unwrap();
-        let notified = code.split("if let Some(body) = delivery.notification {").nth(1).unwrap().split('}').next().unwrap();
+        let notified =
+            code.split("if let Some(body) = delivery.notification {").nth(1).unwrap().split('}').next().unwrap();
         assert!(notified.contains("bounce_in_the_dock(&app);"), "alerts turned off in Settings do not bounce either");
         assert!(code.contains("UserAttentionType::Critical"), "Informational bounces only once");
         let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();

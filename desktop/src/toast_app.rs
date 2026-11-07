@@ -17,7 +17,14 @@ const ICON: &[u8] = include_bytes!("../icons/icon.png");
 
 #[link(name = "advapi32")]
 unsafe extern "system" {
-    fn RegSetKeyValueW(key: isize, sub_key: *const u16, value_name: *const u16, kind: u32, data: *const c_void, size: u32) -> i32;
+    fn RegSetKeyValueW(
+        key: isize,
+        sub_key: *const u16,
+        value_name: *const u16,
+        kind: u32,
+        data: *const c_void,
+        size: u32,
+    ) -> i32;
 }
 
 fn write_icon(folder: &Path) -> Option<PathBuf> {
@@ -52,7 +59,11 @@ mod tests {
     use super::*;
 
     fn dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("octo-toast-app-{name}-{}-{}", std::process::id(), orkai::util::now_ms()));
+        let dir = std::env::temp_dir().join(format!(
+            "octo-toast-app-{name}-{}-{}",
+            std::process::id(),
+            orkai::util::now_ms()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
