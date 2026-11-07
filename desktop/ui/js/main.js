@@ -274,7 +274,7 @@ function markSeenWhileWatching() {
 }
 
 function raiseAlerts(agents) {
-  const { alerts, states } = detectAlerts(alerting.previous, agents, watching() ? state.active : null, Date.now(), alerting.last);
+  const { alerts, states } = detectAlerts(alerting.previous, agents, watching() && document.hasFocus() ? state.active : null, Date.now(), alerting.last);
   alerting.previous = states;
   if (alerts.length) {
     for (const alert of alerts) toast(notice(alert).text, notice(alert).tone);

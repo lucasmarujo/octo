@@ -10,6 +10,8 @@ mod settings;
 #[cfg(any(windows, target_os = "macos"))]
 mod shell_icon;
 mod term;
+#[cfg(windows)]
+mod toast_app;
 mod updates;
 #[cfg(target_os = "macos")]
 mod window;

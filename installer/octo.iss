@@ -57,6 +57,9 @@ Name: "{autodesktop}\Octo"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,Octo}"; Flags: nowait postinstall skipifsilent
 
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\AppUserModelId\dev.marujo.octo"; Flags: uninsdeletekey
+
 [UninstallDelete]
 Type: files; Name: "{app}\{#AppExe}.old-*"
 Type: files; Name: "{app}\.{#AppExe}.update-*"

@@ -1545,6 +1545,11 @@ test('a kept node with a button held down survives a new signature until the but
   assert.equal(built.length, 2);
 });
 
+test('an agent on screen only stays silent while the window has the focus', () => {
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /detectAlerts\(alerting\.previous, agents, watching\(\) && document\.hasFocus\(\) \? state\.active : null,/, 'with the app in the background the person is not watching it');
+});
+
 test('the bell shows off whenever no sound would play, and a click from off makes sound play', async () => {
   const { RESTORED_VOLUME, soundFlip, soundOn } = await import('../js/format.js');
   const on = { notify: true, notify_sound: true, notify_volume: 70 };

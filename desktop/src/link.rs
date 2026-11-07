@@ -144,6 +144,8 @@ pub fn run() -> io::Result<()> {
     let hub = Hub::open(&home)?;
     #[cfg(any(windows, target_os = "macos"))]
     crate::shell_icon::refresh(&home);
+    #[cfg(windows)]
+    crate::toast_app::register(&home);
     pair::keep_alive(Arc::clone(&hub));
     recover::on_launch(Arc::clone(&hub));
     let link = Link::new(hub);

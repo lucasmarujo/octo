@@ -11,6 +11,8 @@ use tauri_plugin_notification::NotificationExt;
 use crate::link::Link;
 
 const NOTIFICATION_TITLE: &str = "Octo";
+#[cfg(target_os = "macos")]
+const MAIN_WINDOW: &str = "main";
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +75,17 @@ pub fn plan(config: &Config, alerts: &[Alert], language: Language) -> Delivery {
     Delivery { chime, notification: summary(alerts, language) }
 }
 
+#[cfg(target_os = "macos")]
+fn bounce_in_the_dock(app: &AppHandle) {
+    use tauri::{Manager, UserAttentionType};
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.request_user_attention(Some(UserAttentionType::Critical));
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn bounce_in_the_dock(_app: &AppHandle) {}
+
 #[tauri::command(async)]
 pub fn alert(app: AppHandle, link: State<'_, Link>, alerts: Vec<AlertView>, language: Option<Language>) {
     let hub = link.hub();
@@ -86,6 +99,7 @@ pub fn alert(app: AppHandle, link: State<'_, Link>, alerts: Vec<AlertView>, lang
     }
     if let Some(body) = delivery.notification {
         let _ = app.notification().builder().title(NOTIFICATION_TITLE).body(body).show();
+        bounce_in_the_dock(&app);
     }
     let notifier = Notifier::start(launcher.config());
     for alert in alerts {
@@ -147,6 +161,16 @@ mod tests {
         assert!(!code.contains("terminal_sequence"), "the window has no bell to fall back to");
         assert!(!code.contains(".sound("), "a notification without a sound name is silent on Windows and macOS");
         assert!(code.contains("notifier.send(alert)"), "the notify command runs whatever the sound does");
+    }
+
+    #[test]
+    fn the_dock_bounces_with_every_notification_until_the_app_is_opened() {
+        let code = include_str!("alerts.rs").split("#[cfg(test)]").next().unwrap();
+        let notified = code.split("if let Some(body) = delivery.notification {").nth(1).unwrap().split('}').next().unwrap();
+        assert!(notified.contains("bounce_in_the_dock(&app);"), "alerts turned off in Settings do not bounce either");
+        assert!(code.contains("UserAttentionType::Critical"), "Informational bounces only once");
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(config["app"]["windows"][0]["label"], "main");
     }
 
     #[test]
