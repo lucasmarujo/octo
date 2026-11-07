@@ -59,7 +59,7 @@ export function tools(agent) {
   const button = alive(agent)
     ? h('button', { class: 'icon-button danger', type: 'button', title: t('Stop'), onclick: act(stopAgent) }, svg(ICON_STOP))
     : h('button', { class: 'icon-button danger', type: 'button', title: t('Remove'), onclick: act(removeAgent) }, svg(ICON_TRASH));
-  return h('div', { class: 'card-tools' }, button);
+  return h('div', { class: 'card-tools', onclick: (event) => event.stopPropagation() }, button);
 }
 
 function card(agent, handlers) {

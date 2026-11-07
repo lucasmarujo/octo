@@ -1516,6 +1516,35 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.match(rust('src/pwa/actions.rs'), /PhoneMsg::MoveAgent \{ agent, session \} => move_agent\(hub, agent, &session, reply\)/);
 });
 
+test('the tools of a card take the click on the whole button, above the time that fades under them', async () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.card-tools \{ position: absolute; z-index: 1;/, 'a faded time is a stacking context that comes later in the card and would take the click');
+  assert.doesNotMatch(css.match(/\.card-tools \{[^}]*\}/)[0], /transform/, 'the button never slides under the mouse as the card is entered');
+  assert.match(css, /\.card:has\(\.card-tools:active\), \.row:has\(\.card-tools:active\), \.card-tools \.icon-button:active \{ transform: none; \}/, 'pressing never shrinks the button from under the mouse');
+  const board = readFileSync(join(REPO, 'desktop/ui/js/board.js'), 'utf8');
+  assert.match(board, /class: 'card-tools', onclick: \(event\) => event\.stopPropagation\(\)/, 'a near miss never opens the agent');
+});
+
+
+test('a kept node with a button held down survives a new signature until the button is let go', async () => {
+  const { keep } = await import('../js/dom.js');
+  let held = false;
+  const built = [];
+  const build = () => {
+    const node = { querySelector: (selector) => (selector === 'button:active' && held ? {} : null) };
+    built.push(node);
+    return node;
+  };
+  const cache = new Map();
+  const first = keep(cache, 1, 'a', build);
+  assert.equal(keep(cache, 1, 'a', build), first);
+  held = true;
+  assert.equal(keep(cache, 1, 'b', build), first, 'the card under a pressed button is not swapped mid-click');
+  held = false;
+  assert.notEqual(keep(cache, 1, 'b', build), first, 'and it catches up once released');
+  assert.equal(built.length, 2);
+});
+
 test('the bell shows off whenever no sound would play, and a click from off makes sound play', async () => {
   const { RESTORED_VOLUME, soundFlip, soundOn } = await import('../js/format.js');
   const on = { notify: true, notify_sound: true, notify_volume: 70 };

@@ -21,7 +21,7 @@ export function h(tag, props, ...children) {
 
 export function keep(cache, key, signature, build) {
   const hit = cache.get(key);
-  if (hit && hit.signature === signature) return hit.node;
+  if (hit && (hit.signature === signature || hit.node.querySelector('button:active'))) return hit.node;
   const node = build();
   cache.set(key, { signature, node });
   return node;
