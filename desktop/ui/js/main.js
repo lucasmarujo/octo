@@ -5,13 +5,13 @@ import { initComposer, renderComposer, renderPalette, setCommandRunner, toggleWo
 import { renameSession, runCommand } from './commands.js';
 import { closeMenu, confirm, menuShown, showCompare, showDiff, showTests } from './dialogs.js';
 import { showFolderSearch, showFolders } from './folders.js';
-import { $, h, svg } from './dom.js';
+import { $, svg } from './dom.js';
 import { initAgentDrag } from './drag.js';
-import { SPINNER, alive, glyph } from './format.js';
+import { OVERVIEW_TAB, SPINNER, alive, tabAfterClosing } from './format.js';
 import { deactivateGrid, gridAgents, peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
 import { renderHelp } from './help.js';
 import { applyStatic, hubText, language, pageToReopen, t } from './i18n.js';
-import { ICON_HELP, ICON_OVERVIEW, ICON_PAIR, ICON_SETTINGS } from './icons.js';
+import { ICON_HELP, ICON_PAIR, ICON_SETTINGS } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
 import { initTooltips } from './motion.js';
 import { renderList, tickList } from './list.js';
@@ -19,6 +19,7 @@ import { openPairing, watchPhone } from './pair.js';
 import { applyTheme, initSound, renderSettings, setAgentOpener, watchInstalls } from './settings.js';
 import { initDetailsWidth, initPanelToggles, initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
+import { initTabs, renderTabs, tabShown } from './tabs.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
 import { channel, connect, currentWindow, invoke, send } from './transport.js';
@@ -61,68 +62,21 @@ const isPage = (id) => Object.hasOwn(PAGES, id);
 const watching = () => state.active !== null && !isPage(state.active);
 
 function settleTabs() {
-  const kept = state.tabs.filter((id) => isPage(id) || findAgent(id));
+  const kept = state.tabs.filter((id) => id === OVERVIEW_TAB || isPage(id) || findAgent(id));
   if (kept.length !== state.tabs.length) {
+    const open = new Set(kept);
     state.tabs = kept;
+    state.pinned = new Set([...state.pinned].filter((id) => open.has(id)));
     saveTabs();
   }
-  if (watching() && !findAgent(state.active)) showOverview();
+  if (watching() && !findAgent(state.active)) openTab(tabAfterClosing(state.tabs, 0));
+  else if (state.active === null && !state.tabs.includes(OVERVIEW_TAB)) openTab(tabAfterClosing(state.tabs, 0));
 }
 
 function onSelect(name) {
   selectSession(name);
   if (state.active !== null) showOverview();
   else onFilter();
-}
-
-function closer(id, name) {
-  return h(
-    'span',
-    {
-      class: 'tab-close',
-      role: 'button',
-      'aria-label': t('Close {name}', { name }),
-      onclick: (event) => {
-        event.stopPropagation();
-        closeTab(id);
-      },
-    },
-    '×',
-  );
-}
-
-function tabButton(id) {
-  const classes = `tab${state.active === id ? ' active' : ''}`;
-  if (isPage(id)) {
-    const page = PAGES[id];
-    return h('div', { class: classes, role: 'button', tabindex: '0', onclick: () => openPage(id) }, svg(page.icon), h('span', { class: 'tab-label' }, page.label), closer(id, page.label));
-  }
-  const agent = findAgent(id);
-  if (!agent) return null;
-  const mark = glyph(agent, state.frame);
-  return h(
-    'div',
-    { class: classes, role: 'button', tabindex: '0', onclick: () => openAgent(agent) },
-    h('span', { class: `tab-glyph ${mark.tone}`, dataset: mark.spin ? { spin: '1' } : {} }, mark.text),
-    h('span', { class: 'label-mono' }, agent.name),
-    closer(id, agent.name),
-  );
-}
-
-function renderTabs() {
-  const host = $('tabs');
-  const signature = JSON.stringify([state.active, state.tabs.map((id) => {
-    if (isPage(id)) return id;
-    const agent = findAgent(id);
-    return agent ? [id, agent.name, agent.state, agent.kind, agent.starting] : null;
-  })]);
-  if (host.dataset.signature === signature) return;
-  host.dataset.signature = signature;
-  for (const page of Object.keys(PAGES)) $(`open-${page}`).setAttribute('aria-current', String(state.active === page));
-  host.replaceChildren(
-    h('button', { class: `tab fixed${state.active === null ? ' active' : ''}`, type: 'button', onclick: showOverview }, svg(ICON_OVERVIEW), t('Overview')),
-    ...state.tabs.map(tabButton).filter(Boolean),
-  );
 }
 
 function renderMascot() {
@@ -216,7 +170,8 @@ function openPage(name) {
 }
 
 function openTab(id) {
-  if (isPage(id)) openPage(id);
+  if (id === OVERVIEW_TAB) showOverview();
+  else if (isPage(id)) openPage(id);
   else openAgent(findAgent(id));
 }
 
@@ -245,6 +200,10 @@ function openAgent(agent) {
 }
 
 function showOverview() {
+  if (!state.tabs.includes(OVERVIEW_TAB)) {
+    state.tabs.push(OVERVIEW_TAB);
+    saveTabs();
+  }
   leaveAgent();
   state.active = null;
   show('overview');
@@ -253,9 +212,12 @@ function showOverview() {
 }
 
 function closeTab(id) {
+  const shown = tabShown(id);
+  const at = state.tabs.indexOf(id);
   state.tabs = state.tabs.filter((tab) => tab !== id);
+  state.pinned.delete(id);
   saveTabs();
-  if (state.active === id) showOverview();
+  if (shown) openTab(tabAfterClosing(state.tabs, at));
   else renderTabs();
 }
 
@@ -401,7 +363,7 @@ function appShortcut(event) {
     return true;
   }
   if (event.altKey && !event.ctrlKey && /^[1-9]$/.test(event.key)) {
-    const id = state.tabs[Number(event.key) - 1];
+    const id = state.tabs.filter((tab) => tab !== OVERVIEW_TAB)[Number(event.key) - 1];
     if (Number(event.key) <= MAX_TAB_KEY && id !== undefined) openTab(id);
     return true;
   }
@@ -512,7 +474,7 @@ function initWindow() {
 function spin() {
   state.frame += 1;
   const text = SPINNER[state.frame % SPINNER.length];
-  for (const node of document.querySelectorAll('.tabs [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin], #dialog [data-spin], #details [data-spin]')) node.textContent = text;
+  for (const node of document.querySelectorAll('.tabs [data-spin], #menu [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin], #dialog [data-spin], #details [data-spin]')) node.textContent = text;
   spinBoard();
   spinSidebar();
 }
@@ -543,6 +505,7 @@ function start() {
   initPanelToggles(() => {
     if (watching()) terminal.focus();
   });
+  initTabs({ pages: PAGES, open: openTab, close: closeTab });
   initAgentDrag();
   initTerminal();
   initComposer();

@@ -467,7 +467,7 @@ test('the help says the same in English and in Portuguese, and English comes fir
   assert.equal(pt.legend.length, en.legend.length);
   assert.deepEqual(pt.legend.map(([mark]) => mark), en.legend.map(([mark]) => mark));
   assert.equal(pt.groups.length, en.groups.length);
-  const translated = { '!command': '!comando', 'ctrl click': 'ctrl clique', drag: 'arrastar' };
+  const translated = { '!command': '!comando', 'ctrl click': 'ctrl clique', drag: 'arrastar', 'drag a tab': 'arrastar uma aba', 'right click a tab': 'clique direito na aba' };
   en.groups.forEach(([, rows], index) => {
     const keys = pt.groups[index][1].map(([key]) => key);
     assert.deepEqual(keys, rows.map(([key]) => translated[key] || key));
@@ -1293,7 +1293,7 @@ test('the phone button is a mini icon to the right of settings, and its status s
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
   const footer = html.match(/<footer class="sidebar-footer">([\s\S]*?)<\/footer>/)[1];
   assert.deepEqual([...footer.matchAll(/<button id="([\w-]+)" class="footer-icon[ "]/g)].map((match) => match[1]), ['open-help', 'open-settings', 'pair', 'sound', 'sidebar-toggle']);
-  assert.match(footer, /<button id="pair" [^>]*aria-label="Pair phone"[^>]*><\/button>/, 'no text child, and a name before the first status arrives');
+  assert.match(footer, /<button id="pair"[^>]*aria-label="Pair phone"[^>]*><\/button>/, 'no text child, and a name before the first status arrives');
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /\$\('pair'\)\.replaceChildren\(svg\(ICON_PAIR\)\);/, 'the icon alone');
   const pair = readFileSync(join(REPO, 'desktop/ui/js/pair.js'), 'utf8');
   assert.doesNotMatch(pair, /phone-text|ICON_CHEVRON_RIGHT/, 'no text and no chevron come back with the status');
@@ -1516,6 +1516,11 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.match(rust('src/pwa/actions.rs'), /PhoneMsg::MoveAgent \{ agent, session \} => move_agent\(hub, agent, &session, reply\)/);
 });
 
+test('an agent on screen only stays silent while the window has the focus', () => {
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /detectAlerts\(alerting\.previous, agents, watching\(\) && document\.hasFocus\(\) \? state\.active : null,/, 'with the app in the background the person is not watching it');
+});
+
 test('the tools of a card take the click on the whole button, above the time that fades under them', async () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.match(css, /\.card-tools \{ position: absolute; z-index: 1;/, 'a faded time is a stacking context that comes later in the card and would take the click');
@@ -1524,7 +1529,6 @@ test('the tools of a card take the click on the whole button, above the time tha
   const board = readFileSync(join(REPO, 'desktop/ui/js/board.js'), 'utf8');
   assert.match(board, /class: 'card-tools', onclick: \(event\) => event\.stopPropagation\(\)/, 'a near miss never opens the agent');
 });
-
 
 test('a kept node with a button held down survives a new signature until the button is let go', async () => {
   const { keep } = await import('../js/dom.js');
@@ -1545,9 +1549,72 @@ test('a kept node with a button held down survives a new signature until the but
   assert.equal(built.length, 2);
 });
 
-test('an agent on screen only stays silent while the window has the focus', () => {
+test('pinned tabs stay together on the left and a tab only moves inside its own group', async () => {
+  const { arrangeTabs, moveTab, tabRange } = await import('../js/format.js');
+  const pinned = new Set(['overview', 3]);
+  assert.deepEqual(arrangeTabs([1, 'overview', 2, 3], pinned), ['overview', 3, 1, 2]);
+  assert.deepEqual(arrangeTabs([1, 2], new Set()), [1, 2]);
+  const tabs = ['overview', 3, 1, 2, 'settings'];
+  assert.deepEqual(tabRange(tabs, pinned, 3), { low: 0, high: 1 });
+  assert.deepEqual(tabRange(tabs, pinned, 2), { low: 2, high: 4 });
+  assert.deepEqual(moveTab(tabs, pinned, 2, 4), ['overview', 3, 1, 'settings', 2]);
+  assert.deepEqual(moveTab(tabs, pinned, 3, 0), [3, 'overview', 1, 2, 'settings']);
+  assert.deepEqual(moveTab(tabs, pinned, 'settings', 0), ['overview', 3, 'settings', 1, 2], 'stops at the first free place');
+  assert.deepEqual(moveTab(tabs, pinned, 'overview', 4), [3, 'overview', 1, 2, 'settings'], 'stops at the last pinned place');
+  assert.equal(moveTab(tabs, pinned, 1, 2), tabs, 'no move, same list');
+  assert.equal(moveTab(tabs, pinned, 99, 0), tabs, 'a tab that is not open');
+});
+
+test('pinning moves a tab to the end of the pinned group and unpinning to the start of the others', async () => {
+  const { arrangeTabs } = await import('../js/format.js');
+  assert.deepEqual(arrangeTabs(['overview', 1, 2, 3], new Set(['overview', 2])), ['overview', 2, 1, 3]);
+  assert.deepEqual(arrangeTabs(['overview', 2, 1, 3], new Set([2])), [2, 'overview', 1, 3]);
+});
+
+test('closing the tab on screen goes to the overview, or to its neighbour when the overview was closed too', async () => {
+  const { tabAfterClosing } = await import('../js/format.js');
+  assert.equal(tabAfterClosing(['overview', 1, 2], 2), 'overview', 'as it always did');
+  assert.equal(tabAfterClosing([1, 2, 3], 1), 2, 'the tab that took its place');
+  assert.equal(tabAfterClosing([1, 2], 2), 2, 'the last one closed, so the one before it');
+  assert.equal(tabAfterClosing([], 0), 'overview', 'nothing left: the overview comes back');
+});
+
+test('the tabs of older versions gain a pinned overview once, and a saved choice is respected', async (context) => {
+  const stored = new Map();
+  globalThis.window = { localStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: (key) => stored.delete(key) } };
+  context.after(() => {
+    delete globalThis.window;
+  });
+  stored.set('orkai.tabs', JSON.stringify([7, 'settings']));
+  const upgraded = await import('../js/state.js?tabs=upgraded');
+  assert.deepEqual(upgraded.state.tabs, ['overview', 7, 'settings']);
+  assert.deepEqual([...upgraded.state.pinned], ['overview']);
+  upgraded.pinTab('overview', false);
+  assert.deepEqual(JSON.parse(stored.get('octo.pinnedTabs')), []);
+  const unpinned = await import('../js/state.js?tabs=unpinned');
+  assert.deepEqual([...unpinned.state.pinned], [], 'the pin taken off stays off after a restart');
+  stored.set('orkai.tabs', JSON.stringify([7, 'overview', 8]));
+  stored.set('octo.pinnedTabs', JSON.stringify([8]));
+  const saved = await import('../js/state.js?tabs=saved');
+  assert.deepEqual(saved.state.tabs, [8, 7, 'overview'], 'pinned first whatever was stored');
+  stored.set('orkai.tabs', JSON.stringify([7]));
+  stored.set('octo.pinnedTabs', JSON.stringify([]));
+  const closed = await import('../js/state.js?tabs=closed');
+  assert.deepEqual(closed.state.tabs, [7], 'a closed overview stays closed');
+});
+
+test('the tabs keep their shortcuts, drag inside the strip and can be chosen from the menu', () => {
   const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
-  assert.match(main, /detectAlerts\(alerting\.previous, agents, watching\(\) && document\.hasFocus\(\) \? state\.active : null,/, 'with the app in the background the person is not watching it');
+  assert.match(main, /state\.tabs\.filter\(\(tab\) => tab !== OVERVIEW_TAB\)\[Number\(event\.key\) - 1\]/, 'alt 1 is still the first tab that is not the overview, ctrl ] is the overview');
+  assert.match(main, /function showOverview\(\) \{\n\s*if \(!state\.tabs\.includes\(OVERVIEW_TAB\)\)/, 'every way back to the overview brings its tab back');
+  const drag = readFileSync(join(REPO, 'desktop/ui/js/drag.js'), 'utf8');
+  assert.match(drag, /const TAB_CONTROLS = '\.tab-close, \.tab-pin';/, 'the buttons of a tab never start a drag');
+  assert.match(drag, /state\.tabs = tabMoving\.before;/, 'a drag called off puts the order back');
+  const tabs = readFileSync(join(REPO, 'desktop/ui/js/tabs.js'), 'utf8');
+  assert.match(tabs, /role: 'menuitemcheckbox', onclick: \(\) => setTabOpen\(id, !state\.tabs\.includes\(id\)\)/);
+  assert.match(tabs, /oncontextmenu: \(event\) => tabMenu\(event, id\)/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.tab-rows \{[^}]*max-height: calc\(100vh - 72px\); overflow-y: auto;/, 'many agents scroll inside the menu');
 });
 
 test('both side panels collapse from a button at the same height, and remember it', () => {

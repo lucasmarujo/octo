@@ -17,7 +17,7 @@ export const HELP = {
     groups: [
       ['Launching', [['enter', 'Launch the agent'], ['shift enter', 'New line in the task'], ['ctrl ↑', 'Tasks you already sent'], ['tab', 'Change who runs it'], ['ctrl L', 'Change the folder'], ['ctrl T', 'One worktree per agent'], ['/', 'Commands and skills'], ['!command', 'Run it in a new terminal']]],
       ['Agents', [['alt N', 'Open who needs you'], ['ctrl ]', 'Back to the overview'], ['alt 1…9', 'Jump to an open tab'], ['ctrl E', 'Rename the agent'], ['delete', 'Stop and remove it'], ['ctrl R', 'Recover interrupted'], ['ctrl P', 'Pair your phone'], ['ctrl click', 'Open a link in the terminal']]],
-      ['Sessions & app', [['ctrl N', 'New session'], ['alt ↑↓', 'Switch session'], ['drag', 'Move an agent to a session, it keeps working'], ['F1', 'This screen'], ['ctrl Q', 'Quit, agents keep going']]],
+      ['Sessions & app', [['ctrl N', 'New session'], ['alt ↑↓', 'Switch session'], ['drag', 'Move an agent to a session, it keeps working'], ['drag a tab', 'Change the order of the tabs'], ['right click a tab', 'Pin, move or close it'], ['F1', 'This screen'], ['ctrl Q', 'Quit, agents keep going']]],
     ],
     states: 'States',
     legend: [
@@ -43,7 +43,7 @@ export const HELP = {
     groups: [
       ['Para lançar', [['enter', 'Lança o agente'], ['shift enter', 'Nova linha na tarefa'], ['ctrl ↑', 'Tarefas que você já enviou'], ['tab', 'Troca quem roda'], ['ctrl L', 'Troca a pasta'], ['ctrl T', 'Um worktree por agente'], ['/', 'Comandos e skills'], ['!comando', 'Roda num terminal novo']]],
       ['Agentes', [['alt N', 'Abre quem precisa de você'], ['ctrl ]', 'Volta para a visão geral'], ['alt 1…9', 'Pula para uma aba aberta'], ['ctrl E', 'Renomeia o agente'], ['delete', 'Para e remove o agente'], ['ctrl R', 'Recupera os interrompidos'], ['ctrl P', 'Pareia o celular'], ['ctrl clique', 'Abre um link no terminal']]],
-      ['Sessões e app', [['ctrl N', 'Nova sessão'], ['alt ↑↓', 'Troca de sessão'], ['arrastar', 'Move um agente para uma sessão, ele continua trabalhando'], ['F1', 'Esta tela'], ['ctrl Q', 'Sai, os agentes continuam']]],
+      ['Sessões e app', [['ctrl N', 'Nova sessão'], ['alt ↑↓', 'Troca de sessão'], ['arrastar', 'Move um agente para uma sessão, ele continua trabalhando'], ['arrastar uma aba', 'Muda a ordem das abas'], ['clique direito na aba', 'Fixa, move ou fecha'], ['F1', 'Esta tela'], ['ctrl Q', 'Sai, os agentes continuam']]],
     ],
     states: 'Estados',
     legend: [

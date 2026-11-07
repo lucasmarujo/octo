@@ -1,5 +1,5 @@
 import { storage } from './dom.js';
-import { DEFAULT_GRID_SIZE, GRID_SIZES } from './format.js';
+import { DEFAULT_GRID_SIZE, GRID_SIZES, OVERVIEW_TAB, arrangeTabs } from './format.js';
 
 const SESSION_KEY = 'orkai.session';
 const EXPANDED_KEY = 'orkai.expanded';
@@ -9,12 +9,17 @@ const WORKTREE_KEY = 'orkai.worktree';
 const BYPASS_KEY = 'orkai.bypass';
 const REMOTE_KEY = 'orkai.remote';
 const TABS_KEY = 'orkai.tabs';
+const PINNED_TABS_KEY = 'octo.pinnedTabs';
 const VIEW_KEY = 'orkai.view';
 const GRID_KEY = 'orkai.grid';
 const PROJECT_KEY = 'orkai.project';
 const USAGE_KEY = 'orkai.usage';
 
 export const VIEWS = ['board', 'list', 'grid'];
+
+const savedPins = storage.json(PINNED_TABS_KEY, null);
+const savedTabs = storage.json(TABS_KEY, []);
+const pinnedTabs = new Set(Array.isArray(savedPins) ? savedPins : [OVERVIEW_TAB]);
 
 export const state = {
   host: '',
@@ -36,7 +41,9 @@ export const state = {
   history: [],
   recall: -1,
   folders: null,
-  tabs: storage.json(TABS_KEY, []),
+  tabs: arrangeTabs(Array.isArray(savedPins) ? savedTabs : [OVERVIEW_TAB, ...savedTabs], pinnedTabs),
+  pinned: pinnedTabs,
+  movingTab: null,
   active: null,
   view: VIEWS.includes(storage.get(VIEW_KEY)) ? storage.get(VIEW_KEY) : 'board',
   gridSize: GRID_SIZES.includes(storage.get(GRID_KEY)) ? storage.get(GRID_KEY) : DEFAULT_GRID_SIZE,
@@ -57,6 +64,14 @@ export function findAgent(id) {
 
 export function saveTabs() {
   storage.set(TABS_KEY, JSON.stringify(state.tabs));
+  storage.set(PINNED_TABS_KEY, JSON.stringify([...state.pinned]));
+}
+
+export function pinTab(id, on) {
+  if (on) state.pinned.add(id);
+  else state.pinned.delete(id);
+  state.tabs = arrangeTabs(state.tabs, state.pinned);
+  saveTabs();
 }
 
 export const now = () => Date.now() - state.skew;

@@ -71,6 +71,33 @@ export function canMove(agent, session) {
   return Boolean(agent && session) && !agent.starting && agent.session !== session;
 }
 
+export const OVERVIEW_TAB = 'overview';
+
+export function arrangeTabs(tabs, pinned) {
+  return [...tabs.filter((id) => pinned.has(id)), ...tabs.filter((id) => !pinned.has(id))];
+}
+
+export function tabRange(tabs, pinned, id) {
+  const count = tabs.filter((tab) => pinned.has(tab)).length;
+  return pinned.has(id) ? { low: 0, high: count - 1 } : { low: count, high: tabs.length - 1 };
+}
+
+export function moveTab(tabs, pinned, id, to) {
+  const from = tabs.indexOf(id);
+  if (from === -1) return tabs;
+  const { low, high } = tabRange(tabs, pinned, id);
+  const at = Math.min(Math.max(to, low), high);
+  if (at === from) return tabs;
+  const next = tabs.filter((tab) => tab !== id);
+  next.splice(at, 0, id);
+  return next;
+}
+
+export function tabAfterClosing(tabs, at) {
+  if (tabs.includes(OVERVIEW_TAB) || !tabs.length) return OVERVIEW_TAB;
+  return tabs[Math.min(at, tabs.length - 1)];
+}
+
 const GRID_RAISING_COLUMNS = new Set(['needs', 'done']);
 export const GRID_SIZES = ['4', '6', '8', '10', '12', 'all'];
 export const DEFAULT_GRID_SIZE = '6';
