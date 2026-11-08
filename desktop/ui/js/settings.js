@@ -448,13 +448,15 @@ function phoneSection() {
 function updatesSection() {
   return section(
     h('div', { class: 'settings-heading' }, h('h2', null, t('Updates'))),
-    row(
-      h('span', null, ...updateLine()),
-      t('Updates install on their own, checked by size and SHA-256. Running agents are never stopped.'),
-      state.updateReady
-        ? h('button', { class: 'button primary', type: 'button', onclick: () => invoke('restart_app') }, t('Restart now'))
-        : h('button', { class: 'button', type: 'button', disabled: Boolean(update && update.checking), onclick: checkUpdate }, t('Check now')),
-    ),
+    current.storeUpdates
+      ? row(`Octo ${state.version || ''}`.trim(), t('The Microsoft Store installs the updates. Running agents are never stopped.'), null)
+      : row(
+          h('span', null, ...updateLine()),
+          t('Updates install on their own, checked by size and SHA-256. Running agents are never stopped.'),
+          state.updateReady
+            ? h('button', { class: 'button primary', type: 'button', onclick: () => invoke('restart_app') }, t('Restart now'))
+            : h('button', { class: 'button', type: 'button', disabled: Boolean(update && update.checking), onclick: checkUpdate }, t('Check now')),
+        ),
     h('div', { class: 'settings-heading notes-heading' }, h('h2', null, t('Release notes'))),
     h('div', { class: 'notes' }, NOTES.map((note) => noteBlock(note, note.version === state.version))),
   );

@@ -357,6 +357,7 @@ export const PT = {
   'Local port': 'Porta local',
   'The bridge only listens on 127.0.0.1.': 'A ponte só escuta em 127.0.0.1.',
   'Updates install on their own, checked by size and SHA-256. Running agents are never stopped.': 'As atualizações se instalam sozinhas, conferidas por tamanho e SHA-256. Os agentes rodando nunca são parados.',
+  'The Microsoft Store installs the updates. Running agents are never stopped.': 'A Microsoft Store instala as atualizações. Os agentes rodando nunca são parados.',
   'Restart now': 'Reiniciar agora',
   'Check now': 'Procurar agora',
   'Saved to': 'Salvo em',

@@ -1036,6 +1036,15 @@ test('an update that cannot install says why in the language of the app', async 
   assert.equal(translate('pt-BR', 'error sending request'), 'error sending request', 'any other error reaches the toast as is');
 });
 
+test('the Octo of the Microsoft Store says the Store updates it and offers no check of its own', async () => {
+  const { PT } = await import('../js/i18n.js');
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  const sentence = 'The Microsoft Store installs the updates. Running agents are never stopped.';
+  assert.match(settings, /current\.storeUpdates\n\s*\? row\(`Octo \$\{state\.version \|\| ''\}`\.trim\(\), t\('The Microsoft Store installs the updates\. Running agents are never stopped\.'\), null\)/, 'no Check now and no restart button');
+  assert.equal(PT[sentence], 'A Microsoft Store instala as atualizações. Os agentes rodando nunca são parados.');
+  assert.match(rust('desktop/src/settings.rs'), /store_updates: updates::from_store\(\)/, 'the window learns it from the package the app runs in');
+});
+
 test('a right click never opens the menu of the webview, with its inspect, save as and print', () => {
   const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
   assert.match(main, /document\.addEventListener\('contextmenu', \(event\) => event\.preventDefault\(\)\);/);

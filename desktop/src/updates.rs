@@ -11,6 +11,7 @@ pub const APP_ASSET_PREFIX: &str = "desktop-app-";
 pub const READY_EVENT: &str = "update-ready";
 pub const TRANSLOCATED: &str = "macOS runs Octo from a read-only copy, so it cannot update itself. Drag Octo to Applications and open it from there.";
 const TRANSLOCATION_FOLDER: &str = "AppTranslocation";
+pub const FROM_STORE: &str = "the Microsoft Store installs the updates of this Octo";
 
 #[derive(Default)]
 pub struct Updates {
@@ -57,13 +58,32 @@ pub fn runs_translocated(exe: &Path) -> bool {
     cfg!(target_os = "macos") && exe.components().any(|part| part.as_os_str() == TRANSLOCATION_FOLDER)
 }
 
+#[cfg(windows)]
+pub fn from_store() -> bool {
+    const APPMODEL_ERROR_NO_PACKAGE: i32 = 15700;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentPackageFullName(length: *mut u32, name: *mut u16) -> i32;
+    }
+    let mut length = 0u32;
+    unsafe { GetCurrentPackageFullName(&mut length, std::ptr::null_mut()) != APPMODEL_ERROR_NO_PACKAGE }
+}
+
+#[cfg(not(windows))]
+pub fn from_store() -> bool {
+    false
+}
+
 pub fn updates_itself() -> bool {
-    BUILD_COMMIT.is_some() && target().is_some() && std::env::var_os(DISABLE_ENV).is_none()
+    BUILD_COMMIT.is_some() && target().is_some() && std::env::var_os(DISABLE_ENV).is_none() && !from_store()
 }
 
 pub fn install_newer(source: &Source, exe: &Path) -> Result<Option<String>, String> {
     if runs_translocated(exe) {
         return Err(TRANSLOCATED.into());
+    }
+    if from_store() {
+        return Err(FROM_STORE.into());
     }
     let commit = BUILD_COMMIT.ok_or("a build made on this computer does not update itself")?;
     let target = target().ok_or("there is no prebuilt Octo app for this platform")?;
@@ -205,6 +225,11 @@ mod tests {
     #[test]
     fn every_platform_the_release_builds_has_a_target() {
         assert!(target().is_some(), "the CI builds the app for this platform, so it must know its own file");
+    }
+
+    #[test]
+    fn an_app_run_outside_a_store_package_is_never_taken_for_the_store_one() {
+        assert!(!from_store());
     }
 
     #[test]

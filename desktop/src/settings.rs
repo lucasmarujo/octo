@@ -26,6 +26,7 @@ pub struct Settings {
     pub agents: Vec<AgentStatus>,
     pub default_shell: String,
     pub shell_rule: &'static str,
+    pub store_updates: bool,
 }
 
 pub const SHELL_RULE: &str = if cfg!(windows) { "pwsh, then powershell" } else { "your $SHELL, then bash" };
@@ -59,7 +60,7 @@ pub fn read(hub: &Hub) -> Settings {
     let default_shell = default_shell(&Config { shell: None, ..config.clone() }).0;
     let local = std::env::var_os("LOCALAPPDATA").filter(|_| cfg!(windows)).map(PathBuf::from);
     let path = shown(&hub.store().home().config_file(), local.as_deref(), user_home().as_deref());
-    Settings { config, path, agents, default_shell, shell_rule: SHELL_RULE }
+    Settings { config, path, agents, default_shell, shell_rule: SHELL_RULE, store_updates: updates::from_store() }
 }
 
 fn statuses(installed: &[AgentKind]) -> Vec<AgentStatus> {
