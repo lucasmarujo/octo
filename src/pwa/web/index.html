@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#121218" />
-    <meta name="color-scheme" content="dark" />
+    <meta id="theme-color" name="theme-color" content="#0e0e13" />
+    <meta name="color-scheme" content="dark light" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -14,71 +14,112 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/octo-kai-corner.png" />
     <link rel="apple-touch-icon" href="/octo-kai-corner.png" />
+    <link rel="preload" href="/fonts/sans-400.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/mono-400.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/style.css" />
   </head>
-  <body>
-    <header class="top">
-      <button id="back" class="back" type="button" aria-label="back to the overview" hidden>‹</button>
+  <body data-view="overview">
+    <header id="top" class="top">
+      <button id="back" class="round press" type="button" aria-label="back to the overview" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6l6 6" /></svg>
+      </button>
       <span id="mascot" class="kai mascot" data-mood="idle" aria-hidden="true"><span class="kai-strip"></span></span>
       <div class="who">
         <strong id="host">Octo</strong>
-        <span id="where" class="sub"></span>
+        <span class="sub"><span id="link" class="dot" data-state="connecting" role="status" aria-label="connecting"></span><span id="where" class="where"></span></span>
       </div>
-      <button id="menu" class="icon" type="button" aria-label="agent actions" hidden>⋯</button>
-      <span id="link" class="dot" data-state="connecting" role="status" aria-label="connecting"></span>
+      <button id="settings" class="round press" type="button" aria-label="appearance">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg>
+      </button>
+      <button id="menu" class="round press" type="button" aria-label="agent actions" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l0 .01" /><path d="M12 12l0 .01" /><path d="M19 12l0 .01" /></svg>
+      </button>
     </header>
 
     <main id="overview" class="view" hidden>
-      <nav id="sessions" class="chips" aria-label="sessions"></nav>
-      <section id="stats" class="stats" aria-label="totals"></section>
-      <section id="usage" class="usage" aria-label="plan usage"></section>
-      <button id="lost" class="lost" type="button" hidden></button>
+      <nav id="sessions" class="sessions" aria-label="sessions"></nav>
+      <section id="offline" class="offline-wrap" hidden></section>
+      <section id="lost" class="recover" hidden></section>
+      <section id="needs" class="asks" aria-label="agents waiting for you"></section>
+      <section id="usage" class="rings" aria-label="plan usage"></section>
+      <div class="viewbar">
+        <div id="modes" class="segmented" role="tablist" aria-label="view"></div>
+        <div id="counts" class="counts"></div>
+      </div>
       <section id="list" class="list" aria-label="agents"></section>
+      <section id="board" class="board" aria-label="board" hidden>
+        <nav id="tabs" class="tabs"></nav>
+        <div id="columns" class="columns"></div>
+      </section>
     </main>
 
     <main id="agent" class="view term-view" hidden>
-      <div id="screen" class="screen" aria-label="agent terminal">
-        <div id="rows" class="rows"></div>
-        <div id="cursor" class="cursor" hidden></div>
+      <div id="context" class="context"></div>
+      <div class="term-card">
+        <div id="screen" class="screen" aria-label="agent terminal">
+          <div id="rows" class="rows"></div>
+          <div id="cursor" class="cursor" hidden></div>
+        </div>
+        <button id="live" class="live press" type="button" hidden>↓ live</button>
       </div>
-      <button id="live" class="live" type="button" hidden>↓ live</button>
+      <section id="approval" class="approval" hidden></section>
       <nav id="keys" class="keys" aria-label="keys"></nav>
     </main>
 
     <main id="pair" class="view pair" hidden>
-      <div id="pair-mascot" class="pair-mascot"></div>
-      <h1>Octo</h1>
-      <p id="pair-text"></p>
+      <div class="pair-glow"></div>
+      <div class="pair-hero">
+        <div id="pair-mascot" class="pair-mascot"></div>
+        <span id="pair-badge" class="badge" hidden></span>
+        <h1 id="pair-title">Pair this phone</h1>
+        <p id="pair-text"></p>
+      </div>
       <ol id="pair-steps" class="steps">
-        <li>open <b>Octo</b> on your computer, or the orkai CLI</li>
-        <li>press <kbd>ctrl+p</kbd> (or click <b>Pair phone</b>)</li>
-        <li>scan the code with this phone's camera, or paste the link shown next to it</li>
+        <li><b>1</b><span>Open <strong>Octo</strong> on your computer, or the orkai CLI</span></li>
+        <li><b>2</b><span>Click <strong>Pair phone</strong> or press <kbd>ctrl+p</kbd></span></li>
+        <li><b>3</b><span>Scan the code with the camera, or paste its link here</span></li>
       </ol>
-      <form id="pair-form" class="sheet-row pair-form" autocomplete="off">
-        <input id="pair-link" type="text" inputmode="url" placeholder="paste the link from Octo" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-label="pairing link" />
-        <button class="primary" type="submit">pair</button>
-      </form>
-      <button id="retry" class="primary" type="button" hidden>try again</button>
+      <div class="pair-actions">
+        <button id="pair-paste" class="primary big press" type="button">Paste pairing link</button>
+        <form id="pair-form" class="pair-form" autocomplete="off">
+          <input id="pair-link" type="text" inputmode="url" placeholder="or type the link from Octo" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-label="pairing link" />
+          <button class="ghost press" type="submit">Pair</button>
+        </form>
+        <button id="retry" class="secondary big press" type="button" hidden>Try again</button>
+        <p class="pair-note">the key never leaves this phone</p>
+      </div>
     </main>
 
-    <footer id="composer" class="composer" hidden>
-      <div id="picks" class="picks"></div>
-      <form id="form" class="form" autocomplete="off">
+    <footer id="composer" class="dock" hidden>
+      <form id="form" class="composer" autocomplete="off">
         <textarea id="input" rows="1" enterkeyhint="send" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="message"></textarea>
-        <button id="send" class="send" type="submit" aria-label="send">↵</button>
+        <div class="bar">
+          <div id="picks" class="picks"></div>
+          <button id="send" class="send press" type="submit" aria-label="send">
+            <span id="send-label" class="send-label"></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5l0 14" /><path d="M18 11l-6 -6" /><path d="M6 11l6 -6" /></svg>
+          </button>
+        </div>
       </form>
     </footer>
 
     <div id="sheet" class="sheet" hidden>
-      <div class="sheet-card" role="dialog" aria-modal="true">
-        <header class="sheet-head"><strong id="sheet-title"></strong><button id="sheet-close" class="icon" type="button" aria-label="close">×</button></header>
+      <div id="sheet-card" class="sheet-card" role="dialog" aria-modal="true">
+        <div id="sheet-grab" class="grab"><span></span></div>
+        <header class="sheet-head">
+          <div id="sheet-lead" class="sheet-lead"></div>
+          <div class="sheet-titles"><strong id="sheet-title"></strong><span id="sheet-sub" class="sheet-sub"></span></div>
+          <button id="sheet-close" class="round small press" type="button" aria-label="close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6l-12 12" /><path d="M6 6l12 12" /></svg>
+          </button>
+        </header>
         <div id="sheet-body" class="sheet-body"></div>
       </div>
     </div>
     <div id="toast" class="toast" role="status" hidden></div>
 
     <script src="/wire.js"></script>
+    <script src="/model.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

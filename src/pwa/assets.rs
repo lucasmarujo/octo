@@ -28,6 +28,12 @@ pub const ASSETS: &[Asset] = &[
         body: include_bytes!("web/wire.js"),
     },
     Asset {
+        path: "/model.js",
+        content_type: "text/javascript; charset=utf-8",
+        cache: REVALIDATE,
+        body: include_bytes!("web/model.js"),
+    },
+    Asset {
         path: "/style.css",
         content_type: "text/css; charset=utf-8",
         cache: REVALIDATE,
@@ -80,6 +86,24 @@ pub const ASSETS: &[Asset] = &[
         content_type: "image/svg+xml",
         cache: IMMUTABLE,
         body: include_bytes!("../../desktop/ui/kai/lost.svg"),
+    },
+    Asset {
+        path: "/fonts/sans-400.woff2",
+        content_type: "font/woff2",
+        cache: IMMUTABLE,
+        body: include_bytes!("../../site/assets/fonts/Barlow-400.woff2"),
+    },
+    Asset {
+        path: "/fonts/sans-600.woff2",
+        content_type: "font/woff2",
+        cache: IMMUTABLE,
+        body: include_bytes!("../../site/assets/fonts/Barlow-600.woff2"),
+    },
+    Asset {
+        path: "/fonts/sans-800.woff2",
+        content_type: "font/woff2",
+        cache: IMMUTABLE,
+        body: include_bytes!("../../site/assets/fonts/Barlow-800.woff2"),
     },
     Asset {
         path: "/fonts/mono-400.woff2",
@@ -219,5 +243,43 @@ mod tests {
         }
         assert!(text("/").contains(r#"id="mascot" class="kai mascot""#));
         assert!(text("/app.js").contains("el.mascot.dataset.mood = moodOf(agents());"));
+    }
+
+    #[test]
+    fn the_phone_speaks_the_type_of_the_desktop_app_and_caches_it_for_good() {
+        for weight in ["400", "600", "800"] {
+            let path = format!("/fonts/sans-{weight}.woff2");
+            let font = lookup(&path).unwrap();
+            assert_eq!(font.cache, IMMUTABLE, "{path}");
+            assert_eq!(&font.body[..4], b"wOF2", "{path}");
+            assert!(text("/style.css").contains(&format!("url(\"{path}\")")), "{path}");
+            assert!(text("/sw.js").contains(&format!("'{path}'")), "{path}");
+        }
+        assert!(!text("/sw.js").contains("'orkai-pwa-v7'"), "a new cache, so the worker drops the old shell");
+    }
+
+    #[test]
+    fn the_page_loads_the_model_before_the_app_and_keeps_inline_styles_out_of_the_csp() {
+        let page = text("/");
+        let model = page.find(r#"<script src="/model.js"></script>"#).expect("the page loads model.js");
+        let app = page.find(r#"<script src="/app.js"></script>"#).expect("the page loads app.js");
+        assert!(model < app, "app.js reads OrkaiModel when it boots");
+        assert_eq!(lookup("/model.js").unwrap().cache, REVALIDATE);
+        assert!(text("/sw.js").contains("'/model.js'"));
+        assert!(!page.contains("style=\""), "the CSP refuses inline style attributes");
+        assert!(!page.contains("<script>"), "the CSP refuses inline scripts");
+    }
+
+    #[test]
+    fn the_themes_match_the_desktop_app() {
+        let css = text("/style.css");
+        for theme in ["gray", "light"] {
+            assert!(css.contains(&format!(":root[data-theme=\"{theme}\"]")), "{theme}");
+        }
+        assert!(text("/app.js").contains("const THEME_KEY = 'orkai.theme';"), "the same key as the desktop theme");
+        assert!(text("/model.js").contains("const THEMES = ['dark', 'gray', 'light', 'system'];"));
+        for index in 0..16 {
+            assert!(css.contains(&format!("--ansi-{index}:")), "the terminal palette follows the theme: {index}");
+        }
     }
 }
