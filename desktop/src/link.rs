@@ -17,7 +17,7 @@ use tauri::{Manager, State};
 
 use crate::term::{self, Console};
 use crate::updates::{self, Updates};
-use crate::{alerts, pair, recover, settings};
+use crate::{agent_updates, alerts, pair, recover, settings};
 use tauri::ipc::{Channel, InvokeResponseBody};
 
 pub struct Link {
@@ -177,6 +177,9 @@ pub fn run() -> io::Result<()> {
             settings::check_update,
             settings::install_agent,
             settings::recheck_agents,
+            agent_updates::agent_updates,
+            agent_updates::agent_version,
+            agent_updates::update_agent,
             alerts::alert,
             pair::pairing,
             pair::set_phone,

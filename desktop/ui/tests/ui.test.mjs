@@ -1410,6 +1410,39 @@ test('a right click on a session in the sidebar offers to rename or delete that 
   assert.match(commands, /case 'delete-session':\n\s*deleteSession\(arg \|\| state\.session\);/);
 });
 
+test('a code agent behind its release shows a card that updates it, and a dismissed version stays quiet', async () => {
+  const { versionAtLeast } = await import('../js/format.js');
+  assert.equal(versionAtLeast('1.5.0', '1.5.0'), true);
+  assert.equal(versionAtLeast('1.10.0', '1.9.3'), true, 'parts compare as numbers');
+  assert.equal(versionAtLeast('1.5.1', '1.5.3'), false);
+  assert.equal(versionAtLeast('2.0.0', '1.99.99'), true);
+  assert.equal(versionAtLeast(null, '1.0.0'), false, 'a version that cannot be read is no update');
+  const { agentName, dismissedFor } = await import('../js/agentupdates.js');
+  assert.equal(agentName('pi'), 'Pi');
+  assert.equal(agentName('antigravity'), 'Antigravity', 'its name, not the agy command');
+  assert.equal(dismissedFor({ pi: '1.5.0' }, { kind: 'pi', latest: '1.5.0' }), true);
+  assert.equal(dismissedFor({ pi: '1.5.0' }, { kind: 'pi', latest: '1.6.0' }), false, 'a newer version asks again');
+  assert.equal(dismissedFor({}, { kind: 'pi', latest: '1.5.0' }), false);
+  const source = readFileSync(join(REPO, 'desktop/ui/js/agentupdates.js'), 'utf8');
+  assert.match(source, /card\.agent = await invoke\('update_agent', \{ kind: card\.update\.kind, session: state\.session \}\);/, 'only the kind and the session leave the window');
+  assert.match(source, /const version = await invoke\('agent_version', \{ kind: card\.update\.kind \}\)/, 'the version is read again once the terminal ends');
+  assert.match(source, /if \(agent\) send\(\{ type: 'remove', agent: agent\.id \}\);/, 'a terminal that worked does not stay on the board');
+  assert.match(source, /onclick: \(\) => close\(card, card\.phase === 'available'\)/, 'closing the offer remembers its version, closing a result does not');
+  assert.match(source, /if \(card\.phase === 'failed' && findAgent\(card\.agent\)\) return h\('button'[^\n]*t\('Open terminal'\)\);/, 'a failed update points at its terminal');
+  assert.match(source, /\$\('toasts'\)\.prepend\(card\.node\);/, 'above the passing toasts');
+  assert.match(source, /card\.node\.replaceChildren\(\.\.\.parts\.filter\(Boolean\)\);/, 'a card without an action draws no "null"');
+  const toast = readFileSync(join(REPO, 'desktop/ui/js/toast.js'), 'utf8');
+  assert.match(toast, /const passing = \(\) => host\.querySelectorAll\('\.toast:not\(\.agent-update\)'\);\n\s*while \(passing\(\)\.length > LIMIT\) passing\(\)\[0\]\.remove\(\);/, 'a burst of toasts never pushes an update card away');
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /connect\(onMessage\)[^\n]*\n\s*checkAgentUpdates\(openAgent\);/, 'checked every time Octo opens, without holding up the first paint');
+  assert.match(main, /watchInstalls\(message\.agents\);\n\s*watchAgentUpdates\(message\.agents\);/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.agent-update \{ position: relative; display: flex;[^}]*pointer-events: auto; \}/, 'the card takes clicks inside the toast column');
+  const i18n = readFileSync(join(REPO, 'desktop/ui/js/i18n.js'), 'utf8');
+  assert.match(i18n, /'\{name\} update available': 'Atualização de \{name\} disponível'/);
+  assert.match(i18n, /Update: 'Atualizar'/);
+});
+
 test('the release notes come newest first, in English and Portuguese, one line for one line', async () => {
   const { NOTES, noteItems, notesUnseen } = await import('../js/notes.js');
   assert.ok(NOTES.length >= 2, 'there is a history to see');

@@ -26,6 +26,8 @@ pub const OS: Os = if cfg!(windows) {
 };
 
 const NAME_PREFIX: &str = "install-";
+const UPDATE_PREFIX: &str = "update-";
+const CLAUDE_UPDATE: &str = "claude update";
 const POWERSHELL_SHOWN: &str = "powershell";
 const POWERSHELL_FLAGS: [&str; 5] = ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"];
 const SH: &str = "/bin/sh";
@@ -61,6 +63,13 @@ pub const fn command(kind: AgentKind, os: Os) -> Option<&'static str> {
         (AgentKind::Pi, Os::Windows) => Some("powershell -c \"irm https://pi.dev/install.ps1 | iex\""),
         (AgentKind::Pi, Os::Mac | Os::Linux) => Some("curl -fsSL https://pi.dev/install.sh | sh"),
         (AgentKind::Terminal, _) => None,
+    }
+}
+
+pub const fn update_command(kind: AgentKind, os: Os) -> Option<&'static str> {
+    match kind {
+        AgentKind::Claude => Some(CLAUDE_UPDATE),
+        _ => command(kind, os),
     }
 }
 
@@ -120,9 +129,12 @@ fn terminal_name(kind: AgentKind) -> String {
     format!("{NAME_PREFIX}{}", kind.label())
 }
 
-fn is_install_of(name: &str, kind: AgentKind) -> bool {
-    let base = terminal_name(kind);
-    name.strip_prefix(&base).is_some_and(|rest| {
+fn update_name(kind: AgentKind) -> String {
+    format!("{UPDATE_PREFIX}{}", kind.label())
+}
+
+fn named_after(name: &str, base: &str) -> bool {
+    name.strip_prefix(base).is_some_and(|rest| {
         rest.is_empty()
             || rest
                 .strip_prefix('-')
@@ -131,10 +143,14 @@ fn is_install_of(name: &str, kind: AgentKind) -> bool {
 }
 
 fn running(hub: &Hub, kind: AgentKind) -> bool {
+    running_named(hub, &terminal_name(kind))
+}
+
+fn running_named(hub: &Hub, base: &str) -> bool {
     let store = hub.store();
     store.list_agents().unwrap_or_default().into_iter().any(|record| {
         record.kind == AgentKind::Terminal
-            && is_install_of(&record.name, kind)
+            && named_after(&record.name, base)
             && match hub.state(record.id) {
                 Some(state) => !matches!(state, AgentState::Exited | AgentState::Lost),
                 None => store.read_exit(record.id).ok().flatten().is_none(),
@@ -142,12 +158,17 @@ fn running(hub: &Hub, kind: AgentKind) -> bool {
     })
 }
 
+fn known_session(hub: &Hub, session: &str) -> Result<(), String> {
+    if hub.store().load_sessions().is_ok_and(|sessions| sessions.iter().any(|known| known.name == session)) {
+        Ok(())
+    } else {
+        Err(format!("session {session} does not exist"))
+    }
+}
+
 pub fn start(hub: &Hub, kind: AgentKind, session: &str) -> Result<AgentId, String> {
     let command = command(kind, OS).ok_or_else(|| format!("{} has no install command here", kind.label()))?;
-    if !hub.store().load_sessions().is_ok_and(|sessions| sessions.iter().any(|known| known.name == session)) {
-        return Err(format!("session {session} does not exist"));
-    }
-    let cwd = user_home().ok_or_else(|| "could not find your home folder".to_string())?;
+    known_session(hub, session)?;
     let _starting = lock(&STARTING);
     if hub.kinds().contains(&kind) {
         return Err(format!("{} is already on PATH", kind.label()));
@@ -155,12 +176,30 @@ pub fn start(hub: &Hub, kind: AgentKind, session: &str) -> Result<AgentId, Strin
     if running(hub, kind) {
         return Err(format!("{} is already installing", kind.label()));
     }
+    launch(hub, session, &terminal_name(kind), command)
+}
+
+pub fn start_update(hub: &Hub, kind: AgentKind, session: &str) -> Result<AgentId, String> {
+    let command = update_command(kind, OS).ok_or_else(|| format!("{} has no update command here", kind.label()))?;
+    known_session(hub, session)?;
+    let _starting = lock(&STARTING);
+    if !hub.kinds().contains(&kind) {
+        return Err(format!("{} is not installed", kind.label()));
+    }
+    if running_named(hub, &update_name(kind)) {
+        return Err(format!("{} is already updating", kind.label()));
+    }
+    launch(hub, session, &update_name(kind), command)
+}
+
+fn launch(hub: &Hub, session: &str, base: &str, command: &str) -> Result<AgentId, String> {
+    let cwd = user_home().ok_or_else(|| "could not find your home folder".to_string())?;
     login_path::refresh();
     let launcher = hub.launcher();
     let installer = launcher
         .reconfigured(launch_config(launcher.config(), interpreter()?, OS, command))
         .map_err(|err| err.to_string())?;
-    let name = default_agent_name(AgentKind::Terminal, &terminal_name(kind), |name| hub.name_taken(session, name));
+    let name = default_agent_name(AgentKind::Terminal, base, |name| hub.name_taken(session, name));
     let draft = NewAgent { session: session.to_string(), name, kind: AgentKind::Terminal, cwd, task: String::new() };
     let record = installer.create(draft, DEFAULT_SIZE, false, false, false).map_err(|err| err.to_string())?;
     hub.nudge();
@@ -342,12 +381,12 @@ mod tests {
             default_agent_name(AgentKind::Terminal, &terminal_name(AgentKind::Kilo), |name| name == "install-kilo"),
             "install-kilo-2"
         );
-        assert!(is_install_of("install-kilo", AgentKind::Kilo));
-        assert!(is_install_of("install-kilo-2", AgentKind::Kilo));
-        assert!(!is_install_of("install-kilo-", AgentKind::Kilo));
-        assert!(!is_install_of("install-kilo-two", AgentKind::Kilo));
-        assert!(!is_install_of("install-kimi", AgentKind::Kilo));
-        assert!(!is_install_of("install-pi", AgentKind::Kilo));
+        assert!(named_after("install-kilo", &terminal_name(AgentKind::Kilo)));
+        assert!(named_after("install-kilo-2", &terminal_name(AgentKind::Kilo)));
+        assert!(!named_after("install-kilo-", &terminal_name(AgentKind::Kilo)));
+        assert!(!named_after("install-kilo-two", &terminal_name(AgentKind::Kilo)));
+        assert!(!named_after("install-kimi", &terminal_name(AgentKind::Kilo)));
+        assert!(!named_after("install-pi", &terminal_name(AgentKind::Kilo)));
     }
 
     struct Fixture {
@@ -403,6 +442,57 @@ mod tests {
         let exit = ExitInfo { code: Some(1), error: None, at_ms: 1 };
         orkai::fsutil::write_json_atomic(&fx.hub.store().home().exit_file(first.id), &exit).unwrap();
         assert!(!running(&fx.hub, AgentKind::Kilo), "a failed install can be tried again");
+    }
+
+    #[test]
+    fn claude_updates_itself_and_every_other_agent_runs_its_installer_again() {
+        for os in OSES {
+            assert_eq!(
+                update_command(AgentKind::Claude, os),
+                Some("claude update"),
+                "whether npm or the native installer put it there"
+            );
+            for kind in ai_kinds().filter(|kind| *kind != AgentKind::Claude) {
+                assert_eq!(
+                    update_command(kind, os),
+                    command(kind, os),
+                    "{kind:?} installs its latest version over the old one"
+                );
+            }
+            assert_eq!(update_command(AgentKind::Terminal, os), None);
+        }
+        assert_eq!(default_agent_name(AgentKind::Terminal, &update_name(AgentKind::Pi), |_| false), "update-pi");
+        assert_eq!(
+            default_agent_name(AgentKind::Terminal, &update_name(AgentKind::Pi), |name| name == "update-pi"),
+            "update-pi-2"
+        );
+        assert!(named_after("update-pi-2", &update_name(AgentKind::Pi)));
+        assert!(!named_after("install-pi", &update_name(AgentKind::Pi)), "an install is not an update");
+    }
+
+    #[test]
+    fn an_update_starts_only_for_an_installed_agent_once_at_a_time() {
+        let fx = fixture("update-guards", missing());
+        assert!(start_update(&fx.hub, AgentKind::Terminal, "default").unwrap_err().contains("no update command"));
+        assert!(start_update(&fx.hub, AgentKind::Kilo, "nowhere").unwrap_err().contains("does not exist"));
+        assert!(start_update(&fx.hub, AgentKind::Kilo, "default").unwrap_err().contains("is not installed"));
+        assert_eq!(fx.hub.store().list_agents().unwrap().len(), 0);
+        let exe = std::env::current_exe().unwrap().display().to_string();
+        let fx = fixture("update-twice", Config { kilo_command: exe, ..Config::default() });
+        let terminal = |name: &str| NewAgent {
+            session: "default".into(),
+            name: name.into(),
+            kind: AgentKind::Terminal,
+            cwd: fx.dir.clone(),
+            task: String::new(),
+        };
+        fx.hub.store().create_agent(terminal("install-kilo")).unwrap();
+        assert!(!running_named(&fx.hub, &update_name(AgentKind::Kilo)), "an old install terminal is no update");
+        let first = fx.hub.store().create_agent(terminal("update-kilo")).unwrap();
+        assert!(start_update(&fx.hub, AgentKind::Kilo, "default").unwrap_err().contains("already updating"));
+        let exit = ExitInfo { code: Some(1), error: None, at_ms: 1 };
+        orkai::fsutil::write_json_atomic(&fx.hub.store().home().exit_file(first.id), &exit).unwrap();
+        assert!(!running_named(&fx.hub, &update_name(AgentKind::Kilo)), "a failed update can be tried again");
     }
 
     #[test]

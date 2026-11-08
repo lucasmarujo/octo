@@ -12,6 +12,7 @@ export function toast(text, tone = 'info') {
   const host = $('toasts');
   const node = h('div', { class: 'toast', dataset: { tone } }, text);
   host.append(node);
-  while (host.children.length > LIMIT) host.firstElementChild.remove();
+  const passing = () => host.querySelectorAll('.toast:not(.agent-update)');
+  while (passing().length > LIMIT) passing()[0].remove();
   setTimeout(() => dismiss(node), tone === 'error' ? 7000 : 4000);
 }

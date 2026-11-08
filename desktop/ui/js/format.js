@@ -67,6 +67,15 @@ export function installKind(agent) {
   return kind !== 'terminal' && Object.hasOwn(KIND_COLORS, kind) ? kind : null;
 }
 
+export function versionAtLeast(version, wanted) {
+  const parts = (text) => String(text || '').split('.').map(Number);
+  const [have, need] = [parts(version), parts(wanted)];
+  for (let index = 0; index < need.length; index++) {
+    if ((have[index] || 0) !== need[index]) return (have[index] || 0) > need[index];
+  }
+  return Boolean(version);
+}
+
 export function canMove(agent, session) {
   return Boolean(agent && session) && !agent.starting && agent.session !== session;
 }

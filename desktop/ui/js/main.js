@@ -1,4 +1,5 @@
 import { nextAttention, rename, renderAgent, renderAgentHead, renderStatus, restartWhenStopped } from './agent.js';
+import { checkAgentUpdates, watchAgentUpdates } from './agentupdates.js';
 import { detectAlerts, notice, windowTitle } from './alerts.js';
 import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tickBoard } from './board.js';
 import { initComposer, renderComposer, renderPalette, setCommandRunner, toggleWorktree } from './composer.js';
@@ -304,6 +305,7 @@ function onMessage(message) {
       markSeenWhileWatching();
       restartWhenStopped(message.agents);
       watchInstalls(message.agents);
+      watchAgentUpdates(message.agents);
       raiseAlerts(message.agents);
       render();
       reopenTerminal();
@@ -553,6 +555,7 @@ function start() {
   invoke('update_ready').then((version) => version && announceUpdate(version)).catch(() => {});
   window.__TAURI__.event.listen('update-ready', (event) => announceUpdate(event.payload));
   connect(onMessage).catch((err) => toast(t('could not reach Octo: {error}', { error: err }), 'error'));
+  checkAgentUpdates(openAgent);
   $('task').focus();
 }
 
