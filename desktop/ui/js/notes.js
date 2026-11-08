@@ -7,6 +7,16 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.27',
+    date: '2026-11-08',
+    en: [
+      'Octo has a new icon: smooth app corners, a bigger prompt and a bigger Kai peeking from the corner.',
+    ],
+    'pt-BR': [
+      'O Octo ganhou ícone novo: cantos lisos de app, um prompt maior e um Kai maior espiando pelo canto.',
+    ],
+  },
+  {
     version: '0.2.26',
     date: '2026-11-08',
     en: [
