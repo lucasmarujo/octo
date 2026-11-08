@@ -25,7 +25,7 @@ use crate::subagents::{self, Subagent, SubagentWatcher};
 use crate::tui::format::{display_path, project_label};
 use crate::tui::render::{USAGE_MONTHLY_LABEL, USAGE_SESSION_LABEL, USAGE_WEEKLY_LABEL};
 use crate::tui::theme;
-use crate::usage::{self, Limits, Problem};
+use crate::usage::{self, Usage};
 use crate::util::{lock, now_ms};
 use crate::worktree::{ChangeWatcher, Changes};
 
@@ -198,6 +198,7 @@ struct Inner {
     ui: UiState,
     published: Option<Overview>,
     usage: Option<Vec<UsageEntry>>,
+    limits: BTreeMap<AgentKind, Usage>,
     usage_at: Option<Instant>,
     usage_busy: bool,
     scan_at: Option<Instant>,
@@ -768,19 +769,29 @@ impl Hub {
         let _ = thread::Builder::new().name("orkai-pwa-usage".into()).spawn(move || {
             let launcher = hub.launcher();
             let config = launcher.config();
-            let entries: Vec<UsageEntry> = thread::scope(|scope| {
+            let results: Vec<_> = thread::scope(|scope| {
                 let fetches: Vec<_> = usage::PROVIDERS
                     .iter()
-                    .map(|kind| scope.spawn(move || usage_entry(*kind, usage::fetch(*kind, config))))
+                    .map(|kind| (*kind, scope.spawn(move || usage::fetch(*kind, config))))
                     .collect();
-                fetches.into_iter().filter_map(|fetch| fetch.join().ok().flatten()).collect()
+                fetches.into_iter().filter_map(|(kind, fetch)| fetch.join().ok().map(|result| (kind, result))).collect()
             });
-            {
+            let entries = {
                 let mut inner = hub.inner();
+                let now = now_ms();
+                let entries: Vec<UsageEntry> = results
+                    .into_iter()
+                    .filter_map(|(kind, result)| {
+                        let usage = inner.limits.entry(kind).or_default();
+                        usage.apply(result, now);
+                        usage_entry(kind, usage)
+                    })
+                    .collect();
                 inner.usage = Some(entries.clone());
                 inner.usage_at = Some(Instant::now());
                 inner.usage_busy = false;
-            }
+                entries
+            };
             hub.broadcast(&BridgeMsg::Usage { entries });
         });
     }
@@ -794,18 +805,17 @@ pub fn encode(message: &BridgeMsg) -> Vec<u8> {
     serde_json::to_vec(message).unwrap_or_default()
 }
 
-pub fn usage_entry(kind: AgentKind, result: Result<Limits, Problem>) -> Option<UsageEntry> {
-    let limits = match result {
-        Err(Problem::SignedOut) => return None,
-        Err(problem) => {
-            return Some(UsageEntry {
-                kind,
-                windows: Vec::new(),
-                credits: None,
-                problem: Some(problem.label().to_string()),
-            });
-        }
-        Ok(limits) => limits,
+pub fn usage_entry(kind: AgentKind, usage: &Usage) -> Option<UsageEntry> {
+    if !usage.is_signed_in() {
+        return None;
+    }
+    let Some(limits) = usage.limits else {
+        return Some(UsageEntry {
+            kind,
+            windows: Vec::new(),
+            credits: None,
+            problem: usage.problem.map(|problem| problem.label().to_string()),
+        });
     };
     let windows = [
         (USAGE_SESSION_LABEL, limits.session),
@@ -823,7 +833,7 @@ pub fn usage_entry(kind: AgentKind, result: Result<Limits, Problem>) -> Option<U
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::usage::Window;
+    use crate::usage::{Limits, Problem, Window};
 
     #[test]
     fn after_a_reboot_the_hub_settles_with_the_interrupted_agents_and_not_the_finished_ones() {
@@ -1211,12 +1221,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    fn fetched(results: &[Result<Limits, Problem>]) -> Usage {
+        let mut usage = Usage::default();
+        for (at, result) in results.iter().enumerate() {
+            usage.apply(*result, u64::try_from(at).unwrap());
+        }
+        usage
+    }
+
     #[test]
     fn a_signed_out_provider_is_left_out_of_the_usage() {
-        assert_eq!(usage_entry(AgentKind::Claude, Err(Problem::SignedOut)), None);
-        let expired = usage_entry(AgentKind::Codex, Err(Problem::Expired)).unwrap();
+        assert_eq!(usage_entry(AgentKind::Claude, &fetched(&[Err(Problem::SignedOut)])), None);
+        let expired = usage_entry(AgentKind::Codex, &fetched(&[Err(Problem::Expired)])).unwrap();
         assert_eq!(expired.problem.as_deref(), Some(Problem::Expired.label()));
         assert!(expired.windows.is_empty());
+    }
+
+    #[test]
+    fn a_rate_limited_check_keeps_the_last_numbers_instead_of_showing_unavailable() {
+        let limits = Limits { session: Some(Window { used_percent: 4.0, resets_at_ms: None }), ..Limits::default() };
+        let kept = usage_entry(AgentKind::Claude, &fetched(&[Ok(limits), Err(Problem::Unavailable)])).unwrap();
+        assert_eq!(kept.windows.iter().map(|w| w.used).collect::<Vec<_>>(), [4.0]);
+        assert_eq!(kept.problem, None, "a failed refresh between two good ones is not news");
+
+        let never = usage_entry(AgentKind::Claude, &fetched(&[Err(Problem::Unavailable)])).unwrap();
+        assert!(never.windows.is_empty());
+        assert_eq!(never.problem.as_deref(), Some(Problem::Unavailable.label()), "with no number yet it says so");
+
+        let expired = usage_entry(AgentKind::Claude, &fetched(&[Ok(limits), Err(Problem::Expired)])).unwrap();
+        assert!(expired.windows.is_empty(), "an expired login drops numbers it can no longer refresh");
+        assert_eq!(expired.problem.as_deref(), Some(Problem::Expired.label()));
     }
 
     #[test]
@@ -1227,7 +1261,7 @@ mod tests {
             monthly: Some(Window { used_percent: 7.5, resets_at_ms: None }),
             credits: Some(3.25),
         };
-        let entry = usage_entry(AgentKind::Claude, Ok(limits)).unwrap();
+        let entry = usage_entry(AgentKind::Claude, &fetched(&[Ok(limits)])).unwrap();
         let labels: Vec<&str> = entry.windows.iter().map(|w| w.label.as_str()).collect();
         assert_eq!(labels, [USAGE_SESSION_LABEL, USAGE_MONTHLY_LABEL]);
         assert_eq!(entry.windows[0].resets_at, Some(9));
