@@ -61,6 +61,7 @@ struct Tracked {
     subagents: Vec<Subagent>,
     model: Option<String>,
     launch_model: Option<String>,
+    child_pid: Option<u32>,
 }
 
 impl Tracked {
@@ -150,7 +151,7 @@ impl Tracked {
     fn parent(&self) -> Option<subagents::Parent> {
         let live = self.status.as_ref().filter(|_| !self.is_dead())?;
         let kind = live.running_kind(self.record.kind);
-        subagents::parent_of(&self.record, kind, live.nested.as_ref(), self.state())
+        subagents::parent_of(&self.record, kind, live.nested.as_ref(), self.state(), self.child_pid)
     }
 }
 
@@ -422,6 +423,10 @@ impl Hub {
             .collect()
     }
 
+    pub fn child_pid(&self, id: AgentId) -> Option<u32> {
+        self.inner().agents.get(&id).filter(|tracked| !tracked.is_dead()).and_then(|tracked| tracked.child_pid)
+    }
+
     pub fn live_status(&self, id: AgentId) -> Option<StatusReport> {
         self.inner().agents.get(&id).filter(|tracked| !tracked.is_dead()).and_then(|tracked| tracked.status.clone())
     }
@@ -555,6 +560,7 @@ impl Hub {
                     subagents: Vec::new(),
                     model: None,
                     launch_model: None,
+                    child_pid: None,
                 });
                 tracked.record = record;
                 match checks.get(&id) {
@@ -599,6 +605,7 @@ impl Hub {
             Ok((conn, reader, _)) => {
                 tracked.link = Link::Live(Arc::new(conn));
                 tracked.launch_model = launch_model;
+                tracked.child_pid = runtime.child_pid;
                 drop(inner);
                 let hub = Arc::clone(&self);
                 let _ = client::spawn_reader(reader, move |message| hub.on_holder(id, generation, message));
@@ -917,6 +924,7 @@ mod tests {
             subagents: Vec::new(),
             model: None,
             launch_model: None,
+            child_pid: None,
         }
     }
 
@@ -958,6 +966,7 @@ mod tests {
             subagents: Vec::new(),
             model: None,
             launch_model: None,
+            child_pid: None,
         }
     }
 

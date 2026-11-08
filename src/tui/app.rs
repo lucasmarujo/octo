@@ -190,7 +190,7 @@ impl AgentEntry {
         if self.is_dead() {
             return None;
         }
-        subagents::parent_of(&self.record, self.kind(), self.nested(), self.state())
+        subagents::parent_of(&self.record, self.kind(), self.nested(), self.state(), None)
     }
 }
 

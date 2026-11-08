@@ -51,6 +51,10 @@ fn session_file(dir: &Path, pid: u32) -> Option<SessionFile> {
     (session.pid == pid && is_uuid(&session.session_id)).then_some(session)
 }
 
+pub fn claude_session(claude_home: &Path, pid: u32) -> Option<String> {
+    session_file(&claude_home.join(CLAUDE_SESSIONS_DIR), pid).map(|session| session.session_id)
+}
+
 pub fn detect(
     processes: &[Process],
     claude_home: Option<&Path>,

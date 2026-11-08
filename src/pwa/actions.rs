@@ -571,7 +571,9 @@ fn describe(hub: &Hub, record: &AgentRecord) -> Details {
     let status = hub.live_status(agent);
     let state = hub.state(agent).unwrap_or(AgentState::Idle);
     let kind = status.as_ref().map_or(record.kind, |status| status.running_kind(record.kind));
-    let parent = status.as_ref().and_then(|status| subagents::parent_of(record, kind, status.nested.as_ref(), state));
+    let child_pid = hub.child_pid(agent);
+    let parent =
+        status.as_ref().and_then(|status| subagents::parent_of(record, kind, status.nested.as_ref(), state, child_pid));
     let subagents = parent
         .map(|parent| SubagentWatcher::new(launch::claude_home(), launch::codex_home()).scan(&[parent], now_ms()))
         .and_then(|mut found| found.remove(&agent))

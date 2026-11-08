@@ -60,6 +60,7 @@ pub struct Parent {
     pub cwd: PathBuf,
     pub created_at_ms: u64,
     pub busy: bool,
+    pub pid: Option<u32>,
 }
 
 pub fn parent_of(
@@ -67,6 +68,7 @@ pub fn parent_of(
     kind: AgentKind,
     nested: Option<&NestedAgent>,
     state: AgentState,
+    child_pid: Option<u32>,
 ) -> Option<Parent> {
     if !kind.is_ai() {
         return None;
@@ -78,6 +80,7 @@ pub fn parent_of(
         cwd: nested.and_then(|n| n.cwd.clone()).unwrap_or_else(|| record.cwd.clone()),
         created_at_ms: nested.map_or(record.created_at_ms, |n| n.since_ms),
         busy: matches!(state, AgentState::Working | AgentState::Paused),
+        pid: nested.map_or(child_pid, |n| Some(n.pid)),
     })
 }
 
@@ -275,9 +278,18 @@ impl SubagentWatcher {
         found
     }
 
+    fn claude_session(&self, parent: &Parent) -> Option<String> {
+        let live = self
+            .claude_home
+            .as_deref()
+            .zip(parent.pid)
+            .and_then(|(home, pid)| crate::holder::nested::claude_session(home, pid));
+        live.or_else(|| parent.conversation_id.clone()).filter(|id| is_uuid(id))
+    }
+
     fn claude_model(&mut self, parent: &Parent) -> Option<String> {
-        let session_id = parent.conversation_id.as_deref().filter(|id| is_uuid(id))?;
-        let session = self.claude_dirs.get(session_id)?.parent()?;
+        let session_id = self.claude_session(parent)?;
+        let session = self.claude_dirs.get(&session_id)?.parent()?;
         let path = session.with_file_name(format!("{session_id}{CLAUDE_TRANSCRIPT_SUFFIX}"));
         self.last_model(&path, claude_model)
     }
@@ -339,8 +351,8 @@ impl SubagentWatcher {
     }
 
     fn claude(&mut self, parent: &Parent, now: u64) -> Vec<Subagent> {
-        let Some(session_id) = parent.conversation_id.as_deref().filter(|id| is_uuid(id)) else { return Vec::new() };
-        let Some(dir) = self.claude_dir(session_id, &parent.cwd) else { return Vec::new() };
+        let Some(session_id) = self.claude_session(parent) else { return Vec::new() };
+        let Some(dir) = self.claude_dir(&session_id, &parent.cwd) else { return Vec::new() };
         let Ok(entries) = fs::read_dir(&dir) else { return Vec::new() };
         let mut found = Vec::new();
         for entry in entries.flatten() {
@@ -619,6 +631,7 @@ mod tests {
             cwd: cwd.to_path_buf(),
             created_at_ms: 0,
             busy,
+            pid: None,
         }
     }
 
@@ -749,6 +762,70 @@ mod tests {
     }
 
     #[test]
+    fn a_cleared_or_resumed_claude_lists_the_subagents_of_the_session_it_runs_now() {
+        const LIVE: &str = "0d6c1f7e-4b8a-4f3e-9a51-2c7d8e9f0a1b";
+        const PID: u32 = 4242;
+        let t = tree("live");
+        let home = t.0.join("claude-home");
+        let cwd = t.0.join("project");
+        fs::create_dir_all(&cwd).unwrap();
+        let project = home.join("projects").join(claude_project_slug(&cwd));
+        claude_subagent(
+            &project.join(SESSION).join("subagents"),
+            "old",
+            serde_json::json!({"agentType":"launched"}),
+            &[tool_use("Read", Value::Null)],
+        );
+        claude_subagent(
+            &project.join(LIVE).join("subagents"),
+            "new",
+            serde_json::json!({"agentType":"after-clear"}),
+            &[tool_use("Grep", Value::Null)],
+        );
+        let now = crate::util::now_ms();
+        let running = Parent { pid: Some(PID), ..claude_parent(&cwd, true) };
+        let roles = |watcher: &mut SubagentWatcher| -> Vec<String> {
+            watcher
+                .scan(std::slice::from_ref(&running), now)
+                .remove(&7)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|s| s.role)
+                .collect()
+        };
+
+        let mut watcher = SubagentWatcher::new(Some(home.clone()), None);
+        assert_eq!(roles(&mut watcher), ["launched"], "without a session file the launched session is the one");
+
+        let registry = home.join("sessions").join(format!("{PID}.json"));
+        write(&registry, &serde_json::json!({"pid": PID, "sessionId": LIVE, "cwd": cwd}).to_string());
+        assert_eq!(roles(&mut watcher), ["after-clear"], "the session Claude reports for its process wins");
+
+        write(&registry, &serde_json::json!({"pid": PID + 1, "sessionId": LIVE}).to_string());
+        assert_eq!(roles(&mut watcher), ["launched"], "a file left by another process is ignored");
+    }
+
+    #[test]
+    fn the_process_of_a_parent_is_the_agent_nested_in_a_terminal_or_else_the_one_launched() {
+        let record: AgentRecord =
+            serde_json::from_str(r#"{"id":5,"session":"s","name":"a","kind":"terminal","cwd":"/x","created_at_ms":1}"#)
+                .unwrap();
+        let nested = NestedAgent {
+            kind: AgentKind::Claude,
+            pid: 77,
+            conversation_id: Some(SESSION.into()),
+            cwd: None,
+            since_ms: 9,
+        };
+        let inside = parent_of(&record, AgentKind::Claude, Some(&nested), AgentState::Working, Some(11)).unwrap();
+        assert_eq!(inside.pid, Some(77));
+        assert_eq!(inside.conversation_id.as_deref(), Some(SESSION));
+        let launched = parent_of(&record, AgentKind::Claude, None, AgentState::Idle, Some(11)).unwrap();
+        assert_eq!(launched.pid, Some(11));
+        assert!(parent_of(&record, AgentKind::Terminal, None, AgentState::Working, Some(11)).is_none());
+    }
+
+    #[test]
     fn claude_slug_replaces_every_non_alphanumeric_character() {
         assert_eq!(
             claude_project_slug(Path::new(r"C:\Users\aluca\orca\projects\orkai_cli")),
@@ -809,6 +886,7 @@ mod tests {
             cwd: PathBuf::from("/work"),
             created_at_ms: now.saturating_sub(60_000),
             busy: false,
+            pid: None,
         };
         let mut watcher = SubagentWatcher::new(None, Some(codex));
         let found = watcher.scan(&[parent], now);
@@ -835,6 +913,7 @@ mod tests {
             cwd: PathBuf::from("/work"),
             created_at_ms: now.saturating_sub(30_000),
             busy: true,
+            pid: None,
         };
         let mut watcher = SubagentWatcher::new(None, Some(codex));
         let found = watcher.scan(std::slice::from_ref(&first), now);
@@ -862,6 +941,7 @@ mod tests {
             cwd: PathBuf::from("/"),
             created_at_ms: 0,
             busy: true,
+            pid: None,
         };
         let mut watcher = SubagentWatcher::default();
         let claude = Parent { kind: AgentKind::Claude, conversation_id: Some(SESSION.into()), ..parent.clone() };
@@ -1034,6 +1114,7 @@ mod tests {
             cwd: PathBuf::from("/work"),
             created_at_ms: now.saturating_sub(60_000),
             busy: true,
+            pid: None,
         };
         let without_rollout = Parent { id: 4, conversation_id: Some("parent-3".into()), ..parent.clone() };
         let mut watcher = SubagentWatcher::new(None, Some(codex));
