@@ -7,6 +7,22 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.26',
+    date: '2026-11-08',
+    en: [
+      'The phone app has a new look: cards, the plan usage as rings and a board next to the list.',
+      'An agent that needs you shows its real choices, so one tap on the phone answers it.',
+      'The phone app has the Dark, Gray and Light themes of Octo, with haptics and reduce motion.',
+      'On the phone a folder can be searched, and the changes of a branch read file by file.',
+    ],
+    'pt-BR': [
+      'O app do celular ganhou visual novo: cartões, o uso do plano em anéis e um quadro ao lado da lista.',
+      'Um agente que precisa de você mostra as opções reais, então um toque no celular responde.',
+      'O app do celular tem os temas Escuro, Cinza e Claro do Octo, com vibração e menos animação.',
+      'No celular dá para buscar uma pasta e ler as mudanças de um branch arquivo por arquivo.',
+    ],
+  },
+  {
     version: '0.2.25',
     date: '2026-11-08',
     en: [
