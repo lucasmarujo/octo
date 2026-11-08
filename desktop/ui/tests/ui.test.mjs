@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { COLUMNS, USAGE_ALERT, USAGE_WARN, column, duration, elapsed, glyph, kindColor, kindHex, label, usageColor } from '../js/format.js';
 import { MOODS, moodOf } from '../js/kai.js';
@@ -244,9 +245,8 @@ test('Kai shows the most urgent state among every agent', () => {
 });
 
 test('the Kai on the phone picks its state the same way as the one on the desktop', () => {
-  const phone = readFileSync(join(REPO, 'src/pwa/web/app.js'), 'utf8');
-  const source = phone.match(/function moodOf\(list\) \{[\s\S]*?\n {2}\}/)[0];
-  const phoneMoodOf = new Function(`${source}; return moodOf;`)();
+  const phoneMoodOf = createRequire(import.meta.url)(join(REPO, 'src/pwa/web/model.js')).moodOf;
+  assert.match(readFileSync(join(REPO, 'src/pwa/web/app.js'), 'utf8'), /const moodOf = M\.moodOf;/, 'the app uses the mood of the model');
   const states = ['idle', 'working', 'paused', 'done', 'lost', 'exited'];
   for (const first of states) {
     for (const second of states) {
@@ -508,7 +508,7 @@ test('the accent of every surface is the pink of Kai', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.equal(css.match(/--color-accent: #[0-9a-f]{6};/g).length, 2);
   assert.ok(css.match(/--color-accent: #[0-9a-f]{6};/g).every((rule) => rule.includes(pink)));
-  assert.match(readFileSync(join(REPO, 'src/pwa/web/style.css'), 'utf8'), new RegExp(`--pink: ${pink};`));
+  assert.match(readFileSync(join(REPO, 'src/pwa/web/style.css'), 'utf8'), new RegExp(`--color-accent: ${pink};`));
   assert.match(readFileSync(join(REPO, 'site/assets/site.css'), 'utf8'), new RegExp(`--pink: ${pink};`));
   assert.match(rust('src/tui/theme.rs'), /ACCENT: Color = Color::Rgb\(232, 94, 182\);/);
   for (const file of ['desktop/ui/styles.css', 'src/pwa/web/style.css', 'site/assets/site.css', 'site/index.html']) {
@@ -627,9 +627,10 @@ test('a phone tab that another tab of the same browser replaced waits for a tap 
   assert.match(rust('src/pwa/web/wire.js'), new RegExp(`const REPLACED = ${code};`), 'the phone knows the code the bridge closes with');
   const app = rust('src/pwa/web/app.js');
   const replaced = app.match(/if \(code === Wire\.REPLACED\) \{([\s\S]*?)\n {4}\}/)[1];
-  assert.match(replaced, /setLink\('replaced'\);[\s\S]*showPair\([^)]*, true, false\);\s+return;/);
+  assert.match(replaced, /setLink\('replaced'\);[\s\S]*showPair\('replaced'\);\s+return;/);
+  assert.match(app, /replaced: \{[^}]*steps: false, form: false, retry: true/, 'it offers a tap, not the pairing steps');
   assert.doesNotMatch(replaced, /setTimeout|connect\(/, 'reconnecting would replace the other tab in turn, forever');
-  assert.match(app, /\['unpaired', 'replaced'\]\.includes\(el\.link\.dataset\.state\)/, 'coming back to the tab or going online does not take the session back either');
+  assert.match(app, /\['unpaired', 'replaced'\]\.includes\(state\.link\)/, 'coming back to the tab or going online does not take the session back either');
 });
 
 test('the test line of an agent says what the TUI says about its last run', async () => {
