@@ -68,6 +68,49 @@ recusa.
 `the_signed_installer_installs_a_signed_app_and_uninstaller` criam um certificado autoassinado descartável no
 repositório do usuário, assinam com ele e o removem no fim; precisam da rede para o carimbo de tempo.
 
+## Microsoft Store
+
+`msix.ps1` gera o `Octo.msix` com o `makeappx` e o `makepri` do Windows SDK, a partir do `msix/AppxManifest.xml`
+e dos ícones em `msix/Assets`. A Microsoft assina o pacote quando ele passa pela certificação da Store, por isso
+ele sai daqui sem assinatura. A versão do pacote é o `ProductVersion` do `Octo.exe` com `.0` no fim, porque a
+Store exige a quarta parte zerada.
+
+```powershell
+cargo build --release -p orkai-desktop
+powershell -ExecutionPolicy Bypass -File installer\msix.ps1 -Binary target\release\octo.exe
+```
+
+O pacote sai em `target\installer\Octo.msix`, e a pasta montada fica em `target\msix`. A identidade já vem com os
+valores da página "Product identity" do app no Partner Center (Store ID `9PCTM2ZPXW4J`): `OctoAI.OctoAIAgents`,
+`CN=7C9FFDFE-038C-491B-903D-40B89EE3BD87`, publisher `OctoAI` e o nome reservado `Octo — AI Agents`, porque "Octo"
+já era de outro publisher. A Store recusa um pacote com outros valores; `-Identity`, `-Publisher`,
+`-PublisherDisplayName` e `-DisplayName` só servem para os testes.
+
+No CI, o job `desktop-build` do Windows monta o `Octo.msix` com o mesmo `Octo.exe` da release e o deixa no
+artefato `store-msix` da execução, fora da release do GitHub, porque um MSIX sem assinatura não instala fora da
+Store. É esse arquivo que vai para a submissão no Partner Center.
+
+O Octo da Store não se atualiza sozinho: a pasta do pacote é somente leitura e a própria Store instala as versões
+novas. Ele mostra isso em Settings › Updates. O manifesto desliga a virtualização de escrita (`desktop6`, com a
+capacidade restrita `unvirtualizedResources`), então o Octo grava no `%LOCALAPPDATA%\Octo` e no registro de
+verdade, e o agents host e os holders, que rodam da cópia em `Octo\bin` fora do pacote e saem do job do Octo com
+`CREATE_BREAKAWAY_FROM_JOB`, enxergam os mesmos arquivos e não têm a identidade do pacote. Por isso uma
+atualização da Store nunca para um agente. Na submissão, a Store pede uma justificativa para `runFullTrust` e
+`unvirtualizedResources`: o Octo abre agentes de linha de comando (Claude Code, Codex, npm…) que leem e gravam o
+AppData e o registro reais do usuário e continuam rodando depois que o Octo fecha.
+
+`installer/msix/Assets` sai do `desktop/icons/icon.png`: a grade de 48 pixels do sprite ampliada por múltiplos
+inteiros, e o `desktop/icons/32x32.png` no tamanho 32.
+
+### Testes
+
+```sh
+cargo test -p orkai-desktop --test msix_e2e -- --ignored
+```
+
+Sem `--ignored`, o `cargo test` só confere o manifesto e os ícones; com ele, monta o pacote de verdade e precisa
+do Windows SDK.
+
 ## orkai (legado)
 
 Depois da 0.2.8 as releases trazem só o Octo: o CI não gera nem publica mais o `orkai.exe` e o

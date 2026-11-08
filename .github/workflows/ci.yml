@@ -64,6 +64,9 @@ jobs:
       - name: Test the Windows installer
         if: matrix.os == 'windows-latest'
         run: cargo test -p orkai-desktop --test installer_e2e -- --ignored
+      - name: Test the Microsoft Store package
+        if: matrix.os == 'windows-latest'
+        run: cargo test -p orkai-desktop --test msix_e2e -- --ignored
 
   version:
     name: check the version
@@ -298,6 +301,16 @@ jobs:
         with:
           name: octo-${{ matrix.target }}
           path: dist/*
+          if-no-files-found: error
+      - name: Build the Microsoft Store package
+        if: runner.os == 'Windows'
+        run: |
+          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File installer\msix.ps1 -Binary "target\${{ matrix.target }}\release\octo.exe"
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: store-msix
+          path: target/installer/Octo.msix
           if-no-files-found: error
 
   publish:
