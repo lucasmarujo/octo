@@ -237,55 +237,57 @@ test('o ícone do orkai CLI (exe e terminais) é o sprite IDLE em cada tamanho',
 });
 
 test('o favicon do site é o ícone do Octo, nos tamanhos de aba', () => {
-  const ico = readFileSync(join(ROOT, 'octo-eye-pixel.ico'));
+  const ico = readFileSync(join(ROOT, 'octo-kai-corner.ico'));
   assert.deepEqual(readFileSync(join(ROOT, 'favicon.ico')), ico, 'site/favicon.ico');
   const sizes = icoFrames(ico).map((frame) => frame.readUInt32BE(16));
   assert.deepEqual([...sizes].sort((a, b) => a - b), [16, 32, 48]);
-  const touch = readFileSync(join(ROOT, 'octo-eye-pixel-touch-icon.png'));
+  const touch = readFileSync(join(ROOT, 'octo-kai-corner-touch-icon.png'));
   assert.equal(touch.readUInt32BE(16), 180);
   assert.equal(touch.readUInt32BE(20), 180);
-  assert.match(head, /<link rel="icon" href="\/octo-eye-pixel\.ico" sizes="48x48">/);
-  assert.match(head, /<link rel="apple-touch-icon" href="\/octo-eye-pixel-touch-icon\.png">/);
+  assert.match(head, /<link rel="icon" href="\/octo-kai-corner\.ico" sizes="48x48">/);
+  assert.match(head, /<link rel="apple-touch-icon" href="\/octo-kai-corner-touch-icon\.png">/);
 });
 
-test('o ícone do Octo é o olho do polvo em todo lugar, e o Kai não sai de onde é mascote', () => {
+test('o ícone do Octo é o Kai espiando pelo canto em todo lugar, e o Kai não sai de onde é mascote', () => {
   const channels = ({ width, pixels }, x, y) => {
     const at = (Math.floor(y * width) * width + Math.floor(x * width)) * 4;
     return [...pixels.subarray(at, at + 4)];
   };
-  const assertEye = (png, label, cornerAlpha = 0) => {
+  const cell = (x, y) => (x + 0.5) / 48;
+  const assertCorner = (png, label, cornerAlpha = 0) => {
     const image = decodePng(png);
     assert.equal(channels(image, 0, 0)[3], cornerAlpha, `${label}: canto`);
-    assert.deepEqual(channels(image, 0.5, 0.5), [0, 0, 0, 255], `${label}: pupila`);
-    assert.deepEqual(channels(image, 0.5, 0.78), [0xe8, 0x5e, 0xb6, 255], `${label}: íris no rosa do Kai`);
-    if (image.width >= 48) assert.deepEqual(channels(image, 90 / 256, 70 / 256), [255, 255, 255, 255], `${label}: brilho`);
+    if (image.width < 48) return image.width;
+    assert.deepEqual(channels(image, cell(24), cell(0)), [0, 0, 0, 255], `${label}: borda da janela`);
+    assert.deepEqual(channels(image, cell(4), cell(30)), [0x1c, 0x1c, 0x24, 255], `${label}: fundo da janela`);
+    assert.deepEqual(channels(image, cell(13), cell(11)), [0xf0, 0x8a, 0xcb, 255], `${label}: cursor`);
+    assert.deepEqual(channels(image, cell(36), cell(32)), [0xe8, 0x5e, 0xb6, 255], `${label}: o Kai no canto, no rosa dele`);
     return image.width;
   };
-  const icons = ['desktop/icons/32x32.png', 'desktop/icons/128x128.png', 'desktop/icons/128x128@2x.png', 'desktop/icons/icon.png', 'assets/octo-eye-pixel.png'];
-  const widths = icons.map((file) => assertEye(readFileSync(join(REPO, file)), file));
+  const icons = ['desktop/icons/32x32.png', 'desktop/icons/128x128.png', 'desktop/icons/128x128@2x.png', 'desktop/icons/icon.png', 'assets/octo-kai-corner.png'];
+  const widths = icons.map((file) => assertCorner(readFileSync(join(REPO, file)), file));
   assert.deepEqual(widths, [32, 128, 256, 512, 512]);
-  const desktop = icoFrames(readFileSync(join(REPO, 'desktop/icons/icon.ico'))).map((frame) => assertEye(frame, 'icon.ico'));
+  const desktop = icoFrames(readFileSync(join(REPO, 'desktop/icons/icon.ico'))).map((frame) => assertCorner(frame, 'icon.ico'));
   assert.deepEqual([...desktop].sort((a, b) => a - b), [16, 24, 32, 48, 64, 128, 256]);
-  icoFrames(readFileSync(join(ROOT, 'octo-eye-pixel.ico'))).forEach((frame) => assertEye(frame, 'octo-eye-pixel.ico'));
-  assertEye(readFileSync(join(ROOT, 'octo-eye-pixel-touch-icon.png')), 'touch icon', 255);
+  icoFrames(readFileSync(join(ROOT, 'octo-kai-corner.ico'))).forEach((frame) => assertCorner(frame, 'octo-kai-corner.ico'));
+  assertCorner(readFileSync(join(ROOT, 'octo-kai-corner-touch-icon.png')), 'touch icon', 255);
   const icns = readFileSync(join(REPO, 'desktop/icons/icon.icns'));
   const mac = [];
   for (let at = 8; at < icns.length; at += icns.readUInt32BE(at + 4)) {
-    if (icns.toString('ascii', at, at + 4) !== 'TOC ') mac.push(assertEye(icns.subarray(at + 8, at + icns.readUInt32BE(at + 4)), 'icon.icns'));
+    if (icns.toString('ascii', at, at + 4) !== 'TOC ') mac.push(assertCorner(icns.subarray(at + 8, at + icns.readUInt32BE(at + 4)), 'icon.icns'));
   }
   assert.deepEqual(new Set(mac), new Set([16, 32, 64, 128, 256, 512, 1024]));
   const favicon = read('favicon.svg');
-  assert.match(favicon, /viewBox="0 0 32 32" shape-rendering="crispEdges"/, 'a grade de 32 pixels');
-  assert.match(favicon, /fill="#E85EB6"/, 'a íris é o rosa do Kai');
+  assert.match(favicon, /viewBox="0 0 48 48" shape-rendering="crispEdges"/, 'a grade de 48 pixels, a mesma do sprite do Kai');
+  assert.match(favicon, /fill="#E85EB6"/, 'o Kai no rosa dele');
   assert.match(readFileSync(join(REPO, 'desktop/ui/kai/idle.svg'), 'utf8'), /#E85EB6/, 'o rosa vem da paleta do Kai');
   assert.match(html, /<span class="kai kai-hero hero-mascot"/, 'o mascote da página continua');
   assert.ok(existsSync(join(REPO, 'desktop/ui/kai/idle.svg')), 'o mascote da sidebar continua');
   assert.equal(meta('property', 'og:image'), `${SITE}og-octo-kai.png`, 'a imagem de compartilhamento continua com o mascote');
 });
 
-test('o ícone é pixel art: só cores da paleta, sem suavização, e os múltiplos de 32 saem da grade do favicon', () => {
-  const palette = new Set(['00000000', '000000ff', 'ffffffff', 'e85eb6ff', 'f08acbff', 'c84898ff', '8f3170ff']);
-  const grid = Array.from({ length: 32 }, () => Array(32).fill('00000000'));
+test('o ícone é pixel art: só cores da grade, sem suavização, e todo tamanho sai da grade do favicon', () => {
+  const grid = Array.from({ length: 48 }, () => Array(48).fill('00000000'));
   for (const [, d, fill] of read('favicon.svg').matchAll(/<path d="([^"]+)" fill="#([0-9A-F]{6})"\/>/g)) {
     for (const [, x, y, w, h] of d.matchAll(/M(\d+) (\d+)h(\d+)v(\d+)h-\d+z/g)) {
       for (let row = Number(y); row < Number(y) + Number(h); row += 1) {
@@ -293,30 +295,34 @@ test('o ícone é pixel art: só cores da paleta, sem suavização, e os múltip
       }
     }
   }
-  const assertPixels = (png, label) => {
+  const palette = new Set(grid.flat());
+  assert.ok(palette.has('e85eb6ff') && palette.has('1c1c24ff'), 'o rosa do Kai e o fundo da janela');
+  const assertPixels = (png, label, background = '00000000') => {
     const { width, pixels } = decodePng(png);
+    const source = (i) => Math.floor(((i + 0.5) * 48) / width);
     for (let y = 0; y < width; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const color = pixels.subarray((y * width + x) * 4, (y * width + x) * 4 + 4).toString('hex');
-        assert.ok(palette.has(color), `${label}: ${color} em ${x},${y} não é da paleta`);
-        if (width % 32 === 0) assert.equal(color, grid[Math.floor(y * 32 / width)][Math.floor(x * 32 / width)], `${label}: ${x},${y}`);
+        const expected = grid[source(y)][source(x)];
+        assert.equal(color, expected === '00000000' ? background : expected, `${label}: ${x},${y}`);
       }
     }
   };
-  for (const file of ['desktop/icons/32x32.png', 'desktop/icons/128x128.png', 'desktop/icons/128x128@2x.png', 'desktop/icons/icon.png', 'assets/octo-eye-pixel.png']) assertPixels(readFileSync(join(REPO, file)), file);
-  for (const file of ['desktop/icons/icon.ico', 'site/octo-eye-pixel.ico']) icoFrames(readFileSync(join(REPO, file))).forEach((frame) => assertPixels(frame, file));
+  for (const file of ['desktop/icons/32x32.png', 'desktop/icons/128x128.png', 'desktop/icons/128x128@2x.png', 'desktop/icons/icon.png', 'assets/octo-kai-corner.png']) assertPixels(readFileSync(join(REPO, file)), file);
+  for (const file of ['desktop/icons/icon.ico', 'site/octo-kai-corner.ico']) icoFrames(readFileSync(join(REPO, file))).forEach((frame) => assertPixels(frame, file));
+  assertPixels(readFileSync(join(ROOT, 'octo-kai-corner-touch-icon.png')), 'touch icon', '000000ff');
   const icns = readFileSync(join(REPO, 'desktop/icons/icon.icns'));
   for (let at = 8; at < icns.length; at += icns.readUInt32BE(at + 4)) {
     if (icns.toString('ascii', at, at + 4) !== 'TOC ') assertPixels(icns.subarray(at + 8, at + icns.readUInt32BE(at + 4)), 'icon.icns');
   }
-  assert.equal(readFileSync(join(REPO, 'assets/octo-eye-pixel.png')).compare(readFileSync(join(REPO, 'desktop/icons/icon.png'))), 0);
+  assert.equal(readFileSync(join(REPO, 'assets/octo-kai-corner.png')).compare(readFileSync(join(REPO, 'desktop/icons/icon.png'))), 0);
 });
 
 test('ícones e imagens trocados ganham nome novo, porque o nginx guarda png e ico por 30 dias', () => {
   const cached = read('nginx.conf').match(/location ~\* \\\.\(\?:([\w|]+)\)\$/)[1].split('|');
   assert.ok(cached.includes('png') && cached.includes('ico'));
-  assert.doesNotMatch(html, /\/og-octo\.png|\/octo\.ico|\/octo-touch-icon\.png|\/octo-kai\.ico|\/octo-kai-touch-icon\.png|\/octo-eye\.ico|\/octo-eye-touch-icon\.png/);
-  for (const old of ['og-octo.png', 'octo.ico', 'octo-touch-icon.png', 'octo-kai.ico', 'octo-kai-touch-icon.png', 'octo-eye.ico', 'octo-eye-touch-icon.png']) assert.ok(!existsSync(join(ROOT, old)), `${old} ficou para trás`);
+  assert.doesNotMatch(html, /\/og-octo\.png|\/octo\.ico|\/octo-touch-icon\.png|\/octo-kai\.ico|\/octo-kai-touch-icon\.png|\/octo-eye\.ico|\/octo-eye-touch-icon\.png|\/octo-eye-pixel\.ico|\/octo-eye-pixel-touch-icon\.png/);
+  for (const old of ['og-octo.png', 'octo.ico', 'octo-touch-icon.png', 'octo-kai.ico', 'octo-kai-touch-icon.png', 'octo-eye.ico', 'octo-eye-touch-icon.png', 'octo-eye-pixel.ico', 'octo-eye-pixel-touch-icon.png']) assert.ok(!existsSync(join(ROOT, old)), `${old} ficou para trás`);
 });
 
 test('a marca é OctoAI, o produto é Octo e a página não oferece mais o orkai CLI', () => {
