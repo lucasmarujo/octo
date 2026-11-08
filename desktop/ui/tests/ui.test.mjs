@@ -1642,6 +1642,23 @@ test('both side panels collapse from a button at the same height, and remember i
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initPanelToggles\(\(\) => \{\n\s*if \(watching\(\)\) terminal\.focus\(\);/, 'the keyboard goes back to the terminal');
 });
 
+test('both side panels slide closed and open instead of jumping, and reduced motion skips the slide', () => {
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  const toggle = sidebar.match(/button\.addEventListener\('click', \(\) => \{[\s\S]*?\n {2}\}\);/)[0];
+  assert.ok(toggle.indexOf("motionMs('--motion-slow')") < toggle.indexOf('paint();'), 'reading the token flushes the style, so it happens before the new state or nothing would slide');
+  assert.match(toggle, /document\.documentElement\.dataset\[name\] = collapsed \? 'closing' : 'opening';\n\s*settling = setTimeout\(paint, ms\);/);
+  assert.match(toggle, /clearTimeout\(settling\);/, 'a click in the middle of a slide turns it around');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /:root\[data-sidebar="closing"\] \.sidebar, :root\[data-sidebar="opening"\] \.sidebar \{ overflow: hidden; transition: width var\(--motion-slow\) var\(--ease-out\); \}/);
+  assert.match(css, /:root\[data-sidebar="closing"\] \.sidebar \{ width: 56px; \}/, 'the same width the collapsed sidebar has');
+  assert.match(css, /:root\[data-sidebar="closing"\] \.sidebar > \*, :root\[data-sidebar="opening"\] \.sidebar > \* \{ width: calc\(var\(--sidebar\) - 24px\); \}/, 'the content keeps its width and is clipped instead of wrapping while it slides');
+  assert.match(css, /:root\[data-details="closing"\] \.details \{ width: 0; margin-left: -16px; opacity: 0; transition: width var\(--motion-slow\)/, 'the gap beside the panel closes with it');
+  assert.match(css, /:root\[data-details="opening"\] \.details \{ animation: details-in var\(--motion-slow\) var\(--ease-out\); \}/, 'a panel that was not drawn can only grow through an animation');
+  assert.match(css, /@keyframes details-in \{ from \{ width: 0; margin-left: -16px; opacity: 0; \} \}/);
+  const resizeMs = Number(readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8').match(/const RESIZE_MS = (\d+);/)[1]);
+  assert.ok(resizeMs > 16, 'the terminal fits once, after the slide, not on every frame');
+});
+
 test('the bell shows off whenever no sound would play, and a click from off makes sound play', async () => {
   const { RESTORED_VOLUME, soundFlip, soundOn } = await import('../js/format.js');
   const on = { notify: true, notify_sound: true, notify_volume: 70 };

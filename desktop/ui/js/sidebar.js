@@ -4,6 +4,7 @@ import { ask, closeMenu, openMenu } from './dialogs.js';
 import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentsTip, detailsWidth, duration, kindColor, kindMark, label, shortModel, sidebarWidth, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
 import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_DETAILS_COLLAPSE, ICON_DETAILS_EXPAND, ICON_PLUS, ICON_SIDEBAR_COLLAPSE, ICON_SIDEBAR_EXPAND, providerIcon } from './icons.js';
+import { motionMs } from './motion.js';
 import { agents, inSession, now, selectSession, state, toggleExpanded, toggleUsage } from './state.js';
 import { send } from './transport.js';
 
@@ -266,6 +267,7 @@ function initPanelWidth({ handle, key, property, clamp, fallback, min, max, from
 
 function initPanelToggle({ button, key, name, collapseText, expandText, collapseIcon, expandIcon, onToggle }) {
   let collapsed = storage.get(key) === 'on';
+  let settling = 0;
   const paint = () => {
     const text = collapsed ? expandText : collapseText;
     document.documentElement.dataset[name] = collapsed ? 'collapsed' : 'open';
@@ -278,7 +280,13 @@ function initPanelToggle({ button, key, name, collapseText, expandText, collapse
   button.addEventListener('click', () => {
     collapsed = !collapsed;
     storage.set(key, collapsed ? 'on' : null);
+    clearTimeout(settling);
+    const ms = motionMs('--motion-slow');
     paint();
+    if (ms) {
+      document.documentElement.dataset[name] = collapsed ? 'closing' : 'opening';
+      settling = setTimeout(paint, ms);
+    }
     onToggle();
   });
 }

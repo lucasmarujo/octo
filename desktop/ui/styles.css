@@ -684,6 +684,16 @@ h1, p { margin: 0; }
 :root[data-sidebar="collapsed"] .sidebar-footer { flex-direction: column; }
 :root[data-sidebar="collapsed"] .sidebar-toggle { margin-left: 0; }
 :root[data-details="collapsed"] .details, :root[data-details="collapsed"] .details-resize { display: none; }
+:root[data-sidebar="closing"] .sidebar, :root[data-sidebar="opening"] .sidebar { overflow: hidden; transition: width var(--motion-slow) var(--ease-out); }
+:root[data-sidebar="closing"] .sidebar { width: 56px; }
+:root[data-sidebar="closing"] .sidebar > *, :root[data-sidebar="opening"] .sidebar > * { width: calc(var(--sidebar) - 24px); }
+:root[data-sidebar="closing"] .sidebar > * { opacity: 0; transition: opacity var(--motion-fast) var(--ease-out); }
+:root[data-sidebar="opening"] .sidebar > *, :root[data-sidebar="collapsed"] .sidebar > * { animation: fade-in var(--motion-slow) var(--ease-out); }
+:root[data-sidebar="closing"] #sidebar-resize, :root[data-details="closing"] .details-resize, :root[data-details="opening"] .details-resize { display: none; }
+:root[data-details="closing"] .details { width: 0; margin-left: -16px; opacity: 0; transition: width var(--motion-slow) var(--ease-out), margin-left var(--motion-slow) var(--ease-out), opacity var(--motion-fast) var(--ease-out); }
+:root[data-details="opening"] .details { animation: details-in var(--motion-slow) var(--ease-out); }
+:root[data-details="closing"] .details > *, :root[data-details="opening"] .details > * { width: var(--details); }
+@keyframes details-in { from { width: 0; margin-left: -16px; opacity: 0; } }
 .phone-status.connected { color: var(--color-done); background: color-mix(in srgb, var(--color-done) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-done) 70%, transparent); }
 .phone-status[data-state="failed"] { box-shadow: inset 0 0 0 1px var(--color-lost); }
 .dialog.pairing { width: min(760px, 92vw); }
