@@ -7,6 +7,26 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.25',
+    date: '2026-11-08',
+    en: [
+      'The sidebar lists every agent of a session, each with its running subagents under it.',
+      'Subagents keep showing after a /clear or a /resume, and for a Claude started from a terminal.',
+      'The plan usage keeps its numbers when Claude is slow to answer, instead of showing it as unavailable.',
+      'The usage rings of a collapsed sidebar fill as the plan is used.',
+      'On the Mac the icon has the same size as every other icon in the Dock.',
+      'An Octo installed from the Microsoft Store leaves its updates to the Store.',
+    ],
+    'pt-BR': [
+      'A barra lateral lista todos os agentes de uma sessão, cada um com seus subagentes rodando logo abaixo.',
+      'Os subagentes continuam aparecendo depois de um /clear ou /resume, e também num Claude aberto pelo terminal.',
+      'O uso do plano mantém os números quando o Claude demora a responder, em vez de aparecer como indisponível.',
+      'Os anéis de uso da barra lateral recolhida enchem conforme o plano é usado.',
+      'No Mac o ícone tem o mesmo tamanho de todos os outros ícones do Dock.',
+      'O Octo instalado pela Microsoft Store deixa as atualizações com a Store.',
+    ],
+  },
+  {
     version: '0.2.24',
     date: '2026-11-07',
     en: [
