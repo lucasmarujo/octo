@@ -1818,8 +1818,9 @@ test('a collapsed sidebar keeps the plan usage as one ring per window around the
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebar, /const USAGE_RINGS = 2;/, 'the session and the week, the windows every provider has');
   assert.match(sidebar, /const radius = RING_OUTER - index \* RING_STEP;/, 'the first window outside, the next one inside it');
-  assert.match(sidebar, /const left = 100 - usedPercent\(window\);/, 'a ring shows what is left, so a fresh plan is a full ring');
-  assert.match(sidebar, /const dash = left < 100 \? ` pathLength="100" stroke-dasharray="\$\{left\} 100"` : '';/, 'a full ring is drawn whole, without a seam at the top');
+  assert.match(sidebar, /const used = usedPercent\(window\);/, 'a ring fills as the plan is used, so a fresh plan is an empty ring');
+  assert.doesNotMatch(sidebar, /100 - usedPercent\(window\)/, 'never the part that is left, which drew a fresh plan as a full ring');
+  assert.match(sidebar, /const dash = used < 100 \? ` pathLength="100" stroke-dasharray="\$\{used\} 100"` : '';/, 'a used-up ring is drawn whole, without a seam at the top');
   assert.match(sidebar, /style="stroke:\$\{usageColor\(window\.used\)\}"/, 'in the same green, yellow and red as the bars');
   assert.match(sidebar, /const shown = usageShown\(entries, state\.usageOpen\);\n\s*renderRings\(shown\);/, 'the same providers the open sidebar shows');
   assert.match(sidebar, /host\.hidden = true;\n\s*renderRings\(\[\]\);/, 'no rings when there is no usage');

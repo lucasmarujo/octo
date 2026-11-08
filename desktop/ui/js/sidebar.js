@@ -148,8 +148,8 @@ const usedPercent = (window) => Math.max(0, Math.min(100, window.used));
 function ringCircles(window, index) {
   const radius = RING_OUTER - index * RING_STEP;
   const circle = `cx="${RING_CENTER}" cy="${RING_CENTER}" r="${radius}"`;
-  const left = 100 - usedPercent(window);
-  const dash = left < 100 ? ` pathLength="100" stroke-dasharray="${left} 100"` : '';
+  const used = usedPercent(window);
+  const dash = used < 100 ? ` pathLength="100" stroke-dasharray="${used} 100"` : '';
   return `<circle class="ring-track" ${circle}/><circle class="ring-fill" ${circle}${dash} style="stroke:${usageColor(window.used)}"/>`;
 }
 
