@@ -297,6 +297,15 @@ h1, p { margin: 0; }
 .usage-bar { height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--color-text) 8%, transparent); overflow: hidden; }
 .usage-fill { height: 100%; border-radius: 1px; background: var(--fill); }
 .usage-note { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-faint); }
+.usage-rings { display: none; }
+:root[data-sidebar="collapsed"] .usage-rings:not([hidden]) { display: flex; flex-direction: column; align-items: center; gap: 10px; flex-shrink: 0; margin-bottom: -8px; }
+.usage-ring { position: relative; display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; }
+.usage-ring .ring { position: absolute; inset: 0; transform: rotate(-90deg); }
+.usage-ring circle { fill: none; stroke-width: 2.5; }
+.usage-ring .ring-track { stroke: color-mix(in srgb, var(--color-text) 8%, transparent); }
+.usage-ring .ring-fill { transition: stroke-dasharray var(--motion-slow) var(--ease-out); }
+.usage-ring-icon { display: flex; align-items: center; justify-content: center; width: 14px; height: 14px; color: var(--color-text); }
+.usage-ring-icon svg { display: block; width: 14px; height: 14px; }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .overview { display: flex; flex-direction: column; gap: 24px; flex: 1; min-height: 0; padding: 28px 32px 20px; }

@@ -1734,6 +1734,24 @@ test('the volume lives in Settings and in a popover over the bell, and both stay
   for (const text of ['Alert volume', 'How loud the chime plays. The volume of the system stays as it is.', 'The sound is off. Moving this turns it back on.']) assert.ok(i18n.includes(`'${text}':`), text);
 });
 
+test('a collapsed sidebar keeps the plan usage as one ring per window around the icon of each provider', () => {
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /const USAGE_RINGS = 2;/, 'the session and the week, the windows every provider has');
+  assert.match(sidebar, /const radius = RING_OUTER - index \* RING_STEP;/, 'the first window outside, the next one inside it');
+  assert.match(sidebar, /const left = 100 - usedPercent\(window\);/, 'a ring shows what is left, so a fresh plan is a full ring');
+  assert.match(sidebar, /const dash = left < 100 \? ` pathLength="100" stroke-dasharray="\$\{left\} 100"` : '';/, 'a full ring is drawn whole, without a seam at the top');
+  assert.match(sidebar, /style="stroke:\$\{usageColor\(window\.used\)\}"/, 'in the same green, yellow and red as the bars');
+  assert.match(sidebar, /const shown = usageShown\(entries, state\.usageOpen\);\n\s*renderRings\(shown\);/, 'the same providers the open sidebar shows');
+  assert.match(sidebar, /host\.hidden = true;\n\s*renderRings\(\[\]\);/, 'no rings when there is no usage');
+  assert.match(sidebar, /ring\.dataset\.tip = ringTip\(entry\);/, 'the numbers and the resets stay one hover away, refreshed every second');
+  assert.match(sidebar, /return \[label\(entry\.kind\), \.\.\.lines\]\.join\('\\n'\);/);
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<section id="usage" class="usage" hidden><\/section>\s*<section id="usage-rings" class="usage-rings" hidden><\/section>\s*<footer class="sidebar-footer">/, 'right above the icons of the footer');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.usage-rings \{ display: none; \}\n:root\[data-sidebar="collapsed"\] \.usage-rings:not\(\[hidden\]\) \{ display: flex; flex-direction: column;/, 'only while the sidebar is collapsed');
+  assert.match(css, /\.usage-ring \.ring \{ position: absolute; inset: 0; transform: rotate\(-90deg\); \}/, 'starting at the top and going clockwise');
+});
+
 test('with the sidebar collapsed the volume opens beside the bell, above the screen next to it', () => {
   const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
   const place = settings.match(/function placePopover\(\) \{[\s\S]*?\n\}/)[0];
