@@ -743,12 +743,16 @@ Application certificate (team `8VRVBA2X7C`), with the hardened runtime, and nota
 stapled to the app. Only CI signs it, from builds of this repository; `codesign -dv /Applications/Octo.app`
 shows the team.
 
-**Privacy.** orkai has no telemetry and sends nothing about you or your projects. It only uses the network
-for:
+**Privacy.** Octo and orkai have no telemetry and send nothing about you or your projects; the full policy is
+at [octo.marujo.dev/privacy](https://octo.marujo.dev/privacy/). They only use the network for:
 
 - updates: each time it opens, it reads the `manifest.json` of this repository's newest version release on
   GitHub and downloads the new version when there is one (`ORKAI_NO_UPDATE=1` turns it off, see
-  [Auto-update](#auto-update));
+  [Auto-update](#auto-update)); the Octo from the Microsoft Store never does this, since the Store installs
+  its updates;
+- agent versions: each time its window opens, Octo reads the public version number of each installed agent
+  from its maker (`downloads.claude.ai`, `registry.npmjs.org`, `x.ai`, `code.kimi.com`, `pi.dev` and the
+  Antigravity update server) to offer an update;
 - plan usage: each agent's login token goes only to the service that issued it (see Security, above);
 - the orkai PWA, only after you turn it on: the Cloudflare quick tunnel, with `cloudflared` downloaded from
   Cloudflare's GitHub release, and a query to `cloudflare-dns.com` that waits for the tunnel's address to

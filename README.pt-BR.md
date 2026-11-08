@@ -747,12 +747,16 @@ Developer ID Application (time `8VRVBA2X7C`), com o hardened runtime, e notariza
 grampeado no app. Só o CI assina, a partir de builds deste repositório; `codesign -dv /Applications/Octo.app`
 mostra o time.
 
-**Privacidade.** O orkai não tem telemetria e não envia nada sobre você ou seus projetos. Ele só usa a rede
-para:
+**Privacidade.** O Octo e o orkai não têm telemetria e não enviam nada sobre você ou seus projetos; a política
+completa está em [octo.marujo.dev/privacy](https://octo.marujo.dev/privacy/). Eles só usam a rede para:
 
 - atualizações: cada vez que abre, lê o `manifest.json` da release da versão mais nova deste repositório no
   GitHub e baixa a versão nova quando existe (`ORKAI_NO_UPDATE=1` desliga, veja
-  [Atualização automática](#atualização-automática));
+  [Atualização automática](#atualização-automática)); o Octo da Microsoft Store nunca faz isso, porque a Store
+  instala as atualizações dele;
+- versões dos agentes: cada vez que a janela abre, o Octo lê o número público da versão de cada agente
+  instalado no site de quem o faz (`downloads.claude.ai`, `registry.npmjs.org`, `x.ai`, `code.kimi.com`,
+  `pi.dev` e o servidor de atualização do Antigravity) para oferecer a atualização;
 - consumo dos planos: o token de login de cada agente vai só para o serviço que o emitiu (veja Segurança,
   acima);
 - o orkai PWA, só depois que você o liga: o quick tunnel da Cloudflare, com o `cloudflared` baixado da release

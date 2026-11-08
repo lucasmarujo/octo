@@ -25,6 +25,15 @@ test('the privacy policy names every host Octo asks for the version of an agent'
   assert.match(page, /Google's update server for Antigravity, whose address names your operating system and processor type/);
 });
 
+test('the privacy note of both READMEs points at the policy and names the same agent version hosts', () => {
+  const versions = hosts(rust('desktop/src/agent_updates.rs').split('#[cfg(test)]')[0]).filter((host) => !host.endsWith('.run.app'));
+  for (const file of ['README.md', 'README.pt-BR.md']) {
+    const readme = rust(file);
+    assert.ok(readme.includes('[octo.marujo.dev/privacy](https://octo.marujo.dev/privacy/)'), file);
+    for (const host of new Set(versions)) assert.ok(readme.includes(`\`${host}\``), `${file}: ${host}`);
+  }
+});
+
 test('the privacy policy says the Store Octo leaves its updates to the Store, as the app does', () => {
   assert.match(rust('desktop/src/updates.rs'), /&& !from_store\(\)/);
   assert.match(page, /The Octo from the Microsoft Store never does this: the Microsoft Store installs its updates\./);
