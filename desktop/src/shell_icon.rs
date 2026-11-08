@@ -181,7 +181,7 @@ mod tests {
         let rendered = [
             ("site/favicon.svg", include_bytes!("../../site/favicon.svg").as_slice(), 0x9bbe_29df_97ba_36d8_u64),
             ("desktop/icons/icon.ico", include_bytes!("../icons/icon.ico").as_slice(), 0xdeb5_b274_6e9c_b7e3),
-            ("desktop/icons/icon.icns", include_bytes!("../icons/icon.icns").as_slice(), 0x36ff_4f48_69b4_b749),
+            ("desktop/icons/icon.icns", include_bytes!("../icons/icon.icns").as_slice(), 0xf1a6_4412_fa32_807d),
             ("desktop/icons/icon.png", include_bytes!("../icons/icon.png").as_slice(), 0x68de_a4c7_9eac_daa5),
         ];
         for (file, bytes, pinned) in rendered {

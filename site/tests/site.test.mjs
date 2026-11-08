@@ -248,15 +248,24 @@ test('o favicon do site é o ícone do Octo, nos tamanhos de aba', () => {
   assert.match(head, /<link rel="apple-touch-icon" href="\/octo-kai-corner-touch-icon\.png">/);
 });
 
+const macInset = (size) => {
+  const shape = Math.round((size * 824) / 1024);
+  return { shape, offset: Math.floor((size - shape) / 2) };
+};
+
 test('o ícone do Octo é o Kai espiando pelo canto em todo lugar, e o Kai não sai de onde é mascote', () => {
+  let tile = null;
   const channels = ({ width, pixels }, x, y) => {
-    const at = (Math.floor(y * width) * width + Math.floor(x * width)) * 4;
+    const { shape, offset } = tile || { shape: width, offset: 0 };
+    const at = ((offset + Math.floor(y * shape)) * width + offset + Math.floor(x * shape)) * 4;
     return [...pixels.subarray(at, at + 4)];
   };
   const cell = (x, y) => (x + 0.5) / 48;
-  const assertCorner = (png, label, cornerAlpha = 0) => {
+  const assertCorner = (png, label, cornerAlpha = 0, mac = false) => {
     const image = decodePng(png);
+    tile = null;
     assert.equal(channels(image, 0, 0)[3], cornerAlpha, `${label}: canto`);
+    tile = mac ? macInset(image.width) : null;
     if (image.width < 48) return image.width;
     assert.deepEqual(channels(image, cell(24), cell(0)), [0, 0, 0, 255], `${label}: borda da janela`);
     assert.deepEqual(channels(image, cell(4), cell(30)), [0x1c, 0x1c, 0x24, 255], `${label}: fundo da janela`);
@@ -274,9 +283,10 @@ test('o ícone do Octo é o Kai espiando pelo canto em todo lugar, e o Kai não 
   const icns = readFileSync(join(REPO, 'desktop/icons/icon.icns'));
   const mac = [];
   for (let at = 8; at < icns.length; at += icns.readUInt32BE(at + 4)) {
-    if (icns.toString('ascii', at, at + 4) !== 'TOC ') mac.push(assertCorner(icns.subarray(at + 8, at + icns.readUInt32BE(at + 4)), 'icon.icns'));
+    if (icns.toString('ascii', at, at + 4) !== 'TOC ') mac.push(assertCorner(icns.subarray(at + 8, at + icns.readUInt32BE(at + 4)), 'icon.icns', 0, true));
   }
   assert.deepEqual(new Set(mac), new Set([16, 32, 64, 128, 256, 512, 1024]));
+  assert.deepEqual(macInset(1024), { shape: 824, offset: 100 }, 'no Mac a janela ocupa 824 de 1024, como todo ícone do Dock');
   const favicon = read('favicon.svg');
   assert.match(favicon, /viewBox="0 0 48 48" shape-rendering="crispEdges"/, 'a grade de 48 pixels, a mesma do sprite do Kai');
   assert.match(favicon, /fill="#E85EB6"/, 'o Kai no rosa dele');
@@ -297,13 +307,14 @@ test('o ícone é pixel art: só cores da grade, sem suavização, e todo tamanh
   }
   const palette = new Set(grid.flat());
   assert.ok(palette.has('e85eb6ff') && palette.has('1c1c24ff'), 'o rosa do Kai e o fundo da janela');
-  const assertPixels = (png, label, background = '00000000') => {
+  const assertPixels = (png, label, background = '00000000', mac = false) => {
     const { width, pixels } = decodePng(png);
-    const source = (i) => Math.floor(((i + 0.5) * 48) / width);
+    const { shape, offset } = mac ? macInset(width) : { shape: width, offset: 0 };
+    const source = (i) => Math.floor(((i - offset + 0.5) * 48) / shape);
     for (let y = 0; y < width; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const color = pixels.subarray((y * width + x) * 4, (y * width + x) * 4 + 4).toString('hex');
-        const expected = grid[source(y)][source(x)];
+        const expected = grid[source(y)]?.[source(x)] ?? '00000000';
         assert.equal(color, expected === '00000000' ? background : expected, `${label}: ${x},${y}`);
       }
     }
@@ -313,7 +324,7 @@ test('o ícone é pixel art: só cores da grade, sem suavização, e todo tamanh
   assertPixels(readFileSync(join(ROOT, 'octo-kai-corner-touch-icon.png')), 'touch icon', '000000ff');
   const icns = readFileSync(join(REPO, 'desktop/icons/icon.icns'));
   for (let at = 8; at < icns.length; at += icns.readUInt32BE(at + 4)) {
-    if (icns.toString('ascii', at, at + 4) !== 'TOC ') assertPixels(icns.subarray(at + 8, at + icns.readUInt32BE(at + 4)), 'icon.icns');
+    if (icns.toString('ascii', at, at + 4) !== 'TOC ') assertPixels(icns.subarray(at + 8, at + icns.readUInt32BE(at + 4)), 'icon.icns', '00000000', true);
   }
   assert.equal(readFileSync(join(REPO, 'assets/octo-kai-corner.png')).compare(readFileSync(join(REPO, 'desktop/icons/icon.png'))), 0);
 });
