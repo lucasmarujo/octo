@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy policy · Octo by OctoAI</title>
+<meta name="description" content="What the Octo desktop app sends over the network, to whom, and what stays on your computer. Octo has no account, no telemetry and no analytics.">
+<meta name="author" content="Lucas Marujo Amadeu">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#121218">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="https://octo.marujo.dev/privacy/">
+<link rel="icon" href="/octo-kai-corner.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/octo-kai-corner-touch-icon.png">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="/" aria-label="OctoAI, home">
+      <span class="wordmark">OctoAI</span>
+    </a>
+  </div>
+</header>
+
+<main class="wrap legal">
+  <p class="kicker">octo · privacy policy</p>
+  <h1>Privacy policy</h1>
+  <p class="legal-date">Last updated on November 8, 2026</p>
+
+  <p>Octo is a desktop app, made by OctoAI (Lucas Marujo), that runs AI coding agents such as Claude Code, Codex and OpenCode across your projects. This policy covers the Octo app for Windows, macOS and Linux, including the version in the Microsoft Store, and the legacy orkai command line tool.</p>
+
+  <h2>In short</h2>
+  <ul>
+    <li>Octo has no account, no telemetry, no analytics, no ads and no crash reporting.</li>
+    <li>OctoAI runs no server that receives data from the app. Nothing about you, your projects or your agents is sent to OctoAI.</li>
+    <li>Your sessions, settings and agent output stay on your computer, in the Octo data folder.</li>
+    <li>The few requests Octo makes go straight to GitHub, to the companies behind the agents you installed, and, only if you turn on phone access, to Cloudflare or Tailscale. They are listed below.</li>
+  </ul>
+
+  <h2>What stays on your computer</h2>
+  <p>Octo keeps its settings, your sessions, the agents you start and what they print in its data folder (<code>%LOCALAPPDATA%\Octo</code> on Windows, the local data folder of your user on macOS and Linux). To show the sessions, models and subagents of each agent, it reads the files those agents keep in your home folder, such as <code>~/.claude</code> and <code>~/.codex</code>. None of it leaves your computer, except to a phone you paired yourself, as described below.</p>
+
+  <h2>What goes over the network, and to whom</h2>
+  <p>Every request carries only what is described here, plus your IP address, which any server you connect to can see. Octo never sends your computer's name, your user name, your files or any identifier of its own.</p>
+
+  <h3>Updates</h3>
+  <p>The Octo downloaded from GitHub reads the version list of its newest release on GitHub (<code>github.com/lucasmarujo/octo</code>) each time it opens, and downloads the new version when there is one. The Octo from the Microsoft Store never does this: the Microsoft Store installs its updates.</p>
+
+  <h3>Versions of your agents</h3>
+  <p>When its window opens, Octo checks whether each agent you have installed has a newer version, by reading the public version number its maker publishes: <code>downloads.claude.ai</code> for Claude Code, <code>registry.npmjs.org</code> for Codex, Kilo, OpenCode and Qwen Code, <code>x.ai</code> for Grok, <code>code.kimi.com</code> for Kimi Code, <code>pi.dev</code> for Pi and Google's update server for Antigravity, whose address names your operating system and processor type. When you click Install or Update, Octo opens a terminal that runs the maker's own installer, which downloads from the maker's servers.</p>
+
+  <h3>Plan usage</h3>
+  <p>To show how much of each plan you have used, Octo reads the login token an agent already saved on your computer (for example in <code>~/.claude/.credentials.json</code> or <code>~/.codex/auth.json</code>) and sends it only to the company that issued it: Anthropic (<code>api.anthropic.com</code>), OpenAI (<code>chatgpt.com</code>), Kilo (<code>api.kilo.ai</code>), OpenCode (<code>opencode.ai</code>), xAI (<code>cli-chat-proxy.grok.com</code>) and Moonshot AI (<code>api.kimi.com</code>), along with the account or user ID that service already gave you when it asks for one. This happens while Octo is open, at most every two minutes. Octo never stores, logs or forwards these tokens. An agent you signed in with an API key, or not at all, is never contacted. For Antigravity, Octo asks the <code>agy</code> program itself for the usage, and <code>agy</code> contacts Google on its own.</p>
+
+  <h3>Phone access, only after you turn it on</h3>
+  <p>Phone access is off by default. When you turn it on, Octo reaches your computer from your phone through a Cloudflare quick tunnel (<code>api.trycloudflare.com</code>, with <code>cloudflared</code> downloaded from Cloudflare's GitHub release if it is missing, and a lookup on <code>cloudflare-dns.com</code>) or, if you choose it, through your own Tailscale network. Everything between Octo and your phone after the first handshake is end-to-end encrypted with a key that never leaves your devices: Cloudflare carries the traffic and can see IP addresses, timing and your phone's browser details, but not your terminals, folders, agent names or usage. Octo keeps the model and system of each paired phone in its data folder so you can tell them apart.</p>
+
+  <h3>The agents themselves</h3>
+  <p>The agents Octo runs are programs made by other companies. What you type into them, and the code they read and write, goes to their makers under their own terms and privacy policies, exactly as when you run them without Octo. Octo does not change, read for itself or forward that traffic.</p>
+
+  <h3>The orkai command line tool</h3>
+  <p>When the legacy orkai tool runs inside Windows Terminal, it adds a Windows Terminal profile whose icon Windows Terminal loads from <code>octo.marujo.dev</code>.</p>
+
+  <h2>This website</h2>
+  <p>octo.marujo.dev is a static site with no cookies, no analytics and no third-party resources. Like any web server, it may keep standard access logs (IP address, time, page and browser) for a short time to keep the site running.</p>
+
+  <h2>Microsoft Store</h2>
+  <p>If you install Octo from the Microsoft Store, Microsoft handles the download, the license and the updates under the <a href="https://privacy.microsoft.com/privacystatement">Microsoft Privacy Statement</a>. OctoAI only receives the reports Microsoft provides to every publisher, such as install counts and crash reports.</p>
+
+  <h2>Children</h2>
+  <p>Octo is a tool for software developers and is not directed at children under 13.</p>
+
+  <h2>Changes and contact</h2>
+  <p>When what Octo sends changes, this page changes with it, and the date at the top says when. Octo is open source, so every request above can be checked in its <a href="https://github.com/lucasmarujo/octo">source code</a>. For questions, open an issue at <a href="https://github.com/lucasmarujo/octo/issues">github.com/lucasmarujo/octo/issues</a>.</p>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-base legal-foot"><span>© 2026 OctoAI · Lucas Marujo</span><span class="t-dim">octo.marujo.dev</span></div>
+</footer>
+</body>
+</html>

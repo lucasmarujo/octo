@@ -751,3 +751,16 @@ kbd + kbd { margin-left: 0.25em; }
 @media (prefers-reduced-motion: reduce) {
   .kai, .kai * { animation: none !important; transition: none !important; }
 }
+
+.legal { max-width: 76ch; padding-block: clamp(32px, 6vw, 72px) 64px; }
+.legal h1 { margin-top: 10px; font-weight: 900; font-size: clamp(2.2rem, 5vw, 3.2rem); line-height: 1.05; letter-spacing: -0.03em; }
+.legal h2 { margin-top: 44px; font-weight: 900; font-size: 1.5rem; letter-spacing: -0.02em; }
+.legal h3 { margin-top: 28px; font-size: 1.15rem; }
+.legal p, .legal ul { margin-top: 12px; color: var(--muted); }
+.legal ul { display: grid; gap: 8px; padding-left: 1.2em; list-style: square; }
+.legal li::marker { color: var(--pink); }
+.legal a { color: var(--text); }
+.legal a:hover { color: var(--pink); }
+.legal code { white-space: normal; overflow-wrap: anywhere; }
+.legal-date { font-family: var(--mono); font-size: 0.8rem; }
+.legal-foot { margin-top: 0; padding-block: 24px; }
