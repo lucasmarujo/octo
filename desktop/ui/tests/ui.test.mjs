@@ -1458,6 +1458,8 @@ test('the release notes come newest first, in English and Portuguese, one line f
     assert.equal(note['pt-BR'].length, note.en.length, `every line of ${note.version} has its Portuguese`);
     for (const line of [...note.en, ...note['pt-BR']]) assert.ok(line.trim().length > 0 && !line.includes('\n'), note.version);
   }
+  const version = rust('Cargo.toml').match(/^version = "([^"]+)"/m)[1];
+  assert.equal(NOTES[0].version, version, 'a release says what is new in it');
   assert.deepEqual(noteItems(NOTES[0], 'pt-BR'), NOTES[0]['pt-BR']);
   assert.deepEqual(noteItems(NOTES[0], 'fr'), NOTES[0].en, 'a language without notes falls back to English');
   assert.equal(notesUnseen(null), true, 'the first time the dot shows');
