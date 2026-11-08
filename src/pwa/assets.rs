@@ -232,10 +232,7 @@ mod tests {
             lookup("/octo-kai-corner.png").is_none(),
             "a new path, so phones drop the outlined pixel tile they cached for good"
         );
-        assert!(
-            text("/sw.js").contains("'/octo-kai-peek.png'"),
-            "the worker installs only if every shell file exists"
-        );
+        assert!(text("/sw.js").contains("'/octo-kai-peek.png'"), "the worker installs only if every shell file exists");
         assert!(!text("/sw.js").contains("'orkai-pwa-v8'"), "a new cache, so the worker drops the old shell");
         assert!(text("/").contains(r#"<link rel="icon" href="/octo-kai-peek.png" />"#));
         assert!(text("/").contains(r#"<link rel="apple-touch-icon" href="/octo-kai-peek.png" />"#));
