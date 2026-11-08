@@ -8,7 +8,7 @@ cores por projeto, glifos, título da janela e avisos) e mostra o sprite de `src
 mascotes do resto da página e a imagem de compartilhamento são o Kai pixel do Octo: as tiras em
 `assets/kai/` são cópias exatas das de `desktop/ui/kai/`, uma pose por quadro, que só animam `transform` para rodar a 60 fps.
 A cena do footer usa `assets/kai/ink.png`, uma tira de 14 quadros de 128 × 96: os quatro primeiros são o idle do app, pixel a pixel, e os seguintes mantêm a cabeça e o boné dele e só mudam a expressão (susto, olhar firme, olhos espremidos), com os oito tentáculos agarrando as bordas e a tinta desenhados para a cena. A tira sempre cobre a tela, então nenhum tentáculo aparece cortado.
-O favicon e os ícones são o Kai espiando pelo canto da janela do Octo (a proposta B), em pixel art, o mesmo ícone do app. `favicon.svg` é a grade de 48 pixels, montada com o sprite idle do Kai em escala 1:1, e todo tamanho sai dela por vizinho mais próximo (o centro de cada pixel), sem suavização e só com as cores da grade.
+O favicon e os ícones são o Kai espiando pelo canto da janela do Octo (o 1.4 do Paper, página Mascot & Icon), o mesmo ícone do app. `favicon.svg` é o desenho numa tela de 256: a janela com cantos arredondados lisos de app, sem contorno, a seta do prompt em vetor com a aresta de baixo mais escura, o cursor um pouco translúcido e o Kai em pixels de 7, cortado pela borda. Todo tamanho sai desse desenho com suavização nas bordas; no `.icns` a janela ocupa 824 de 1024 pixels, centrada, como todo ícone do Dock.
 
 ## Testes
 

@@ -99,8 +99,9 @@ atualização da Store nunca para um agente. Na submissão, a Store pede uma jus
 `unvirtualizedResources`: o Octo abre agentes de linha de comando (Claude Code, Codex, npm…) que leem e gravam o
 AppData e o registro reais do usuário e continuam rodando depois que o Octo fecha.
 
-`installer/msix/Assets` sai do `desktop/icons/icon.png`: a grade de 48 pixels do sprite ampliada por múltiplos
-inteiros, e o `desktop/icons/32x32.png` no tamanho 32.
+`installer/msix/Assets` sai do mesmo desenho do ícone do app (`site/favicon.svg`): os tamanhos de 16, 24, 32, 48 e
+256 são idênticos aos do `desktop/icons/icon.ico`, e os logos de 150, 310 × 150 e 50 levam a janela de 144 ou 48
+pixels com a mesma margem transparente de antes.
 
 ### Testes
 

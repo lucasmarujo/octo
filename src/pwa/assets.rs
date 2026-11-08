@@ -52,10 +52,10 @@ pub const ASSETS: &[Asset] = &[
         body: include_bytes!("web/manifest.webmanifest"),
     },
     Asset {
-        path: "/octo-kai-corner.png",
+        path: "/octo-kai-peek.png",
         content_type: "image/png",
         cache: IMMUTABLE,
-        body: include_bytes!("../../assets/octo-kai-corner.png"),
+        body: include_bytes!("../../assets/octo-kai-peek.png"),
     },
     Asset {
         path: "/kai/idle.svg",
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn fonts_and_the_icon_are_cached_for_good_and_the_code_is_revalidated() {
         assert_eq!(lookup("/fonts/mono-400.woff2").unwrap().cache, IMMUTABLE);
-        assert_eq!(lookup("/octo-kai-corner.png").unwrap().cache, IMMUTABLE);
+        assert_eq!(lookup("/octo-kai-peek.png").unwrap().cache, IMMUTABLE);
         assert_eq!(lookup("/kai/idle.svg").unwrap().cache, IMMUTABLE);
         assert_eq!(lookup("/app.js").unwrap().cache, REVALIDATE);
         assert_eq!(lookup("/sw.js").unwrap().cache, REVALIDATE);
@@ -213,9 +213,9 @@ mod tests {
     fn the_phone_shows_the_pixel_kai_of_the_desktop_app_and_its_icon() {
         let manifest: serde_json::Value =
             serde_json::from_slice(lookup("/manifest.webmanifest").unwrap().body).unwrap();
-        assert_eq!(manifest["icons"][0]["src"], "/octo-kai-corner.png");
+        assert_eq!(manifest["icons"][0]["src"], "/octo-kai-peek.png");
         assert_eq!(manifest["icons"][0]["sizes"], "512x512");
-        let icon = lookup("/octo-kai-corner.png").unwrap().body;
+        let icon = lookup("/octo-kai-peek.png").unwrap().body;
         assert_eq!(&icon[1..4], b"PNG");
         assert_eq!(u32::from_be_bytes(icon[16..20].try_into().unwrap()), 512);
         assert_eq!(u32::from_be_bytes(icon[20..24].try_into().unwrap()), 512);
@@ -229,12 +229,16 @@ mod tests {
             "a new path, so phones drop the pixel eye they cached for good"
         );
         assert!(
-            text("/sw.js").contains("'/octo-kai-corner.png'"),
+            lookup("/octo-kai-corner.png").is_none(),
+            "a new path, so phones drop the outlined pixel tile they cached for good"
+        );
+        assert!(
+            text("/sw.js").contains("'/octo-kai-peek.png'"),
             "the worker installs only if every shell file exists"
         );
-        assert!(!text("/sw.js").contains("'orkai-pwa-v6'"), "a new cache, so the worker drops the old shell");
-        assert!(text("/").contains(r#"<link rel="icon" href="/octo-kai-corner.png" />"#));
-        assert!(text("/").contains(r#"<link rel="apple-touch-icon" href="/octo-kai-corner.png" />"#));
+        assert!(!text("/sw.js").contains("'orkai-pwa-v8'"), "a new cache, so the worker drops the old shell");
+        assert!(text("/").contains(r#"<link rel="icon" href="/octo-kai-peek.png" />"#));
+        assert!(text("/").contains(r#"<link rel="apple-touch-icon" href="/octo-kai-peek.png" />"#));
         for mood in ["idle", "working", "needs", "done", "lost"] {
             let strip = lookup(&format!("/kai/{mood}.svg")).unwrap();
             assert_eq!(strip.content_type, "image/svg+xml");

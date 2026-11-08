@@ -237,15 +237,15 @@ test('o ícone do orkai CLI (exe e terminais) é o sprite IDLE em cada tamanho',
 });
 
 test('o favicon do site é o ícone do Octo, nos tamanhos de aba', () => {
-  const ico = readFileSync(join(ROOT, 'octo-kai-corner.ico'));
+  const ico = readFileSync(join(ROOT, 'octo-kai-peek.ico'));
   assert.deepEqual(readFileSync(join(ROOT, 'favicon.ico')), ico, 'site/favicon.ico');
   const sizes = icoFrames(ico).map((frame) => frame.readUInt32BE(16));
   assert.deepEqual([...sizes].sort((a, b) => a - b), [16, 32, 48]);
-  const touch = readFileSync(join(ROOT, 'octo-kai-corner-touch-icon.png'));
+  const touch = readFileSync(join(ROOT, 'octo-kai-peek-touch-icon.png'));
   assert.equal(touch.readUInt32BE(16), 180);
   assert.equal(touch.readUInt32BE(20), 180);
-  assert.match(head, /<link rel="icon" href="\/octo-kai-corner\.ico" sizes="48x48">/);
-  assert.match(head, /<link rel="apple-touch-icon" href="\/octo-kai-corner-touch-icon\.png">/);
+  assert.match(head, /<link rel="icon" href="\/octo-kai-peek\.ico" sizes="48x48">/);
+  assert.match(head, /<link rel="apple-touch-icon" href="\/octo-kai-peek-touch-icon\.png">/);
 });
 
 const macInset = (size) => {
@@ -253,87 +253,111 @@ const macInset = (size) => {
   return { shape, offset: Math.floor((size - shape) / 2) };
 };
 
-test('o ícone do Octo é o Kai espiando pelo canto em todo lugar, e o Kai não sai de onde é mascote', () => {
-  let tile = null;
-  const channels = ({ width, pixels }, x, y) => {
-    const { shape, offset } = tile || { shape: width, offset: 0 };
-    const at = ((offset + Math.floor(y * shape)) * width + offset + Math.floor(x * shape)) * 4;
-    return [...pixels.subarray(at, at + 4)];
+const UNITS = 256;
+const TILE = [0x1c, 0x1c, 0x24, 255];
+const CURSOR = [0xd0, 0x7a, 0xb2, 255];
+const PROMPT = [0xe8, 0x5e, 0xb6, 255];
+const PROMPT_SHADE = [0xc8, 0x48, 0x98, 255];
+
+const alphaAt = ({ width, pixels }, x, y) => pixels[(y * width + x) * 4 + 3];
+
+function assertIcon(png, label, { cornerAlpha = 0, box = null } = {}) {
+  const image = decodePng(png);
+  const { shape, x: left, y: top } = box || { shape: image.width, x: 0, y: 0 };
+  const at = (u, v) => {
+    const i = ((top + Math.floor((v / UNITS) * shape)) * image.width + left + Math.floor((u / UNITS) * shape)) * 4;
+    return [...image.pixels.subarray(i, i + 4)];
   };
-  const cell = (x, y) => (x + 0.5) / 48;
-  const assertCorner = (png, label, cornerAlpha = 0, mac = false) => {
-    const image = decodePng(png);
-    tile = null;
-    assert.equal(channels(image, 0, 0)[3], cornerAlpha, `${label}: canto`);
-    tile = mac ? macInset(image.width) : null;
-    if (image.width < 48) return image.width;
-    assert.deepEqual(channels(image, cell(24), cell(0)), [0, 0, 0, 255], `${label}: borda da janela`);
-    assert.deepEqual(channels(image, cell(4), cell(30)), [0x1c, 0x1c, 0x24, 255], `${label}: fundo da janela`);
-    assert.deepEqual(channels(image, cell(13), cell(11)), [0xf0, 0x8a, 0xcb, 255], `${label}: cursor`);
-    assert.deepEqual(channels(image, cell(36), cell(32)), [0xe8, 0x5e, 0xb6, 255], `${label}: o Kai no canto, no rosa dele`);
-    return image.width;
-  };
-  const icons = ['desktop/icons/32x32.png', 'desktop/icons/128x128.png', 'desktop/icons/128x128@2x.png', 'desktop/icons/icon.png', 'assets/octo-kai-corner.png'];
-  const widths = icons.map((file) => assertCorner(readFileSync(join(REPO, file)), file));
-  assert.deepEqual(widths, [32, 128, 256, 512, 512]);
-  const desktop = icoFrames(readFileSync(join(REPO, 'desktop/icons/icon.ico'))).map((frame) => assertCorner(frame, 'icon.ico'));
-  assert.deepEqual([...desktop].sort((a, b) => a - b), [16, 24, 32, 48, 64, 128, 256]);
-  icoFrames(readFileSync(join(ROOT, 'octo-kai-corner.ico'))).forEach((frame) => assertCorner(frame, 'octo-kai-corner.ico'));
-  assertCorner(readFileSync(join(ROOT, 'octo-kai-corner-touch-icon.png')), 'touch icon', 255);
-  const icns = readFileSync(join(REPO, 'desktop/icons/icon.icns'));
-  const mac = [];
-  for (let at = 8; at < icns.length; at += icns.readUInt32BE(at + 4)) {
-    if (icns.toString('ascii', at, at + 4) !== 'TOC ') mac.push(assertCorner(icns.subarray(at + 8, at + icns.readUInt32BE(at + 4)), 'icon.icns', 0, true));
+  assert.equal(image.pixels[3], cornerAlpha, `${label}: canto`);
+  if (shape >= 32) {
+    const diagonal = Array.from({ length: shape / 2 }, (_, i) => alphaAt(image, left + i, top + i));
+    assert.ok(diagonal.some((alpha) => alpha > 0 && alpha < 255) || cornerAlpha === 255, `${label}: canto arredondado e liso, sem degrau`);
   }
-  assert.deepEqual(new Set(mac), new Set([16, 32, 64, 128, 256, 512, 1024]));
-  assert.deepEqual(macInset(1024), { shape: 824, offset: 100 }, 'no Mac a janela ocupa 824 de 1024, como todo ícone do Dock');
+  if (shape < 48) return shape;
+  assert.deepEqual(at(24, 150), TILE, `${label}: fundo da janela`);
+  assert.deepEqual(at(99, 80), CURSOR, `${label}: cursor, um pouco translúcido`);
+  assert.deepEqual(at(51, 64), PROMPT, `${label}: a aresta de cima da seta`);
+  assert.deepEqual(at(51, 96), PROMPT_SHADE, `${label}: a aresta de baixo da seta, mais escura`);
+  assert.deepEqual(at(205, 161), PROMPT, `${label}: o Kai no canto, no rosa dele`);
+  return shape;
+}
+
+test('o ícone do Octo é o Kai espiando pelo canto em todo lugar, e o Kai não sai de onde é mascote', () => {
+  const icons = ['desktop/icons/32x32.png', 'desktop/icons/128x128.png', 'desktop/icons/128x128@2x.png', 'desktop/icons/icon.png', 'assets/octo-kai-peek.png'];
+  const widths = icons.map((file) => assertIcon(readFileSync(join(REPO, file)), file));
+  assert.deepEqual(widths, [32, 128, 256, 512, 512]);
+  const desktop = icoFrames(readFileSync(join(REPO, 'desktop/icons/icon.ico'))).map((frame) => assertIcon(frame, 'icon.ico'));
+  assert.deepEqual([...desktop].sort((a, b) => a - b), [16, 24, 32, 48, 64, 128, 256]);
+  icoFrames(readFileSync(join(ROOT, 'octo-kai-peek.ico'))).forEach((frame) => assertIcon(frame, 'octo-kai-peek.ico'));
+  assertIcon(readFileSync(join(ROOT, 'octo-kai-peek-touch-icon.png')), 'touch icon', { cornerAlpha: 255 });
   const favicon = read('favicon.svg');
-  assert.match(favicon, /viewBox="0 0 48 48" shape-rendering="crispEdges"/, 'a grade de 48 pixels, a mesma do sprite do Kai');
+  assert.match(favicon, /viewBox="0 0 256 256"/);
+  assert.match(favicon, /<rect width="256" height="256" rx="56" fill="#1C1C24"\/>/, 'a janela com cantos arredondados de app, sem contorno');
+  assert.match(favicon, /<g clip-path="url\(#tile\)" shape-rendering="crispEdges">/, 'o Kai em pixels, cortado pela borda lisa');
+  assert.match(favicon, /stroke="#C84898"[\s\S]*stroke="#E85EB6"/, 'a seta lisa em dois tons');
+  assert.match(favicon, /fill="#F08ACB" fill-opacity="0\.85"/, 'o cursor um pouco translúcido');
   assert.match(favicon, /fill="#E85EB6"/, 'o Kai no rosa dele');
+  assert.doesNotMatch(favicon, /#000000/, 'sem o contorno preto');
   assert.match(readFileSync(join(REPO, 'desktop/ui/kai/idle.svg'), 'utf8'), /#E85EB6/, 'o rosa vem da paleta do Kai');
   assert.match(html, /<span class="kai kai-hero hero-mascot"/, 'o mascote da página continua');
   assert.ok(existsSync(join(REPO, 'desktop/ui/kai/idle.svg')), 'o mascote da sidebar continua');
   assert.equal(meta('property', 'og:image'), `${SITE}og-octo-kai.png`, 'a imagem de compartilhamento continua com o mascote');
 });
 
-test('o ícone é pixel art: só cores da grade, sem suavização, e todo tamanho sai da grade do favicon', () => {
-  const grid = Array.from({ length: 48 }, () => Array(48).fill('00000000'));
-  for (const [, d, fill] of read('favicon.svg').matchAll(/<path d="([^"]+)" fill="#([0-9A-F]{6})"\/>/g)) {
-    for (const [, x, y, w, h] of d.matchAll(/M(\d+) (\d+)h(\d+)v(\d+)h-\d+z/g)) {
-      for (let row = Number(y); row < Number(y) + Number(h); row += 1) {
-        for (let column = Number(x); column < Number(x) + Number(w); column += 1) grid[row][column] = `${fill.toLowerCase()}ff`;
-      }
-    }
-  }
-  const palette = new Set(grid.flat());
-  assert.ok(palette.has('e85eb6ff') && palette.has('1c1c24ff'), 'o rosa do Kai e o fundo da janela');
-  const assertPixels = (png, label, background = '00000000', mac = false) => {
-    const { width, pixels } = decodePng(png);
-    const { shape, offset } = mac ? macInset(width) : { shape: width, offset: 0 };
-    const source = (i) => Math.floor(((i - offset + 0.5) * 48) / shape);
-    for (let y = 0; y < width; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        const color = pixels.subarray((y * width + x) * 4, (y * width + x) * 4 + 4).toString('hex');
-        const expected = grid[source(y)]?.[source(x)] ?? '00000000';
-        assert.equal(color, expected === '00000000' ? background : expected, `${label}: ${x},${y}`);
-      }
-    }
-  };
-  for (const file of ['desktop/icons/32x32.png', 'desktop/icons/128x128.png', 'desktop/icons/128x128@2x.png', 'desktop/icons/icon.png', 'assets/octo-kai-corner.png']) assertPixels(readFileSync(join(REPO, file)), file);
-  for (const file of ['desktop/icons/icon.ico', 'site/octo-kai-corner.ico']) icoFrames(readFileSync(join(REPO, file))).forEach((frame) => assertPixels(frame, file));
-  assertPixels(readFileSync(join(ROOT, 'octo-kai-corner-touch-icon.png')), 'touch icon', '000000ff');
+test('no Mac a janela ocupa 824 de 1024, centrada, com a margem transparente de todo ícone do Dock', () => {
+  assert.deepEqual(macInset(1024), { shape: 824, offset: 100 });
   const icns = readFileSync(join(REPO, 'desktop/icons/icon.icns'));
+  assert.equal(icns.toString('ascii', 0, 4), 'icns');
+  const sizes = new Set();
   for (let at = 8; at < icns.length; at += icns.readUInt32BE(at + 4)) {
-    if (icns.toString('ascii', at, at + 4) !== 'TOC ') assertPixels(icns.subarray(at + 8, at + icns.readUInt32BE(at + 4)), 'icon.icns', '00000000', true);
+    if (icns.toString('ascii', at, at + 4) === 'TOC ') continue;
+    const png = icns.subarray(at + 8, at + icns.readUInt32BE(at + 4));
+    const image = decodePng(png);
+    const { shape, offset } = macInset(image.width);
+    const label = `icon.icns ${image.width}`;
+    assertIcon(png, label, { box: { shape, x: offset, y: offset } });
+    const middle = offset + Math.floor(shape / 2);
+    for (let i = 0; i < image.width; i += 1) {
+      const outside = i < offset || i >= offset + shape;
+      if (!outside) continue;
+      assert.equal(alphaAt(image, i, middle), 0, `${label}: margem na linha do meio, x ${i}`);
+      assert.equal(alphaAt(image, middle, i), 0, `${label}: margem na coluna do meio, y ${i}`);
+    }
+    if (image.width >= 64) {
+      for (const [x, y] of [[offset, middle], [offset + shape - 1, middle], [middle, offset], [middle, offset + shape - 1]]) {
+        assert.equal(alphaAt(image, x, y), 255, `${label}: a janela chega à borda do molde em ${x},${y}`);
+      }
+    }
+    sizes.add(image.width);
   }
-  assert.equal(readFileSync(join(REPO, 'assets/octo-kai-corner.png')).compare(readFileSync(join(REPO, 'desktop/icons/icon.png'))), 0);
+  assert.deepEqual(sizes, new Set([16, 32, 64, 128, 256, 512, 1024]));
+});
+
+test('todo arquivo de ícone sai do mesmo desenho: um tamanho é igual em todo lugar', () => {
+  const frames = (file) => new Map(icoFrames(readFileSync(join(REPO, file))).map((frame) => [frame.readUInt32BE(16), frame]));
+  const desktop = frames('desktop/icons/icon.ico');
+  const png = (file) => readFileSync(join(REPO, file));
+  assert.deepEqual(desktop.get(32), png('desktop/icons/32x32.png'));
+  assert.deepEqual(desktop.get(128), png('desktop/icons/128x128.png'));
+  assert.deepEqual(desktop.get(256), png('desktop/icons/128x128@2x.png'));
+  assert.deepEqual(png('assets/octo-kai-peek.png'), png('desktop/icons/icon.png'), 'o ícone do PWA é o do app');
+  for (const [size, frame] of frames('site/octo-kai-peek.ico')) assert.deepEqual(frame, desktop.get(size), `site ico ${size}`);
+  const store = 'installer/msix/Assets';
+  for (const size of [16, 24, 32, 48, 256]) {
+    assert.deepEqual(png(`${store}/Square44x44Logo.targetsize-${size}.png`), desktop.get(size), `Store ${size}`);
+    assert.deepEqual(png(`${store}/Square44x44Logo.targetsize-${size}_altform-unplated.png`), desktop.get(size), `Store ${size} sem placa`);
+  }
+  assertIcon(png(`${store}/Square44x44Logo.png`), 'Square44x44Logo');
+  assertIcon(png(`${store}/Square150x150Logo.png`), 'Square150x150Logo', { box: { shape: 144, x: 3, y: 3 } });
+  assertIcon(png(`${store}/StoreLogo.png`), 'StoreLogo', { box: { shape: 48, x: 1, y: 1 } });
+  assertIcon(png(`${store}/Wide310x150Logo.png`), 'Wide310x150Logo', { box: { shape: 144, x: 83, y: 3 } });
 });
 
 test('ícones e imagens trocados ganham nome novo, porque o nginx guarda png e ico por 30 dias', () => {
   const cached = read('nginx.conf').match(/location ~\* \\\.\(\?:([\w|]+)\)\$/)[1].split('|');
   assert.ok(cached.includes('png') && cached.includes('ico'));
-  assert.doesNotMatch(html, /\/og-octo\.png|\/octo\.ico|\/octo-touch-icon\.png|\/octo-kai\.ico|\/octo-kai-touch-icon\.png|\/octo-eye\.ico|\/octo-eye-touch-icon\.png|\/octo-eye-pixel\.ico|\/octo-eye-pixel-touch-icon\.png/);
-  for (const old of ['og-octo.png', 'octo.ico', 'octo-touch-icon.png', 'octo-kai.ico', 'octo-kai-touch-icon.png', 'octo-eye.ico', 'octo-eye-touch-icon.png', 'octo-eye-pixel.ico', 'octo-eye-pixel-touch-icon.png']) assert.ok(!existsSync(join(ROOT, old)), `${old} ficou para trás`);
+  assert.doesNotMatch(html, /\/og-octo\.png|\/octo\.ico|\/octo-touch-icon\.png|\/octo-kai\.ico|\/octo-kai-touch-icon\.png|\/octo-eye\.ico|\/octo-eye-touch-icon\.png|\/octo-eye-pixel\.ico|\/octo-eye-pixel-touch-icon\.png|\/octo-kai-corner\.ico|\/octo-kai-corner-touch-icon\.png/);
+  for (const old of ['og-octo.png', 'octo.ico', 'octo-touch-icon.png', 'octo-kai.ico', 'octo-kai-touch-icon.png', 'octo-eye.ico', 'octo-eye-touch-icon.png', 'octo-eye-pixel.ico', 'octo-eye-pixel-touch-icon.png', 'octo-kai-corner.ico', 'octo-kai-corner-touch-icon.png']) assert.ok(!existsSync(join(ROOT, old)), `${old} ficou para trás`);
 });
 
 test('a marca é OctoAI, o produto é Octo e a página não oferece mais o orkai CLI', () => {

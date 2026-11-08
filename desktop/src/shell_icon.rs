@@ -117,7 +117,7 @@ mod tests {
     use super::*;
 
     #[cfg(windows)]
-    const PREVIOUS_ICON_MARKER: &str = "43a707abb5957020";
+    const PREVIOUS_ICON_MARKER: &str = "deb5b2746e9cb7e3";
 
     fn dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -179,13 +179,13 @@ mod tests {
     #[test]
     fn the_icons_of_the_app_are_the_ones_rendered_from_the_vector_of_the_site() {
         let rendered = [
-            ("site/favicon.svg", include_bytes!("../../site/favicon.svg").as_slice(), 0x9bbe_29df_97ba_36d8_u64),
-            ("desktop/icons/icon.ico", include_bytes!("../icons/icon.ico").as_slice(), 0xdeb5_b274_6e9c_b7e3),
-            ("desktop/icons/icon.icns", include_bytes!("../icons/icon.icns").as_slice(), 0xf1a6_4412_fa32_807d),
-            ("desktop/icons/icon.png", include_bytes!("../icons/icon.png").as_slice(), 0x68de_a4c7_9eac_daa5),
+            ("site/favicon.svg", include_bytes!("../../site/favicon.svg").as_slice(), 0xee17_2270_d0f2_a2bc_u64),
+            ("desktop/icons/icon.ico", include_bytes!("../icons/icon.ico").as_slice(), 0x1208_9772_e913_d01d),
+            ("desktop/icons/icon.icns", include_bytes!("../icons/icon.icns").as_slice(), 0x6d85_962b_8897_59c5),
+            ("desktop/icons/icon.png", include_bytes!("../icons/icon.png").as_slice(), 0xb16c_a29d_4c97_e0e1),
         ];
         for (file, bytes, pinned) in rendered {
-            assert_eq!(fnv1a64(bytes), pinned, "{file}: render every size from the grids again and pin them here");
+            assert_eq!(fnv1a64(bytes), pinned, "{file}: render every size from the design again and pin them here");
         }
     }
 
