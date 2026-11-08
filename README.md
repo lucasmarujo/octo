@@ -55,7 +55,7 @@ The orkai CLI described below is legacy: the releases no longer carry it, so it 
 
 ## Octo in 60 seconds
 
-https://github.com/user-attachments/assets/b3e62649-f203-4ac6-8e52-9e83a3fa6c3c
+https://github.com/user-attachments/assets/1e8cbd53-b2b6-4318-97d8-74d33790c49c
 
 <p align="center">
   <img src="docs/overview.png" alt="orkai overview: sessions in the sidebar, counters and usage at the top, agents grouped by project">

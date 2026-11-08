@@ -780,8 +780,8 @@ test('orçamento de peso para carregar rápido', () => {
   assert.ok(size('assets/kai/ink.png') < 20 * 1024, 'cena da tinta');
   const fonts = readdirSync(join(ROOT, 'assets/fonts')).reduce((sum, file) => sum + size(`assets/fonts/${file}`), 0);
   assert.ok(fonts < 220 * 1024, `fontes ${fonts}`);
-  assert.ok(size('assets/octo-launch.mp4') < 12 * 1024 * 1024, 'vídeo');
-  assert.ok(size('assets/octo-launch-poster.webp') < 50 * 1024, 'poster');
+  assert.ok(size('assets/octo-launch-v2.mp4') < 12 * 1024 * 1024, 'vídeo');
+  assert.ok(size('assets/octo-launch-v2-poster.webp') < 50 * 1024, 'poster');
   assert.ok(size('assets/overview.webp') < 120 * 1024, 'overview');
   ['octo-board', 'octo-list', 'octo-pair', 'octo-agent', 'octo-grid'].forEach((name) => {
     assert.ok(size(`assets/${name}.webp`) < 100 * 1024, name);
