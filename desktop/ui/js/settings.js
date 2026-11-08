@@ -183,9 +183,11 @@ function usingKeyboard() {
 function placePopover() {
   const box = $('sound').getBoundingClientRect();
   const popover = $('sound-popover');
-  const left = box.left + box.width / 2 - popover.offsetWidth / 2;
+  const beside = document.documentElement.dataset.sidebar === 'collapsed';
+  const left = beside ? box.right + POPOVER_GAP : box.left + box.width / 2 - popover.offsetWidth / 2;
+  const top = beside ? box.top + box.height / 2 - popover.offsetHeight / 2 : box.top - popover.offsetHeight - POPOVER_GAP;
   popover.style.left = `${Math.max(POPOVER_MARGIN, Math.min(left, window.innerWidth - popover.offsetWidth - POPOVER_MARGIN))}px`;
-  popover.style.top = `${box.top - popover.offsetHeight - POPOVER_GAP}px`;
+  popover.style.top = `${Math.max(POPOVER_MARGIN, Math.min(top, window.innerHeight - popover.offsetHeight - POPOVER_MARGIN))}px`;
 }
 
 function openPopover() {

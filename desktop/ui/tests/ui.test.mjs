@@ -1707,6 +1707,17 @@ test('the volume lives in Settings and in a popover over the bell, and both stay
   for (const text of ['Alert volume', 'How loud the chime plays. The volume of the system stays as it is.', 'The sound is off. Moving this turns it back on.']) assert.ok(i18n.includes(`'${text}':`), text);
 });
 
+test('with the sidebar collapsed the volume opens beside the bell, above the screen next to it', () => {
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  const place = settings.match(/function placePopover\(\) \{[\s\S]*?\n\}/)[0];
+  assert.match(place, /const beside = document\.documentElement\.dataset\.sidebar === 'collapsed';/, 'the icons of a collapsed sidebar sit in a column, so above would cover them');
+  assert.match(place, /const left = beside \? box\.right \+ POPOVER_GAP : box\.left \+ box\.width \/ 2 - popover\.offsetWidth \/ 2;/);
+  assert.match(place, /const top = beside \? box\.top \+ box\.height \/ 2 - popover\.offsetHeight \/ 2 : box\.top - popover\.offsetHeight - POPOVER_GAP;/);
+  assert.match(place, /Math\.min\(top, window\.innerHeight - popover\.offsetHeight - POPOVER_MARGIN\)/, 'it stays inside the window from top to bottom');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.sidebar-footer \{[^}]*position: sticky; bottom: 0; z-index: 3;/, 'the sticky footer stacks above the main screen, so the popover is never drawn under the task box');
+});
+
 test('Settings lists every agent at once, and the plan usage keeps its own folding', () => {
   const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
   assert.doesNotMatch(settings, /FIRST_AGENTS|showAll|agents-more|agents-hidden|Show fewer|Show \{count\} more/);
