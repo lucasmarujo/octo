@@ -1466,6 +1466,16 @@ test('a double click on the title of a session renames it from the board, the li
   assert.equal(PT['Double click to rename'], 'Clique duplo para renomear');
 });
 
+test('a double click on the title of an agent or on its tab renames it, and only an agent tab does', () => {
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /\$\('agent-title'\)\.addEventListener\('dblclick', \(\) => watching\(\) && findAgent\(state\.active\) && rename\(findAgent\(state\.active\)\)\);/, 'the same rename as the button and ctrl E');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<div id="agent-title" class="agent-title" title="Double click to rename" data-i18n-title="Double click to rename"><\/div>/, 'on the element that stays, since the title inside is redrawn every second');
+  const tabs = readFileSync(join(REPO, 'desktop/ui/js/tabs.js'), 'utf8');
+  assert.match(tabs, /import \{ rename \} from '\.\/agent\.js';/);
+  assert.match(tabs, /ondblclick: findAgent\(id\) \? \(\) => rename\(findAgent\(id\)\) : null,/, 'the overview and the pages keep their names');
+});
+
 test('the panel of an agent is as wide as the user left it and never scrolls sideways', async () => {
   const { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, detailsWidth } = await import('../js/format.js');
   const { PT } = await import('../js/i18n.js');

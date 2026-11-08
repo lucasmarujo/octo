@@ -514,6 +514,7 @@ function start() {
   setAgentOpener(openAgent);
   $('recover').addEventListener('click', () => send({ type: 'recover', session: state.session }));
   $('session-title').addEventListener('dblclick', () => state.session && renameSession(state.session));
+  $('agent-title').addEventListener('dblclick', () => watching() && findAgent(state.active) && rename(findAgent(state.active)));
   $('project').addEventListener('click', (event) => {
     event.stopPropagation();
     if (!menuShown()) openProjectMenu(onFilter);

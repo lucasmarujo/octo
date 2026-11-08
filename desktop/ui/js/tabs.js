@@ -1,3 +1,4 @@
+import { rename } from './agent.js';
 import { $, h, svg } from './dom.js';
 import { closeMenu, menuShown, openMenu } from './dialogs.js';
 import { initTabDrag } from './drag.js';
@@ -126,6 +127,7 @@ function tabButton(id) {
       tabindex: '0',
       dataset: { tab: String(id) },
       onclick: () => actions.open(id),
+      ondblclick: findAgent(id) ? () => rename(findAgent(id)) : null,
       oncontextmenu: (event) => tabMenu(event, id),
       onkeydown: (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
