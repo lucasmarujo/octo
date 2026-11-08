@@ -1120,7 +1120,7 @@ test('a line of the sidebar shows the provider of its agent, with a mark for tho
   assert.equal(kindMark('pi'), 'P');
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebar, /icon \? svg\(icon\) : h\('span', \{ class: 'summary-mark', style: `color:\$\{kindColor\(kind\)\}` \}, kindMark\(kind\)\)/);
-  assert.match(sidebar, /summaryIcon\(list\[0\]\.kind\)/);
+  assert.match(sidebar, /summaryIcon\(agent\.kind\)/);
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.match(css, /\.summary-icon \{[^}]*width: 12px; height: 12px; flex-shrink: 0;/, 'every line keeps the text in the same column');
   assert.match(css, /\.summary-text \{ flex: 1; min-width: 0;[^}]*text-overflow: ellipsis;/, 'the name gives way first');
@@ -1178,7 +1178,7 @@ test('a model becomes a short name by one rule and the tooltip keeps the full id
   assert.equal(agentTip(agy), 'five · agy');
   assert.equal(agentsTip([claude, codex, qwen, shell]), 'one · claude · claude-opus-5-5\ntwo · codex · gpt-5.1-codex-max\nthree · qwen\nfour · terminal');
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
-  assert.match(sidebar, /title: agentsTip\(list\)/, 'the +N of a line are in its tooltip');
+  assert.match(sidebar, /title: agentTip\(agent\)/, 'each line has the name, provider and model of its own agent in its tooltip');
   assert.match(sidebar, /model \? h\('span', \{ class: 'summary-model' \}, model\) : null/, 'no element for a missing model');
 });
 
@@ -1398,6 +1398,16 @@ test('board cards glide only when the columns change, and settings controls fini
   assert.match(css, /\.segmented\.sliding::before \{[^}]*transform: translateX\(var\(--thumb-x\)\);[^}]*\}/);
 });
 
+test('an open session in the sidebar lists every one of its agents, each followed by its running subagents', () => {
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /const lines = expanded \? agents\.flatMap\(\(agent\) => \[summaryLine\(agent, onOpen\), \.\.\.\(agent\.subagents \|\| \[\]\)\.map\(\(sub\) => subagentSummary\(sub, agent, onOpen\)\)\]\) : \[\];/, 'one line per agent, whatever its state, with no +N standing for the others');
+  assert.doesNotMatch(sidebar, /summary-rest/, 'no agent is folded into a count');
+  assert.match(sidebar, /const mark = glyph\(agent, state\.frame\);/, 'the same mark the board and the list give the agent');
+  assert.match(sidebar, /\{ class: 'summary sub', title: \[line\.role, line\.text\]\.filter\(Boolean\)\.join\('\\n'\), onclick: \(\) => onOpen\(agent\) \}/, 'a subagent opens its agent and has no data-agent, so it never drags');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.summary\.sub \{ padding-left: 48px; \}/, 'a subagent sits under the name of its agent');
+});
+
 test('a right click on a session in the sidebar offers to rename or delete that session', () => {
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebar, /oncontextmenu: \(event\) => sessionMenu\(event, session\.name\)/);
@@ -1596,8 +1606,8 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.match(drag, /closest\('\.session'\)\?\.querySelector\('\.session-row\[data-session\]'\)/, 'a drop counts anywhere on an expanded session, not only on its row');
   assert.doesNotMatch(drag, /addEventListener\('blur'/, 'the capture of the pointer says when a drag is lost');
   const sidebarCode = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
-  assert.match(sidebarCode, /class: `summary\$\{entry\.waiting \? ' waiting' : ''\}`, dataset: \{ agent: String\(list\[0\]\.id\) \}/, 'an agent listed in the sidebar drags from there too');
-  assert.match(sidebarCode, /\[agent\.id, agent\.name, agent\.state, agent\.starting, agent\.kind, agent\.model\]/, 'a line never keeps the id of another agent with the same name, nor an old provider or model');
+  assert.match(sidebarCode, /class: `summary\$\{waiting \? ' waiting' : ''\}`, dataset: \{ agent: String\(agent\.id\) \}/, 'an agent listed in the sidebar drags from there too');
+  assert.match(sidebarCode, /\[agent\.id, agent\.name, agent\.state, agent\.starting, agent\.kind, agent\.model, \(agent\.subagents \|\| \[\]\)\.map\(\(sub\) => \[sub\.role, sub\.description, sub\.startedAt\]\)\]/, 'a line never keeps the id of another agent with the same name, nor an old provider or model');
   assert.match(drag, /\.xterm/, 'nothing drags out of a terminal');
   assert.match(drag, /addEventListener\('click', swallow, \{ capture: true, once: true \}\)/);
   assert.match(drag, /event\.key === 'Escape'/, 'a drag can be called off');

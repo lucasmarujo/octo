@@ -1,7 +1,7 @@
 import { deleteSession, renameSession } from './commands.js';
 import { $, h, keep, place, storage, svg } from './dom.js';
 import { ask, closeMenu, openMenu } from './dialogs.js';
-import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentsTip, detailsWidth, duration, kindColor, kindMark, label, shortModel, sidebarWidth, usageColor, usageOrder, usageShown } from './format.js';
+import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentTip, detailsWidth, duration, glyph, kindColor, kindMark, label, shortModel, sidebarWidth, subagentLine, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
 import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_DETAILS_COLLAPSE, ICON_DETAILS_EXPAND, ICON_PLUS, ICON_SIDEBAR_COLLAPSE, ICON_SIDEBAR_EXPAND, providerIcon } from './icons.js';
 import { motionMs } from './motion.js';
@@ -14,30 +14,33 @@ const SIDEBAR_COLLAPSED_KEY = 'octo.sidebarCollapsed';
 const DETAILS_COLLAPSED_KEY = 'octo.detailsCollapsed';
 const WIDTH_STEP = 16;
 const DETAILS_HANDLE_GAP = 8;
-const SUMMARY = [
-  { state: 'paused', glyph: '‖', tone: 't-yellow', waiting: true },
-  { state: 'working', glyph: null, tone: 't-text' },
-  { state: 'done', glyph: '✓', tone: 't-green' },
-];
 
 function summaryIcon(kind) {
   const icon = providerIcon(kind);
   return h('span', { class: 'summary-icon' }, icon ? svg(icon) : h('span', { class: 'summary-mark', style: `color:${kindColor(kind)}` }, kindMark(kind)));
 }
 
-function summaryLine(entry, list, onOpen) {
-  if (!list.length) return null;
-  const glyph = entry.glyph || SPINNER[state.frame % SPINNER.length];
-  const rest = list.length > 1 ? h('span', { class: 'summary-rest' }, `+${list.length - 1}`) : null;
-  const model = shortModel(list[0].model);
+function summaryLine(agent, onOpen) {
+  const mark = glyph(agent, state.frame);
+  const waiting = agent.state === 'paused' && !agent.starting;
+  const model = shortModel(agent.model);
   return h(
     'div',
-    { class: `summary${entry.waiting ? ' waiting' : ''}`, dataset: { agent: String(list[0].id) }, title: agentsTip(list), onclick: () => onOpen(list[0]) },
-    h('span', { class: `glyph ${entry.tone}`, dataset: entry.glyph ? {} : { spin: '1' } }, glyph),
-    summaryIcon(list[0].kind),
-    h('span', { class: 'summary-text' }, list[0].name),
-    rest,
+    { class: `summary${waiting ? ' waiting' : ''}`, dataset: { agent: String(agent.id) }, title: agentTip(agent), onclick: () => onOpen(agent) },
+    h('span', { class: `glyph ${mark.tone}`, dataset: mark.spin ? { spin: '1' } : {} }, mark.text),
+    summaryIcon(agent.kind),
+    h('span', { class: 'summary-text' }, agent.name),
     model ? h('span', { class: 'summary-model' }, model) : null,
+  );
+}
+
+function subagentSummary(sub, agent, onOpen) {
+  const line = subagentLine(sub, now());
+  return h(
+    'div',
+    { class: 'summary sub', title: [line.role, line.text].filter(Boolean).join('\n'), onclick: () => onOpen(agent) },
+    h('span', { class: 'glyph t-faint' }, '↳'),
+    h('span', { class: 'summary-text' }, line.role, sub.description ? h('span', { class: 'summary-detail' }, ` · ${sub.description}`) : null),
   );
 }
 
@@ -88,12 +91,9 @@ function sessionItem(session, onSelect, onOpen) {
     hint,
     h('span', { class: 'session-count' }, String(session.agents)),
   );
-  const lines = expanded
-    ? SUMMARY.map((entry) => summaryLine(entry, agents.filter((agent) => agent.state === entry.state && !agent.starting), onOpen))
-    : [];
-  const visible = lines.filter(Boolean);
-  const classes = ['session', selected ? 'selected' : '', expanded && visible.length ? 'expanded' : ''].filter(Boolean);
-  return h('div', { class: classes.join(' ') }, row, visible);
+  const lines = expanded ? agents.flatMap((agent) => [summaryLine(agent, onOpen), ...(agent.subagents || []).map((sub) => subagentSummary(sub, agent, onOpen))]) : [];
+  const classes = ['session', selected ? 'selected' : '', expanded && lines.length ? 'expanded' : ''].filter(Boolean);
+  return h('div', { class: classes.join(' ') }, row, lines);
 }
 
 async function newSession(onSelect) {
@@ -251,7 +251,7 @@ export function renderSidebar(onSelect, onOpen) {
     ? JSON.stringify([
         state.session,
         [...state.expanded],
-        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map((agent) => [agent.id, agent.name, agent.state, agent.starting, agent.kind, agent.model])]),
+        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map((agent) => [agent.id, agent.name, agent.state, agent.starting, agent.kind, agent.model, (agent.subagents || []).map((sub) => [sub.role, sub.description, sub.startedAt])])]),
       ])
     : '';
   if (overview && host.dataset.signature !== signature) {
