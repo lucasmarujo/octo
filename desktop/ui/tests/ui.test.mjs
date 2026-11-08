@@ -1292,7 +1292,7 @@ test('the phone button shows a phone and a green outline while a phone is connec
 test('the phone button is a mini icon to the right of settings, and its status stays on the icon', async () => {
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
   const footer = html.match(/<footer class="sidebar-footer">([\s\S]*?)<\/footer>/)[1];
-  assert.deepEqual([...footer.matchAll(/<button id="([\w-]+)" class="footer-icon[ "]/g)].map((match) => match[1]), ['open-help', 'open-settings', 'pair', 'sound', 'sidebar-toggle']);
+  assert.deepEqual([...footer.matchAll(/<button id="([\w-]+)" class="footer-icon[ "]/g)].map((match) => match[1]), ['open-help', 'open-settings', 'pair', 'sound', 'whats-new', 'sidebar-toggle']);
   assert.match(footer, /<button id="pair"[^>]*aria-label="Pair phone"[^>]*><\/button>/, 'no text child, and a name before the first status arrives');
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /\$\('pair'\)\.replaceChildren\(svg\(ICON_PAIR\)\);/, 'the icon alone');
   const pair = readFileSync(join(REPO, 'desktop/ui/js/pair.js'), 'utf8');
@@ -1408,6 +1408,51 @@ test('a right click on a session in the sidebar offers to rename or delete that 
   assert.match(commands, /export async function deleteSession\(name\) \{[\s\S]*?send\(\{ type: 'deleteSession', name \}\)/);
   assert.match(commands, /case 'rename-session':\n\s*renameSession\(state\.session, arg\)/, 'the slash command still renames the session on screen');
   assert.match(commands, /case 'delete-session':\n\s*deleteSession\(arg \|\| state\.session\);/);
+});
+
+test('the release notes come newest first, in English and Portuguese, one line for one line', async () => {
+  const { NOTES, noteItems, notesUnseen } = await import('../js/notes.js');
+  assert.ok(NOTES.length >= 2, 'there is a history to see');
+  const versions = NOTES.map((note) => note.version.split('.').map(Number));
+  for (let index = 1; index < versions.length; index++) {
+    const [a, b] = [versions[index - 1], versions[index]];
+    assert.ok(a[0] > b[0] || (a[0] === b[0] && (a[1] > b[1] || (a[1] === b[1] && a[2] > b[2]))), `${NOTES[index - 1].version} comes before ${NOTES[index].version}`);
+  }
+  for (const note of NOTES) {
+    assert.match(note.version, /^\d+\.\d+\.\d+$/);
+    assert.match(note.date, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(note.en.length > 0, note.version);
+    assert.equal(note['pt-BR'].length, note.en.length, `every line of ${note.version} has its Portuguese`);
+    for (const line of [...note.en, ...note['pt-BR']]) assert.ok(line.trim().length > 0 && !line.includes('\n'), note.version);
+  }
+  assert.deepEqual(noteItems(NOTES[0], 'pt-BR'), NOTES[0]['pt-BR']);
+  assert.deepEqual(noteItems(NOTES[0], 'fr'), NOTES[0].en, 'a language without notes falls back to English');
+  assert.equal(notesUnseen(null), true, 'the first time the dot shows');
+  assert.equal(notesUnseen(NOTES[0].version), false, 'once read it goes away');
+  assert.equal(notesUnseen(NOTES[1].version), true, 'and comes back with the next version');
+  const notes = readFileSync(join(REPO, 'desktop/ui/js/notes.js'), 'utf8');
+  assert.match(notes, /storage\.set\(SEEN_KEY, latest\.version\);\n\s*paintButton\(\);/, 'opening the notes marks them read');
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /function openUpdates\(\) \{\n\s*pickSection\('Updates'\);\n\s*if \(state\.active === 'settings'\) renderSettings\(\);\n\s*else openPage\('settings'\);/, 'all the notes open on the Updates section, also when Settings is already open');
+  assert.match(main, /initNotes\(openUpdates\);/);
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /h\('div', \{ class: 'notes' \}, NOTES\.map\(\(note\) => noteBlock\(note, note\.version === state\.version\)\)\),/, 'Updates lists every release, marking the one running');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<span class="volume-value">100%<\/span>\s*<\/div>\s*<button id="whats-new" class="footer-icon whats-new"[^>]*data-i18n-label="What's new"[^>]*><\/button>\s*<button id="sidebar-toggle"/, 'with the other icons of the sidebar, before the toggle');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.whats-new\.unseen::after \{[^}]*background: var\(--color-accent\);/, 'a pink dot while there are notes not read');
+});
+
+test('every icon of the sidebar footer fits in one row at the narrowest sidebar', async () => {
+  const { SIDEBAR_MIN } = await import('../js/format.js');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  const icons = html.match(/<footer class="sidebar-footer">([\s\S]*?)<\/footer>/)[1].match(/<button /g).length;
+  const size = Number(css.match(/\.footer-icon \{[^}]*width: (\d+)px;/)[1]);
+  const gap = Number(css.match(/\.sidebar-footer \{[^}]*gap: (\d+)px;/)[1]);
+  const [, , sides] = css.match(/\.sidebar \{[^}]*padding: (\d+)px (\d+)px \d+px;/).map(Number);
+  const border = Number(css.match(/\.sidebar \{[^}]*border-right: (\d+)px solid/)[1]);
+  assert.ok(SIDEBAR_MIN - 2 * sides - border >= icons * size + (icons - 1) * gap, `${icons} icons need ${icons * size + (icons - 1) * gap}px`);
 });
 
 test('the sidebar is as wide as the user left it, within limits, on every screen', async () => {

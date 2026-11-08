@@ -4,6 +4,7 @@ import { alive, installKind, joinArgs, kindColor, label, soundFlip, soundOn, spl
 import { LANGUAGES, language, setLanguage, t } from './i18n.js';
 import { ICON_BELL, ICON_BELL_OFF } from './icons.js';
 import { choose, hideTip, motion, reducedMotion, rise, settle, slideThumb } from './motion.js';
+import { NOTES, noteBlock } from './notes.js';
 import { agents, state } from './state.js';
 import { toast } from './toast.js';
 import { invoke } from './transport.js';
@@ -454,10 +455,16 @@ function updatesSection() {
         ? h('button', { class: 'button primary', type: 'button', onclick: () => invoke('restart_app') }, t('Restart now'))
         : h('button', { class: 'button', type: 'button', disabled: Boolean(update && update.checking), onclick: checkUpdate }, t('Check now')),
     ),
+    h('div', { class: 'settings-heading notes-heading' }, h('h2', null, t('Release notes'))),
+    h('div', { class: 'notes' }, NOTES.map((note) => noteBlock(note, note.version === state.version))),
   );
 }
 
 const SECTIONS = { Appearance: appearanceSection, Agents: agentsSection, Alerts: alertsSection, Phone: phoneSection, Updates: updatesSection };
+
+export function pickSection(name) {
+  shownSection = name;
+}
 
 function showSection(name) {
   if (name === shownSection) return;

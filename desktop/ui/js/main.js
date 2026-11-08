@@ -15,8 +15,9 @@ import { ICON_HELP, ICON_PAIR, ICON_SETTINGS } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
 import { initTooltips } from './motion.js';
 import { renderList, tickList } from './list.js';
+import { initNotes } from './notes.js';
 import { openPairing, watchPhone } from './pair.js';
-import { applyTheme, initSound, renderSettings, setAgentOpener, watchInstalls } from './settings.js';
+import { applyTheme, initSound, pickSection, renderSettings, setAgentOpener, watchInstalls } from './settings.js';
 import { initDetailsWidth, initPanelToggles, initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
 import { initTabs, renderTabs, tabShown } from './tabs.js';
@@ -167,6 +168,12 @@ function openPage(name) {
   show(`${name}-view`);
   renderTabs();
   PAGES[name].render();
+}
+
+function openUpdates() {
+  pickSection('Updates');
+  if (state.active === 'settings') renderSettings();
+  else openPage('settings');
 }
 
 function openTab(id) {
@@ -469,6 +476,7 @@ function initWindow() {
   initSound();
   $('open-help').addEventListener('click', () => openPage('help'));
   $('open-settings').addEventListener('click', () => openPage('settings'));
+  initNotes(openUpdates);
 }
 
 function spin() {
