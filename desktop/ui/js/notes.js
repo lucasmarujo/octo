@@ -7,6 +7,16 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.30',
+    date: '2026-11-09',
+    en: [
+      'Pick the model a new agent starts with, right next to the agent: the models Claude Code and Codex offer, remembered for each agent.',
+    ],
+    'pt-BR': [
+      'Escolha o modelo com que o agente novo começa, logo ao lado do agente: os modelos que o Claude Code e o Codex oferecem, lembrados para cada agente.',
+    ],
+  },
+  {
     version: '0.2.29',
     date: '2026-11-09',
     en: [
