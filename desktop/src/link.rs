@@ -4,6 +4,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use orkai::launch;
 use orkai::model::{AgentId, AgentRecord};
 use orkai::paths::Home;
 use orkai::pwa::hub::{Event, Hub};
@@ -138,10 +139,16 @@ fn open_link(url: String) -> Result<(), String> {
     Ok(())
 }
 
+fn open_hub(home: &Home) -> io::Result<Arc<Hub>> {
+    let hub = Hub::open(home)?;
+    launch::prune_holder_binaries(home, hub.launcher().holder_exe());
+    Ok(hub)
+}
+
 pub fn run() -> io::Result<()> {
     orkai::migrate::adopt_on_launch();
     let home = Home::resolve()?;
-    let hub = Hub::open(&home)?;
+    let hub = open_hub(&home)?;
     #[cfg(any(windows, target_os = "macos"))]
     crate::shell_icon::refresh(&home);
     #[cfg(windows)]
@@ -354,5 +361,41 @@ mod tests {
         let fx = fixture("detached");
         let err = fx.link.send(PhoneMsg::Sync).unwrap_err();
         assert!(err.contains("not attached"), "{err}");
+    }
+
+    #[test]
+    fn opening_the_app_removes_the_holders_of_older_versions_but_keeps_the_ones_agents_still_run() {
+        let dir =
+            std::env::temp_dir().join(format!("orkai-desktop-prune-{}-{}", std::process::id(), orkai::util::now_ms()));
+        let home = Home::at(dir.join("home"));
+        home.ensure().unwrap();
+        let suffix = std::env::consts::EXE_SUFFIX;
+        let old = home.bin_dir().join(format!("{}0.0.1-0000000000000000{suffix}", launch::HOLDER_PREFIX));
+        let legacy = home.bin_dir().join(format!("orkai-holder-0.0.2-0000000000000000{suffix}"));
+        let running = home.bin_dir().join(format!("{}0.0.3-0000000000000000{suffix}", launch::HOLDER_PREFIX));
+        let other = home.bin_dir().join(format!("cloudflared{suffix}"));
+        for path in [&old, &legacy, &running, &other] {
+            std::fs::write(path, b"binary").unwrap();
+        }
+        std::fs::create_dir_all(home.agent_dir(4)).unwrap();
+        let runtime = orkai::model::RuntimeInfo {
+            holder_pid: 1,
+            child_pid: None,
+            port: 1,
+            token: String::new(),
+            started_at_ms: 1,
+            protocol: 1,
+            version: String::new(),
+            exe: Some(running.clone()),
+        };
+        orkai::fsutil::write_json_atomic(&home.runtime_file(4), &runtime).unwrap();
+        let hub = open_hub(&home).unwrap();
+        assert!(!old.exists(), "a holder of an older version is removed");
+        assert!(!legacy.exists(), "a holder from before the rename to Octo is removed");
+        assert!(running.exists(), "an agent still running keeps the holder its hooks call");
+        assert!(other.exists(), "only holders are removed");
+        assert!(hub.launcher().holder_exe().exists(), "the holder of this version stays");
+        drop(hub);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
