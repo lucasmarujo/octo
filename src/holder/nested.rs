@@ -11,6 +11,7 @@ pub const CHECK_EVERY_TICKS: u32 = 10;
 pub const MAX_PROCESSES: usize = 256;
 const CLAUDE_SESSIONS_DIR: &str = "sessions";
 const QWEN_SESSIONS_DIR: &str = "sessions";
+const CLAUDE_BUSY_STATUS: &str = "busy";
 const PROGRAMS: [(&str, AgentKind); 10] = [
     ("claude", AgentKind::Claude),
     ("codex", AgentKind::Codex),
@@ -36,6 +37,14 @@ struct SessionFile {
     pid: u32,
     session_id: String,
     cwd: Option<PathBuf>,
+    status: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClaudeSession {
+    pub session_id: String,
+    pub cwd: Option<PathBuf>,
+    pub busy: bool,
 }
 
 pub fn program_name(name: &str) -> String {
@@ -53,6 +62,19 @@ fn session_file(dir: &Path, pid: u32) -> Option<SessionFile> {
 
 pub fn claude_session(claude_home: &Path, pid: u32) -> Option<String> {
     session_file(&claude_home.join(CLAUDE_SESSIONS_DIR), pid).map(|session| session.session_id)
+}
+
+pub fn claude_sessions_among(claude_home: &Path, processes: &[Process]) -> Vec<ClaudeSession> {
+    let dir = claude_home.join(CLAUDE_SESSIONS_DIR);
+    processes
+        .iter()
+        .filter_map(|process| session_file(&dir, process.pid))
+        .map(|session| ClaudeSession {
+            busy: session.status.as_deref() == Some(CLAUDE_BUSY_STATUS),
+            session_id: session.session_id,
+            cwd: session.cwd,
+        })
+        .collect()
 }
 
 pub fn detect(
@@ -284,6 +306,34 @@ mod tests {
         assert_eq!(found.conversation_id.as_deref(), Some(SESSION));
         assert_eq!(found.cwd, Some(PathBuf::from("/work/app")));
         assert_eq!(found.since_ms, 500);
+    }
+
+    #[test]
+    fn the_background_sessions_of_claude_come_from_the_session_files_of_its_processes() {
+        const BACKGROUND: &str = "c82c00b5-5f5b-44d0-a322-f806f88bf804";
+        let spare = format!(r#"{{"pid":3042,"sessionId":"{BACKGROUND}","cwd":"/work/app","status":"busy"}}"#);
+        let idle = format!(r#"{{"pid":3047,"sessionId":"{SESSION}","status":"idle"}}"#);
+        let stale = format!(r#"{{"pid":9999,"sessionId":"{SESSION}"}}"#);
+        let home =
+            claude_home(&[(3042, &spare), (3047, &idle), (3059, &stale), (3060, r#"{"pid":3060,"sessionId":"x"}"#)]);
+        let processes = [
+            process(3034, "claude"),
+            process(3039, "claude"),
+            process(3042, "claude"),
+            process(3047, "claude"),
+            process(3059, "claude"),
+            process(3060, "claude"),
+        ];
+        let sessions = claude_sessions_among(&home.0, &processes);
+        assert_eq!(
+            sessions,
+            [
+                ClaudeSession { session_id: BACKGROUND.into(), cwd: Some(PathBuf::from("/work/app")), busy: true },
+                ClaudeSession { session_id: SESSION.into(), cwd: None, busy: false },
+            ],
+            "a file of another process or without a session id is skipped"
+        );
+        assert!(claude_sessions_among(&home.0, &[]).is_empty());
     }
 
     #[test]

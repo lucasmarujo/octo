@@ -9,6 +9,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::fsutil;
+use crate::holder::nested::{ClaudeSession, claude_sessions_among, descendants};
 use crate::launch::{find_codex_session, is_safe_session_id, recent_codex_rollouts};
 use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, NestedAgent};
 use crate::util::is_uuid;
@@ -350,9 +351,36 @@ impl SubagentWatcher {
         Some(dir)
     }
 
+    fn background_sessions(&self, parent: &Parent) -> Vec<ClaudeSession> {
+        let Some((home, pid)) = self.claude_home.as_deref().zip(parent.pid) else { return Vec::new() };
+        claude_sessions_among(home, &descendants(pid))
+    }
+
     fn claude(&mut self, parent: &Parent, now: u64) -> Vec<Subagent> {
-        let Some(session_id) = self.claude_session(parent) else { return Vec::new() };
-        let Some(dir) = self.claude_dir(&session_id, &parent.cwd) else { return Vec::new() };
+        let mut sessions: Vec<ClaudeSession> = self
+            .claude_session(parent)
+            .map(|session_id| ClaudeSession { session_id, cwd: None, busy: parent.busy })
+            .into_iter()
+            .collect();
+        for session in self.background_sessions(parent) {
+            if is_uuid(&session.session_id) && !sessions.iter().any(|known| known.session_id == session.session_id) {
+                sessions.push(session);
+            }
+        }
+        let mut found: Vec<Subagent> = Vec::new();
+        for session in sessions {
+            let cwd = session.cwd.clone().unwrap_or_else(|| parent.cwd.clone());
+            for subagent in self.claude_in_session(&session.session_id, &cwd, session.busy, now) {
+                if !found.iter().any(|known| known.id == subagent.id) {
+                    found.push(subagent);
+                }
+            }
+        }
+        found
+    }
+
+    fn claude_in_session(&mut self, session_id: &str, cwd: &Path, busy: bool, now: u64) -> Vec<Subagent> {
+        let Some(dir) = self.claude_dir(session_id, cwd) else { return Vec::new() };
         let Ok(entries) = fs::read_dir(&dir) else { return Vec::new() };
         let mut found = Vec::new();
         for entry in entries.flatten() {
@@ -369,7 +397,7 @@ impl SubagentWatcher {
             }
             let meta_path = dir.join(format!("{CLAUDE_TRANSCRIPT_PREFIX}{id}{CLAUDE_META_SUFFIX}"));
             let meta = self.claude_metas.entry(meta_path).or_insert_with_key(|p| read_json(p)).clone();
-            if !parent.busy && meta.request_shape.as_deref() != Some(CLAUDE_BACKGROUND_SHAPE) {
+            if !busy && meta.request_shape.as_deref() != Some(CLAUDE_BACKGROUND_SHAPE) {
                 continue;
             }
             let tail = self.tail(&path, len, modified, claude_tail);
@@ -803,6 +831,81 @@ mod tests {
 
         write(&registry, &serde_json::json!({"pid": PID + 1, "sessionId": LIVE}).to_string());
         assert_eq!(roles(&mut watcher), ["launched"], "a file left by another process is ignored");
+    }
+
+    struct Child(std::process::Child);
+
+    impl Drop for Child {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    fn long_running_child() -> Child {
+        let mut command = if cfg!(windows) {
+            let mut ping = std::process::Command::new("ping");
+            ping.args(["-n", "60", "127.0.0.1"]);
+            ping
+        } else {
+            let mut sleep = std::process::Command::new("sleep");
+            sleep.arg("60");
+            sleep
+        };
+        Child(command.stdout(std::process::Stdio::null()).spawn().unwrap())
+    }
+
+    #[test]
+    fn subagents_of_a_background_session_claude_runs_under_the_agent_are_listed() {
+        const BACKGROUND: &str = "c82c00b5-5f5b-44d0-a322-f806f88bf804";
+        let t = tree("background");
+        let home = t.0.join("claude-home");
+        let cwd = t.0.join("project");
+        fs::create_dir_all(&cwd).unwrap();
+        let project = home.join("projects").join(claude_project_slug(&cwd));
+        write(&project.join(format!("{SESSION}{CLAUDE_TRANSCRIPT_SUFFIX}")), "{}\n");
+        let subagents = project.join(BACKGROUND).join("subagents");
+        claude_subagent(&subagents, "fg", serde_json::json!({"agentType":"Explore"}), &[tool_use("Grep", Value::Null)]);
+        claude_subagent(
+            &subagents,
+            "bg",
+            serde_json::json!({"agentType":"general-purpose","requestShape":"background"}),
+            &[tool_use("Bash", Value::Null)],
+        );
+        let spare = long_running_child();
+        let registry = home.join("sessions").join(format!("{}.json", spare.0.id()));
+        let session = |status: &str| {
+            serde_json::json!({"pid": spare.0.id(), "sessionId": BACKGROUND, "cwd": cwd, "status": status}).to_string()
+        };
+        let agent = Parent { pid: Some(std::process::id()), ..claude_parent(&cwd, false) };
+        let now = crate::util::now_ms();
+        let roles = |watcher: &mut SubagentWatcher| -> Vec<String> {
+            let mut roles: Vec<String> = watcher
+                .scan(std::slice::from_ref(&agent), now)
+                .remove(&7)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|s| s.role)
+                .collect();
+            roles.sort();
+            roles
+        };
+        let mut watcher = SubagentWatcher::new(Some(home.clone()), None);
+        assert!(roles(&mut watcher).is_empty(), "no session file, no background session");
+
+        write(&registry, &session("busy"));
+        assert_eq!(
+            roles(&mut watcher),
+            ["Explore", "general-purpose"],
+            "the busy background session shows all its work"
+        );
+
+        write(&registry, &session("idle"));
+        assert_eq!(
+            roles(&mut watcher),
+            ["general-purpose"],
+            "an idle background session keeps only its background subagents"
+        );
     }
 
     #[test]
