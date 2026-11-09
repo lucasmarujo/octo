@@ -7,6 +7,16 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.31',
+    date: '2026-11-09',
+    en: [
+      'On macOS the subagents of an agent show again: Octo also follows the work Claude Code runs in the background under it.',
+    ],
+    'pt-BR': [
+      'No macOS os subagentes de um agente voltam a aparecer: o Octo também acompanha o trabalho que o Claude Code roda em segundo plano dentro dele.',
+    ],
+  },
+  {
     version: '0.2.30',
     date: '2026-11-09',
     en: [
