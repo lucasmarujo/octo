@@ -68,6 +68,26 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: cargo test -p orkai-desktop --test msix_e2e -- --ignored
 
+  mobile:
+    name: mobile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Types
+        run: npx tsc --noEmit
+      - name: Test
+        run: npx jest --ci
+
   version:
     name: check the version
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

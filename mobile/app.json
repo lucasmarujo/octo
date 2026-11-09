@@ -1,0 +1,105 @@
+{
+  "expo": {
+    "name": "Octo",
+    "slug": "octo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "octo",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#0e0e13",
+    "ios": {
+      "bundleIdentifier": "dev.marujo.octo",
+      "supportsTablet": false,
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "Octo uses the camera only to scan the pairing code Octo shows on your computer."
+      }
+    },
+    "android": {
+      "package": "dev.marujo.octo",
+      "adaptiveIcon": {
+        "backgroundColor": "#1c1c24",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 128,
+          "backgroundColor": "#0e0e13"
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "ios": {
+            "fonts": [
+              "./assets/fonts/Barlow-Regular.ttf",
+              "./assets/fonts/Barlow-SemiBold.ttf",
+              "./assets/fonts/Barlow-ExtraBold.ttf",
+              "./assets/fonts/JetBrainsMono-Regular.ttf",
+              "./assets/fonts/JetBrainsMono-Bold.ttf"
+            ]
+          },
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "Barlow",
+                "fontDefinitions": [
+                  {
+                    "path": "./assets/fonts/Barlow-Regular.ttf",
+                    "weight": 400
+                  },
+                  {
+                    "path": "./assets/fonts/Barlow-SemiBold.ttf",
+                    "weight": 600
+                  },
+                  {
+                    "path": "./assets/fonts/Barlow-ExtraBold.ttf",
+                    "weight": 800
+                  }
+                ]
+              },
+              {
+                "fontFamily": "JetBrains Mono",
+                "fontDefinitions": [
+                  {
+                    "path": "./assets/fonts/JetBrainsMono-Regular.ttf",
+                    "weight": 400
+                  },
+                  {
+                    "path": "./assets/fonts/JetBrainsMono-Bold.ttf",
+                    "weight": 700
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    ],
+    "owner": "lmaorgexpo",
+    "extra": {
+      "eas": {
+        "projectId": "250deae1-db96-4679-9c43-b610766280db"
+      }
+    }
+  }
+}

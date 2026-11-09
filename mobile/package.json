@@ -1,0 +1,37 @@
+{
+  "name": "octo-mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "expo": "~58.0.23",
+    "expo-build-properties": "~58.0.12",
+    "expo-clipboard": "~58.0.4",
+    "expo-dev-client": "~58.0.18",
+    "expo-font": "~58.0.11",
+    "expo-haptics": "~58.0.7",
+    "expo-secure-store": "~58.0.2",
+    "expo-splash-screen": "~58.0.13",
+    "expo-status-bar": "~58.0.4",
+    "expo-system-ui": "~58.0.7",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.11.1",
+    "react-native-svg": "15.16.0"
+  },
+  "devDependencies": {
+    "@types/jest": "30.0.0",
+    "@types/react": "~19.3.0",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.14",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "kai": "node scripts/kai.js",
+    "test": "jest",
+    "types": "tsc --noEmit"
+  },
+  "private": true
+}

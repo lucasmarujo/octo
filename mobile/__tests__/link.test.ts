@@ -1,0 +1,182 @@
+import type { Identity, Transport } from '../src/core/link';
+import { DeviceLink, ownerOf, RETRY, RETRY_MAX } from '../src/core/link';
+import { attentionOf } from '../src/core/links';
+import type { AgentView, Overview } from '../src/core/protocol';
+import { OUTDATED, REPLACED, UNPAIRED } from '../src/core/protocol';
+
+type Call = [method: 'open' | 'send' | 'close', id: string, ...rest: string[]];
+
+const KEY = 'A'.repeat(43);
+const IDENTITY: Identity = {
+  agent: 'Octo/1.0.0 (Linux; Android 16; Pixel 9) Mobile',
+  device: { type: 'device', model: 'Pixel 9', osVersion: '16', standalone: true, client: 'phone-1' },
+};
+
+function transport(): Transport & { calls: Call[] } {
+  const calls: Call[] = [];
+  return {
+    calls,
+    open: (id, url, key, agent) => calls.push(['open', id, url, key, agent]),
+    send: (id, text) => calls.push(['send', id, text]),
+    close: id => calls.push(['close', id]),
+  };
+}
+
+function agent(part: Partial<AgentView>): AgentView {
+  return {
+    id: 1,
+    session: 'main',
+    name: 'holder-e2e',
+    kind: 'claude',
+    state: 'working',
+    starting: false,
+    activity: '',
+    task: '',
+    cwd: '/w',
+    project: 'octo',
+    color: '#e85eb6',
+    startedAt: 1,
+    stateSince: 1,
+    turnStarted: 1,
+    lastTurn: null,
+    branch: null,
+    exit: null,
+    ...part,
+  };
+}
+
+function overview(agents: AgentView[], now = 1000): Overview {
+  return { host: 'lucas-desktop', now, session: 'main', sessions: [{ name: 'main', agents: agents.length }], agents, whereDir: '/w', dirs: {}, worktree: false, kinds: ['claude'] };
+}
+
+function opened(link: DeviceLink, wire: ReturnType<typeof transport>): string {
+  link.connect();
+  const open = wire.calls.filter(call => call[0] === 'open').pop();
+  return open![1];
+}
+
+describe('a link to one computer', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('opens the encrypted socket of the computer under a session of its own', () => {
+    const wire = transport();
+    const link = new DeviceLink('home', 'https://home-pc.trycloudflare.com', KEY, wire, IDENTITY);
+    const session = opened(link, wire);
+    expect(ownerOf(session)).toBe('home');
+    expect(wire.calls[0]).toEqual(['open', session, 'wss://home-pc.trycloudflare.com/ws', KEY, IDENTITY.agent]);
+    expect(link.store.get().phase).toBe('connecting');
+  });
+
+  it('tells the computer which phone it is once the channel is up, and nothing before', () => {
+    const wire = transport();
+    const link = new DeviceLink('home', 'https://h', KEY, wire, IDENTITY);
+    const session = opened(link, wire);
+    link.send({ type: 'close' });
+    expect(wire.calls.filter(call => call[0] === 'send')).toEqual([]);
+    link.onReady(session);
+    expect(wire.calls.filter(call => call[0] === 'send')).toEqual([['send', session, JSON.stringify(IDENTITY.device)]]);
+  });
+
+  it('goes live on the welcome and keeps the last workspace and usage', () => {
+    const wire = transport();
+    const link = new DeviceLink('home', 'https://h', KEY, wire, IDENTITY);
+    const session = opened(link, wire);
+    link.onReady(session);
+    link.onMessage(session, JSON.stringify({ type: 'welcome', host: 'lucas-desktop', version: '0.2.31' }));
+    link.onMessage(session, JSON.stringify({ type: 'state', ...overview([agent({})]) }));
+    link.onMessage(session, JSON.stringify({ type: 'usage', entries: [{ kind: 'claude', windows: [], credits: null, problem: null }] }));
+    link.onMessage(session, 'not json');
+    const state = link.store.get();
+    expect(state.phase).toBe('live');
+    expect(state.overview!.host).toBe('lucas-desktop');
+    expect(state.usage).toHaveLength(1);
+  });
+
+  it('stops for good when the computer forgot the phone, moved it or speaks another version', () => {
+    for (const [code, phase] of [
+      [UNPAIRED, 'unpaired'],
+      [REPLACED, 'replaced'],
+      [OUTDATED, 'outdated'],
+    ] as const) {
+      const wire = transport();
+      const link = new DeviceLink('home', 'https://h', KEY, wire, IDENTITY);
+      const session = opened(link, wire);
+      link.onClosed(session, code);
+      expect(link.store.get().phase).toBe(phase);
+      jest.advanceTimersByTime(RETRY_MAX * 3);
+      expect(wire.calls.filter(call => call[0] === 'open')).toHaveLength(1);
+      link.reconnectNow();
+      expect(wire.calls.filter(call => call[0] === 'open')).toHaveLength(1);
+    }
+  });
+
+  it('retries a dropped connection a little later each time, up to a ceiling', () => {
+    const wire = transport();
+    const link = new DeviceLink('home', 'https://h', KEY, wire, IDENTITY);
+    let session = opened(link, wire);
+    const waits: number[] = [];
+    for (let attempt = 0; attempt < RETRY.length + 2; attempt += 1) {
+      link.onClosed(session, 1006);
+      expect(link.store.get().phase).toBe('offline');
+      const before = wire.calls.length;
+      let waited = 0;
+      while (wire.calls.length === before) {
+        jest.advanceTimersByTime(100);
+        waited += 100;
+      }
+      waits.push(waited);
+      session = wire.calls[wire.calls.length - 1][1];
+    }
+    expect(waits).toEqual([...RETRY, RETRY_MAX, RETRY_MAX]);
+  });
+
+  it('ignores what an older session of the same computer says', () => {
+    const wire = transport();
+    const link = new DeviceLink('home', 'https://h', KEY, wire, IDENTITY);
+    const old = opened(link, wire);
+    link.onClosed(old, 1006);
+    jest.advanceTimersByTime(RETRY[0]);
+    const current = wire.calls[wire.calls.length - 1][1];
+    expect(current).not.toBe(old);
+    link.onMessage(old, JSON.stringify({ type: 'welcome', host: 'x', version: '1' }));
+    link.onClosed(old, UNPAIRED);
+    expect(link.store.get().phase).toBe('connecting');
+  });
+
+  it('lets go of the socket in the background and comes back on its own', () => {
+    const wire = transport();
+    const link = new DeviceLink('home', 'https://h', KEY, wire, IDENTITY);
+    const session = opened(link, wire);
+    link.suspend();
+    expect(wire.calls).toContainEqual(['close', session]);
+    expect(link.store.get().phase).toBe('offline');
+    link.reconnectNow();
+    expect(wire.calls.filter(call => call[0] === 'open')).toHaveLength(2);
+  });
+
+  it('moves to the new address and key when the computer is paired again', () => {
+    const wire = transport();
+    const link = new DeviceLink('home', 'https://old', KEY, wire, IDENTITY);
+    const session = opened(link, wire);
+    link.onMessage(session, JSON.stringify({ type: 'state', ...overview([]) }));
+    link.retarget('https://new', 'B'.repeat(43));
+    expect(wire.calls).toContainEqual(['close', session]);
+    expect(wire.calls[wire.calls.length - 1].slice(2, 4)).toEqual(['wss://new/ws', 'B'.repeat(43)]);
+    expect(link.store.get().overview).toBeNull();
+    expect(link.targets('https://new', 'B'.repeat(43))).toBe(true);
+  });
+});
+
+describe('what deserves the attention of the user', () => {
+  it('is an agent that starts waiting, or one that finished its turn', () => {
+    const before = overview([agent({ id: 1, state: 'working' }), agent({ id: 2, state: 'working' }), agent({ id: 3, state: 'working', kind: 'terminal' }), agent({ id: 4, state: 'idle' })]);
+    const after = overview([agent({ id: 1, state: 'paused' }), agent({ id: 2, state: 'done' }), agent({ id: 3, state: 'done', kind: 'terminal' }), agent({ id: 4, state: 'done' }), agent({ id: 5, state: 'paused' })]);
+    const found = attentionOf('home', before, after).map(item => [item.device, item.agent.id, item.kind]);
+    expect(found).toEqual([
+      ['home', 1, 'needs'],
+      ['home', 2, 'done'],
+    ]);
+    expect(attentionOf('home', null, after)).toEqual([]);
+  });
+});

@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["OctoScannerModule"]
+  },
+  "android": {
+    "modules": ["dev.marujo.octo.scanner.OctoScannerModule"]
+  }
+}
