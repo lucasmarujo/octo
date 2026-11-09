@@ -19,7 +19,7 @@ import { renderList, tickList } from './list.js';
 import { initNotes } from './notes.js';
 import { openPairing, watchPhone } from './pair.js';
 import { applyTheme, initSound, pickSection, renderSettings, setAgentOpener, watchInstalls } from './settings.js';
-import { initDetailsWidth, initPanelToggles, initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
+import { initDetailsWidth, initFlyout, initPanelToggles, initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
 import { initTabs, renderTabs, tabShown } from './tabs.js';
 import { Terminal } from './terminal.js';
@@ -524,6 +524,7 @@ function start() {
   initTerminal();
   initComposer();
   initTooltips();
+  initFlyout();
   setCommandRunner((text) => runCommand(text, commands));
   setAgentOpener(openAgent);
   $('recover').addEventListener('click', () => send({ type: 'recover', session: state.session }));

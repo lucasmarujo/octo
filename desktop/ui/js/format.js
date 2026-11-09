@@ -10,6 +10,8 @@ export const SIDEBAR_MAX = 480;
 export const DETAILS_DEFAULT = 280;
 export const DETAILS_MIN = 220;
 export const DETAILS_MAX = 560;
+export const FLYOUT_GAP = 6;
+export const FLYOUT_MARGIN = 8;
 
 const LABELS = { antigravity: 'agy' };
 const TERMINAL_KIND = 'terminal';
@@ -268,6 +270,18 @@ export function usageOrder(entries, kinds) {
 
 export function usageShown(entries, open) {
   return open ? entries : entries.slice(0, USAGE_FOLDED);
+}
+
+export function sessionMark(name) {
+  const words = name.trim().split(/[\s._\-/]+/).filter(Boolean).map((word) => [...word]);
+  const letters = words.length > 1 ? [words[0][0], words[1][0]] : (words[0] || []).slice(0, 2);
+  return letters.join('').toUpperCase();
+}
+
+export function flyoutPlace(anchor, size, viewport) {
+  const left = Math.min(anchor.right + FLYOUT_GAP, viewport.width - size.width - FLYOUT_MARGIN);
+  const top = Math.min(anchor.top, viewport.height - size.height - FLYOUT_MARGIN);
+  return { left: Math.max(FLYOUT_MARGIN, left), top: Math.max(FLYOUT_MARGIN, top) };
 }
 
 export function plural(count, one, many) {

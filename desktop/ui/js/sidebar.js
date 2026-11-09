@@ -1,10 +1,10 @@
 import { deleteSession, renameSession } from './commands.js';
 import { $, h, keep, place, storage, svg } from './dom.js';
 import { ask, closeMenu, openMenu } from './dialogs.js';
-import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentTip, detailsWidth, duration, glyph, kindColor, kindMark, label, shortModel, sidebarWidth, subagentLine, usageColor, usageOrder, usageShown } from './format.js';
+import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentTip, detailsWidth, duration, flyoutPlace, glyph, kindColor, kindMark, label, plural, sessionMark, shortModel, sidebarWidth, subagentLine, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
 import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_DETAILS_COLLAPSE, ICON_DETAILS_EXPAND, ICON_PLUS, ICON_SIDEBAR_COLLAPSE, ICON_SIDEBAR_EXPAND, providerIcon } from './icons.js';
-import { motionMs } from './motion.js';
+import { hideTip, motionMs } from './motion.js';
 import { agents, inSession, now, selectSession, state, toggleExpanded, toggleUsage } from './state.js';
 import { send } from './transport.js';
 
@@ -14,6 +14,80 @@ const SIDEBAR_COLLAPSED_KEY = 'octo.sidebarCollapsed';
 const DETAILS_COLLAPSED_KEY = 'octo.detailsCollapsed';
 const WIDTH_STEP = 16;
 const DETAILS_HANDLE_GAP = 8;
+const FLYOUT_CLOSE_MS = 160;
+
+let flyoutOpen = null;
+let flyoutTimer = 0;
+
+const needsYou = (agent) => agent.state === 'paused' && !agent.starting;
+const agentSignature = (agent) => [agent.id, agent.name, agent.state, agent.starting, agent.kind, agent.model, (agent.subagents || []).map((sub) => [sub.role, sub.description, sub.startedAt])];
+
+function tickResets(host) {
+  for (const node of host.querySelectorAll('[data-resets]')) {
+    node.textContent = t('resets in {time}', { time: duration(Number(node.dataset.resets) - now()) });
+  }
+}
+
+function closeFlyout() {
+  clearTimeout(flyoutTimer);
+  flyoutOpen = null;
+  $('flyout').hidden = true;
+}
+
+function closeFlyoutSoon() {
+  clearTimeout(flyoutTimer);
+  flyoutTimer = setTimeout(closeFlyout, FLYOUT_CLOSE_MS);
+}
+
+function paintFlyout() {
+  if (!flyoutOpen) return;
+  const { anchor, read } = flyoutOpen;
+  const content = anchor.offsetWidth ? read() : null;
+  if (!content) {
+    closeFlyout();
+    return;
+  }
+  const host = $('flyout');
+  if (flyoutOpen.signature !== content.signature) {
+    flyoutOpen.signature = content.signature;
+    host.replaceChildren(...content.build());
+  }
+  host.hidden = false;
+  tickResets(host);
+  const edge = { right: anchor.closest('.sidebar').getBoundingClientRect().right, top: anchor.getBoundingClientRect().top };
+  const spot = flyoutPlace(edge, { width: host.offsetWidth, height: host.offsetHeight }, { width: window.innerWidth, height: window.innerHeight });
+  host.style.left = `${spot.left}px`;
+  host.style.top = `${spot.top}px`;
+}
+
+function openFlyout(anchor, read) {
+  clearTimeout(flyoutTimer);
+  hideTip();
+  flyoutOpen = { anchor, read, signature: null };
+  paintFlyout();
+}
+
+function hoverFlyout(anchor, read) {
+  anchor.addEventListener('pointerenter', () => openFlyout(anchor, read));
+  anchor.addEventListener('pointerleave', closeFlyoutSoon);
+  anchor.addEventListener('focus', () => {
+    if (anchor.matches(':focus-visible')) openFlyout(anchor, read);
+  });
+  anchor.addEventListener('blur', () => {
+    if (!anchor.matches(':hover')) closeFlyoutSoon();
+  });
+  return anchor;
+}
+
+export function initFlyout() {
+  const host = $('flyout');
+  host.addEventListener('pointerenter', () => clearTimeout(flyoutTimer));
+  host.addEventListener('pointerleave', closeFlyoutSoon);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeFlyout();
+  });
+  window.addEventListener('blur', closeFlyout);
+}
 
 function summaryIcon(kind) {
   const icon = providerIcon(kind);
@@ -22,7 +96,7 @@ function summaryIcon(kind) {
 
 function summaryLine(agent, onOpen) {
   const mark = glyph(agent, state.frame);
-  const waiting = agent.state === 'paused' && !agent.starting;
+  const waiting = needsYou(agent);
   const model = shortModel(agent.model);
   return h(
     'div',
@@ -96,6 +170,55 @@ function sessionItem(session, onSelect, onOpen) {
   return h('div', { class: classes.join(' ') }, row, lines);
 }
 
+function sessionFlyout(name, onOpen) {
+  const session = state.overview ? state.overview.sessions.find((item) => item.name === name) : null;
+  if (!session) return null;
+  const list = inSession(name);
+  const open = (agent) => {
+    closeFlyout();
+    onOpen(agent);
+  };
+  return {
+    signature: JSON.stringify([name, session.agents, list.map(agentSignature)]),
+    build: () => [
+      h('div', { class: 'flyout-head' }, h('span', { class: 'flyout-title' }, name), h('span', { class: 'flyout-count' }, plural(session.agents, t('agent'), t('agents')))),
+      list.length
+        ? list.flatMap((agent) => [summaryLine(agent, open), ...(agent.subagents || []).map((sub) => subagentSummary(sub, agent, open))])
+        : [h('span', { class: 'flyout-note' }, t('No agents yet'))],
+    ].flat(),
+  };
+}
+
+function railChip(name, onSelect, onOpen) {
+  const chip = h(
+    'button',
+    {
+      type: 'button',
+      'aria-label': name,
+      dataset: { session: name },
+      onclick: () => onSelect(name),
+      oncontextmenu: (event) => {
+        closeFlyout();
+        sessionMenu(event, name);
+      },
+    },
+    sessionMark(name),
+  );
+  return hoverFlyout(chip, () => sessionFlyout(name, onOpen));
+}
+
+function renderRail(sessions, onSelect, onOpen) {
+  const names = new Set(sessions.map((session) => session.name));
+  for (const name of [...railChips.keys()]) if (!names.has(name)) railChips.delete(name);
+  const chips = sessions.map((session) => {
+    const chip = keep(railChips, session.name, '', () => railChip(session.name, onSelect, onOpen));
+    const classes = ['rail-chip', session.name === state.session ? 'selected' : '', inSession(session.name).some(needsYou) ? 'waiting' : ''];
+    chip.className = classes.filter(Boolean).join(' ');
+    return chip;
+  });
+  place($('session-rail'), chips);
+}
+
 async function newSession(onSelect) {
   const name = await ask({ title: t('New session'), text: t('A session groups agents you work on together.'), action: t('Create'), placeholder: t('session name') });
   if (!name) return;
@@ -112,6 +235,8 @@ const USAGE_RINGS = 2;
 const usageCards = new Map();
 const usageFrame = new Map();
 const usageRings = new Map();
+const railChips = new Map();
+let ringEntries = [];
 
 function usageRow(window) {
   const used = Math.max(0, Math.min(100, window.used));
@@ -156,12 +281,18 @@ function ringCircles(window, index) {
 function usageRing(entry) {
   const icon = providerIcon(entry.kind);
   const rings = entry.windows.slice(0, USAGE_RINGS).map(ringCircles).join('');
-  return h(
+  const ring = h(
     'div',
     { class: 'usage-ring', role: 'img', dataset: { kind: entry.kind } },
     svg(`<svg class="ring" width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">${rings}</svg>`),
     h('span', { class: 'usage-ring-icon' }, icon ? svg(icon) : h('span', { class: 'summary-mark', style: `color:${kindColor(entry.kind)}` }, kindMark(entry.kind))),
   );
+  return hoverFlyout(ring, () => usageFlyout(entry.kind));
+}
+
+function usageFlyout(kind) {
+  const entry = ringEntries.find((item) => item.kind === kind);
+  return entry ? { signature: JSON.stringify(entry), build: () => [usageCard(entry)] } : null;
 }
 
 function ringTip(entry) {
@@ -177,10 +308,10 @@ function ringTip(entry) {
 function renderRings(entries) {
   const host = $('usage-rings');
   host.hidden = !entries.length;
+  ringEntries = entries;
   const rings = entries.map((entry) => {
     const ring = keep(usageRings, entry.kind, JSON.stringify(entry), () => usageRing(entry));
-    ring.dataset.tip = ringTip(entry);
-    ring.setAttribute('aria-label', ring.dataset.tip);
+    ring.setAttribute('aria-label', ringTip(entry));
     return ring;
   });
   place(host, rings);
@@ -238,9 +369,7 @@ function renderUsage() {
   place(list, cards);
   place(host, [head, list]);
   host.classList.toggle('open', state.usageOpen);
-  for (const node of host.querySelectorAll('[data-resets]')) {
-    node.textContent = t('resets in {time}', { time: duration(Number(node.dataset.resets) - now()) });
-  }
+  tickResets(host);
 }
 
 export function renderSidebar(onSelect, onOpen) {
@@ -251,7 +380,7 @@ export function renderSidebar(onSelect, onOpen) {
     ? JSON.stringify([
         state.session,
         [...state.expanded],
-        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map((agent) => [agent.id, agent.name, agent.state, agent.starting, agent.kind, agent.model, (agent.subagents || []).map((sub) => [sub.role, sub.description, sub.startedAt])])]),
+        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map(agentSignature)]),
       ])
     : '';
   if (overview && host.dataset.signature !== signature) {
@@ -265,12 +394,14 @@ export function renderSidebar(onSelect, onOpen) {
       h('span', { class: 'kbd' }, 'ctrl N'),
     );
     host.replaceChildren(...items, create);
+    renderRail(overview.sessions, onSelect, onOpen);
   }
   renderUsage();
+  paintFlyout();
 }
 
 export function spinSidebar() {
-  for (const node of $('sessions').querySelectorAll('[data-spin]')) node.textContent = SPINNER[state.frame % SPINNER.length];
+  for (const node of document.querySelectorAll('#sessions [data-spin], #flyout [data-spin]')) node.textContent = SPINNER[state.frame % SPINNER.length];
 }
 
 export function promptNewSession(onSelect) {

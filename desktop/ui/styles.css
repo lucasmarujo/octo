@@ -274,6 +274,22 @@ h1, p { margin: 0; }
 .drag-ghost-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .new-session { color: var(--color-text-faint); }
 .new-session:hover { color: var(--color-text-muted); }
+.session-rail { display: none; }
+:root[data-sidebar="collapsed"] .session-rail { display: flex; flex-direction: column; align-items: center; gap: 4px; flex-shrink: 0; }
+.rail-chip { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--color-text-muted); }
+.rail-chip:hover { background: var(--color-surface); color: var(--color-text); }
+.rail-chip.selected { background: var(--color-surface-raised); color: var(--color-text); }
+.rail-chip.waiting { color: var(--color-waiting); }
+.flyout { position: fixed; z-index: 20; display: flex; flex-direction: column; gap: 2px; min-width: 220px; max-width: 320px; max-height: calc(100vh - 16px); overflow-y: auto; padding: 6px; border-radius: 10px; background: var(--color-surface-raised); border: 1px solid var(--color-border); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); transform-origin: top left; }
+.flyout[hidden] { display: none; }
+.flyout-head { display: flex; align-items: baseline; gap: 12px; padding: 4px 8px 6px; }
+.flyout-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); font-weight: 600; color: var(--color-text); }
+.flyout-count, .flyout-note { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-faint); }
+.flyout-note { padding: 2px 8px 6px; }
+.flyout .summary { flex-shrink: 0; height: 26px; padding: 0 8px; border-radius: 6px; }
+.flyout .summary:hover { background: var(--color-border); }
+.flyout .summary.sub { padding-left: 26px; }
+.flyout .usage-card { padding: 4px 8px 8px; background: none; }
 
 .usage { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; padding: 14px 0 0; border-top: 1px solid var(--color-border); }
 .usage.open { flex-shrink: 1; min-height: 0; }
@@ -861,7 +877,7 @@ h1, p { margin: 0; }
 .segmented button[aria-pressed="true"] { cursor: default; }
 .setting .segmented button { padding: 0 14px; }
 
-.button, .toggle, .chip, .filter, .segmented button, .tab, .session-row, .chevron, .summary-text, .footer-icon, .menu-item, .palette-item, .row, .card, .tile, .tile-new, .icon-button, .link-button, .settings-nav-item, .field, .win-button, .usage-toggle, .new-session, .commit-subject, .composer, .term-frame, .kbd-chip {
+.button, .toggle, .chip, .filter, .segmented button, .tab, .session-row, .rail-chip, .chevron, .summary-text, .footer-icon, .menu-item, .palette-item, .row, .card, .tile, .tile-new, .icon-button, .link-button, .settings-nav-item, .field, .win-button, .usage-toggle, .new-session, .commit-subject, .composer, .term-frame, .kbd-chip {
   transition: background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), box-shadow var(--motion-base) var(--ease-out), opacity var(--motion-fast) var(--ease-out), filter var(--motion-fast) var(--ease-out), transform var(--motion-base) var(--ease-spring);
 }
 .button:active:not(:disabled), .toggle:active, .chip:active, .filter:active, .footer-icon:active, .icon-button:active, .usage-toggle:active, .win-button:active, .tile-new:active, .segmented button:active:not([aria-pressed="true"]) { transform: scale(0.96); transition-duration: 60ms; }
@@ -890,7 +906,7 @@ h1, p { margin: 0; }
 .menu:not([hidden]) { animation: pop-in var(--motion-base) var(--ease-out); }
 .menu.closing { animation: pop-out var(--motion-fast) var(--ease-in) forwards; pointer-events: none; }
 .palette:not([hidden]) { --pop-from: 8px; transform-origin: bottom center; animation: pop-in var(--motion-base) var(--ease-out); }
-.commit-tip:not([hidden]) { animation: pop-in var(--motion-base) var(--ease-out); }
+.commit-tip:not([hidden]), .flyout:not([hidden]) { animation: pop-in var(--motion-base) var(--ease-out); }
 .dialog[open] { animation: dialog-in var(--motion-slow) var(--ease-out); }
 .dialog[open]::backdrop { animation: fade-in var(--motion-slow) var(--ease-out); }
 .toast { animation: toast-in var(--motion-slow) var(--ease-spring); }
