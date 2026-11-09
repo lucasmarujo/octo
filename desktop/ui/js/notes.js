@@ -7,6 +7,16 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.29',
+    date: '2026-11-09',
+    en: [
+      'An agent that finished its reply but still runs a shell, a monitor or subagents now stays working until they end, instead of showing as done or idle.',
+    ],
+    'pt-BR': [
+      'Um agente que terminou a resposta mas ainda tem um shell, um monitor ou subagentes rodando agora continua trabalhando até eles acabarem, em vez de aparecer como concluído ou ocioso.',
+    ],
+  },
+  {
     version: '0.2.28',
     date: '2026-11-09',
     en: [
