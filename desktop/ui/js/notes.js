@@ -7,6 +7,16 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.28',
+    date: '2026-11-09',
+    en: [
+      'Octo no longer keeps a copy of every version it ran: the old ones are removed when it opens, freeing hundreds of MB.',
+    ],
+    'pt-BR': [
+      'O Octo não guarda mais uma cópia de cada versão que já rodou: as antigas são apagadas ao abrir, liberando centenas de MB.',
+    ],
+  },
+  {
     version: '0.2.27',
     date: '2026-11-08',
     en: [
