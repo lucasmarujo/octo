@@ -201,7 +201,7 @@ fn launch(hub: &Hub, session: &str, base: &str, command: &str) -> Result<AgentId
         .map_err(|err| err.to_string())?;
     let name = default_agent_name(AgentKind::Terminal, base, |name| hub.name_taken(session, name));
     let draft = NewAgent { session: session.to_string(), name, kind: AgentKind::Terminal, cwd, task: String::new() };
-    let record = installer.create(draft, DEFAULT_SIZE, false, false, false).map_err(|err| err.to_string())?;
+    let record = installer.create(draft, DEFAULT_SIZE, false, false, false, None).map_err(|err| err.to_string())?;
     hub.nudge();
     Ok(record.id)
 }
@@ -327,6 +327,7 @@ mod tests {
             project: None,
             parent: None,
             race: None,
+            model: None,
         }
     }
 

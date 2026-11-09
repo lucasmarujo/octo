@@ -1469,7 +1469,7 @@ impl App {
         let _ = thread::Builder::new().name("orkai-launch".into()).spawn(move || {
             let created = match race {
                 Some(race) => launcher.create_in_race(draft, size, bypass, false, race),
-                None => launcher.create(draft, size, isolate, bypass, false),
+                None => launcher.create(draft, size, isolate, bypass, false, None),
             };
             let result = created.map_err(|e| e.to_string());
             let _ = tx.send(AppEvent::Launched { result });

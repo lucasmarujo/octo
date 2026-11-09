@@ -153,6 +153,8 @@ pub struct AgentRecord {
     pub parent: Option<AgentId>,
     #[serde(default)]
     pub race: Option<u64>,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 fn started_before_remote_control_was_a_choice() -> bool {

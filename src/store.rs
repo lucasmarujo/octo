@@ -192,6 +192,7 @@ impl Store {
             project: None,
             parent: None,
             race: None,
+            model: None,
         };
         self.save_agent(&record)?;
         Ok(record)

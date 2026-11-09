@@ -1218,7 +1218,7 @@ test('the three options left the row of the task box for a small button right af
   assert.doesNotMatch(html, /id="(worktree|remote|bypass)"/);
   const row = html.split('<div class="composer-options">')[1].split('</form>')[0];
   const ids = [...row.matchAll(/<button id="(\w+)"/g)].map((match) => match[1]);
-  assert.deepEqual(ids, ['who', 'where', 'options', 'launch']);
+  assert.deepEqual(ids, ['who', 'model', 'where', 'options', 'launch']);
   assert.match(html, /<button id="options" class="toggle options-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-pressed="false"><\/button>/);
   const { ICON_OPTIONS } = await import('../js/icons.js');
   assert.match(ICON_OPTIONS, /d="M2 3h8M2 6h8M2 9h8"/, 'three horizontal bars');
@@ -1335,6 +1335,50 @@ test('the phone button is a mini icon to the right of settings, and its status s
   } finally {
     delete globalThis.document;
   }
+});
+
+test('each agent keeps its own model, and a model its agent no longer lists falls back to the default', async () => {
+  const { chosenModel } = await import('../js/format.js');
+  const opus = { id: 'claude-opus-5-5', name: 'Opus 5.5', description: 'For complex work' };
+  assert.equal(chosenModel([opus], 'claude-opus-5-5'), opus);
+  assert.equal(chosenModel([opus], 'claude-opus-4-1'), null);
+  assert.equal(chosenModel([opus], null), null);
+  assert.equal(chosenModel(undefined, 'claude-opus-5-5'), null);
+
+  const { state, currentModel, modelsOf, setModel, setWho } = await import('../js/state.js');
+  const before = { overview: state.overview, who: state.who, model: { ...state.model }, models: state.models };
+  try {
+    state.overview = { kinds: ['claude', 'codex', 'terminal'] };
+    state.models = { claude: { list: [opus], at: 1 }, codex: { list: [{ id: 'gpt-6-luna', name: 'GPT-6-Luna', description: '' }], at: 1 } };
+    setWho('claude');
+    assert.equal(currentModel(), null, 'nothing chosen means the default of the agent');
+    setModel('claude', 'claude-opus-5-5');
+    assert.equal(currentModel(), opus);
+    setWho('codex');
+    assert.equal(currentModel(), null, 'the model of Claude never goes to Codex');
+    setModel('codex', 'gpt-6-luna');
+    assert.equal(currentModel().id, 'gpt-6-luna');
+    setWho('claude');
+    assert.equal(currentModel(), opus, 'switching back finds the model chosen for Claude');
+    setModel('claude', null);
+    assert.equal(currentModel(), null);
+    assert.deepEqual(modelsOf('terminal'), []);
+  } finally {
+    setModel('claude', before.model.claude || null);
+    setModel('codex', before.model.codex || null);
+    Object.assign(state, { overview: before.overview, who: before.who, models: before.models });
+  }
+
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  assert.match(composer, /model: ai \? currentModel\(\)\?\.id \|\| null : null/, 'a terminal or a !command never gets a model');
+  assert.match(composer, /send\(\{ type: 'models', kind \}\)/);
+  assert.match(composer, /button\.hidden = kind === 'terminal' \|\| modelsOf\(kind\)\.length === 0;/, 'no selector when the agent lists no models');
+  const commands = readFileSync(join(REPO, 'desktop/ui/js/commands.js'), 'utf8');
+  assert.match(commands, /type: 'skill'[^}]*model: currentModel\(\)\?\.id \|\| null/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /case 'models':\n\s*state\.models\[message\.kind\] = \{ list: message\.models, at: Date\.now\(\) \};\n\s*renderComposer\(\);/);
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<button id="who"[^>]*><\/button>\n\s*<button id="model" class="chip"[^>]*hidden><\/button>/, 'the model sits right of the agent');
 });
 
 test('remote control is off until chosen and only for Claude', async () => {

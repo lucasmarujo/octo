@@ -915,6 +915,7 @@ mod tests {
             project: None,
             parent: None,
             race: None,
+            model: None,
         };
         let status = StatusReport {
             state: AgentState::Working,

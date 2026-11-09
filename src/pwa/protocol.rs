@@ -127,6 +127,9 @@ pub enum PhoneMsg {
         kind: AgentKind,
         cwd: String,
     },
+    Models {
+        kind: AgentKind,
+    },
     Skill {
         kind: AgentKind,
         session: String,
@@ -140,6 +143,8 @@ pub enum PhoneMsg {
         bypass: bool,
         #[serde(default)]
         remote_control: bool,
+        #[serde(default)]
+        model: Option<String>,
     },
     Race {
         session: String,
@@ -186,6 +191,8 @@ pub struct StartRequest {
     pub bypass: bool,
     #[serde(default)]
     pub remote_control: bool,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -246,6 +253,10 @@ pub enum BridgeMsg {
         cwd: String,
         skills: Vec<SkillView>,
     },
+    Models {
+        kind: AgentKind,
+        models: Vec<ModelView>,
+    },
     Compare {
         agent: AgentId,
         title: String,
@@ -263,6 +274,14 @@ pub enum BridgeMsg {
 pub struct SkillView {
     pub name: String,
     pub owner: AgentKind,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelView {
+    pub id: String,
+    pub name: String,
+    pub description: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -536,6 +555,7 @@ mod tests {
                     worktree: true,
                     bypass: false,
                     remote_control: false,
+                    model: None,
                 }),
             ),
             (
@@ -548,6 +568,7 @@ mod tests {
                     worktree: false,
                     bypass: true,
                     remote_control: false,
+                    model: None,
                 }),
             ),
             (
@@ -560,6 +581,7 @@ mod tests {
                     worktree: false,
                     bypass: false,
                     remote_control: true,
+                    model: None,
                 }),
             ),
             (
@@ -573,8 +595,37 @@ mod tests {
                     worktree: false,
                     bypass: false,
                     remote_control: true,
+                    model: None,
                 },
             ),
+            (
+                r#"{"type":"start","kind":"codex","session":"s","cwd":"~","task":"t","worktree":false,"model":"gpt-6-luna"}"#,
+                PhoneMsg::Start(StartRequest {
+                    kind: AgentKind::Codex,
+                    session: "s".into(),
+                    cwd: "~".into(),
+                    task: "t".into(),
+                    worktree: false,
+                    bypass: false,
+                    remote_control: false,
+                    model: Some("gpt-6-luna".into()),
+                }),
+            ),
+            (
+                r#"{"type":"skill","kind":"claude","session":"s","cwd":"~","name":"review","model":"claude-opus-5-5"}"#,
+                PhoneMsg::Skill {
+                    kind: AgentKind::Claude,
+                    session: "s".into(),
+                    cwd: "~".into(),
+                    name: "review".into(),
+                    args: String::new(),
+                    worktree: false,
+                    bypass: false,
+                    remote_control: false,
+                    model: Some("claude-opus-5-5".into()),
+                },
+            ),
+            (r#"{"type":"models","kind":"claude"}"#, PhoneMsg::Models { kind: AgentKind::Claude }),
             (
                 r#"{"type":"folders","path":"~"}"#,
                 PhoneMsg::Folders { path: "~".into(), hidden: false, places: false, seq: 0 },
@@ -605,6 +656,22 @@ mod tests {
         assert_eq!(value["type"], "state");
         assert_eq!(value["host"], "pc");
         assert_eq!(value["whereDir"], "/w");
+    }
+
+    #[test]
+    fn the_models_of_an_agent_go_out_as_plain_camel_case_json() {
+        let models = BridgeMsg::Models {
+            kind: AgentKind::Codex,
+            models: vec![ModelView {
+                id: "gpt-6-luna".into(),
+                name: "GPT-6-Luna".into(),
+                description: "Newest".into(),
+            }],
+        };
+        assert_eq!(
+            serde_json::to_string(&models).unwrap(),
+            r#"{"type":"models","kind":"codex","models":[{"id":"gpt-6-luna","name":"GPT-6-Luna","description":"Newest"}]}"#
+        );
     }
 
     #[test]

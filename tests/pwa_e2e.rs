@@ -473,6 +473,7 @@ fn the_phone_starts_stops_and_removes_agents() {
         worktree: false,
         bypass: false,
         remote_control: false,
+        model: None,
     }));
     let started = phone.overview_where(|overview| overview.agents.iter().any(running));
     let id = started.agents[0].id;
@@ -498,6 +499,7 @@ fn a_bad_request_from_the_phone_gets_a_notice_and_changes_nothing() {
         worktree: false,
         bypass: false,
         remote_control: false,
+        model: None,
     }));
     let text = phone.until(|message| match message {
         BridgeMsg::Notice { text, .. } => Some(text),
@@ -615,6 +617,7 @@ fn a_window_without_a_socket_drives_the_hub_through_its_inbox() {
         worktree: false,
         bypass: false,
         remote_control: false,
+        model: None,
     });
     peer.inbox().send(Event::Inbound(start)).unwrap();
     let started = pump_until(&mut peer, &mut window, |message| match message {
@@ -891,6 +894,7 @@ fn the_overview_counts_the_changes_of_each_worktree() {
         worktree: true,
         bypass: false,
         remote_control: false,
+        model: None,
     });
     peer.inbox().send(Event::Inbound(start)).unwrap();
     let id = pump_until(&mut peer, &mut window, |message| match message {
@@ -1095,6 +1099,7 @@ fn launch(fx: &Fixture, phone: &mut Phone, kind: AgentKind, dir: &str, task: &st
         worktree: false,
         bypass: false,
         remote_control: false,
+        model: None,
     }));
     cwd
 }

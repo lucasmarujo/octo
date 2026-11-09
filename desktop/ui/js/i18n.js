@@ -207,6 +207,9 @@ export const PT = {
   'Write the task first.': 'Escreva a tarefa primeiro.',
   'Who runs the task': 'Quem roda a tarefa',
   'Where the task runs': 'Onde a tarefa roda',
+  'Model the agent starts with': 'Modelo com que o agente começa',
+  'Default model': 'Modelo padrão',
+  'Whatever the agent is set to use': 'O que o agente estiver configurado para usar',
   'Each new AI agent runs in its own git worktree and octo/<name> branch': 'Cada agente de IA novo roda no próprio worktree git e na branch octo/<nome>',
   'Task options': 'Opções da tarefa',
   Bypass: 'Bypass',
@@ -426,6 +429,7 @@ export const HUB = [
   [/^rename failed: (.*)$/, (m) => `falha ao renomear: ${m[1]}`],
   [/^(.+) is not installed on (.+)$/, (m) => `${m[1]} não está instalado em ${m[2]}`],
   [/^(.+) is not a folder$/, (m) => `${m[1]} não é uma pasta`],
+  [/^that model name is not valid$/, () => 'esse nome de modelo não é válido'],
   [
     /^starting (\S+) (\S+?)( in a new worktree)?( with permissions bypassed)?…$/,
     (m) => `iniciando ${m[1]} ${m[2]}${m[3] ? ' num worktree novo' : ''}${m[4] ? ' sem pedir permissões' : ''}…`,

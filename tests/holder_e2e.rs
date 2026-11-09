@@ -310,7 +310,7 @@ fn a_terminal_with_an_explicit_interpreter_runs_its_command_keeps_the_output_and
         cwd: fx.dir.join("work"),
         task: String::new(),
     };
-    let record = launcher.create(draft, TermSize::new(24, 100), false, false, false).unwrap();
+    let record = launcher.create(draft, TermSize::new(24, 100), false, false, false, None).unwrap();
     wait_until(|| fx.store.read_exit(record.id).ok().flatten().is_some());
     assert_eq!(fx.store.read_exit(record.id).unwrap().unwrap().code, Some(0));
     let parser = oplog::replay(&fx.store.home().output_log(record.id)).unwrap().unwrap();
@@ -802,7 +802,7 @@ fn an_agent_started_in_bypass_mode_gets_the_flag_and_keeps_it_when_recovered() {
         cwd: fx.dir.join("work"),
         task: String::new(),
     };
-    let mut record = launcher.create(draft, size, false, true, false).unwrap();
+    let mut record = launcher.create(draft, size, false, true, false, None).unwrap();
     assert!(record.bypass);
     assert!(fx.store.load_agent(record.id).unwrap().bypass, "the mode is saved with the agent");
     stop_after_seeing(&fx, record.id, size, "--dangerously-skip-permissions");
@@ -887,7 +887,7 @@ fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
         cwd: repo.join("app"),
         task: "git branch --show-current".into(),
     };
-    let record = launcher.create(draft, TermSize { rows: 24, cols: 100 }, true, false, false).unwrap();
+    let record = launcher.create(draft, TermSize { rows: 24, cols: 100 }, true, false, false, None).unwrap();
     let worktree = record.worktree.clone().expect("the agent must get a worktree");
     assert_eq!(worktree.branch, "octo/branch-check");
     assert_eq!(record.cwd, worktree.path.join("app"));
@@ -908,7 +908,7 @@ fn an_agent_started_in_a_worktree_works_on_its_own_branch_until_removed() {
         cwd: record.cwd.clone(),
         task: String::new(),
     };
-    let guest = launcher.create(inside, TermSize { rows: 24, cols: 100 }, false, false, false).unwrap();
+    let guest = launcher.create(inside, TermSize { rows: 24, cols: 100 }, false, false, false, None).unwrap();
     assert_eq!(guest.worktree, None);
     assert_eq!(guest.project, Some(repo.join("app")), "an agent inside the worktree belongs to its project");
     assert_eq!(fx.store.load_agent(guest.id).unwrap().project_dir(), repo.join("app"));

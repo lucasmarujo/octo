@@ -1,5 +1,5 @@
 import { storage } from './dom.js';
-import { DEFAULT_GRID_SIZE, GRID_SIZES, OVERVIEW_TAB, arrangeTabs } from './format.js';
+import { DEFAULT_GRID_SIZE, GRID_SIZES, OVERVIEW_TAB, arrangeTabs, chosenModel } from './format.js';
 
 const SESSION_KEY = 'orkai.session';
 const EXPANDED_KEY = 'orkai.expanded';
@@ -8,6 +8,7 @@ const WHERE_KEY = 'orkai.where';
 const WORKTREE_KEY = 'orkai.worktree';
 const BYPASS_KEY = 'orkai.bypass';
 const REMOTE_KEY = 'orkai.remote';
+const MODEL_KEY = 'octo.model';
 const TABS_KEY = 'orkai.tabs';
 const PINNED_TABS_KEY = 'octo.pinnedTabs';
 const VIEW_KEY = 'orkai.view';
@@ -18,6 +19,7 @@ const USAGE_KEY = 'orkai.usage';
 export const VIEWS = ['board', 'list', 'grid'];
 
 const savedPins = storage.json(PINNED_TABS_KEY, null);
+const savedModels = storage.json(MODEL_KEY, {});
 const savedTabs = storage.json(TABS_KEY, []);
 const pinnedTabs = new Set(Array.isArray(savedPins) ? savedPins : [OVERVIEW_TAB]);
 
@@ -38,6 +40,8 @@ export const state = {
   worktree: storage.json(WORKTREE_KEY, null),
   bypass: storage.get(BYPASS_KEY) === 'on',
   remote: storage.get(REMOTE_KEY) === 'on',
+  model: savedModels && typeof savedModels === 'object' && !Array.isArray(savedModels) ? savedModels : {},
+  models: {},
   history: [],
   recall: -1,
   folders: null,
@@ -171,6 +175,22 @@ export function setWorktree(on) {
 export function setBypass(on) {
   state.bypass = on;
   storage.set(BYPASS_KEY, on ? 'on' : null);
+}
+
+export function modelsOf(kind) {
+  const known = state.models[kind];
+  return known ? known.list : [];
+}
+
+export function currentModel() {
+  const kind = currentWho();
+  return chosenModel(modelsOf(kind), state.model[kind]);
+}
+
+export function setModel(kind, id) {
+  if (id) state.model[kind] = id;
+  else delete state.model[kind];
+  storage.set(MODEL_KEY, JSON.stringify(state.model));
 }
 
 export function setRemote(on) {

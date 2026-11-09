@@ -8,13 +8,14 @@ use crate::client;
 use crate::launch;
 use crate::launch::LaunchMode;
 use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, NewAgent, validate_agent_name};
+use crate::models;
 use crate::paths::{expand_tilde, user_home};
 use crate::project;
 use crate::protocol::ClientMsg;
 use crate::pwa::hub::{Event, Hub};
 use crate::pwa::protocol::{
-    BridgeMsg, CommitView, Details, Dir, FileView, FolderHit, OverlapView, PhoneMsg, PlaceView, Preview, Run,
-    SkillView, StartRequest, SubagentView, TestView, Tone,
+    BridgeMsg, CommitView, Details, Dir, FileView, FolderHit, ModelView, OverlapView, PhoneMsg, PlaceView, Preview,
+    Run, SkillView, StartRequest, SubagentView, TestView, Tone,
 };
 use crate::pwa::screen;
 use crate::skills;
@@ -68,8 +69,9 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         PhoneMsg::CrossReview { agent, reviewer } => cross_review(hub, agent, &reviewer, reply),
         PhoneMsg::Tests { agent } => tests(hub, agent, reply),
         PhoneMsg::Skills { kind, cwd } => list_skills(kind, &cwd, reply),
-        PhoneMsg::Skill { kind, session, cwd, name, args, worktree, bypass, remote_control } => {
-            run_skill(hub, SkillRun { kind, session, cwd, name, args, worktree, bypass, remote_control }, reply);
+        PhoneMsg::Models { kind } => list_models(kind, reply),
+        PhoneMsg::Skill { kind, session, cwd, name, args, worktree, bypass, remote_control, model } => {
+            run_skill(hub, SkillRun { kind, session, cwd, name, args, worktree, bypass, remote_control, model }, reply);
         }
         PhoneMsg::Race { session, cwd, race: line, bypass, remote_control } => {
             race(hub, session, &cwd, &line, bypass, remote_control, reply);
@@ -176,7 +178,7 @@ pub fn resolve_dir(path: &str) -> PathBuf {
 }
 
 fn start(hub: &Arc<Hub>, request: StartRequest, reply: &Sender<Event>) {
-    let StartRequest { kind, session, cwd, task, worktree, bypass, remote_control } = request;
+    let StartRequest { kind, session, cwd, task, worktree, bypass, remote_control, model } = request;
     if !hub.kinds().contains(&kind) {
         return notice(reply, Tone::Error, format!("{} is not installed on {}", kind.label(), hub.host()));
     }
@@ -191,13 +193,17 @@ fn start(hub: &Arc<Hub>, request: StartRequest, reply: &Sender<Event>) {
     let isolate = worktree && kind.is_ai();
     let bypass = bypass && kind.is_ai();
     let remote_control = remote_control && kind == AgentKind::Claude;
+    let model = model.map(|model| model.trim().to_string()).filter(|model| !model.is_empty() && kind.is_ai());
+    if model.as_deref().is_some_and(|model| !models::is_valid_id(model)) {
+        return notice(reply, Tone::Error, "that model name is not valid");
+    }
     let place = if isolate { " in a new worktree" } else { "" };
     let mode = if bypass { " with permissions bypassed" } else { "" };
     notice(reply, Tone::Info, format!("starting {} {name}{place}{mode}…", kind.label()));
     let draft = NewAgent { session, name, kind, cwd, task };
     let (hub, reply) = (Arc::clone(hub), reply.clone());
     spawn("orkai-pwa-launch", move || {
-        match hub.launcher().create(draft, DEFAULT_SIZE, isolate, bypass, remote_control) {
+        match hub.launcher().create(draft, DEFAULT_SIZE, isolate, bypass, remote_control, model) {
             Ok(record) => notice(&reply, Tone::Success, format!("{} {} started", record.kind.label(), record.name)),
             Err(err) => notice(&reply, Tone::Error, format!("could not start the agent: {err}")),
         }
@@ -333,6 +339,7 @@ fn cross_review(hub: &Arc<Hub>, agent: AgentId, reviewer: &str, reply: &Sender<E
             worktree: false,
             bypass: false,
             remote_control: false,
+            model: None,
         },
         reply,
     );
@@ -347,6 +354,7 @@ struct SkillRun {
     worktree: bool,
     bypass: bool,
     remote_control: bool,
+    model: Option<String>,
 }
 
 fn list_skills(kind: AgentKind, cwd: &str, reply: &Sender<Event>) {
@@ -357,6 +365,17 @@ fn list_skills(kind: AgentKind, cwd: &str, reply: &Sender<Event>) {
             .map(|skill| SkillView { name: skill.name, owner: skill.owner })
             .collect();
         let _ = reply.send(Event::Reply(BridgeMsg::Skills { kind, cwd, skills }));
+    });
+}
+
+fn list_models(kind: AgentKind, reply: &Sender<Event>) {
+    let reply = reply.clone();
+    spawn("orkai-pwa-models", move || {
+        let models = models::available(kind)
+            .into_iter()
+            .map(|model| ModelView { id: model.id, name: model.name, description: model.description })
+            .collect();
+        let _ = reply.send(Event::Reply(BridgeMsg::Models { kind, models }));
     });
 }
 
@@ -376,6 +395,7 @@ fn run_skill(hub: &Arc<Hub>, run: SkillRun, reply: &Sender<Event>) {
         worktree: run.worktree,
         bypass: run.bypass,
         remote_control: run.remote_control,
+        model: run.model,
     };
     start(hub, request, reply);
 }

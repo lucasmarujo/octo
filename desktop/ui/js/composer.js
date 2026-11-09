@@ -7,10 +7,13 @@ import { t } from './i18n.js';
 import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_OPTIONS, ICON_REMOTE, ICON_SHIELD } from './icons.js';
 import { flash } from './motion.js';
 import {
+  currentModel,
   currentWhere,
   currentWho,
   installedKinds,
+  modelsOf,
   setBypass,
+  setModel,
   setRemote,
   setWhere,
   setWho,
@@ -24,6 +27,7 @@ import { send } from './transport.js';
 const MAX_HEIGHT = 160;
 const MAX_SUGGESTIONS = 8;
 const SKILLS_TTL_MS = 5000;
+const MODELS_TTL_MS = 60_000;
 const TASK_OPTIONS = [
   { name: t('Worktree'), icon: ICON_BRANCH, tone: 'var(--color-link)', title: t('Each new AI agent runs in its own git worktree and octo/<name> branch'), on: worktreeOn, set: setWorktree },
   { name: t('Remote Control'), icon: ICON_REMOTE, tone: 'var(--color-waiting)', title: t('New Claude agents start with Remote Control: continue them from claude.ai or the Claude app'), on: () => state.remote, set: setRemote },
@@ -51,6 +55,14 @@ function askSkills() {
   if (fresh || currentWho() === 'terminal') return;
   state.skills = { kind: currentWho(), cwd: currentWhere(), names: skills && skills.kind === currentWho() ? skills.names : [], at: Date.now() };
   send({ type: 'skills', kind: currentWho(), cwd: currentWhere() });
+}
+
+function askModels() {
+  const kind = currentWho();
+  const known = state.models[kind];
+  if (kind === 'terminal' || (known && Date.now() - known.at < MODELS_TTL_MS)) return;
+  state.models[kind] = { list: known ? known.list : [], at: Date.now() };
+  send({ type: 'models', kind });
 }
 
 function typedWord() {
@@ -146,6 +158,46 @@ function openWhoMenu() {
     ),
   );
   openMenu($('who'), items, true);
+}
+
+function modelItem(kind, model, current) {
+  const active = (model ? model.id : null) === (current ? current.id : null);
+  return h(
+    'button',
+    {
+      class: `menu-item${active ? ' active' : ''}`,
+      type: 'button',
+      role: 'menuitem',
+      title: model ? model.description || model.id : t('Whatever the agent is set to use'),
+      onclick: () => {
+        setModel(kind, model ? model.id : null);
+        closeMenu();
+        renderComposer();
+        $('task').focus();
+      },
+    },
+    h('span', null, model ? model.name : t('Default model')),
+    active ? h('span', { class: 'check' }, '✓') : null,
+  );
+}
+
+function openModelMenu() {
+  const kind = currentWho();
+  const current = currentModel();
+  const items = [modelItem(kind, null, current), ...modelsOf(kind).map((model) => modelItem(kind, model, current))];
+  openMenu($('model'), items, true);
+}
+
+function renderModel() {
+  askModels();
+  const kind = currentWho();
+  const button = $('model');
+  button.hidden = kind === 'terminal' || modelsOf(kind).length === 0;
+  const current = currentModel();
+  const name = current ? current.name : t('Default model');
+  button.replaceChildren(h('span', { class: 'value' }, name), svg(ICON_CHEVRON_DOWN));
+  button.setAttribute('aria-label', `${t('Model the agent starts with')}: ${name}`);
+  button.title = t('Model the agent starts with');
 }
 
 export function toggleWorktree() {
@@ -266,6 +318,7 @@ function submit(event) {
     worktree: worktreeOn() && ai,
     bypass: state.bypass && ai,
     remoteControl: state.remote && kind === 'claude',
+    model: ai ? currentModel()?.id || null : null,
   });
   flash($('composer'), 'sent');
   if (text) state.history.push(raw);
@@ -309,6 +362,7 @@ export function renderComposer() {
   );
   $('who').setAttribute('aria-label', `${t('Who runs the task')}: ${label(who)}`);
   $('who').title = t('Who runs the task');
+  renderModel();
   $('where').replaceChildren(h('span', { class: 'value path' }, currentWhere()));
   $('where').setAttribute('aria-label', `${t('Where the task runs')}: ${currentWhere()}`);
   $('where').title = currentWhere();
@@ -326,6 +380,11 @@ export function initComposer() {
   $('who').addEventListener('click', (event) => {
     event.stopPropagation();
     if (!menuShown()) openWhoMenu();
+    else closeMenu();
+  });
+  $('model').addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (!menuShown()) openModelMenu();
     else closeMenu();
   });
   $('where').addEventListener('click', () =>

@@ -11,6 +11,7 @@ pub mod launch;
 pub mod mcp;
 pub mod migrate;
 pub mod model;
+pub mod models;
 pub mod notify;
 pub mod paths;
 pub mod project;

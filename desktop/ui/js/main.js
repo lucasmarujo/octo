@@ -337,6 +337,10 @@ function onMessage(message) {
     case 'details':
       onDetails(message);
       break;
+    case 'models':
+      state.models[message.kind] = { list: message.models, at: Date.now() };
+      renderComposer();
+      break;
     case 'skills':
       state.skills = { kind: message.kind, cwd: message.cwd, names: message.skills.map((skill) => skill.name), at: Date.now() };
       renderPalette();

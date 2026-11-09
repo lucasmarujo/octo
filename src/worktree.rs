@@ -992,6 +992,7 @@ mod tests {
             project: None,
             parent: None,
             race: None,
+            model: None,
         };
         let web = Worktree { source: PathBuf::from("/src/web/app"), ..tree("/src/web") };
         let records = [record(1, None), record(2, Some(web))];

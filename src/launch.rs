@@ -13,6 +13,7 @@ use crate::config::Config;
 use crate::fsutil;
 use crate::hooks;
 use crate::model::{AgentId, AgentKind, AgentRecord, LaunchSpec, NewAgent, RuntimeInfo, TestTarget};
+use crate::models;
 use crate::paths::{HOME_ENV, Home, normalize_for_compare, user_home};
 use crate::protocol::TermSize;
 use crate::store::Store;
@@ -500,6 +501,23 @@ fn model_options(kind: AgentKind) -> &'static [&'static str] {
     }
 }
 
+fn without_model(args: Vec<String>, kind: AgentKind) -> Vec<String> {
+    let options = model_options(kind);
+    let mut kept = Vec::with_capacity(args.len());
+    let mut args = args.into_iter().peekable();
+    while let Some(arg) = args.next() {
+        if arg.split_once('=').is_some_and(|(option, _)| options.contains(&option)) {
+            continue;
+        }
+        if options.contains(&arg.as_str()) {
+            args.next_if(|value| !value.starts_with('-'));
+            continue;
+        }
+        kept.push(arg);
+    }
+    kept
+}
+
 pub fn launch_model(spec: &LaunchSpec) -> Option<String> {
     let options = model_options(spec.kind);
     let mut chosen = None;
@@ -716,6 +734,12 @@ pub fn build_spec(
         && !permission_options(record.kind).iter().any(|option| names_option(&args, option))
     {
         args.push(flag.to_string());
+    }
+    if let Some(model) = record.model.as_deref().filter(|model| models::is_valid_id(model))
+        && !model_options(record.kind).is_empty()
+    {
+        args = without_model(args, record.kind);
+        args.extend([MODEL_OPTION.to_string(), model.to_string()]);
     }
     if !record.cwd.is_dir() {
         return Err(io::Error::new(
@@ -1068,8 +1092,13 @@ impl Launcher {
         isolate: bool,
         bypass: bool,
         remote_control: bool,
+        model: Option<String>,
     ) -> io::Result<AgentRecord> {
-        self.create_with_parent(draft, size, isolate, bypass, remote_control, None)
+        let mut record = self.store.create_agent(draft)?;
+        record.bypass = bypass;
+        record.remote_control = remote_control;
+        record.model = model;
+        self.launch_new(record, size, isolate)
     }
 
     pub fn create_with_parent(
@@ -1223,6 +1252,7 @@ mod tests {
             project: None,
             parent: None,
             race: None,
+            model: None,
         }
     }
 
@@ -2098,6 +2128,53 @@ mod tests {
         kilo.bypass = true;
         let fresh = spec_for(&config, &mut kilo, LaunchMode::Fresh, &Homes::default());
         assert_eq!(fresh.args, vec!["--auto", "--prompt", "task"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_model_chosen_at_launch_replaces_the_configured_one_and_stays_when_resumed() {
+        let dir = temp_dir("chosen-model");
+        let program = fake_program(&dir);
+        let config = Config {
+            claude_args: vec!["--model".into(), "haiku".into(), "--verbose".into()],
+            codex_args: vec!["-m".into(), "gpt-old".into(), "--model=gpt-older".into(), "--search".into()],
+            ..every_agent(&program)
+        };
+        let id = "123e4567-e89b-42d3-a456-426614174000";
+        let mut claude = record(AgentKind::Claude, dir.clone(), "task");
+        let configured = spec_for(&config, &mut claude, LaunchMode::Fresh, &Homes::default());
+        assert_eq!(launch_model(&configured).as_deref(), Some("haiku"), "without a choice the config decides");
+        claude.model = Some("claude-fable-5-1[1m]".into());
+        let fresh = spec_for(&config, &mut claude, LaunchMode::Fresh, &Homes::default());
+        assert_eq!(fresh.args.iter().filter(|arg| *arg == MODEL_OPTION).count(), 1, "{:?}", fresh.args);
+        assert!(fresh.args.contains(&"--verbose".to_string()));
+        assert_eq!(launch_model(&fresh).as_deref(), Some("claude-fable-5-1[1m]"));
+        let resumed = spec_for(&config, &mut claude, LaunchMode::Resume, &Homes::default());
+        assert_eq!(launch_model(&resumed).as_deref(), Some("claude-fable-5-1[1m]"));
+
+        let mut codex = record(AgentKind::Codex, dir.clone(), "task");
+        codex.model = Some("gpt-6-luna".into());
+        let fresh = spec_for(&config, &mut codex, LaunchMode::Fresh, &Homes::default());
+        assert_eq!(fresh.args, vec!["--search", "--model", "gpt-6-luna"]);
+        codex.conversation_id = Some(id.into());
+        let resumed = spec_for(&config, &mut codex, LaunchMode::Resume, &Homes::default());
+        assert_eq!(resumed.args, vec!["resume", id, "--search", "--model", "gpt-6-luna"]);
+
+        let mut opencode = record(AgentKind::Opencode, dir.clone(), "task");
+        opencode.model = Some("opencode/big-pickle".into());
+        let fresh = spec_for(&config, &mut opencode, LaunchMode::Fresh, &Homes::default());
+        assert_eq!(fresh.args, vec!["--model", "opencode/big-pickle", "--prompt", "task"]);
+
+        let mut terminal = record(AgentKind::Terminal, dir.clone(), "");
+        terminal.model = Some("opus".into());
+        let shell = spec_for(&config, &mut terminal, LaunchMode::Fresh, &Homes::default());
+        assert!(!shell.args.contains(&MODEL_OPTION.to_string()), "a terminal has no model: {:?}", shell.args);
+
+        let mut forged = record(AgentKind::Claude, dir.clone(), "task");
+        forged.model = Some("--dangerously-skip-permissions".into());
+        let spec = spec_for(&config, &mut forged, LaunchMode::Fresh, &Homes::default());
+        assert!(!spec.args.contains(&"--dangerously-skip-permissions".to_string()), "{:?}", spec.args);
+        assert_eq!(launch_model(&spec).as_deref(), Some("haiku"));
         fs::remove_dir_all(dir).unwrap();
     }
 

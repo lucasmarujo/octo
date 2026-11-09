@@ -48,6 +48,10 @@ export function detailsWidth(value) {
   return panelWidth(value, DETAILS_DEFAULT, DETAILS_MIN, DETAILS_MAX);
 }
 
+export function chosenModel(models, id) {
+  return (Array.isArray(models) && id && models.find((model) => model.id === id)) || null;
+}
+
 export function optionsTone({ worktree, remote, bypass }) {
   if (bypass) return 'danger';
   if (remote) return 'caution';

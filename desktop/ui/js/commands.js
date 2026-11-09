@@ -5,6 +5,7 @@ import { pickFolder } from './folders.js';
 import { label } from './format.js';
 import { t } from './i18n.js';
 import {
+  currentModel,
   currentWhere,
   currentWho,
   findAgent,
@@ -215,7 +216,7 @@ export function runCommand(text, ctx) {
       ctx.quit();
       break;
     default:
-      send({ type: 'skill', kind: currentWho(), session: state.session, cwd: currentWhere(), name: word, args: arg, worktree: worktreeOn(), bypass: state.bypass, remoteControl: state.remote });
+      send({ type: 'skill', kind: currentWho(), session: state.session, cwd: currentWhere(), name: word, args: arg, worktree: worktreeOn(), bypass: state.bypass, remoteControl: state.remote, model: currentModel()?.id || null });
       break;
   }
   return true;
