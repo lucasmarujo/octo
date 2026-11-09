@@ -7,6 +7,18 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.32',
+    date: '2026-11-09',
+    en: [
+      'With the sidebar collapsed, hover a usage ring to see the percentage of each window of that agent, right beside it.',
+      'Sessions stay in the collapsed sidebar: hover one to see how many agents it has and click any of them to open it.',
+    ],
+    'pt-BR': [
+      'Com a barra lateral recolhida, passe o mouse num anel de consumo para ver a porcentagem de cada janela daquele agente, logo ao lado.',
+      'As sessões continuam na barra lateral recolhida: passe o mouse numa delas para ver quantos agentes ela tem e clique em qualquer um para abri-lo.',
+    ],
+  },
+  {
     version: '0.2.31',
     date: '2026-11-09',
     en: [
