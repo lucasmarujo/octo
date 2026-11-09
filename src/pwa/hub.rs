@@ -77,6 +77,13 @@ impl Tracked {
         }
     }
 
+    fn shown_state(&self) -> AgentState {
+        match self.state() {
+            AgentState::Done | AgentState::Idle if !self.subagents.is_empty() => AgentState::Working,
+            state => state,
+        }
+    }
+
     fn launching(&self) -> bool {
         self.record.launches <= 1 && now_ms().saturating_sub(self.record.created_at_ms) < FRESH_RECORD_MS
     }
@@ -107,7 +114,7 @@ impl Tracked {
             session: self.record.session.clone(),
             name: self.record.name.clone(),
             kind: live.map_or(self.record.kind, |status| status.running_kind(self.record.kind)),
-            state: self.state(),
+            state: self.shown_state(),
             starting,
             activity,
             task: self.record.task.clone(),
@@ -964,6 +971,34 @@ mod tests {
         assert_eq!(tracked.view().model, None);
         tracked.model = Some("claude-opus-5-5".into());
         assert_eq!(tracked.view().model.as_deref(), Some("claude-opus-5-5"));
+    }
+
+    fn running_subagent() -> Subagent {
+        Subagent {
+            id: "a1".into(),
+            role: "general-purpose".into(),
+            description: "run the e2e suite".into(),
+            activity: "Bash · cargo test".into(),
+            started_at_ms: 0,
+        }
+    }
+
+    #[test]
+    fn an_agent_whose_subagents_still_run_is_shown_working_after_its_turn() {
+        let mut tracked = tracked_with_status(None);
+        for state in [AgentState::Done, AgentState::Idle] {
+            tracked.status.as_mut().unwrap().state = state;
+            tracked.subagents = vec![running_subagent()];
+            assert_eq!(tracked.view().state, AgentState::Working, "{state:?} with a subagent running");
+            assert_eq!(tracked.state(), state, "the holder's own state is kept for the subagent scan");
+            tracked.subagents.clear();
+            assert_eq!(tracked.view().state, state);
+        }
+        tracked.status.as_mut().unwrap().state = AgentState::Paused;
+        tracked.subagents = vec![running_subagent()];
+        assert_eq!(tracked.view().state, AgentState::Paused, "a question still waits for you");
+        tracked.link = Link::Exited(ExitInfo { code: Some(0), error: None, at_ms: 0 });
+        assert_eq!(tracked.view().state, AgentState::Exited);
     }
 
     fn tracked_agent(record: AgentRecord, link: Link, status: Option<StatusReport>) -> Tracked {

@@ -643,6 +643,20 @@ mod tests {
     }
 
     #[test]
+    fn a_claude_turn_that_left_a_shell_running_is_still_working_until_the_shell_ends() {
+        let mut t = state(AgentKind::Claude);
+        assert!(t.apply_hook(HookSignal::Busy, 100));
+        t.process("\x1b[2J\x1b[H> \r\n────────\r\n  ⏵⏵ bypass permissions on · 1 shell".as_bytes(), 200);
+        t.evaluate(300);
+        assert!(!t.apply_hook(HookSignal::Finished, 400), "the reply is over but the shell still runs");
+        t.evaluate(400 + 10 * DONE_GRACE_MS);
+        assert_eq!(t.report(None).state, AgentState::Working);
+        t.process("\x1b[2J\x1b[H> \r\n────────\r\n  ⏵⏵ bypass permissions on".as_bytes(), 30_000);
+        t.evaluate(30_000 + DONE_GRACE_MS);
+        assert_eq!(t.report(None).state, AgentState::Done);
+    }
+
+    #[test]
     fn hooks_are_ignored_for_terminals_and_programs_started_inside_them() {
         let mut terminal = state(AgentKind::Terminal);
         assert!(!terminal.apply_hook(HookSignal::Busy, 100));

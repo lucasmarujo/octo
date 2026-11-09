@@ -51,11 +51,15 @@ const GROK_STATES: &[&str] = &["Thinking", "Responding", "Compacting", "Waiting"
 const GROK_RUNNING: &str = "Running:";
 const GROK_NAME: &str = "grok";
 const TITLE_SEPARATOR: &str = " - ";
+const CLAUDE_INPUT_BORDER: char = '─';
+const CLAUDE_FOOTER_SEPARATORS: &[char] = &['·', ','];
+const CLAUDE_BACKGROUND_TASKS: &[&str] = &["shell", "shells", "monitor", "monitors"];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Signals {
     pub busy: bool,
     pub waiting: bool,
+    pub background: bool,
 }
 
 const SPINNER_GLYPHS: &[char] = &['◐', '◓', '◑', '◒', '◴', '◵', '◶', '◷', '✢', '✶', '✻', '✽', '·'];
@@ -93,11 +97,17 @@ fn waiting_markers(kind: AgentKind) -> &'static [&'static str] {
 fn title_signals(kind: AgentKind, title: &str) -> Signals {
     let lead = title.trim_start().chars().next();
     match kind {
-        AgentKind::Claude => Signals { busy: title_is_busy(title), waiting: false },
-        AgentKind::Qwen => Signals { busy: lead == Some(QWEN_BUSY_GLYPH), waiting: lead == Some(QWEN_WAITING_GLYPH) },
-        AgentKind::Grok => {
-            Signals { busy: lead.is_some_and(is_braille_spinner), waiting: title.contains(GROK_ATTENTION) }
-        }
+        AgentKind::Claude => Signals { busy: title_is_busy(title), ..Signals::default() },
+        AgentKind::Qwen => Signals {
+            busy: lead == Some(QWEN_BUSY_GLYPH),
+            waiting: lead == Some(QWEN_WAITING_GLYPH),
+            ..Signals::default()
+        },
+        AgentKind::Grok => Signals {
+            busy: lead.is_some_and(is_braille_spinner),
+            waiting: title.contains(GROK_ATTENTION),
+            ..Signals::default()
+        },
         _ => Signals::default(),
     }
 }
@@ -118,7 +128,33 @@ pub fn analyze(kind: AgentKind, title: &str, tail: &str) -> Signals {
     let title = title_signals(kind, title);
     let waiting = title.waiting || WAITING_MARKERS.iter().chain(waiting_markers(kind)).any(|m| lower.contains(m));
     let busy = !waiting && (title.busy || BUSY_MARKERS.iter().chain(busy_markers(kind)).any(|m| lower.contains(m)));
-    Signals { busy, waiting }
+    Signals { busy, waiting, background: runs_in_background(kind, tail) }
+}
+
+fn runs_in_background(kind: AgentKind, tail: &str) -> bool {
+    match kind {
+        AgentKind::Claude => claude_footer(tail)
+            .iter()
+            .flat_map(|line| line.split(CLAUDE_FOOTER_SEPARATORS))
+            .any(|segment| counts_background_task(segment.trim())),
+        _ => false,
+    }
+}
+
+fn claude_footer(tail: &str) -> Vec<&str> {
+    let lines: Vec<&str> = tail.lines().collect();
+    let start = lines.iter().rposition(|line| is_input_border(line)).map_or(lines.len(), |border| border + 1);
+    lines[start..].to_vec()
+}
+
+fn is_input_border(line: &str) -> bool {
+    let line = line.trim();
+    !line.is_empty() && line.chars().all(|c| c == CLAUDE_INPUT_BORDER)
+}
+
+fn counts_background_task(segment: &str) -> bool {
+    let Some((count, task)) = segment.split_once(' ') else { return false };
+    count.parse::<u32>().is_ok_and(|count| count > 0) && CLAUDE_BACKGROUND_TASKS.contains(&task)
 }
 
 fn looks_like_program_path(text: &str) -> bool {
@@ -218,6 +254,7 @@ pub struct Detector {
     last_signal_at: u64,
     lease: Option<Lease>,
     launch: Option<Launch>,
+    background: bool,
 }
 
 impl Detector {
@@ -230,6 +267,7 @@ impl Detector {
             last_signal_at: 0,
             lease: None,
             launch: None,
+            background: false,
         }
     }
 
@@ -320,6 +358,11 @@ impl Detector {
                     return false;
                 }
                 self.launch = None;
+                if self.background {
+                    self.lease = None;
+                    self.last_signal_at = self.last_signal_at.max(at);
+                    return false;
+                }
                 self.lease = Some(Lease::Finished { screen_settled: false });
                 if !self.is_busy_or_waiting() {
                     return false;
@@ -338,11 +381,13 @@ impl Detector {
     }
 
     fn observe_ai(&mut self, signals: Signals, now: u64) -> bool {
+        self.background = signals.background;
         match self.lease {
             Some(Lease::Waiting) => {
                 self.last_signal_at = now;
                 return false;
             }
+            Some(Lease::Finished { .. }) if signals.background => self.lease = None,
             Some(Lease::Finished { screen_settled }) => {
                 if !signals.busy {
                     self.lease = Some(Lease::Finished { screen_settled: true });
@@ -362,7 +407,7 @@ impl Detector {
             }
             return self.set(AgentState::Paused, now);
         }
-        if signals.busy {
+        if signals.busy || signals.background {
             self.turn_began();
             self.last_signal_at = now;
             if !self.is_busy_or_waiting() {
@@ -426,13 +471,14 @@ mod tests {
     const CLAUDE_TRUST: &str = " Do you trust the files in this folder?\n ❯ 1. Yes, proceed\n";
     const CLAUDE_IDLE: &str = "● Done. All tests pass.\n> \n  ? for shortcuts\n";
     const CLAUDE_QUESTION: &str = " ☐ Delete  ☐ Popup  ✔ Submit  →\n Which behavior?\n ❯ 1. Stop and remove\n   2. Same as ctrl+x\n   3. Type something.\n Enter to select · Tab/Arrow keys to navigate · Esc to cancel\n";
+    const CLAUDE_BACKGROUND: &str = "● Started the dev server and a log monitor.\n  Ran 5 shell commands\n────────\n> \n────────\n  Opus 5.5 - high │ ⎇ main │\n  ⏵⏵ bypass permissions on · 1 shell, 1 monitor · ← 1 agent\n";
     const CODEX_QUESTION: &str =
         " Question 1/2\n  › 1. Keep the API\n    2. Replace it\n  enter to submit answer · esc to interrupt\n";
 
     #[test]
     fn detects_claude_working_from_screen() {
         let s = analyze(AgentKind::Claude, "✳ Fix tests", CLAUDE_WORKING);
-        assert_eq!(s, Signals { busy: true, waiting: false });
+        assert_eq!(s, Signals { busy: true, waiting: false, background: false });
     }
 
     #[test]
@@ -452,20 +498,20 @@ mod tests {
     #[test]
     fn permission_prompt_is_waiting_and_not_busy() {
         let s = analyze(AgentKind::Claude, "⠐ Fix tests", CLAUDE_PERMISSION);
-        assert_eq!(s, Signals { busy: false, waiting: true });
+        assert_eq!(s, Signals { busy: false, waiting: true, background: false });
         assert!(analyze(AgentKind::Claude, "", CLAUDE_TRUST).waiting);
     }
 
     #[test]
     fn the_folder_trust_check_waits_for_you_instead_of_looking_busy() {
         let trust = " Quick safety check: Is this a project you created or one you trust?\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n";
-        assert_eq!(analyze(AgentKind::Claude, "", trust), Signals { busy: false, waiting: true });
+        assert_eq!(analyze(AgentKind::Claude, "", trust), Signals { busy: false, waiting: true, background: false });
     }
 
     #[test]
     fn the_bypass_mode_warning_waits_for_you_until_it_is_accepted() {
         let warning = " WARNING: Claude Code running in Bypass Permissions mode\n\n In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.\n\n ❯ 1. No, exit\n   2. Yes, I accept\n";
-        assert_eq!(analyze(AgentKind::Claude, "", warning), Signals { busy: false, waiting: true });
+        assert_eq!(analyze(AgentKind::Claude, "", warning), Signals { busy: false, waiting: true, background: false });
         let accepted = "> \n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n";
         assert_eq!(analyze(AgentKind::Claude, "", accepted), Signals::default());
     }
@@ -478,8 +524,14 @@ mod tests {
 
     #[test]
     fn questions_waiting_for_a_choice_are_not_reported_as_working() {
-        assert_eq!(analyze(AgentKind::Claude, "⠐ Plan", CLAUDE_QUESTION), Signals { busy: false, waiting: true });
-        assert_eq!(analyze(AgentKind::Codex, "", CODEX_QUESTION), Signals { busy: false, waiting: true });
+        assert_eq!(
+            analyze(AgentKind::Claude, "⠐ Plan", CLAUDE_QUESTION),
+            Signals { busy: false, waiting: true, background: false }
+        );
+        assert_eq!(
+            analyze(AgentKind::Codex, "", CODEX_QUESTION),
+            Signals { busy: false, waiting: true, background: false }
+        );
         assert!(analyze(AgentKind::Codex, "", "Press enter to confirm or esc to cancel").waiting);
     }
 
@@ -487,11 +539,11 @@ mod tests {
     fn opencode_and_kilo_screens_show_work_permissions_and_questions() {
         for kind in [AgentKind::Opencode, AgentKind::Kilo] {
             let working = "  ■■⬝⬝⬝⬝⬝⬝  esc interrupt\n";
-            assert_eq!(analyze(kind, "OpenCode", working), Signals { busy: true, waiting: false });
+            assert_eq!(analyze(kind, "OpenCode", working), Signals { busy: true, waiting: false, background: false });
             assert!(analyze(kind, "", "esc again to interrupt").busy);
             let permission =
                 " △ Permission required\n   $ npm test\n  Allow once   Allow always   Reject\n  esc interrupt";
-            assert_eq!(analyze(kind, "", permission), Signals { busy: false, waiting: true });
+            assert_eq!(analyze(kind, "", permission), Signals { busy: false, waiting: true, background: false });
             assert!(analyze(kind, "", " 1. Keep it\n 2. Type your own answer\n").waiting);
             let finished = "▣  Build · anthropic/claude-sonnet · 12.3s\n  tab agents  ctrl+p commands";
             assert_eq!(analyze(kind, "OC | Fix login", finished), Signals::default());
@@ -513,9 +565,12 @@ mod tests {
         assert!(analyze(AgentKind::Grok, "⠋ - Thinking - fix login - grok", "").busy);
         assert!(analyze(AgentKind::Grok, "fix login - grok", "⠧ Running… 12s   1m02s ⇣12k [stop]").busy);
         let approval = "⚠ Action Required - ⠋ - Waiting - fix login - grok";
-        assert_eq!(analyze(AgentKind::Grok, approval, ""), Signals { busy: false, waiting: true });
+        assert_eq!(analyze(AgentKind::Grok, approval, ""), Signals { busy: false, waiting: true, background: false });
         let prompt = " Allow `npm`?\n 1. Yes, proceed\n 2. No, and tell Grok what to do differently\n";
-        assert_eq!(analyze(AgentKind::Grok, "fix login - grok", prompt), Signals { busy: false, waiting: true });
+        assert_eq!(
+            analyze(AgentKind::Grok, "fix login - grok", prompt),
+            Signals { busy: false, waiting: true, background: false }
+        );
         assert_eq!(analyze(AgentKind::Grok, "fix login - grok", "Worked for 2m5s\n> "), Signals::default());
         assert!(!analyze(AgentKind::Claude, "⚠ Action Required - grok", "").waiting);
     }
@@ -523,9 +578,9 @@ mod tests {
     #[test]
     fn qwen_title_glyphs_tell_working_from_waiting() {
         let busy = format!("{QWEN_BUSY_GLYPH}\u{FE0E} Fix login{}", " ".repeat(40));
-        assert_eq!(analyze(AgentKind::Qwen, &busy, ""), Signals { busy: true, waiting: false });
+        assert_eq!(analyze(AgentKind::Qwen, &busy, ""), Signals { busy: true, waiting: false, background: false });
         let waiting = format!("{QWEN_WAITING_GLYPH}\u{FE0E} Fix login");
-        assert_eq!(analyze(AgentKind::Qwen, &waiting, ""), Signals { busy: false, waiting: true });
+        assert_eq!(analyze(AgentKind::Qwen, &waiting, ""), Signals { busy: false, waiting: true, background: false });
         assert!(analyze(AgentKind::Qwen, "Qwen - app", "(5s · ↓ 1.2k tokens · esc to cancel)").busy);
         assert!(analyze(AgentKind::Qwen, "", "Allow execution of: 'rm -rf build'?\n ● 1. Yes, allow once").waiting);
         assert_eq!(analyze(AgentKind::Qwen, "Qwen - app", "> "), Signals::default());
@@ -537,7 +592,7 @@ mod tests {
         assert!(analyze(AgentKind::Kimi, "Kimi Code", "⠋ Working… · Tip: use /usage").busy);
         assert!(analyze(AgentKind::Kimi, "Kimi Code", "🌓").busy);
         let approval = "───\n ▶ Run this command?\n ▶ 1. Approve once\n   2. Approve for this session\n   3. Reject";
-        assert_eq!(analyze(AgentKind::Kimi, "", approval), Signals { busy: false, waiting: true });
+        assert_eq!(analyze(AgentKind::Kimi, "", approval), Signals { busy: false, waiting: true, background: false });
         assert!(analyze(AgentKind::Kimi, "", " Trust this folder?\n Trust and continue").waiting);
         assert_eq!(analyze(AgentKind::Kimi, "Kimi Code", "Interrupted by user\n> "), Signals::default());
     }
@@ -620,7 +675,7 @@ mod tests {
 
     #[test]
     fn ai_turn_lifecycle_working_done_seen() {
-        let busy = Signals { busy: true, waiting: false };
+        let busy = Signals { busy: true, waiting: false, background: false };
         let mut d = Detector::new(0);
         assert!(d.observe(AgentKind::Claude, busy, 0, 1_000));
         assert_eq!(d.state(), AgentState::Working);
@@ -640,11 +695,11 @@ mod tests {
     #[test]
     fn paused_keeps_turn_running() {
         let mut d = Detector::new(0);
-        d.observe(AgentKind::Claude, Signals { busy: true, waiting: false }, 0, 100);
-        d.observe(AgentKind::Claude, Signals { busy: false, waiting: true }, 0, 200);
+        d.observe(AgentKind::Claude, Signals { busy: true, waiting: false, background: false }, 0, 100);
+        d.observe(AgentKind::Claude, Signals { busy: false, waiting: true, background: false }, 0, 200);
         assert_eq!(d.state(), AgentState::Paused);
         assert_eq!(d.turn_started(), Some(100));
-        d.observe(AgentKind::Claude, Signals { busy: true, waiting: false }, 0, 300);
+        d.observe(AgentKind::Claude, Signals { busy: true, waiting: false, background: false }, 0, 300);
         assert_eq!(d.state(), AgentState::Working);
         assert_eq!(d.turn_started(), Some(100));
     }
@@ -677,8 +732,8 @@ mod tests {
     #[test]
     fn a_finished_hook_ends_the_turn_at_once_and_question_text_cannot_reopen_it() {
         let mut d = hook_turn();
-        let busy = Signals { busy: true, waiting: false };
-        let question = Signals { busy: false, waiting: true };
+        let busy = Signals { busy: true, waiting: false, background: false };
+        let question = Signals { busy: false, waiting: true, background: false };
         d.observe(AgentKind::Claude, busy, 0, 2_000);
         assert!(d.hook(HookSignal::Finished, 3_000));
         assert_eq!((d.state(), d.since(), d.last_turn_ms()), (AgentState::Done, 3_000, Some(2_000)));
@@ -694,7 +749,7 @@ mod tests {
     #[test]
     fn a_waiting_hook_holds_until_the_user_answers() {
         let mut d = hook_turn();
-        let busy = Signals { busy: true, waiting: false };
+        let busy = Signals { busy: true, waiting: false, background: false };
         assert!(d.hook(HookSignal::Waiting, 2_000));
         assert_eq!((d.state(), d.turn_started()), (AgentState::Paused, Some(1_000)));
         assert!(!d.observe(AgentKind::Claude, busy, 0, 2_100), "a dialog footer like esc to cancel is not work");
@@ -722,7 +777,7 @@ mod tests {
         d.hook(HookSignal::Waiting, 2_000);
         assert!(d.hook(HookSignal::Busy, 3_000));
         assert_eq!((d.state(), d.turn_started()), (AgentState::Working, Some(1_000)));
-        assert!(d.observe(AgentKind::Claude, Signals { busy: false, waiting: true }, 0, 3_100));
+        assert!(d.observe(AgentKind::Claude, Signals { busy: false, waiting: true, background: false }, 0, 3_100));
         assert_eq!(d.state(), AgentState::Paused);
         d.hook(HookSignal::Finished, 4_000);
         assert!(d.hook(HookSignal::Busy, 5_000));
@@ -744,5 +799,60 @@ mod tests {
         let mut d = Detector::new(0);
         d.user_answered();
         assert_eq!(d, Detector::new(0));
+    }
+
+    #[test]
+    fn claude_shells_and_monitors_in_the_footer_run_in_the_background() {
+        assert_eq!(analyze(AgentKind::Claude, "Claude Code", CLAUDE_BACKGROUND), background());
+        let shells = "> \n────────\n  2 shells · ? for shortcuts\n";
+        assert!(analyze(AgentKind::Claude, "", shells).background);
+        let monitors = "────────\n  ⏵⏵ accept edits on · 3 monitors\n";
+        assert!(analyze(AgentKind::Claude, "", monitors).background);
+        assert!(!analyze(AgentKind::Claude, "", CLAUDE_IDLE).background);
+        let above_the_input = "  1 shell, 1 monitor\n────────\n> \n────────\n  ⏵⏵ bypass permissions on · ← 1 agent\n";
+        assert!(!analyze(AgentKind::Claude, "", above_the_input).background, "only the footer counts");
+        let no_input_box = "  1 shell, 1 monitor\n";
+        assert!(!analyze(AgentKind::Claude, "", no_input_box).background);
+        let no_task = "────────\n  0 shells · 1 shell command\n";
+        assert!(!analyze(AgentKind::Claude, "", no_task).background);
+        assert!(!analyze(AgentKind::Codex, "", CLAUDE_BACKGROUND).background);
+    }
+
+    fn background() -> Signals {
+        Signals { busy: false, waiting: false, background: true }
+    }
+
+    #[test]
+    fn a_finished_turn_with_a_shell_still_running_keeps_working_until_it_ends() {
+        let mut d = hook_turn();
+        assert!(!d.observe(AgentKind::Claude, background(), 0, 2_000));
+        assert!(!d.hook(HookSignal::Finished, 3_000), "the turn ended but the shell is still running");
+        assert_eq!((d.state(), d.turn_started()), (AgentState::Working, Some(1_000)));
+        assert!(!d.observe(AgentKind::Claude, background(), 0, 3_000 + 10 * DONE_GRACE_MS));
+        assert_eq!(d.state(), AgentState::Working);
+        let ended = 3_000 + 10 * DONE_GRACE_MS;
+        assert!(!d.observe(AgentKind::Claude, Signals::default(), 0, ended + DONE_GRACE_MS - 1));
+        assert!(d.observe(AgentKind::Claude, Signals::default(), 0, ended + DONE_GRACE_MS));
+        assert_eq!((d.state(), d.since(), d.last_turn_ms()), (AgentState::Done, ended, Some(ended - 1_000)));
+    }
+
+    #[test]
+    fn a_shell_shown_after_the_turn_ended_brings_the_agent_back_to_work() {
+        let mut d = hook_turn();
+        assert!(d.hook(HookSignal::Finished, 2_000));
+        assert!(d.mark_seen());
+        assert!(d.observe(AgentKind::Claude, background(), 0, 5_000));
+        assert_eq!((d.state(), d.turn_started()), (AgentState::Working, Some(5_000)));
+    }
+
+    #[test]
+    fn a_question_still_waits_for_you_while_a_shell_runs() {
+        let mut d = hook_turn();
+        let question = Signals { busy: false, waiting: true, background: true };
+        assert!(d.observe(AgentKind::Claude, question, 0, 2_000));
+        assert_eq!(d.state(), AgentState::Paused);
+        assert!(!d.hook(HookSignal::Waiting, 2_100));
+        assert!(!d.observe(AgentKind::Claude, background(), 0, 3_000), "the hold waits for the answer");
+        assert_eq!(d.state(), AgentState::Paused);
     }
 }
