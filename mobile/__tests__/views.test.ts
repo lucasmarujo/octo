@@ -1,8 +1,9 @@
 import { idleRunning, idleStopped, removeAllAsk, removeAsk, still, stopAllAsk, stopAsk } from '../src/core/agents';
 import type { LinkState } from '../src/core/link';
 import model from '../src/core/model';
-import type { AgentView, UsageEntry } from '../src/core/protocol';
+import type { AgentView, Run, UsageEntry } from '../src/core/protocol';
 import { ringValue } from '../src/screens/device/Rings';
+import { shiftFor } from '../src/screens/device/Terminal';
 import { glyphOf } from '../src/screens/Devices';
 import { scanWindow } from '../src/screens/Scan';
 import { budgeted } from '../src/sheets/Diff';
@@ -164,6 +165,36 @@ describe('the keyboard', () => {
     expect(covered(0, 48, 'android')).toBe(0);
     expect(covered(-48, 48, 'android')).toBe(0);
     expect(covered(0, 34, 'ios')).toBe(0);
+  });
+});
+
+describe('the terminal of an agent with the keyboard open', () => {
+  const LINE = 14.4;
+  const HEIGHT = 300;
+  const blank: Run[] = [['', -1, -1, 0]];
+  const text = (value: string): Run[] => [[value, -1, -1, 0]];
+  const screen = (rows: Run[][], cursor: [number, number] | null, scroll = 0) => ({ rows, cols: 40, cursor, scroll });
+
+  it('keeps a shell that printed little in sight from the top', () => {
+    const rows = [text('Microsoft Windows'), blank, text('C:\\work>'), ...Array<Run[]>(37).fill(blank)];
+    expect(shiftFor(screen(rows, [2, 8]), LINE, HEIGHT)).toBe(0);
+  });
+
+  it('follows an agent that filled its screen down to the last line', () => {
+    const rows = Array.from({ length: 40 }, (_, index) => text(`line ${index}`));
+    expect(shiftFor(screen(rows, null), LINE, HEIGHT)).toBe(Math.round(6 + 40 * LINE - HEIGHT));
+  });
+
+  it('keeps the cursor in sight below the last printed line, unless the phone reads the history', () => {
+    const rows = [text('a'), ...Array<Run[]>(39).fill(blank)];
+    expect(shiftFor(screen(rows, [30, 0]), LINE, HEIGHT)).toBe(Math.round(6 + 31 * LINE - HEIGHT));
+    expect(shiftFor(screen(rows, [30, 0], 5), LINE, HEIGHT)).toBe(0);
+  });
+
+  it('counts a colored bar without words as printed', () => {
+    const bar: Run[] = [['   ', -1, 4, 0]];
+    const rows = [...Array<Run[]>(35).fill(blank), bar, ...Array<Run[]>(4).fill(blank)];
+    expect(shiftFor(screen(rows, null), LINE, HEIGHT)).toBe(Math.round(6 + 36 * LINE - HEIGHT));
   });
 });
 

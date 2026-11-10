@@ -141,6 +141,19 @@ export function Chips({ agent }: { agent: AgentView | null }) {
   );
 }
 
+function lastLine(screen: ScreenState): number {
+  for (let index = screen.rows.length - 1; index >= 0; index -= 1) {
+    if (screen.rows[index].some(([text, , bg]) => text.trim() !== '' || bg !== DEFAULT)) return index;
+  }
+  return 0;
+}
+
+export function shiftFor(screen: ScreenState, line: number, height: number): number {
+  const cursor = screen.cursor && !screen.scroll ? screen.cursor[0] : 0;
+  const lowest = Math.max(lastLine(screen), cursor);
+  return Math.max(0, Math.round(TERM_PAD + (lowest + 1) * line - height));
+}
+
 function Cursor({ screen, font, ratio, shift }: { screen: ScreenState; font: number; ratio: number; shift: number }) {
   const s = useStyles(styles);
   const reduced = useReduced();
@@ -224,8 +237,7 @@ export function Terminal() {
     [workspace, line],
   );
 
-  const rowsHeight = screen ? screen.rows.length * line : 0;
-  const shift = box ? Math.max(0, Math.round(rowsHeight + TERM_PAD - box.height)) : 0;
+  const shift = screen && box ? shiftFor(screen, line, box.height) : 0;
   const wide = screen ? Math.ceil(screen.cols * font * ratio) + TERM_PAD * 2 : 0;
 
   return (
