@@ -24,6 +24,9 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_LOCAL_PAIRING": "1"
       }
     },
     "production": {

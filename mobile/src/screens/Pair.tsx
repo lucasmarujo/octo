@@ -84,6 +84,7 @@ const PRESETS: Record<PairKind, Preset> = {
   },
 };
 const MASCOT = 128;
+const LOCAL_PAIRING = __DEV__ || process.env.EXPO_PUBLIC_LOCAL_PAIRING === '1';
 const GLOW = 320;
 
 const styles = (t: Theme) =>
@@ -130,7 +131,7 @@ export function Pair({ kind, replace, onBack, onPaired, onRetry }: Props) {
   }, [keyboard]);
 
   const pairWith = (text: string): boolean => {
-    const pairing = parsePairingLink(text, __DEV__);
+    const pairing = parsePairingLink(text, LOCAL_PAIRING);
     if (!pairing) return false;
     setLink('');
     setScanning(false);
