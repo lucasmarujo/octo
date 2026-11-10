@@ -43,7 +43,7 @@ export function Kai({ mood, size, style }: Props) {
 
   const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [0, -size * (strip.frames - 1)] });
   return (
-    <View style={[{ width: size, height: size, overflow: 'hidden' }, style]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <View pointerEvents="none" style={[{ width: size, height: size, overflow: 'hidden' }, style]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       <Animated.Image source={strip.source} fadeDuration={0} resizeMode="stretch" style={{ width: size * strip.frames, height: size, transform: [{ translateX }] }} />
     </View>
   );

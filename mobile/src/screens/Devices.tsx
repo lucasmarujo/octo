@@ -7,7 +7,6 @@ import type { Device } from '../core/devices';
 import type { DeviceLink, LinkPhase, LinkState } from '../core/link';
 import type { Mood } from '../core/model';
 import model from '../core/model';
-import { hostOf } from '../core/pairing';
 import type { AgentView } from '../core/protocol';
 import { useStore } from '../core/store';
 import { mix } from '../theme/color';
@@ -92,7 +91,6 @@ const styles = (t: Theme) =>
     line: { flexDirection: 'row', alignItems: 'baseline', gap: 8, minWidth: 0 },
     name: { ...mono(15, 700, 20), flex: 1, minWidth: 0, color: t.text },
     word: { ...mono(12), flexShrink: 0 },
-    host: { ...mono(12, 400, 18), color: t.textFaint, flexShrink: 1, minWidth: 0 },
     note: { ...sans(14, 400, 18), color: t.textMuted, flexShrink: 1, minWidth: 0 },
     counts: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 },
     count: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -125,19 +123,14 @@ function Row({ device, link, first, onOpen, onMenu }: { device: Device; link: De
         </View>
         <View style={s.line}>
           {counts.length ? (
-            <>
-              <View style={s.counts}>
-                {counts.map(part => (
-                  <View key={part.mark} style={s.count}>
-                    <Text style={[s.mark, { color: part.color }]}>{part.mark}</Text>
-                    <Text style={s.number}>{String(part.n)}</Text>
-                  </View>
-                ))}
-              </View>
-              <Text style={s.host} numberOfLines={1}>
-                {hostOf(device.url)}
-              </Text>
-            </>
+            <View style={s.counts}>
+              {counts.map(part => (
+                <View key={part.mark} style={s.count}>
+                  <Text style={[s.mark, { color: part.color }]}>{part.mark}</Text>
+                  <Text style={s.number}>{String(part.n)}</Text>
+                </View>
+              ))}
+            </View>
           ) : (
             <Text style={[s.note, state.phase !== 'live' && state.phase !== 'connecting' && { color: t.lost }]} numberOfLines={1}>
               {note}

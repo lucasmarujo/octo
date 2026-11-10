@@ -12,6 +12,7 @@ import type { Theme } from '../../theme/tokens';
 import { mono, sans } from '../../theme/type';
 import { kindColor } from '../../ui/atoms';
 import { Icon } from '../../ui/Icon';
+import { useKeyboard } from '../../ui/keyboard';
 import { Press } from '../../ui/Press';
 import { useDevice } from './context';
 
@@ -57,6 +58,8 @@ export const Composer = React.forwardRef<ComposerHandle, Props>(function Compose
   const t = useTheme();
   const s = useStyles(styles);
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboard();
+  const bottom = keyboard ? 0 : insets.bottom;
   const state = useStore(workspace.store);
   const overview = useStore(link.store).overview;
   const [text, setText] = useState('');
@@ -112,7 +115,7 @@ export const Composer = React.forwardRef<ComposerHandle, Props>(function Compose
 
   if (inAgent) {
     return (
-      <View style={[s.dock, { paddingBottom: insets.bottom + 10 }]}>
+      <View style={[s.dock, { paddingBottom: bottom + 10 }]}>
         <View style={[s.composer, s.inline, focused && s.focused]}>
           {field}
           {send}
@@ -124,7 +127,7 @@ export const Composer = React.forwardRef<ComposerHandle, Props>(function Compose
   const prefs = device.prefs;
   const tint = kindColor(t, who);
   return (
-    <View style={[s.dock, s.floating, { paddingBottom: insets.bottom + 12 }]} pointerEvents="box-none">
+    <View style={[s.dock, s.floating, { paddingBottom: bottom + 12 }]} pointerEvents="box-none">
       <View style={[s.composer, focused && s.focused]}>
         {field}
         <View style={s.bar}>

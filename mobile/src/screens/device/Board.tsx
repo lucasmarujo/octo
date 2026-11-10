@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { Animated, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import type { TileTone } from '../../core/agents';
 import { alive, doing, elapsed, label, status, testMark, waiting } from '../../core/agents';
@@ -17,6 +17,7 @@ import { Glyph, kindColor, Swatch, toneColor } from '../../ui/atoms';
 import { Flash } from '../../ui/Flash';
 import { Press } from '../../ui/Press';
 import { Rise } from '../../ui/Rise';
+import { useTween } from '../../ui/tween';
 import { useDevice } from './context';
 
 type Props = {
@@ -163,25 +164,18 @@ export function Board({ agents, now, entered }: Props) {
   const [column, setColumn] = useState(firstFilled);
   const [slots, setSlots] = useState<Record<number, Slot>>({});
   const columns = useRef<React.ComponentRef<typeof ScrollView>>(null);
-  const x = useRef(new Animated.Value(0)).current;
-  const width = useRef(new Animated.Value(0)).current;
+  const picked = useRef<number | null>(null);
   const columnWidth = Math.min(window.width - 2 * GUTTER, COLUMN_MAX);
   const step = columnWidth + GAP;
   const slot = slots[column];
+  const duration = lasting(BASE_MS, reduced);
+  const x = useTween(slot ? slot.x : 0, duration, EASE_OUT);
+  const width = useTween(slot ? slot.width : 0, duration, EASE_OUT);
 
   useEffect(() => {
     columns.current?.scrollTo({ x: firstFilled * step, animated: false });
     setColumn(firstFilled);
   }, [entered]);
-
-  useEffect(() => {
-    if (!slot) return;
-    const duration = lasting(BASE_MS, reduced);
-    Animated.parallel([
-      Animated.timing(x, { toValue: slot.x, duration, easing: EASE_OUT, useNativeDriver: false }),
-      Animated.timing(width, { toValue: slot.width, duration, easing: EASE_OUT, useNativeDriver: false }),
-    ]).start();
-  }, [slot, x, width, reduced]);
 
   const measure = (index: number) => (event: LayoutChangeEvent) => {
     const { x: left, width: wide } = event.nativeEvent.layout;
@@ -189,9 +183,14 @@ export function Board({ agents, now, entered }: Props) {
   };
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.max(0, Math.min(model.COLUMNS.length - 1, Math.round(event.nativeEvent.contentOffset.x / step)));
+    if (picked.current !== null) {
+      if (index === picked.current) picked.current = null;
+      return;
+    }
     if (index !== column) setColumn(index);
   };
   const pick = (index: number) => {
+    picked.current = index === column ? null : index;
     setColumn(index);
     columns.current?.scrollTo({ x: index * step, animated: !reduced });
   };
@@ -213,7 +212,7 @@ export function Board({ agents, now, entered }: Props) {
             </View>
           );
         })}
-        <Animated.View style={[s.indicator, { width, transform: [{ translateX: x }] }]} />
+        <View style={[s.indicator, { width, transform: [{ translateX: x }] }]} />
       </ScrollView>
       <ScrollView
         ref={columns}
