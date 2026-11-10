@@ -23,6 +23,12 @@ export type Mark = {
   tone: TextTone;
 };
 
+export type Ask = {
+  title: string;
+  text: string;
+  action: string;
+};
+
 const LABELS: Partial<Record<AgentKind, string>> = { antigravity: 'agy' };
 const NAMES: Record<AgentKind, string> = {
   claude: 'Claude',
@@ -90,4 +96,39 @@ export function doing(agent: AgentView): Doing {
 
 export function testMark(test: TestState | null | undefined): Mark | null {
   return (test && TESTS[test]) || null;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+export function idleRunning(list: AgentView[]): AgentView[] {
+  return list.filter(agent => model.column(agent) === 'idle' && alive(agent) && !agent.starting);
+}
+
+export function idleStopped(list: AgentView[]): AgentView[] {
+  return list.filter(agent => model.column(agent) === 'idle' && agent.state === 'exited');
+}
+
+export function still(asked: AgentView[], now: AgentView[]): AgentView[] {
+  const ids = new Set(asked.map(agent => agent.id));
+  return now.filter(agent => ids.has(agent.id));
+}
+
+export function stopAsk(agent: AgentView): Ask {
+  return { title: `Stop ${agent.name}?`, text: 'The agent process ends. Its card stays here until you remove it.', action: 'Stop' };
+}
+
+export function removeAsk(agent: AgentView): Ask {
+  const worktree = agent.branch ? ` Its worktree and the ${agent.branch} branch are deleted too.` : '';
+  return { title: `Remove ${agent.name}?`, text: `The agent and its recorded output are deleted.${worktree}`, action: 'Remove' };
+}
+
+export function stopAllAsk(list: AgentView[]): Ask {
+  return { title: `Stop ${plural(list.length, 'idle agent', 'idle agents')}?`, text: 'Their processes end. The cards stay in Idle until you remove them.', action: 'Stop all' };
+}
+
+export function removeAllAsk(list: AgentView[]): Ask {
+  const worktrees = list.some(agent => agent.branch) ? ' Their worktrees and branches are deleted too.' : '';
+  return { title: `Remove ${plural(list.length, 'stopped agent', 'stopped agents')}?`, text: `The agents and their recorded output are deleted.${worktrees}`, action: 'Remove all' };
 }

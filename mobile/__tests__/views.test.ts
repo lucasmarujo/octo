@@ -1,3 +1,4 @@
+import { idleRunning, idleStopped, removeAllAsk, removeAsk, still, stopAllAsk, stopAsk } from '../src/core/agents';
 import type { LinkState } from '../src/core/link';
 import model from '../src/core/model';
 import type { AgentView, UsageEntry } from '../src/core/protocol';
@@ -79,6 +80,31 @@ describe('the provider of an agent', () => {
     expect(providerXml('terminal')).toBeNull();
     expect(providerXml('toString')).toBeNull();
     expect(model.kindMark('pi')).toBe('π');
+  });
+});
+
+describe('stopping and removing agents', () => {
+  const one = (id: number, state: AgentView['state'], extra: Partial<AgentView> = {}): AgentView => ({ ...agent(state), id, name: `agent-${id}`, ...extra });
+
+  it('asks before ending a running agent and before deleting a stopped one, in the words of the desktop', () => {
+    expect(stopAsk(one(1, 'working'))).toEqual({ title: 'Stop agent-1?', text: 'The agent process ends. Its card stays here until you remove it.', action: 'Stop' });
+    expect(removeAsk(one(2, 'exited'))).toEqual({ title: 'Remove agent-2?', text: 'The agent and its recorded output are deleted.', action: 'Remove' });
+    expect(removeAsk(one(3, 'lost', { branch: 'octo/fix-login' })).text).toBe('The agent and its recorded output are deleted. Its worktree and the octo/fix-login branch are deleted too.');
+  });
+
+  it('stops the idle agents still running and removes the stopped ones, never the working or the interrupted', () => {
+    const list = [one(1, 'idle'), one(2, 'exited'), one(3, 'lost'), one(4, 'working'), one(5, 'done'), one(6, 'idle', { starting: true }), one(7, 'idle', { branch: 'octo/b' })];
+    expect(idleRunning(list).map(entry => entry.id)).toEqual([1, 7]);
+    expect(idleStopped(list).map(entry => entry.id)).toEqual([2]);
+    expect(stopAllAsk(idleRunning(list))).toEqual({ title: 'Stop 2 idle agents?', text: 'Their processes end. The cards stay in Idle until you remove them.', action: 'Stop all' });
+    expect(removeAllAsk(idleStopped(list))).toEqual({ title: 'Remove 1 stopped agent?', text: 'The agents and their recorded output are deleted.', action: 'Remove all' });
+    expect(removeAllAsk([one(8, 'exited', { branch: 'octo/c' })]).text).toBe('The agents and their recorded output are deleted. Their worktrees and branches are deleted too.');
+  });
+
+  it('leaves out of a confirmed batch the agents that changed while the question was open', () => {
+    const asked = [one(1, 'idle'), one(7, 'idle')];
+    const now = [one(1, 'working'), one(7, 'idle'), one(9, 'idle')];
+    expect(still(asked, idleRunning(now)).map(entry => entry.id)).toEqual([7]);
   });
 });
 

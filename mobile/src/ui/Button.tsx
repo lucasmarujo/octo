@@ -7,7 +7,7 @@ import type { Theme } from '../theme/tokens';
 import { sans } from '../theme/type';
 import { Press } from './Press';
 
-type Kind = 'primary' | 'secondary' | 'ghost';
+type Kind = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 type Props = {
   kind: Kind;
@@ -27,7 +27,9 @@ const styles = (t: Theme) =>
     flat: { boxShadow: [] },
     secondary: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
     ghost: { backgroundColor: t.surfaceRaised, borderWidth: 1, borderColor: t.border },
+    danger: { backgroundColor: t.lost },
     primaryText: { ...sans(16, 700), color: t.accentInk },
+    dangerText: { ...sans(16, 700), color: t.lostInk },
     plainText: { ...sans(16, 600), color: t.text },
     bigText: { fontSize: 17, lineHeight: 17 * 1.4 },
   });
@@ -36,7 +38,7 @@ export function Button({ kind, text, big = false, flat = false, style, onPress, 
   const s = useStyles(styles);
   return (
     <Press style={[s.button, s[kind], big && s.big, flat && s.flat, style]} onPress={onPress}>
-      {children || <Text style={[kind === 'primary' ? s.primaryText : s.plainText, big && s.bigText]}>{text}</Text>}
+      {children || <Text style={[kind === 'primary' ? s.primaryText : kind === 'danger' ? s.dangerText : s.plainText, big && s.bigText]}>{text}</Text>}
     </Press>
   );
 }

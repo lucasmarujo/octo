@@ -19,6 +19,7 @@ import { Press } from '../../ui/Press';
 import { Rise } from '../../ui/Rise';
 import { useTween } from '../../ui/tween';
 import { useDevice } from './context';
+import { AgentTool, IdleTools } from './Tools';
 
 type Props = {
   agents: AgentView[];
@@ -69,6 +70,7 @@ const styles = (t: Theme) =>
     glyph: { ...mono(15, 700), width: 14 },
     name: { ...mono(15, 700, 20), flex: 1, minWidth: 0, color: t.text },
     time: { ...mono(12), color: t.textFaint },
+    tool: { marginVertical: -8, marginRight: -6 },
     meta: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: INDENT },
     metaText: { ...mono(12), color: t.textMuted },
     text: { ...sans(15, 400, 20), paddingLeft: INDENT, fontVariant: [...NO_LIGATURES] },
@@ -107,6 +109,7 @@ function Card({ agent, now }: { agent: AgentView; now: number }) {
             {agent.name}
           </Text>
           <Text style={s.time}>{time || ''}</Text>
+          <AgentTool agent={agent} style={s.tool} />
         </View>
         <View style={s.meta}>
           <Swatch color={agent.color} size={6} radius={2} />
@@ -226,6 +229,7 @@ export function Board({ agents, now, entered }: Props) {
         onScroll={onScroll}>
         {model.COLUMNS.map((def, index) => (
           <View key={def.key} style={[s.column, { width: columnWidth }]}>
+            {def.key === 'idle' ? <IdleTools agents={members[index]} /> : null}
             {members[index].length ? (
               members[index].map(agent => {
                 const delay = order * STAGGER_MS;

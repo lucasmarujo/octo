@@ -15,6 +15,7 @@ import { Kai } from '../../ui/Kai';
 import { Press } from '../../ui/Press';
 import { Rise } from '../../ui/Rise';
 import { useDevice } from './context';
+import { AgentTool } from './Tools';
 
 type ListProps = {
   agents: AgentView[];
@@ -50,6 +51,7 @@ const styles = (t: Theme) =>
     doing: { ...sans(14, 400, 18), flexShrink: 1, minWidth: 0, fontVariant: [...NO_LIGATURES] },
     doingMono: { ...mono(13, 400, 18), flexShrink: 1, minWidth: 0 },
     faded: { color: t.textFaint },
+    tool: { marginRight: -6 },
     empty: { alignItems: 'center', gap: 12, paddingTop: 48, paddingHorizontal: 32 },
     emptyTitle: { ...sans(26, 800, 30), ...tracking(26, TIGHT), color: t.text, textAlign: 'center' },
     emptyText: { ...sans(16, 400, 22), color: t.textMuted, textAlign: 'center' },
@@ -93,6 +95,7 @@ function Row({ agent, now, first }: { agent: AgentView; now: number; first: bool
             </Text>
           </View>
         </View>
+        <AgentTool agent={agent} style={s.tool} />
       </Press>
     </Flash>
   );
