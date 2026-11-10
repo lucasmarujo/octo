@@ -8,6 +8,7 @@ import { budgeted } from '../src/sheets/Diff';
 import { pathAt } from '../src/sheets/Where';
 import { usageLine } from '../src/sheets/Who';
 import { ANDROID_STAND_INS, termText } from '../src/theme/type';
+import { covered } from '../src/ui/keyboard';
 import { providerXml } from '../src/ui/ProviderMark';
 
 jest.mock('../modules/octo-scanner', () => ({ __esModule: true, default: { requestAccess: jest.fn() }, ScannerView: () => null }));
@@ -120,6 +121,23 @@ describe('the terminal on Android', () => {
     const line = '  ⎿  Read 412 lines ⏵⏵ ✻ ● ⠋';
     expect(termText(line, null)).toBe(line);
     expect(termText('  ⎿  Read 412 lines ✻ ⠋', ANDROID_STAND_INS)).toBe('  ⎿  Read 412 lines ✻ ⠋');
+  });
+});
+
+describe('the keyboard', () => {
+  it('covers the navigation bar too on Android, which React Native leaves out of its height', () => {
+    expect(covered(290, 48, 'android')).toBe(338);
+    expect(covered(290, 0, 'android')).toBe(290);
+  });
+
+  it('is measured from the bottom of the screen on the iPhone', () => {
+    expect(covered(336, 34, 'ios')).toBe(336);
+  });
+
+  it('covers nothing while it is closed or floats away from the bottom', () => {
+    expect(covered(0, 48, 'android')).toBe(0);
+    expect(covered(-48, 48, 'android')).toBe(0);
+    expect(covered(0, 34, 'ios')).toBe(0);
   });
 });
 

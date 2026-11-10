@@ -129,7 +129,7 @@ export const Composer = React.forwardRef<ComposerHandle, Props>(function Compose
   const prefs = device.prefs;
   const tint = kindColor(t, who);
   return (
-    <View style={[s.dock, s.floating, { paddingBottom: bottom + 12 }]} pointerEvents="box-none">
+    <View style={[s.dock, s.floating, { bottom: keyboard, paddingBottom: bottom + 12 }]} pointerEvents="box-none">
       <View style={[s.composer, focused && s.focused]}>
         {field}
         <View style={s.bar}>
