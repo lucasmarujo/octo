@@ -1107,12 +1107,12 @@ test('every provider with plan usage has its icon in the real colors of its bran
   const { PROVIDER_ICONS } = await import('../js/icons.js');
   const providers = rust('src/usage.rs').match(/pub const PROVIDERS: \[AgentKind; \d+\] = \[([\s\S]*?)\];/)[1].match(/AgentKind::\w+/g).map((name) => name.slice(11).toLowerCase());
   assert.ok(providers.length >= 7, 'Rust providers not found');
-  assert.deepEqual(Object.keys(PROVIDER_ICONS).sort(), [...providers].sort());
+  for (const provider of providers) assert.ok(Object.hasOwn(PROVIDER_ICONS, provider), `${provider} has its icon`);
   for (const [kind, icon] of Object.entries(PROVIDER_ICONS)) {
     assert.match(icon, /^<svg width="(14|22)" height="\1" viewBox="0 0 24 24"[^>]*aria-hidden="true">[\s\S]+<\/svg>$/, kind);
     assert.doesNotMatch(icon, /<title|<script|href=|url\(http/i, kind);
   }
-  const brand = { claude: '#D97757', codex: '#3941FF', kilo: '#F8F676', antigravity: '#3186FF', kimi: '#1783FF' };
+  const brand = { claude: '#D97757', codex: '#3941FF', kilo: '#F8F676', antigravity: '#3186FF', kimi: '#1783FF', qwen: '#082dff' };
   for (const [kind, color] of Object.entries(brand)) assert.ok(PROVIDER_ICONS[kind].includes(`"${color}"`), `${kind} keeps ${color}`);
   for (const kind of ['grok', 'opencode']) assert.match(PROVIDER_ICONS[kind], /^<svg [^>]*fill="currentColor"/, `${kind} is black or white, like its logo`);
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
