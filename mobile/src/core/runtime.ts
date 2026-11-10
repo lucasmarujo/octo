@@ -14,8 +14,8 @@ export async function boot(): Promise<void> {
   Link.addListener('onMessage', event => links.onMessage(event.id, event.text));
   Link.addListener('onClosed', event => links.onClosed(event.id, event.code));
   AppState.addEventListener('change', state => {
-    if (state === 'active') links.foreground();
-    else if (state === 'background') links.background();
+    if (state === 'active') links.foreground(Date.now());
+    else if (state === 'background') links.background(Date.now());
   });
   links.start(identity);
 }

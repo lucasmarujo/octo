@@ -108,10 +108,10 @@ export class DeviceLink {
     this.retryNow();
   }
 
-  suspend(): void {
-    if (!this.session && !this.timer) return;
+  restart(): void {
+    if (STOPPED.includes(this.store.get().phase)) return;
     this.drop();
-    if (!STOPPED.includes(this.store.get().phase)) this.store.patch({ phase: 'offline' });
+    this.retryNow();
   }
 
   dispose(): void {

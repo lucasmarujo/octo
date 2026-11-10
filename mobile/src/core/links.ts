@@ -13,7 +13,7 @@ export type Attention = {
 
 export type Noticed = (attention: Attention) => void;
 
-export const SUSPEND_AFTER_MS = 30000;
+export const STALE_AFTER_MS = 30000;
 
 export function attentionOf(device: string, previous: Overview | null, next: Overview): Attention[] {
   if (!previous) return [];
@@ -31,7 +31,7 @@ export function attentionOf(device: string, previous: Overview | null, next: Ove
 export class Links {
   readonly store = new Store<ReadonlyMap<string, DeviceLink>>(new Map());
   private readonly noticed = new Set<Noticed>();
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private hiddenAt: number | null = null;
   private stop: (() => void) | null = null;
   private identity: Identity | null = null;
 
@@ -47,7 +47,6 @@ export class Links {
   shut(): void {
     if (this.stop) this.stop();
     this.stop = null;
-    this.clearTimer();
     for (const link of this.store.get().values()) link.dispose();
     this.store.set(new Map());
   }
@@ -75,17 +74,17 @@ export class Links {
     this.of(ownerOf(session))?.onClosed(session, code);
   }
 
-  foreground(): void {
-    this.clearTimer();
-    for (const link of this.store.get().values()) link.reconnectNow();
+  foreground(now: number): void {
+    const away = this.hiddenAt === null ? 0 : now - this.hiddenAt;
+    this.hiddenAt = null;
+    for (const link of this.store.get().values()) {
+      if (away >= STALE_AFTER_MS) link.restart();
+      else link.reconnectNow();
+    }
   }
 
-  background(): void {
-    this.clearTimer();
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      for (const link of this.store.get().values()) link.suspend();
-    }, SUSPEND_AFTER_MS);
+  background(now: number): void {
+    this.hiddenAt = now;
   }
 
   private sync(list: Device[]): void {
@@ -121,10 +120,5 @@ export class Links {
         for (const noticed of [...this.noticed]) noticed(attention);
       }
     };
-  }
-
-  private clearTimer(): void {
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
   }
 }

@@ -1,8 +1,11 @@
 import type { Identity, Transport } from '../src/core/link';
 import { DeviceLink, ownerOf, RETRY, RETRY_MAX } from '../src/core/link';
-import { attentionOf } from '../src/core/links';
+import { devices } from '../src/core/devices';
+import { attentionOf, Links, STALE_AFTER_MS } from '../src/core/links';
 import type { AgentView, Overview } from '../src/core/protocol';
 import { OUTDATED, REPLACED, UNPAIRED } from '../src/core/protocol';
+
+jest.mock('../src/core/storage', () => ({ load: jest.fn(async () => null), save: jest.fn(async () => {}) }));
 
 type Call = [method: 'open' | 'send' | 'close', id: string, ...rest: string[]];
 
@@ -144,14 +147,16 @@ describe('a link to one computer', () => {
     expect(link.store.get().phase).toBe('connecting');
   });
 
-  it('lets go of the socket in the background and comes back on its own', () => {
+  it('opens a fresh socket when asked to restart, unless the computer turned the phone away', () => {
     const wire = transport();
     const link = new DeviceLink('home', 'https://h', KEY, wire, IDENTITY);
     const session = opened(link, wire);
-    link.suspend();
+    link.restart();
     expect(wire.calls).toContainEqual(['close', session]);
-    expect(link.store.get().phase).toBe('offline');
-    link.reconnectNow();
+    expect(wire.calls.filter(call => call[0] === 'open')).toHaveLength(2);
+    const fresh = wire.calls[wire.calls.length - 1][1];
+    link.onClosed(fresh, UNPAIRED);
+    link.restart();
     expect(wire.calls.filter(call => call[0] === 'open')).toHaveLength(2);
   });
 
@@ -178,5 +183,28 @@ describe('what deserves the attention of the user', () => {
       ['home', 2, 'done'],
     ]);
     expect(attentionOf('home', null, after)).toEqual([]);
+  });
+});
+
+describe('coming back to the app', () => {
+  it('keeps the sockets after a short trip away and opens fresh ones after a long one', () => {
+    const wire = transport();
+    const links = new Links(wire);
+    devices.set([
+      { id: 'home', url: 'https://home', key: KEY, name: 'home', addedAt: 0, prefs: { who: null, worktree: false, bypass: false } },
+      { id: 'work', url: 'https://work', key: KEY, name: 'work', addedAt: 0, prefs: { who: null, worktree: false, bypass: false } },
+    ]);
+    links.start(IDENTITY);
+    const opens = () => wire.calls.filter(call => call[0] === 'open').length;
+    expect(opens()).toBe(2);
+    links.background(1000);
+    links.foreground(1000 + STALE_AFTER_MS - 1);
+    expect(opens()).toBe(2);
+    links.background(5000);
+    links.foreground(5000 + STALE_AFTER_MS);
+    expect(opens()).toBe(4);
+    expect(wire.calls.filter(call => call[0] === 'close')).toHaveLength(2);
+    links.shut();
+    devices.set([]);
   });
 });
