@@ -14,6 +14,7 @@ import { kindColor } from '../../ui/atoms';
 import { Icon } from '../../ui/Icon';
 import { useKeyboard } from '../../ui/keyboard';
 import { Press } from '../../ui/Press';
+import { ProviderMark } from '../../ui/ProviderMark';
 import { useDevice } from './context';
 
 export type ComposerHandle = {
@@ -28,6 +29,7 @@ type Props = {
 };
 
 const INPUT_MAX = 132;
+const PICK_ICON = 14;
 
 const styles = (t: Theme) =>
   StyleSheet.create({
@@ -134,7 +136,8 @@ export const Composer = React.forwardRef<ComposerHandle, Props>(function Compose
           {overview ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.picks} contentContainerStyle={s.picksContent} keyboardShouldPersistTaps="handled">
               <Press style={[s.pick, { backgroundColor: mix(tint, 14) }]} onPress={onWho}>
-                <Text style={[s.whoText, { color: tint }]}>{`${model.kindMark(who)} ${label(who)}`}</Text>
+                <ProviderMark kind={who} size={PICK_ICON} style={[s.whoText, { color: tint }]} />
+                <Text style={[s.whoText, { color: tint }]}>{label(who)}</Text>
                 <Icon name="chevron" size={12} color={tint} stroke={2.4} />
               </Press>
               <Press style={s.pick} onPress={onWhere}>

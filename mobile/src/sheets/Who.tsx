@@ -16,6 +16,7 @@ import { kindColor } from '../ui/atoms';
 import { Icon } from '../ui/Icon';
 import { Group, Option } from '../ui/Option';
 import { Press } from '../ui/Press';
+import { ProviderMark } from '../ui/ProviderMark';
 import { RingArt } from '../ui/RingArt';
 import { closeSheet, openSheet, SheetScroll } from '../ui/Sheet';
 
@@ -27,6 +28,7 @@ type Line = {
 const RING = 36;
 const RING_STROKE = 5;
 const RING_MARK = 12;
+const OPTION_ICON = 18;
 
 export function usageLine(entry: UsageEntry, now: number): Line {
   if (entry.windows.length) {
@@ -102,7 +104,7 @@ function WhoBody({ scope }: { scope: DeviceScope }) {
         {plain.map(kind => (
           <Option
             key={kind}
-            icon={() => <Text style={[s.mark, { color: kindColor(t, kind) }]}>{model.kindMark(kind)}</Text>}
+            icon={() => <ProviderMark kind={kind} size={OPTION_ICON} style={[s.mark, { color: kindColor(t, kind) }]} />}
             iconFill={mix(kindColor(t, kind), 14)}
             text={title(kind)}
             detail={kind === 'terminal' ? 'a shell in the folder' : null}

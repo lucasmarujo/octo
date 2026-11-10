@@ -8,6 +8,7 @@ import { budgeted } from '../src/sheets/Diff';
 import { pathAt } from '../src/sheets/Where';
 import { usageLine } from '../src/sheets/Who';
 import { ANDROID_STAND_INS, termText } from '../src/theme/type';
+import { providerXml } from '../src/ui/ProviderMark';
 
 jest.mock('../modules/octo-scanner', () => ({ __esModule: true, default: { requestAccess: jest.fn() }, ScannerView: () => null }));
 jest.mock('../modules/octo-link', () => ({ __esModule: true, default: { open: jest.fn(), send: jest.fn(), close: jest.fn(), addListener: jest.fn() } }));
@@ -59,6 +60,24 @@ describe('the plan usage', () => {
     expect(usageLine({ kind: 'opencode', windows: [], credits: 18.4, problem: null }, NOW)).toEqual({ text: '$18.40 in funds', tone: 'muted' });
     expect(ringValue({ kind: 'pi', windows: [], credits: null, problem: null }, NOW)).toEqual({ text: 'no limits', tone: 'faint' });
     expect(usageLine({ kind: 'pi', windows: [], credits: null, problem: 'signed out' }, NOW)).toEqual({ text: 'signed out', tone: 'faint' });
+  });
+});
+
+describe('the provider of an agent', () => {
+  const desktop = jest.requireActual<{ PROVIDER_ICONS: Record<string, string> }>('../../desktop/ui/js/icons.js').PROVIDER_ICONS;
+
+  it('is drawn with the very logo the desktop shows', () => {
+    for (const kind of ['claude', 'codex', 'kilo', 'opencode', 'antigravity', 'grok', 'qwen', 'kimi'] as const) {
+      expect(providerXml(kind)).toBe(desktop[kind]);
+      expect(providerXml(kind)).toContain('viewBox="0 0 24 24"');
+    }
+  });
+
+  it('keeps the mark of the agents without a logo and of the terminal', () => {
+    expect(providerXml('pi')).toBeNull();
+    expect(providerXml('terminal')).toBeNull();
+    expect(providerXml('toString')).toBeNull();
+    expect(model.kindMark('pi')).toBe('π');
   });
 });
 

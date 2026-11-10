@@ -13,12 +13,14 @@ import type { Theme } from '../theme/tokens';
 import { mono, sans } from '../theme/type';
 import { kindColor } from '../ui/atoms';
 import { Note } from '../ui/Option';
+import { ProviderMark } from '../ui/ProviderMark';
 import { RingArt, usageColor } from '../ui/RingArt';
 import { openSheet, SheetScroll } from '../ui/Sheet';
 
 const RING = 112;
 const RING_STROKE = 4.5;
 const RING_MARK = 18;
+const BIG_ICON = 18;
 
 const styles = (t: Theme) =>
   StyleSheet.create({
@@ -34,6 +36,7 @@ const styles = (t: Theme) =>
     resets: { ...mono(11), color: t.textFaint, paddingLeft: 14 },
     bigPercent: { ...sans(30, 800, 30), color: t.text },
     bigMark: mono(18, 700),
+    bigLabel: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     pair: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
     mini: { flexGrow: 1, flexShrink: 1, flexBasis: '40%', gap: 4, padding: 14, borderRadius: 18, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
     miniName: sans(15, 700),
@@ -53,7 +56,10 @@ function Card({ entry, now }: { entry: UsageEntry; now: number }) {
         {only ? (
           <>
             <Text style={s.bigPercent}>{`${Math.round(only.used)}%`}</Text>
-            <Text style={[s.bigMark, { color: tint }]}>{`${model.kindMark(entry.kind)} ${only.label}`}</Text>
+            <View style={s.bigLabel}>
+              <ProviderMark kind={entry.kind} size={BIG_ICON} style={[s.bigMark, { color: tint }]} />
+              <Text style={[s.bigMark, { color: tint }]}>{only.label}</Text>
+            </View>
           </>
         ) : null}
       </RingArt>

@@ -10,6 +10,7 @@ import { useReduced, useTheme } from '../theme/ThemeContext';
 import type { Theme } from '../theme/tokens';
 import { mono } from '../theme/type';
 import { kindColor } from './atoms';
+import { ProviderMark } from './ProviderMark';
 import { useTween } from './tween';
 
 type Props = {
@@ -27,6 +28,7 @@ const INNER = 18.5;
 const DASHED_STROKE = 2;
 const DASHED = [3, 5];
 const TURN = 2 * Math.PI;
+const ICON_SCALE = 1.15;
 
 export function usageColor(t: Theme, used: number): string {
   return { green: t.done, yellow: t.waiting, red: t.lost }[model.usageTone(used)];
@@ -45,7 +47,8 @@ export function RingArt({ entry, size, stroke, markSize, children }: Props) {
   const t = useTheme();
   const windows = entry.windows.slice(0, 2);
   const funds = !windows.length && entry.credits !== null;
-  const mark = windows.length || entry.credits === null ? model.kindMark(entry.kind) : `$${Math.round(entry.credits)}`;
+  const markStyle = [mono(markSize, 700), { color: kindColor(t, entry.kind) }];
+  const mark = funds ? <Text style={markStyle}>{`$${Math.round(entry.credits!)}`}</Text> : <ProviderMark kind={entry.kind} size={Math.round(markSize * ICON_SCALE)} style={markStyle} />;
   return (
     <View style={{ width: size, height: size, flexShrink: 0 }}>
       <Svg width={size} height={size} viewBox={`0 0 ${VIEW} ${VIEW}`} style={{ transform: [{ rotate: '-90deg' }] }}>
@@ -61,7 +64,7 @@ export function RingArt({ entry, size, stroke, markSize, children }: Props) {
         {funds ? <Circle cx={CENTER} cy={CENTER} r={OUTER} fill="none" stroke={mix(t.text, 25)} strokeWidth={stroke} /> : null}
         {!windows.length && !funds ? <Circle cx={CENTER} cy={CENTER} r={OUTER} fill="none" stroke={t.track} strokeWidth={DASHED_STROKE} strokeDasharray={DASHED} /> : null}
       </Svg>
-      <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>{children || <Text style={[mono(markSize, 700), { color: kindColor(t, entry.kind) }]}>{mark}</Text>}</View>
+      <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>{children || mark}</View>
     </View>
   );
 }
