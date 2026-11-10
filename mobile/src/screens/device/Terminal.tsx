@@ -11,7 +11,7 @@ import { mix } from '../../theme/color';
 import { useStyles } from '../../theme/styles';
 import { useReduced, useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/tokens';
-import { mono, sans, TERM } from '../../theme/type';
+import { mono, sans, TERM, termText } from '../../theme/type';
 import { toneColor } from '../../ui/atoms';
 import { Press } from '../../ui/Press';
 import { Rise } from '../../ui/Rise';
@@ -76,12 +76,13 @@ const Row = React.memo(function Row({ runs, font, theme }: { runs: Run[]; font: 
     <Text numberOfLines={1} ellipsizeMode="clip" style={{ fontFamily: TERM, fontSize: font, lineHeight: height, height, color: theme.termFg, includeFontPadding: false }}>
       {runs.map(([text, fg, bg, flags], index) => {
         const style = runStyle(theme, fg, bg, flags);
+        const shown = termText(text);
         return style ? (
           <Text key={index} style={style}>
-            {text}
+            {shown}
           </Text>
         ) : (
-          text
+          shown
         );
       })}
     </Text>

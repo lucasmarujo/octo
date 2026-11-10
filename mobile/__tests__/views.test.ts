@@ -7,6 +7,7 @@ import { scanWindow } from '../src/screens/Scan';
 import { budgeted } from '../src/sheets/Diff';
 import { pathAt } from '../src/sheets/Where';
 import { usageLine } from '../src/sheets/Who';
+import { ANDROID_STAND_INS, termText } from '../src/theme/type';
 
 jest.mock('../modules/octo-scanner', () => ({ __esModule: true, default: { requestAccess: jest.fn() }, ScannerView: () => null }));
 jest.mock('../modules/octo-link', () => ({ __esModule: true, default: { open: jest.fn(), send: jest.fn(), close: jest.fn(), addListener: jest.fn() } }));
@@ -84,6 +85,22 @@ describe('the changes of an agent', () => {
     ]);
     expect(shown.cut).toBe(true);
     expect(budgeted(files, 100).cut).toBe(false);
+  });
+});
+
+describe('the terminal on Android', () => {
+  it('draws the symbols of Claude that no Android font carries with ones it does, cell for cell', () => {
+    const footer = '  ⏵⏵ accept edits on (shift+tab to cycle)';
+    expect(termText(footer, ANDROID_STAND_INS)).toBe('  ▸▸ accept edits on (shift+tab to cycle)');
+    expect(termText('⏺ Read(app.js)', ANDROID_STAND_INS)).toBe('● Read(app.js)');
+    expect(termText('⏸ plan mode on', ANDROID_STAND_INS)).toBe('‖ plan mode on');
+    expect(termText(footer, ANDROID_STAND_INS)).toHaveLength(footer.length);
+  });
+
+  it('leaves the text alone where the fonts carry them', () => {
+    const line = '  ⎿  Read 412 lines ⏵⏵ ✻ ● ⠋';
+    expect(termText(line, null)).toBe(line);
+    expect(termText('  ⎿  Read 412 lines ✻ ⠋', ANDROID_STAND_INS)).toBe('  ⎿  Read 412 lines ✻ ⠋');
   });
 });
 
