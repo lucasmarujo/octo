@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use orkai::config::Config;
 use orkai::model::{AgentId, AgentKind, AgentState};
 use orkai::notify::{self, Alert, Notifier};
+use orkai::pwa::push;
 use orkai::sound::{Chime, Player};
 use serde::Deserialize;
 use tauri::{AppHandle, State};
@@ -101,6 +102,7 @@ pub fn alert(app: AppHandle, link: State<'_, Link>, alerts: Vec<AlertView>, lang
         let _ = app.notification().builder().title(NOTIFICATION_TITLE).body(body).show();
         bounce_in_the_dock(&app);
     }
+    push::notify(hub.store().home(), &alerts);
     let notifier = Notifier::start(launcher.config());
     for alert in alerts {
         notifier.send(alert);
@@ -161,6 +163,21 @@ mod tests {
         assert!(!code.contains("terminal_sequence"), "the window has no bell to fall back to");
         assert!(!code.contains(".sound("), "a notification without a sound name is silent on Windows and macOS");
         assert!(code.contains("notifier.send(alert)"), "the notify command runs whatever the sound does");
+    }
+
+    #[test]
+    fn every_alert_also_reaches_the_paired_phones_whatever_the_desktop_settings() {
+        let code = include_str!("alerts.rs").split("#[cfg(test)]").next().unwrap();
+        let command = code.split("pub fn alert(").nth(1).unwrap();
+        assert!(command.contains("push::notify(hub.store().home(), &alerts);"), "the alert command pushes");
+        let notified =
+            command.split("if let Some(body) = delivery.notification {").nth(1).unwrap().split('}').next().unwrap();
+        assert!(!notified.contains("push::"), "turning the desktop notifications off keeps the phone ones");
+        let pushed = command.find("push::notify").unwrap();
+        assert!(
+            pushed < command.find("for alert in alerts").unwrap(),
+            "the alerts are pushed before the notify command takes them"
+        );
     }
 
     #[test]

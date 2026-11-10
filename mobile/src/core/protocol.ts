@@ -113,7 +113,9 @@ export type PeekMsg = { type: 'peek'; previews: Preview[] };
 
 export type BridgeMsg = Welcome | StateMsg | UsageMsg | ScreenMsg | NoticeMsg | FoldersMsg | FolderSearchMsg | DiffMsg | PeekMsg;
 
-export type DeviceMsg = { type: 'device'; model: string | null; osVersion: string | null; standalone: boolean; client: string | null };
+export type PushTo = { token: string; device: string };
+
+export type DeviceMsg = { type: 'device'; model: string | null; osVersion: string | null; standalone: boolean; client: string | null; push?: PushTo | null };
 
 export type PhoneMsg =
   | DeviceMsg

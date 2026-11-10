@@ -4,6 +4,7 @@ import { devices } from '../src/core/devices';
 import { attentionOf, Links, STALE_AFTER_MS } from '../src/core/links';
 import type { AgentView, Overview } from '../src/core/protocol';
 import { OUTDATED, REPLACED, UNPAIRED } from '../src/core/protocol';
+import { push, pushTarget, shown } from '../src/core/push';
 
 jest.mock('../src/core/storage', () => ({ load: jest.fn(async () => null), save: jest.fn(async () => {}) }));
 
@@ -79,6 +80,21 @@ describe('a link to one computer', () => {
     expect(wire.calls.filter(call => call[0] === 'send')).toEqual([]);
     link.onReady(session);
     expect(wire.calls.filter(call => call[0] === 'send')).toEqual([['send', session, JSON.stringify(IDENTITY.device)]]);
+  });
+
+  it('gives the computer the push token of the phone and its own name for that computer once notifications are allowed', () => {
+    const wire = transport();
+    const link = new DeviceLink('home', 'https://h', KEY, wire, IDENTITY);
+    const session = opened(link, wire);
+    const sent = () => wire.calls.filter(call => call[0] === 'send').map(call => JSON.parse(call[2]));
+    link.announce('ExponentPushToken[abc]');
+    expect(sent()).toEqual([]);
+    link.onReady(session);
+    expect(sent()).toEqual([{ ...IDENTITY.device, push: { token: 'ExponentPushToken[abc]', device: 'home' } }]);
+    link.announce('ExponentPushToken[abc]');
+    expect(sent()).toHaveLength(1);
+    link.announce(null);
+    expect(sent()[1]).toEqual({ ...IDENTITY.device, push: null });
   });
 
   it('goes live on the welcome and keeps the last workspace and usage', () => {
@@ -183,6 +199,58 @@ describe('what deserves the attention of the user', () => {
       ['home', 2, 'done'],
     ]);
     expect(attentionOf('home', null, after)).toEqual([]);
+  });
+});
+
+describe('the notifications of the phone', () => {
+  afterEach(() => push.set({ known: false, token: null }));
+
+  it('reach every computer once the phone knows its token, and the ones paired later', () => {
+    const wire = transport();
+    const links = new Links(wire);
+    devices.set([{ id: 'home', url: 'https://home', key: KEY, name: 'home', addedAt: 0, prefs: { who: null, worktree: false, bypass: false } }]);
+    links.start(IDENTITY);
+    const ready = () => {
+      for (const call of wire.calls.filter(entry => entry[0] === 'open')) links.onReady(call[1]);
+    };
+    ready();
+    const pushes = () => wire.calls.filter(call => call[0] === 'send').map(call => [ownerOf(call[1]), JSON.parse(call[2]).push]);
+    expect(pushes()).toEqual([['home', undefined]]);
+    push.set({ known: true, token: 'ExponentPushToken[abc]' });
+    expect(pushes()).toEqual([
+      ['home', undefined],
+      ['home', { token: 'ExponentPushToken[abc]', device: 'home' }],
+    ]);
+    devices.set([...devices.get(), { id: 'work', url: 'https://work', key: KEY, name: 'work', addedAt: 0, prefs: { who: null, worktree: false, bypass: false } }]);
+    ready();
+    expect(pushes().filter(([device]) => device === 'work')).toEqual([['work', { token: 'ExponentPushToken[abc]', device: 'work' }]]);
+    links.shut();
+    devices.set([]);
+  });
+
+  it('stop for a computer the phone forgets, which is told so while it still listens', () => {
+    const wire = transport();
+    const links = new Links(wire);
+    push.set({ known: true, token: 'ExponentPushToken[abc]' });
+    devices.set([{ id: 'home', url: 'https://home', key: KEY, name: 'home', addedAt: 0, prefs: { who: null, worktree: false, bypass: false } }]);
+    links.start(IDENTITY);
+    const session = wire.calls.find(call => call[0] === 'open')![1];
+    links.onReady(session);
+    devices.set([]);
+    const last = wire.calls.filter(call => call[0] === 'send').pop()!;
+    expect(JSON.parse(last[2]).push).toBeNull();
+    expect(wire.calls[wire.calls.length - 1]).toEqual(['close', session]);
+    links.shut();
+  });
+
+  it('open the agent of the notification and stay out of the way while the app shows that computer', () => {
+    expect(pushTarget({ device: 'home', agent: 4 })).toEqual({ device: 'home', agent: 4 });
+    for (const junk of [null, undefined, 'home', { device: 'home' }, { device: 4, agent: 4 }, { device: 'home', agent: '4' }]) expect(pushTarget(junk)).toBeNull();
+    expect(shown(true, true, 'live')).toBe(false);
+    expect(shown(true, true, 'offline')).toBe(true);
+    expect(shown(true, false, 'live')).toBe(true);
+    expect(shown(true, true, null)).toBe(true);
+    expect(shown(false, false, null)).toBe(false);
   });
 });
 

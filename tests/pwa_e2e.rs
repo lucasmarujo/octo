@@ -18,8 +18,9 @@ use orkai::protocol::{ClientMsg, HolderMsg, TermSize};
 use orkai::pwa::crypto::{self, Channel, Ephemeral, Secret, Side};
 use orkai::pwa::hub::{Event, Hub};
 use orkai::pwa::protocol::{
-    AgentView, BridgeMsg, Details, Greeting, Overview, PhoneMsg, Screen, StartRequest, Tone, VERSION,
+    AgentView, BridgeMsg, Details, Greeting, Overview, PhoneMsg, Push, Screen, StartRequest, Tone, VERSION,
 };
+use orkai::pwa::push;
 use orkai::pwa::server::{OUTDATED, Outbox, Peer, REPLACED, Server, UNPAIRED};
 use orkai::store::Store;
 
@@ -73,6 +74,7 @@ fn a_paired_phone_reports_its_device_to_the_desktop() {
         os_version: Some("14".into()),
         standalone: true,
         client: Some("tab-1".into()),
+        push: None,
     });
     let deadline = Instant::now() + TIMEOUT;
     while fx.hub.devices().first().and_then(|device| device.model.as_deref()) != Some("Pixel 8")
@@ -88,6 +90,39 @@ fn a_paired_phone_reports_its_device_to_the_desktop() {
 }
 
 #[test]
+fn a_phone_app_that_allows_notifications_is_kept_for_the_alerts_until_it_turns_them_off() {
+    let fx = fixture();
+    let home = fx.store.home().clone();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    let device = |push: Option<Option<Push>>| PhoneMsg::Device {
+        model: Some("Pixel 8".into()),
+        os_version: Some("14".into()),
+        standalone: true,
+        client: Some("app-1".into()),
+        push,
+    };
+    let kept = |want: usize| {
+        let deadline = Instant::now() + TIMEOUT;
+        while push::phones(&home).len() != want && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        push::phones(&home)
+    };
+    phone.send(&device(Some(Some(Push { token: "ExponentPushToken[abc]".into(), device: "d1".into() }))));
+    let phones = kept(1);
+    assert_eq!(phones.len(), 1);
+    assert_eq!(
+        (phones[0].client.as_str(), phones[0].token.as_str(), phones[0].device.as_str()),
+        ("app-1", "ExponentPushToken[abc]", "d1")
+    );
+    phone.send(&device(None));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(push::phones(&home).len(), 1, "a phone that does not know yet keeps what it said before");
+    phone.send(&device(Some(None)));
+    assert!(kept(0).is_empty(), "a phone that turned notifications off is forgotten");
+}
+
+#[test]
 fn a_tab_replaced_by_another_tab_of_the_same_browser_is_told_so_and_the_new_one_stays() {
     let fx = fixture();
     let tab = |model: &str| PhoneMsg::Device {
@@ -95,6 +130,7 @@ fn a_tab_replaced_by_another_tab_of_the_same_browser_is_told_so_and_the_new_one_
         os_version: None,
         standalone: false,
         client: Some("tab-1".into()),
+        push: None,
     };
     let listed = |model: &str| {
         let deadline = Instant::now() + TIMEOUT;

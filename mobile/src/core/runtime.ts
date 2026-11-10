@@ -4,6 +4,7 @@ import Link from '../../modules/octo-link';
 import { loadDevices } from './devices';
 import { loadIdentity } from './identity';
 import { Links } from './links';
+import { startNotifications } from './notifications';
 import { loadSettings } from './settings';
 
 export const links = new Links(Link);
@@ -18,4 +19,5 @@ export async function boot(): Promise<void> {
     else if (state === 'background') links.background(Date.now());
   });
   links.start(identity);
+  startNotifications(links);
 }

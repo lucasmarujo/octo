@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::folders::PlaceKind;
 use crate::model::{AgentId, AgentKind, AgentState, TestState};
@@ -27,6 +27,8 @@ pub enum PhoneMsg {
         standalone: bool,
         #[serde(default)]
         client: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "present")]
+        push: Option<Option<Push>>,
     },
     Open {
         agent: AgentId,
@@ -177,6 +179,17 @@ pub enum PhoneMsg {
         #[serde(default)]
         command: Option<String>,
     },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Push {
+    pub token: String,
+    pub device: String,
+}
+
+fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(deserializer: D) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -503,6 +516,27 @@ mod tests {
                     os_version: Some("14".into()),
                     standalone: true,
                     client: Some("tab-1".into()),
+                    push: None,
+                },
+            ),
+            (
+                r#"{"type":"device","model":"Pixel 8","client":"c1","push":{"token":"ExponentPushToken[abc]","device":"d1"}}"#,
+                PhoneMsg::Device {
+                    model: Some("Pixel 8".into()),
+                    os_version: None,
+                    standalone: false,
+                    client: Some("c1".into()),
+                    push: Some(Some(Push { token: "ExponentPushToken[abc]".into(), device: "d1".into() })),
+                },
+            ),
+            (
+                r#"{"type":"device","client":"c1","push":null}"#,
+                PhoneMsg::Device {
+                    model: None,
+                    os_version: None,
+                    standalone: false,
+                    client: Some("c1".into()),
+                    push: Some(None),
                 },
             ),
             (r#"{"type":"open","agent":3,"rows":30,"cols":48}"#, PhoneMsg::Open { agent: 3, rows: 30, cols: 48 }),

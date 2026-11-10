@@ -26,7 +26,8 @@
       },
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
@@ -34,7 +35,8 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT"
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -99,6 +101,13 @@
               }
             ]
           }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#e85eb6"
         }
       ]
     ],

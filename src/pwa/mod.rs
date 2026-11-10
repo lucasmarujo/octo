@@ -6,6 +6,7 @@ pub mod crypto;
 pub mod http;
 pub mod hub;
 pub mod protocol;
+pub mod push;
 pub mod qr;
 pub mod screen;
 pub mod server;

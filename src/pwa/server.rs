@@ -21,6 +21,7 @@ use crate::pwa::crypto::{self, Channel, Ephemeral, Secret, Side};
 use crate::pwa::http;
 use crate::pwa::hub::{Device, Event, Hub, device_text, encode};
 use crate::pwa::protocol::{BridgeMsg, Greeting, PhoneMsg, Tone, VERSION};
+use crate::pwa::push;
 use crate::pwa::screen::Mirror;
 use crate::tui::keys;
 use crate::tui::view::TermView;
@@ -267,7 +268,10 @@ impl Peer {
     pub fn handle(&mut self, message: PhoneMsg, out: &mut impl Outbox) -> io::Result<()> {
         match message {
             PhoneMsg::Sync => self.hub.nudge(),
-            PhoneMsg::Device { model, os_version, standalone, client } => {
+            PhoneMsg::Device { model, os_version, standalone, client, push } => {
+                if let Some(push) = push {
+                    push::register(self.hub.store().home(), client.as_deref(), push.as_ref());
+                }
                 self.hub.refine(self.id, model, os_version, standalone, client)
             }
             PhoneMsg::Open { agent, rows, cols } => self.open(agent, clamp(rows, cols)),

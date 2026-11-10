@@ -15,13 +15,14 @@ use crate::paths::{HOME_ENV, Home};
 use crate::pwa::cloudflared;
 use crate::pwa::crypto::{self, Secret};
 use crate::pwa::hub::{Device, Hub};
+use crate::pwa::push;
 use crate::pwa::server::Server;
 use crate::pwa::tunnel::{self, QuickTunnel, Tunnel, TunnelKind};
 use crate::store::Store;
 use crate::util::{lock, now_ms};
 
 pub const COMMAND: &str = "__pwa";
-pub const VERSION: u32 = 15;
+pub const VERSION: u32 = 16;
 pub const DEFAULT_PORT: u16 = 7470;
 pub const STALE_AFTER_MS: u64 = 15_000;
 pub const LINK_KEY: &str = "k";
@@ -153,6 +154,7 @@ pub fn load_secret(home: &Home) -> io::Result<Secret> {
 
 pub fn forget_phones(home: &Home) -> io::Result<()> {
     fsutil::remove_file_if_exists(&secret_path(home))?;
+    fsutil::remove_file_if_exists(&push::path(home))?;
     fsutil::remove_file_if_exists(&tunnel_path(home))
 }
 
@@ -556,8 +558,12 @@ mod tests {
         };
         fsutil::write_json_atomic(&tunnel_path(&home), &saved).unwrap();
         assert_eq!(saved_tunnel(&home).unwrap(), saved, "a saved tunnel is reused, so its link never changes");
+        let notified = crate::pwa::protocol::Push { token: "ExponentPushToken[abc]".into(), device: "d1".into() };
+        push::register(&home, Some("c1"), Some(&notified));
+        assert_eq!(push::phones(&home).len(), 1);
         forget_phones(&home).unwrap();
         assert!(load_tunnel(&home).is_none());
+        assert!(push::phones(&home).is_empty(), "a forgotten phone gets no more notifications");
         assert_ne!(load_secret(&home).unwrap(), secret);
         std::fs::remove_dir_all(home.root()).unwrap();
     }

@@ -3,6 +3,7 @@ import { changeDevice, devices } from './devices';
 import type { Heard, Identity, Transport } from './link';
 import { DeviceLink, ownerOf } from './link';
 import type { AgentView, BridgeMsg, Overview } from './protocol';
+import { push } from './push';
 import { Store } from './store';
 
 export type Attention = {
@@ -40,7 +41,12 @@ export class Links {
   start(identity: Identity): void {
     if (this.stop) return;
     this.identity = identity;
-    this.stop = devices.subscribe(() => this.sync(devices.get()));
+    const listed = devices.subscribe(() => this.sync(devices.get()));
+    const pushed = push.subscribe(() => this.announce());
+    this.stop = () => {
+      listed();
+      pushed();
+    };
     this.sync(devices.get());
   }
 
@@ -102,14 +108,24 @@ export class Links {
       }
       const link = new DeviceLink(device.id, device.url, device.key, this.transport, identity);
       link.listen(this.hear(device.id));
+      const news = push.get();
+      if (news.known) link.announce(news.token);
       link.connect();
       next.set(device.id, link);
       changed = true;
     }
     for (const [id, link] of current) {
-      if (!next.has(id)) link.dispose();
+      if (next.has(id)) continue;
+      link.announce(null);
+      link.dispose();
     }
     if (changed) this.store.set(next);
+  }
+
+  private announce(): void {
+    const news = push.get();
+    if (!news.known) return;
+    for (const link of this.store.get().values()) link.announce(news.token);
   }
 
   private hear(device: string): Heard {

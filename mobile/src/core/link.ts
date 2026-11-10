@@ -49,6 +49,7 @@ export class DeviceLink {
   private attempt = 0;
   private opened = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private pushToken: string | null | undefined = undefined;
   private readonly heard = new Set<Heard>();
   private readonly flashes = new Map<number, Flash>();
 
@@ -124,10 +125,16 @@ export class DeviceLink {
     return flash && Date.now() - flash.at < FLASH_MS ? flash.tone : null;
   }
 
+  announce(token: string | null): void {
+    if (this.pushToken === token) return;
+    this.pushToken = token;
+    if (this.ready) this.introduce();
+  }
+
   onReady(session: string): void {
     if (session !== this.session) return;
     this.ready = true;
-    this.send(this.identity.device);
+    this.introduce();
   }
 
   onMessage(session: string, text: string): void {
@@ -155,6 +162,12 @@ export class DeviceLink {
     this.attempt += 1;
     this.clearTimer();
     this.timer = setTimeout(() => this.connect(), delay);
+  }
+
+  private introduce(): void {
+    const token = this.pushToken;
+    if (token === undefined) this.send(this.identity.device);
+    else this.send({ ...this.identity.device, push: token ? { token, device: this.id } : null });
   }
 
   private handle(message: BridgeMsg): void {

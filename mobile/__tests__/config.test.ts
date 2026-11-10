@@ -7,11 +7,34 @@ const { readFileSync } = jest.requireActual<{ readFileSync(path: string, encodin
 const { join } = jest.requireActual<{ join(...segments: string[]): string }>('path');
 
 describe('the store builds', () => {
-  it('ask only for the camera, to scan the pairing code, and the vibration of the haptics', () => {
-    expect(app.expo.android.permissions).toEqual(['android.permission.CAMERA', 'android.permission.VIBRATE']);
+  it('ask only for the camera, to scan the pairing code, the vibration of the haptics and the notifications of the agents', () => {
+    expect(app.expo.android.permissions).toEqual(['android.permission.CAMERA', 'android.permission.VIBRATE', 'android.permission.POST_NOTIFICATIONS']);
     expect(app.expo.android.blockedPermissions).toEqual(
-      expect.arrayContaining(['android.permission.USE_BIOMETRIC', 'android.permission.USE_FINGERPRINT', 'android.permission.RECORD_AUDIO', 'android.permission.SYSTEM_ALERT_WINDOW']),
+      expect.arrayContaining(['android.permission.USE_BIOMETRIC', 'android.permission.USE_FINGERPRINT', 'android.permission.RECORD_AUDIO', 'android.permission.SYSTEM_ALERT_WINDOW', 'android.permission.RECEIVE_BOOT_COMPLETED']),
     );
+  });
+
+  it('show the notifications of the agents with the prompt of Octo in the status bar', () => {
+    expect(app.expo.plugins).toContainEqual(['expo-notifications', { icon: './assets/notification-icon.png', color: '#e85eb6' }]);
+  });
+
+  it('take the Firebase file of the push from the build and the production push environment for the stores', () => {
+    const config = (env: Record<string, string>) => {
+      const saved = { ...process.env };
+      Object.assign(process.env, env);
+      let made: { android: { googleServicesFile?: string }; plugins: unknown[] } | null = null;
+      jest.isolateModules(() => {
+        made = require('../app.config.js')({ config: app.expo });
+      });
+      process.env = saved;
+      return made!;
+    };
+    const local = config({});
+    expect(local.android.googleServicesFile).toBeUndefined();
+    expect(local.plugins).toContainEqual(['expo-notifications', { icon: './assets/notification-icon.png', color: '#e85eb6' }]);
+    const store = config({ GOOGLE_SERVICES_JSON: '/eas/google-services.json', EAS_BUILD_PROFILE: 'production' });
+    expect(store.android.googleServicesFile).toBe('/eas/google-services.json');
+    expect(store.plugins).toContainEqual(['expo-notifications', { icon: './assets/notification-icon.png', color: '#e85eb6', mode: 'production' }]);
   });
 
   it('keep the pairing keys without asking for Face ID, which the app never uses', () => {
