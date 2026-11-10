@@ -7,6 +7,16 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.34',
+    date: '2026-11-10',
+    en: [
+      'The folder picker has a New folder button (Ctrl+Shift+N): name it and it is made inside the folder you are looking at, already picked so the agents can start there.',
+    ],
+    'pt-BR': [
+      'O seletor de pastas ganhou o botão Nova pasta (Ctrl+Shift+N): dê um nome e ela é criada dentro da pasta que você está vendo, já selecionada para os agentes começarem nela.',
+    ],
+  },
+  {
     version: '0.2.33',
     date: '2026-11-10',
     en: [
