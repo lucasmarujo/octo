@@ -3,7 +3,7 @@ import { $, h, storage, svg } from './dom.js';
 import { t } from './i18n.js';
 import {
   ICON_ALERT, ICON_BRANCH, ICON_CHEVRON_RIGHT, ICON_CLOCK, ICON_CODE, ICON_DESKTOP, ICON_DOCUMENT,
-  ICON_DOWNLOAD, ICON_DRIVE, ICON_EYE, ICON_FOLDER, ICON_FOLDER_UP, ICON_HOME, ICON_SEARCH,
+  ICON_DOWNLOAD, ICON_DRIVE, ICON_EYE, ICON_FOLDER, ICON_FOLDER_PLUS, ICON_FOLDER_UP, ICON_HOME, ICON_SEARCH,
 } from './icons.js';
 import { state, worktreeOn } from './state.js';
 import { send } from './transport.js';
@@ -99,6 +99,13 @@ export function emptyTypedNote(tail, typed) {
   return [t('No folder starts with “{name}” here', { name: tail }), t('Enter goes to {path}', { path: typed })];
 }
 
+export function makeProblemText(problem, name) {
+  if (problem === 'exists') return t('{name} already exists here', { name });
+  if (problem === 'invalid') return t('Pick another name · no slashes, : * ? " < > | or a dot at the end');
+  if (problem === 'denied') return t('Octo cannot create folders here');
+  return t('Could not create the folder');
+}
+
 export function folderNote(repo, missing, worktree) {
   if (missing) return { tone: 'missing', icon: ICON_ALERT, text: t('This folder does not exist') };
   if (repo && worktree) return { tone: 'worktree', icon: ICON_BRANCH, text: t('{repo} is a git repository · each agent gets its own worktree', { repo: baseName(repo) }) };
@@ -133,6 +140,7 @@ export function pickFolder(start, onPick) {
   const pick = {
     listing: null, places: null, hidden: storage.get(HIDDEN_KEY) === 'on', active: -1, shown: [],
     typed: null, keepFilter: false, listed: 0, search: null, timer: 0, activePath: null,
+    naming: false, making: 0, problem: null,
   };
   current = pick;
 
@@ -152,6 +160,13 @@ export function pickFolder(start, onPick) {
   const places = h('div', { class: 'folder-places', role: 'group', 'aria-label': t('Places') });
   const status = h('p', { class: 'folder-status', id: 'folder-status', 'aria-live': 'polite' });
   const use = h('button', { class: 'button primary folder-use', type: 'button', onclick: () => choose() }, t('Use this folder'));
+  const newFolder = h('button', {
+    class: 'button folder-new', type: 'button', title: `${t('New folder')} (${MAC ? '⌘⇧N' : 'Ctrl+Shift+N'})`, onclick: () => startNaming(),
+  }, svg(ICON_FOLDER_PLUS), h('span', null, t('New folder')));
+  const nameInput = h('input', {
+    class: 'folder-name-input', id: 'folder-name-input', type: 'text', spellcheck: 'false', autocomplete: 'off', autocapitalize: 'off',
+    maxlength: '255', placeholder: t('Folder name'), 'aria-label': t('New folder name'),
+  });
 
   const browse = (path, keepFilter = false) => {
     pick.keepFilter = keepFilter;
@@ -180,6 +195,35 @@ export function pickFolder(start, onPick) {
     remember(path);
     closeDialog();
     onPick(path);
+  }
+
+  function startNaming() {
+    const listing = pick.listing;
+    if (!listing || listing.missing) return;
+    if (!pick.naming) nameInput.value = '';
+    Object.assign(pick, { naming: true, problem: null });
+    if (filter.value) {
+      filter.value = '';
+      update();
+    } else render();
+    nameInput.focus();
+    nameInput.select();
+  }
+
+  function stopNaming() {
+    Object.assign(pick, { naming: false, making: 0, problem: null });
+    nameInput.readOnly = false;
+    render();
+    filter.focus();
+  }
+
+  function makeFolder() {
+    const name = nameInput.value.trim();
+    if (!name) return stopNaming();
+    if (pick.making || !pick.listing) return;
+    pick.making = ++requests;
+    nameInput.readOnly = true;
+    send({ type: 'makeFolder', parent: pick.listing.path, name, seq: pick.making });
   }
 
   function complete(item) {
@@ -212,6 +256,7 @@ export function pickFolder(start, onPick) {
     const item = target();
     const name = item ? item.name : baseName(listing.path);
     use.disabled = !item && listing.missing;
+    newFolder.disabled = listing.missing;
     use.replaceChildren(h('span', null, t('Use {name}', { name })));
     use.title = item ? item.path : listing.path;
     const summary = folderNote(item ? item.repo : listing.repo, !item && listing.missing, worktreeOn());
@@ -233,6 +278,13 @@ export function pickFolder(start, onPick) {
     h('button', { class: 'folder-open', type: 'button', tabindex: '-1', title: t('Open {name}', { name: item.name }), 'aria-label': t('Open {name}', { name: item.name }), onclick: (event) => { event.stopPropagation(); browse(item.path); } }, svg(ICON_CHEVRON_RIGHT)));
   }
 
+  const namingRow = () => h('div', { class: 'folder-row folder-naming', role: 'presentation' },
+    svg(ICON_FOLDER_PLUS),
+    h('span', { class: 'folder-text' },
+      nameInput,
+      pick.problem ? h('span', { class: 'folder-name-problem', role: 'alert' }, makeProblemText(pick.problem, nameInput.value.trim())) : null),
+    h('span'),
+    h('span'));
   const note = (text, detail) => h('div', { class: 'folder-note' }, text, detail ? h('span', null, detail) : null);
   const heading = (text) => h('div', { class: 'folder-heading', role: 'presentation' }, text);
 
@@ -283,7 +335,9 @@ export function pickFolder(start, onPick) {
       else if (search?.truncated) rows.push(note(t('Stopped after the first thousands of folders.'), t('Open a folder closer to the project to search deeper.')));
     }
     pick.shown = items;
-    list.replaceChildren(...rows);
+    const naming = document.activeElement === nameInput;
+    list.replaceChildren(...(pick.naming ? [namingRow(), ...rows.filter((node) => !node.classList.contains('folder-note'))] : rows));
+    if (naming && pick.naming) nameInput.focus();
     list.removeAttribute('aria-busy');
     searching.classList.toggle('on', Boolean(text) && !pathMode() && text.length >= MIN_DEEP_QUERY && (!pick.search || pick.search.pending || pick.search.query !== text));
     const kept = pick.activePath ? items.findIndex((item) => item.path === pick.activePath) : -1;
@@ -362,11 +416,42 @@ export function pickFolder(start, onPick) {
       pick.active = -1;
       pick.activePath = null;
       pick.search = null;
+      Object.assign(pick, { naming: false, making: 0, problem: null });
+      nameInput.readOnly = false;
     }
     renderChrome();
     searchDeep();
     render();
   };
+
+  pick.onMade = (message) => {
+    if (!pick.making || message.seq !== pick.making) return;
+    pick.making = 0;
+    nameInput.readOnly = false;
+    if (message.problem) {
+      pick.problem = message.problem;
+      render();
+      nameInput.focus();
+      nameInput.select();
+      return;
+    }
+    Object.assign(pick, { naming: false, problem: null, activePath: message.path });
+    filter.focus();
+    browse(pick.listing.path);
+  };
+
+  nameInput.addEventListener('input', () => {
+    if (!pick.problem) return;
+    pick.problem = null;
+    render();
+  });
+  nameInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') makeFolder();
+    else if (event.key === 'Escape') stopNaming();
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
 
   pick.onSearch = (message) => {
     const search = pick.search;
@@ -397,6 +482,7 @@ export function pickFolder(start, onPick) {
     else if ((key === 'Backspace' || key === 'ArrowLeft') && empty) goUp();
     else if (key === 'Escape' && !empty) { filter.value = ''; update(); }
     else if ((MAC && mod && event.shiftKey && (key === '.' || key === '>')) || (!MAC && event.ctrlKey && key.toLowerCase() === 'h')) toggleHidden();
+    else if (mod && event.shiftKey && key.toLowerCase() === 'n') startNaming();
     else if ((mod && key.toLowerCase() === 'l') || (MAC && mod && event.shiftKey && key.toLowerCase() === 'g')) {
       filter.value = `${trimSep(folderCrumbs(pick.listing?.path || '~', state.home).map((crumb) => crumb.name).join('/').replace(/^\/\//, '/'))}/`;
       update();
@@ -412,6 +498,7 @@ export function pickFolder(start, onPick) {
   ], [
     status,
     h('button', { class: 'button', type: 'button', onclick: closeDialog }, t('Cancel')),
+    newFolder,
     use,
   ]);
   const closed = () => {
@@ -432,4 +519,8 @@ export function showFolders(message) {
 
 export function showFolderSearch(message) {
   if (current && $('folder-list')) current.onSearch(message);
+}
+
+export function showFolderMade(message) {
+  if (current && $('folder-list')) current.onMade(message);
 }

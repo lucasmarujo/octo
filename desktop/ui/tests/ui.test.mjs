@@ -2093,6 +2093,32 @@ test('the folder picker numbers every listing it asks for and drops a reply to a
   assert.match(rust('src/pwa/protocol.rs'), /Folders \{\n\s+path: String,[\s\S]*?#\[serde\(default\)\]\n\s+seq: u64,\n\s+\},/, 'the phone keeps sending listings without a number');
 });
 
+test('a new folder is made in the folder on screen, numbered like listings, and then picked', () => {
+  const picker = readFileSync(new URL('../js/folders.js', import.meta.url), 'utf8');
+  assert.match(picker, /send\(\{ type: 'makeFolder', parent: pick\.listing\.path, name, seq: pick\.making \}\)/, 'it lands in the folder being viewed, not the highlighted row');
+  assert.match(picker, /pick\.making = \+\+requests;/, 'the same counter as listings and searches');
+  assert.match(picker, /pick\.onMade = \(message\) => \{\n\s+if \(!pick\.making \|\| message\.seq !== pick\.making\) return;/, 'a late reply never touches a newer request');
+  assert.match(picker, /activePath: message\.path \}\);\n\s+filter\.focus\(\);\n\s+browse\(pick\.listing\.path\);/, 'the listing comes back with the new folder highlighted');
+  assert.match(picker, /t\('Cancel'\)\),\n\s+newFolder,\n\s+use,\n\s+\]\);/, 'New folder sits right left of Use');
+  assert.match(picker, /newFolder\.disabled = listing\.missing;/, 'no folder is made inside one that does not exist');
+  assert.match(readFileSync(new URL('../js/main.js', import.meta.url), 'utf8'), /case 'folderMade':\n\s+showFolderMade\(message\);/);
+  assert.match(rust('src/pwa/protocol.rs'), /MakeFolder \{\n\s+parent: String,\n\s+name: String,\n\s+seq: u64,\n\s+\},/);
+});
+
+test('every problem the core can have making a folder has its own words', async () => {
+  const { makeProblemText } = await import('../js/folders.js');
+  const { PT } = await import('../js/i18n.js');
+  const variants = rust('src/folders.rs').match(/pub enum MakeProblem \{([^}]+)\}/)[1].match(/\w+/g).map((name) => name.toLowerCase());
+  assert.deepEqual(variants, ['invalid', 'exists', 'denied', 'failed']);
+  const texts = variants.map((problem) => makeProblemText(problem, 'app'));
+  assert.equal(new Set(texts).size, variants.length, 'each problem reads differently');
+  assert.equal(makeProblemText('exists', 'app'), 'app already exists here');
+  assert.ok(makeProblemText('invalid', 'a/b').includes('slashes, : *'), 'the forbidden characters are named');
+  for (const key of ['New folder', 'Folder name', 'New folder name', '{name} already exists here', 'Pick another name · no slashes, : * ? " < > | or a dot at the end', 'Octo cannot create folders here', 'Could not create the folder']) {
+    assert.ok(Object.hasOwn(PT, key), `no Portuguese for: ${key}`);
+  }
+});
+
 test('every kind of place the core sends has its icon in the folder picker', () => {
   const variants = rust('src/folders.rs').match(/pub enum PlaceKind \{([^}]+)\}/)[1].match(/\w+/g).map((name) => name.toLowerCase());
   const picker = readFileSync(new URL('../js/folders.js', import.meta.url), 'utf8');

@@ -5,7 +5,7 @@ import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tick
 import { initComposer, renderComposer, renderPalette, setCommandRunner, toggleWorktree } from './composer.js';
 import { renameSession, runCommand } from './commands.js';
 import { closeMenu, confirm, menuShown, showCompare, showDiff, showTests } from './dialogs.js';
-import { showFolderSearch, showFolders } from './folders.js';
+import { showFolderMade, showFolderSearch, showFolders } from './folders.js';
 import { $, svg } from './dom.js';
 import { initAgentDrag } from './drag.js';
 import { OVERVIEW_TAB, SPINNER, alive, tabAfterClosing } from './format.js';
@@ -327,6 +327,9 @@ function onMessage(message) {
       break;
     case 'folderSearch':
       showFolderSearch(message);
+      break;
+    case 'folderMade':
+      showFolderMade(message);
       break;
     case 'diff':
       showDiff(message);

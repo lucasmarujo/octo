@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::folders::PlaceKind;
+use crate::folders::{MakeProblem, PlaceKind};
 use crate::model::{AgentId, AgentKind, AgentState, TestState};
 
 pub const VERSION: u32 = 2;
@@ -95,6 +95,11 @@ pub enum PhoneMsg {
         query: String,
         #[serde(default)]
         hidden: bool,
+        seq: u64,
+    },
+    MakeFolder {
+        parent: String,
+        name: String,
         seq: u64,
     },
     Diff {
@@ -240,6 +245,11 @@ pub enum BridgeMsg {
         query: String,
         hits: Vec<FolderHit>,
         truncated: bool,
+    },
+    FolderMade {
+        seq: u64,
+        path: String,
+        problem: Option<MakeProblem>,
     },
     Diff {
         agent: AgentId,
@@ -672,6 +682,10 @@ mod tests {
                 r#"{"type":"folderSearch","root":"~","query":"oc","seq":2}"#,
                 PhoneMsg::FolderSearch { root: "~".into(), query: "oc".into(), hidden: false, seq: 2 },
             ),
+            (
+                r#"{"type":"makeFolder","parent":"~/dev","name":"app","seq":5}"#,
+                PhoneMsg::MakeFolder { parent: "~/dev".into(), name: "app".into(), seq: 5 },
+            ),
         ];
         for (text, expected) in cases {
             assert_eq!(serde_json::from_str::<PhoneMsg>(text).unwrap(), expected, "{text}");
@@ -715,6 +729,17 @@ mod tests {
         assert_eq!(agent.model, None);
         let sent = serde_json::to_value(AgentView { model: Some("gpt-5".into()), ..agent }).unwrap();
         assert_eq!(sent["model"], "gpt-5");
+    }
+
+    #[test]
+    fn a_made_folder_goes_out_with_the_request_number_and_any_problem() {
+        let made = BridgeMsg::FolderMade { seq: 5, path: "/w/app".into(), problem: None };
+        assert_eq!(
+            serde_json::to_string(&made).unwrap(),
+            r#"{"type":"folderMade","seq":5,"path":"/w/app","problem":null}"#
+        );
+        let refused = BridgeMsg::FolderMade { seq: 6, path: "/w/app".into(), problem: Some(MakeProblem::Exists) };
+        assert_eq!(serde_json::to_value(&refused).unwrap()["problem"], "exists");
     }
 
     #[test]

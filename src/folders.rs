@@ -92,6 +92,22 @@ pub struct Place {
     pub path: PathBuf,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MakeProblem {
+    Invalid,
+    Exists,
+    Denied,
+    Failed,
+}
+
+pub const MAX_FOLDER_NAME: usize = 255;
+const WINDOWS_FORBIDDEN: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
+const WINDOWS_RESERVED: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2",
+    "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
 pub fn is_repo(dir: &Path) -> bool {
     dir.join(".git").exists()
 }
@@ -135,6 +151,35 @@ pub fn list(dir: &Path, hidden: bool) -> Listing {
         })
         .collect();
     Listing { dirs, truncated }
+}
+
+/// Whether `name` can be one new folder right inside another, on every system Octo runs on.
+pub fn valid_folder_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or_default();
+    !name.is_empty()
+        && name.len() <= MAX_FOLDER_NAME
+        && name.trim() == name
+        && name != "."
+        && name != ".."
+        && !name.ends_with('.')
+        && !name.chars().any(|c| c == '/' || c == '\\' || c.is_control() || WINDOWS_FORBIDDEN.contains(&c))
+        && !WINDOWS_RESERVED.iter().any(|reserved| reserved.eq_ignore_ascii_case(stem))
+}
+
+/// Creates the folder `name` right inside `parent`, which must already exist, and never one that is already there.
+pub fn make(parent: &Path, name: &str) -> Result<PathBuf, MakeProblem> {
+    if !valid_folder_name(name) {
+        return Err(MakeProblem::Invalid);
+    }
+    let path = parent.join(name);
+    match std::fs::create_dir(&path) {
+        Ok(()) => Ok(path),
+        Err(err) => Err(match err.kind() {
+            std::io::ErrorKind::AlreadyExists => MakeProblem::Exists,
+            std::io::ErrorKind::PermissionDenied => MakeProblem::Denied,
+            _ => MakeProblem::Failed,
+        }),
+    }
 }
 
 fn skipped(name: &str, under_root: bool) -> bool {
@@ -408,6 +453,47 @@ mod tests {
         assert_eq!(names, ["DEV", "Code", "Projects"]);
         assert_eq!(found[1].1, home.join("Code"));
         std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn a_new_folder_is_made_once_right_inside_the_folder_on_screen() {
+        let root = temp("make");
+        let made = make(&root, "my app").unwrap();
+        assert_eq!(made, root.join("my app"));
+        assert!(made.is_dir());
+        assert_eq!(list(&root, false).dirs.into_iter().map(|(name, ..)| name).collect::<Vec<_>>(), ["my app"]);
+        assert_eq!(make(&root, "my app"), Err(MakeProblem::Exists), "an existing folder is never reused");
+        std::fs::write(root.join("notes.txt"), "x").unwrap();
+        assert_eq!(make(&root, "notes.txt"), Err(MakeProblem::Exists), "nor a file with that name");
+        assert_eq!(make(&root.join("gone"), "app"), Err(MakeProblem::Failed), "the parent is never created");
+        assert!(!root.join("gone").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_new_folder_name_stays_one_portable_folder() {
+        let root = temp("make-name");
+        for name in [
+            "", " ", " app", "app ", ".", "..", "app.", "a/b", "a\\b", "../up", "a:b", "a*b", "a?b", "a\"b", "a<b",
+            "a|b", "a\u{0}b", "a\tb", "CON", "nul", "com1.txt", "LPT9",
+        ] {
+            assert_eq!(make(&root, name), Err(MakeProblem::Invalid), "{name:?}");
+        }
+        assert_eq!(make(&root, &"a".repeat(MAX_FOLDER_NAME + 1)), Err(MakeProblem::Invalid));
+        for name in [".config", "my-app_2", "Projeto ação", "console", "con-app", "v1.2"] {
+            assert!(valid_folder_name(name), "{name:?}");
+        }
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0, "nothing is made for a bad name");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn make_problems_reach_the_picker_in_lowercase() {
+        let sent: Vec<_> = [MakeProblem::Invalid, MakeProblem::Exists, MakeProblem::Denied, MakeProblem::Failed]
+            .iter()
+            .map(|problem| serde_json::to_value(problem).unwrap())
+            .collect();
+        assert_eq!(sent, ["invalid", "exists", "denied", "failed"]);
     }
 
     #[test]

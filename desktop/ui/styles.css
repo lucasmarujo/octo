@@ -618,6 +618,14 @@ h1, p { margin: 0; }
 .folder-status[data-tone="missing"] { color: var(--color-lost); }
 .folder-status[data-tone="blocked"] { color: var(--color-waiting); }
 .folder-use > span { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.folder-new svg { width: 15px; height: 15px; flex-shrink: 0; }
+.folder-naming { padding-top: 4px; padding-bottom: 4px; background: color-mix(in srgb, var(--color-accent) 7%, transparent); }
+.folder-naming:hover { background: color-mix(in srgb, var(--color-accent) 7%, transparent); }
+.folder-naming > svg { color: var(--color-accent); }
+.folder-name-input { width: 100%; height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--color-accent); background: var(--color-bg); color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-sm); user-select: text; }
+.folder-name-input:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent); }
+.folder-name-input::placeholder { color: var(--color-text-faint); }
+.folder-name-problem { padding: 3px 2px 0; font-size: var(--text-xs); line-height: 16px; color: var(--color-lost); white-space: normal; }
 @media (hover: none) { .folder-open { opacity: 1; } }
 @media (max-width: 640px) {
   .folder-picker .dialog-body { padding: 18px 16px 14px; }

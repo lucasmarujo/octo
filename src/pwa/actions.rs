@@ -61,6 +61,7 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         PhoneMsg::Recover { session } => recover(hub, &session, reply),
         PhoneMsg::Folders { path, hidden, places, seq } => folders(&path, hidden, places, seq, reply),
         PhoneMsg::FolderSearch { root, query, hidden, seq } => folder_search(root, query, hidden, seq, reply),
+        PhoneMsg::MakeFolder { parent, name, seq } => make_folder(&parent, &name, seq, reply),
         PhoneMsg::Diff { agent } => diff(hub, agent, reply),
         PhoneMsg::Merge { agent } => merge(hub, agent, reply),
         PhoneMsg::Peek { agents, rows } => peek(hub, agents, rows, reply),
@@ -308,6 +309,20 @@ fn folder_search(root: String, query: String, hidden: bool, seq: u64, reply: &Se
             hits,
             truncated,
         }));
+    });
+}
+
+pub fn made_folder(parent: &str, name: &str, seq: u64) -> BridgeMsg {
+    let parent = resolve_dir(parent);
+    let made = crate::folders::make(&parent, name);
+    let path = made.as_ref().map_or_else(|_| parent.join(name), PathBuf::clone);
+    BridgeMsg::FolderMade { seq, path: path.to_string_lossy().into_owned(), problem: made.err() }
+}
+
+fn make_folder(parent: &str, name: &str, seq: u64, reply: &Sender<Event>) {
+    let (parent, name, reply) = (parent.to_string(), name.to_string(), reply.clone());
+    spawn("orkai-pwa-make-folder", move || {
+        let _ = reply.send(Event::Reply(made_folder(&parent, &name, seq)));
     });
 }
 
@@ -908,6 +923,24 @@ mod tests {
         let names: Vec<&str> = dirs.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(names, ["Alpha", "beta"]);
         assert_eq!(dirs[1].path, dir.join("beta").to_string_lossy());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_folder_made_from_the_picker_lands_in_the_folder_on_screen_and_shows_in_its_listing() {
+        let dir = std::env::temp_dir().join(format!("orkai-pwa-make-{}-{}", std::process::id(), crate::util::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let parent = dir.to_string_lossy().into_owned();
+        let BridgeMsg::FolderMade { seq, path, problem } = made_folder(&parent, "app", 9) else { panic!() };
+        assert_eq!((seq, problem), (9, None));
+        assert_eq!(path, dir.join("app").to_string_lossy());
+        let BridgeMsg::Folders { dirs, .. } = list_folders(&parent, false, false, 10) else { panic!() };
+        assert!(dirs.iter().any(|d| d.path == path), "the listing that follows has the new folder");
+        let BridgeMsg::FolderMade { problem, path: again, .. } = made_folder(&parent, "app", 11) else { panic!() };
+        assert_eq!((problem, again), (Some(crate::folders::MakeProblem::Exists), path));
+        let BridgeMsg::FolderMade { problem, .. } = made_folder(&parent, "../escape", 12) else { panic!() };
+        assert_eq!(problem, Some(crate::folders::MakeProblem::Invalid));
+        assert!(!dir.parent().unwrap().join("escape").exists(), "a name never climbs out of the folder");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
