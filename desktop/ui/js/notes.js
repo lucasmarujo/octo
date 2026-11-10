@@ -7,6 +7,18 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.33',
+    date: '2026-11-10',
+    en: [
+      'If you allow notifications in the Octo app on your phone, it tells you when an agent finishes or waits for you, even with the app closed.',
+      'Qwen Code agents show the Qwen logo in the sidebar.',
+    ],
+    'pt-BR': [
+      'Se você permitir notificações no app do Octo no celular, ele avisa quando um agente termina ou espera por você, mesmo com o app fechado.',
+      'Agentes do Qwen Code mostram o logo do Qwen na barra lateral.',
+    ],
+  },
+  {
     version: '0.2.32',
     date: '2026-11-09',
     en: [
