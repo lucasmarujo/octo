@@ -8,7 +8,7 @@ import type { Theme } from '../theme/tokens';
 import { mono, sans, TIGHT, tracking } from '../theme/type';
 import { Round } from './atoms';
 import type { IconName } from './Icon';
-import { Kai } from './Kai';
+import { Brand } from './Brand';
 
 type Action = {
   icon: IconName;
@@ -44,7 +44,7 @@ export function Top({ title, mood, compact = false, onBack, backLabel = 'back', 
   return (
     <View style={[s.top, { paddingTop: insets.top + 8 }]}>
       {onBack ? <Round icon="back" label={backLabel} onPress={onBack} /> : null}
-      <Kai mood={mood} size={compact ? MASCOT_COMPACT : MASCOT} />
+      <Brand mood={mood} size={compact ? MASCOT_COMPACT : MASCOT} />
       <View style={s.who}>
         <Text style={compact ? s.compactTitle : s.title} numberOfLines={1}>
           {title}

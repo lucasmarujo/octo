@@ -3,7 +3,7 @@ import type { Device } from '../core/devices';
 import { forgetDevice } from '../core/devices';
 import { hostOf } from '../core/pairing';
 import { Icon } from '../ui/Icon';
-import { Kai } from '../ui/Kai';
+import { Brand } from '../ui/Brand';
 import { ArmedOption, Group, Option } from '../ui/Option';
 import { closeSheet, openSheet, SheetScroll } from '../ui/Sheet';
 
@@ -48,5 +48,5 @@ function MenuBody({ device, onPair, onForgotten }: Props) {
 }
 
 export function openDeviceMenu(props: Props): void {
-  openSheet({ title: props.device.name, sub: hostOf(props.device.url), lead: <Kai mood="idle" size={LEAD} />, agentHead: true, content: <MenuBody {...props} /> });
+  openSheet({ title: props.device.name, sub: hostOf(props.device.url), lead: <Brand mood="idle" size={LEAD} />, agentHead: true, content: <MenuBody {...props} /> });
 }

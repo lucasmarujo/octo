@@ -11,7 +11,7 @@ import type { Theme } from '../../theme/tokens';
 import { CAPS, mono, sans, TIGHT, tracking } from '../../theme/type';
 import { kindColor, Swatch, Tile, toneColor } from '../../ui/atoms';
 import { Flash } from '../../ui/Flash';
-import { Kai } from '../../ui/Kai';
+import { Brand } from '../../ui/Brand';
 import { Press } from '../../ui/Press';
 import { Rise } from '../../ui/Rise';
 import { useDevice } from './context';
@@ -105,7 +105,7 @@ function Empty({ session, onStarter }: { session: string; onStarter: (text: stri
   const s = useStyles(styles);
   return (
     <Rise style={s.empty}>
-      <Kai mood="idle" size={96} />
+      <Brand mood="idle" size={96} />
       <Text style={s.emptyTitle}>A quiet session</Text>
       <Text style={s.emptyText}>{`Nothing runs in ${session} yet. Describe a task below and pick who does it.`}</Text>
       <View style={s.starters}>

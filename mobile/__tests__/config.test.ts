@@ -15,7 +15,7 @@ describe('the store builds', () => {
   });
 
   it('show the notifications of the agents with the prompt of Octo in the status bar', () => {
-    expect(app.expo.plugins).toContainEqual(['expo-notifications', { icon: './assets/notification-icon.png', color: '#e85eb6' }]);
+    expect(app.expo.plugins).toContainEqual(['expo-notifications', { icon: './assets/notification-icon.png', color: '#35fddc' }]);
   });
 
   it('take the Firebase file of the push from the build and the production push environment for the stores', () => {
@@ -31,10 +31,10 @@ describe('the store builds', () => {
     };
     const local = config({});
     expect(local.android.googleServicesFile).toBeUndefined();
-    expect(local.plugins).toContainEqual(['expo-notifications', { icon: './assets/notification-icon.png', color: '#e85eb6' }]);
+    expect(local.plugins).toContainEqual(['expo-notifications', { icon: './assets/notification-icon.png', color: '#35fddc' }]);
     const store = config({ GOOGLE_SERVICES_JSON: '/eas/google-services.json', EAS_BUILD_PROFILE: 'production' });
     expect(store.android.googleServicesFile).toBe('/eas/google-services.json');
-    expect(store.plugins).toContainEqual(['expo-notifications', { icon: './assets/notification-icon.png', color: '#e85eb6', mode: 'production' }]);
+    expect(store.plugins).toContainEqual(['expo-notifications', { icon: './assets/notification-icon.png', color: '#35fddc', mode: 'production' }]);
   });
 
   it('keep the pairing keys without asking for Face ID, which the app never uses', () => {

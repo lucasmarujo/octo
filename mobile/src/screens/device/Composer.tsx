@@ -50,7 +50,7 @@ const styles = (t: Theme) =>
     toggleText: sans(13, 700),
     worktreeOn: { backgroundColor: mix(t.link, 16) },
     bypassOn: { backgroundColor: mix(t.waiting, 16) },
-    send: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 38, minWidth: 38, paddingHorizontal: 10, borderRadius: 999, backgroundColor: t.accent, boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 18, color: 'rgba(232, 94, 182, 0.4)' }] },
+    send: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 38, minWidth: 38, paddingHorizontal: 10, borderRadius: 999, backgroundColor: t.accent, boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 18, color: mix(t.accent, 40) }] },
     sendInline: { height: 36, minWidth: 36 },
     sendLabel: { ...sans(15, 700), color: t.accentInk, paddingLeft: 6 },
   });

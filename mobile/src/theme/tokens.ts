@@ -1,5 +1,6 @@
 import type { BoxShadowValue } from 'react-native';
 
+import { accentInk, accentLink } from '../core/accent';
 import type { ThemeName } from '../core/model';
 import type { AgentKind } from '../core/protocol';
 
@@ -35,8 +36,8 @@ export type Theme = {
   ansi: string[];
 };
 
-const dark: Theme = {
-  name: 'dark',
+const old: Theme = {
+  name: 'old',
   light: false,
   bg: '#0e0e13',
   surface: '#16161d',
@@ -77,8 +78,24 @@ const dark: Theme = {
   ansi: ['#2c2c3a', '#f04e5c', '#50d782', '#f0d65a', '#6e96ff', '#ec80dc', '#5ad2d2', '#dedee4', '#6e6e7a', '#ff7d9d', '#96e2aa', '#f0de96', '#89bafa', '#e8aaec', '#8ce2d6', '#ffffff'],
 };
 
+const octo: Theme = {
+  ...old,
+  name: 'octo',
+  bg: '#000000',
+  surface: '#0a0b0c',
+  surfaceRaised: '#141718',
+  border: '#1a1d1f',
+  borderStrong: '#23282a',
+  accent: '#35fddc',
+  accentInk: '#04201c',
+  link: '#7dfee8',
+  scrim: 'rgba(0, 0, 0, 0.62)',
+  termBg: '#000000',
+  sheet: '#141718',
+};
+
 const gray: Theme = {
-  ...dark,
+  ...octo,
   name: 'gray',
   bg: '#282828',
   surface: '#303030',
@@ -93,14 +110,16 @@ const gray: Theme = {
   termFg: '#ececec',
   sheet: '#3a3a3a',
   track: 'rgba(236, 236, 236, 0.1)',
-  kind: { ...dark.kind, grok: '#e8e8e8', other: '#b0b0b0' },
-  ansi: dark.ansi.map((color, index) => ({ 0: '#3a3a3a', 1: '#ff6673', 7: '#dedede', 8: '#7a7a7a' }[index] || color)),
+  scrim: old.scrim,
+  kind: { ...octo.kind, grok: '#e8e8e8', other: '#b0b0b0' },
+  ansi: octo.ansi.map((color, index) => ({ 0: '#3a3a3a', 1: '#ff6673', 7: '#dedede', 8: '#7a7a7a' }[index] || color)),
 };
 
 const light: Theme = {
-  ...dark,
+  ...octo,
   name: 'light',
   light: true,
+  accent: '#12b8a0',
   bg: '#ffffff',
   surface: '#f6f6f9',
   surfaceRaised: '#ffffff',
@@ -138,4 +157,10 @@ const light: Theme = {
   ansi: ['#16161d', '#c8303f', '#1b8a4a', '#8f6f00', '#2f5fd6', '#a8389c', '#0f8585', '#55556a', '#8a8a9a', '#dc4258', '#26a35c', '#a88600', '#4a7bea', '#c04eb4', '#169a9f', '#2c2c3a'],
 };
 
-export const THEMES: Record<ThemeName, Theme> = { dark, gray, light };
+export const THEMES: Record<ThemeName, Theme> = { octo, gray, light, old };
+const FIXED: ThemeName = 'old';
+
+export function tinted(theme: Theme, accent: string | null): Theme {
+  if (!accent || theme.name === FIXED) return theme;
+  return { ...theme, accent, accentInk: accentInk(accent), link: accentLink(accent, theme.light) };
+}

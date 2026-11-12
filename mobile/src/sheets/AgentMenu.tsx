@@ -8,7 +8,7 @@ import { useStyles } from '../theme/styles';
 import type { Theme } from '../theme/tokens';
 import { mono } from '../theme/type';
 import { Icon } from '../ui/Icon';
-import { Kai } from '../ui/Kai';
+import { Brand } from '../ui/Brand';
 import { ArmedOption, Group, Option } from '../ui/Option';
 import { closeSheet, openSheet, SheetScroll } from '../ui/Sheet';
 import { openPrompt } from './Prompt';
@@ -118,7 +118,7 @@ export function openAgentMenu(scope: DeviceScope): void {
   openSheet({
     title: agent.name,
     sub: `${label(agent.kind)} · ${mark.word}${time ? ` ${time}` : ''}`,
-    lead: <Kai mood={model.moodOf([agent])} size={LEAD} />,
+    lead: <Brand mood={model.moodOf([agent])} size={LEAD} />,
     agentHead: true,
     content: <MenuBody scope={scope} agent={agent} />,
   });

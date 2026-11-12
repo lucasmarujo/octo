@@ -16,7 +16,7 @@ import type { Theme } from '../theme/tokens';
 import { mono, sans, TIGHT, tracking } from '../theme/type';
 import { Dot } from '../ui/atoms';
 import { Button } from '../ui/Button';
-import { Kai } from '../ui/Kai';
+import { Brand } from '../ui/Brand';
 import { useKeyboard } from '../ui/keyboard';
 import { Rise } from '../ui/Rise';
 import { Scan } from './Scan';
@@ -180,7 +180,7 @@ export function Pair({ kind, replace, onBack, onPaired, onRetry }: Props) {
       <ScrollView ref={scroll} contentContainerStyle={[s.pair, { paddingBottom: (keyboard ? 0 : insets.bottom) + 16 }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={[s.glow, preset.badge ? s.glowError : s.glowIdle]} pointerEvents="none" />
         <Rise replay={kind} from={8} shrink={1} style={s.hero}>
-          <Kai mood={preset.mood} size={MASCOT} />
+          <Brand mood={preset.mood} size={MASCOT} />
           {preset.badge ? (
             <View style={s.badge}>
               <Text style={s.badgeText}>{preset.badge}</Text>
