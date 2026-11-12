@@ -433,20 +433,20 @@ mod tests {
     fn a_long_conversation_sends_only_its_end_and_never_a_line_cut_in_half() {
         let dir = temp_dir("case4");
         let path = &dir.join(format!("{SESSION}.jsonl"));
-        let mut file = File::create(&path).unwrap();
+        let mut file = File::create(path).unwrap();
         let filler = "x".repeat(900);
         let lines = 2_000;
         for index in 0..lines {
             file.write_all(says(&format!("message {index} {filler}")).as_bytes()).unwrap();
         }
         drop(file);
-        let page = read_claude(&path, 0);
+        let page = read_claude(path, 0);
         assert!(page.items.len() <= MAX_ITEMS);
         assert!(
             page.items.iter().map(weight).sum::<usize>() <= PAGE_MAX_BYTES,
             "a page never outgrows what a phone should receive at once"
         );
-        assert_eq!(page.next, fs::metadata(&path).unwrap().len());
+        assert_eq!(page.next, fs::metadata(path).unwrap().len());
         let ChatItem::Text { text } = page.items.last().unwrap() else { panic!("a text ends it") };
         assert!(text.starts_with(&format!("message {} ", lines - 1)));
         assert!(page.items.iter().all(|item| matches!(item, ChatItem::Text { text } if text.starts_with("message "))));
@@ -510,10 +510,10 @@ mod tests {
         let home = temp_dir("case7");
         let cwd = Path::new("/work/octo");
         let own = &home.join("projects").join(claude_project_slug(cwd));
-        fs::create_dir_all(&own).unwrap();
+        fs::create_dir_all(own).unwrap();
         assert_eq!(claude_transcript(&home, cwd, SESSION), None);
         let elsewhere = &home.join("projects").join("-another-folder");
-        fs::create_dir_all(&elsewhere).unwrap();
+        fs::create_dir_all(elsewhere).unwrap();
         fs::write(elsewhere.join(format!("{SESSION}.jsonl")), "").unwrap();
         assert_eq!(claude_transcript(&home, cwd, SESSION), Some(elsewhere.join(format!("{SESSION}.jsonl"))));
         fs::write(own.join(format!("{SESSION}.jsonl")), "").unwrap();
