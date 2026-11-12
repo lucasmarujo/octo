@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::fsutil;
 use crate::launch::{
-    antigravity_home, claude_home, codex_home, grok_home, kilo_config_dir, kimi_home, opencode_config_dir,
+    antigravity_home, claude_home, codex_home, cursor_home, grok_home, kilo_config_dir, kimi_home, opencode_config_dir,
     pi_agent_dir, qwen_home,
 };
 use crate::model::AgentKind;
@@ -27,6 +27,7 @@ const CODEX_SKILL_SIGIL: char = '$';
 const SKILL_COMMAND_PREFIX: &str = "/skill:";
 const KIMI_PROJECT_DIR: &str = ".kimi-code";
 const PI_PROJECT_DIR: &str = ".pi";
+const CURSOR_PROJECT_DIR: &str = ".cursor";
 const PLUGIN_SEPARATOR: char = ':';
 const PATH_SEPARATOR: char = '/';
 const SKILL_DIRS: [&str; 2] = ["skill", "skills"];
@@ -113,6 +114,7 @@ fn own_skills(kind: AgentKind, cwd: &Path) -> SkillFiles {
         AgentKind::Qwen => qwen_skills(qwen_home().as_deref(), user_home().as_deref(), cwd),
         AgentKind::Kimi => kimi_skills(kimi_home().as_deref(), user_home().as_deref(), cwd),
         AgentKind::Pi => pi_skills(pi_agent_dir().as_deref(), user_home().as_deref(), cwd),
+        AgentKind::Cursor => cursor_skills(cursor_home().as_deref(), user_home().as_deref(), cwd),
         AgentKind::Terminal => SkillFiles::new(),
     }
 }
@@ -242,6 +244,10 @@ pub fn kimi_skills(kimi_home: Option<&Path>, user_home: Option<&Path>, cwd: &Pat
 
 pub fn pi_skills(pi_agent: Option<&Path>, user_home: Option<&Path>, cwd: &Path) -> SkillFiles {
     agent_skills(pi_agent, PI_PROJECT_DIR, user_home, cwd)
+}
+
+pub fn cursor_skills(cursor_home: Option<&Path>, user_home: Option<&Path>, cwd: &Path) -> SkillFiles {
+    agent_skills(cursor_home, CURSOR_PROJECT_DIR, user_home, cwd)
 }
 
 pub fn claude_skills(claude_home: Option<&Path>, cwd: &Path) -> SkillFiles {
@@ -606,6 +612,14 @@ mod tests {
         skill(&cwd.join(".pi").join("skills"), "pi-repo", "name: pi-repo");
         assert_eq!(names(pi_skills(Some(&pi), Some(&user), &cwd)), ["pi-own", "pi-repo", "repo", "shared"]);
 
+        let cursor = user.join(".cursor");
+        skill(&cursor.join("skills"), "cursor-own", "name: cursor-own");
+        skill(&cwd.join(".cursor").join("skills"), "cursor-repo", "name: cursor-repo");
+        assert_eq!(
+            names(cursor_skills(Some(&cursor), Some(&user), &cwd)),
+            ["cursor-own", "cursor-repo", "from-cursor", "repo", "shared"]
+        );
+
         let agy = user.join(".gemini").join("antigravity-cli");
         skill(&agy.join("skills"), "agy-own", "name: agy-own");
         skill(&cwd.join(".agent").join("skills"), "legacy", "name: legacy");
@@ -709,6 +723,7 @@ mod tests {
         assert_eq!(invocation(AgentKind::Claude, &owned("review", AgentKind::Claude, file), " "), "/review");
         assert_eq!(invocation(AgentKind::Kimi, &owned("review", AgentKind::Kimi, file), "12"), "/skill:review 12");
         assert_eq!(invocation(AgentKind::Pi, &owned("review", AgentKind::Pi, file), "12"), "/skill:review 12");
+        assert_eq!(invocation(AgentKind::Cursor, &owned("review", AgentKind::Cursor, file), "12"), "/review 12");
         let commit = owned("git/commit", AgentKind::Opencode, file);
         assert_eq!(invocation(AgentKind::Opencode, &commit, "now"), "/git/commit now");
     }

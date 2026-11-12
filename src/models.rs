@@ -78,6 +78,7 @@ pub fn available(kind: AgentKind) -> Vec<Model> {
         | AgentKind::Qwen
         | AgentKind::Kimi
         | AgentKind::Pi
+        | AgentKind::Cursor
         | AgentKind::Terminal => Vec::new(),
     }
 }

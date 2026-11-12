@@ -48,7 +48,7 @@ test('usage turns yellow and red at the same percentages as the TUI', () => {
 
 test('every agent kind keeps the color it has in the TUI', () => {
   const theme = rust('src/tui/theme.rs');
-  const names = { claude: 'CLAUDE', codex: 'CODEX', kilo: 'KILO', opencode: 'OPENCODE', antigravity: 'ANTIGRAVITY', grok: 'GROK', qwen: 'QWEN', kimi: 'KIMI', pi: 'PI', terminal: 'TERMINAL' };
+  const names = { claude: 'CLAUDE', codex: 'CODEX', kilo: 'KILO', opencode: 'OPENCODE', antigravity: 'ANTIGRAVITY', grok: 'GROK', qwen: 'QWEN', kimi: 'KIMI', pi: 'PI', cursor: 'CURSOR', terminal: 'TERMINAL' };
   for (const [kind, constant] of Object.entries(names)) {
     const [, r, g, b] = theme.match(new RegExp(`pub const ${constant}: Color = Color::Rgb\\((\\d+), (\\d+), (\\d+)\\)`));
     const hex = `#${[r, g, b].map((part) => Number(part).toString(16).padStart(2, '0')).join('')}`;
@@ -63,7 +63,7 @@ test('the dark theme keeps the colors of the TUI and the light theme redefines e
   const { BASE16 } = await import('../js/palette.js');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   const [dark, light] = [css.split(':root {')[1].split('}')[0], css.split(':root[data-theme="light"] {')[1].split('}')[0]];
-  const kinds = ['claude', 'codex', 'kilo', 'opencode', 'antigravity', 'grok', 'qwen', 'kimi', 'pi', 'terminal'];
+  const kinds = ['claude', 'codex', 'kilo', 'opencode', 'antigravity', 'grok', 'qwen', 'kimi', 'pi', 'cursor', 'terminal'];
   for (const kind of kinds) {
     assert.ok(dark.includes(`--kind-${kind}: ${kindHex(kind)};`), kind);
     assert.ok(light.includes(`--kind-${kind}:`), kind);
@@ -1180,6 +1180,7 @@ test('a line of the sidebar shows the provider of its agent, with a mark for tho
   assert.equal(kindMark('terminal'), '$');
   assert.equal(kindMark('qwen'), 'Q');
   assert.equal(kindMark('pi'), 'P');
+  assert.equal(kindMark('cursor'), 'C');
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebar, /icon \? svg\(icon\) : h\('span', \{ class: 'summary-mark', style: `color:\$\{kindColor\(kind\)\}` \}, kindMark\(kind\)\)/);
   assert.match(sidebar, /summaryIcon\(agent\.kind\)/);
@@ -1564,6 +1565,7 @@ test('a code agent behind its release shows a card that updates it, and a dismis
   assert.equal(versionAtLeast(null, '1.0.0'), false, 'a version that cannot be read is no update');
   const { agentName, dismissedFor } = await import('../js/agentupdates.js');
   assert.equal(agentName('pi'), 'Pi');
+  assert.equal(agentName('cursor'), 'Cursor');
   assert.equal(agentName('antigravity'), 'Antigravity', 'its name, not the agy command');
   assert.equal(dismissedFor({ pi: '1.5.0' }, { kind: 'pi', latest: '1.5.0' }), true);
   assert.equal(dismissedFor({ pi: '1.5.0' }, { kind: 'pi', latest: '1.6.0' }), false, 'a newer version asks again');

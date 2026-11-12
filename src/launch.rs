@@ -7,6 +7,7 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use md5::{Digest, Md5};
 use serde::Deserialize;
 
 use crate::config::Config;
@@ -55,6 +56,10 @@ const PI_HOME_DIR: &str = ".pi";
 const PI_AGENT_DIR: &str = "agent";
 const PI_SESSIONS: &str = "sessions";
 const PI_SESSION_SUFFIX: &str = ".jsonl";
+const CURSOR_HOME_ENV: &str = "CURSOR_CONFIG_DIR";
+const CURSOR_HOME_DIR: &str = ".cursor";
+const CURSOR_XDG_DIR: &str = "cursor";
+const CURSOR_CHATS: &str = "chats";
 const KIMI_SESSION_INDEX: &str = "session_index.jsonl";
 const KIMI_STATE: &str = "state.json";
 const MAX_INDEX_BYTES: u64 = 8 * 1024 * 1024;
@@ -235,6 +240,12 @@ pub fn pi_agent_dir() -> Option<PathBuf> {
 
 pub fn pi_sessions_dir() -> Option<PathBuf> {
     env_dir(PI_SESSION_DIR_ENV).or_else(|| pi_agent_dir().map(|agent| agent.join(PI_SESSIONS)))
+}
+
+pub fn cursor_home() -> Option<PathBuf> {
+    env_dir(CURSOR_HOME_ENV)
+        .or_else(|| env_dir("XDG_CONFIG_HOME").map(|dir| dir.join(CURSOR_XDG_DIR)))
+        .or_else(|| user_home().map(|home| home.join(CURSOR_HOME_DIR)))
 }
 
 #[derive(Clone, Debug, Default)]
@@ -450,6 +461,36 @@ pub fn find_kimi_session(kimi_home: &Path, cwd: &Path, since_ms: u64, exclude: &
         .map(|(_, id)| id)
 }
 
+pub fn cursor_workspace_key(cwd: &Path) -> String {
+    Md5::digest(cwd.to_string_lossy().as_bytes()).iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn created_ms(path: &Path) -> Option<u64> {
+    let meta = fs::metadata(path).ok()?;
+    let created = meta.created().or_else(|_| meta.modified()).ok()?;
+    let since_epoch = created.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(u64::try_from(since_epoch.as_millis()).unwrap_or(u64::MAX))
+}
+
+pub fn find_cursor_chat(cursor_home: &Path, cwd: &Path, since_ms: u64, exclude: &[String]) -> Option<String> {
+    let chats = cursor_home.join(CURSOR_CHATS).join(cursor_workspace_key(cwd));
+    let threshold = since_ms.saturating_sub(SESSION_CLOCK_SKEW_MS);
+    fs::read_dir(chats)
+        .ok()?
+        .flatten()
+        .filter_map(|chat| {
+            let id = chat
+                .file_name()
+                .to_str()
+                .filter(|id| is_uuid(id) && !exclude.iter().any(|taken| taken == id))?
+                .to_string();
+            let created = created_ms(&chat.path())?;
+            (created >= threshold).then_some(((created < since_ms, created), id))
+        })
+        .min()
+        .map(|(_, id)| id)
+}
+
 pub fn find_antigravity_conversation(agy_home: &Path, cwd: &Path, exclude: &[String]) -> Option<String> {
     let file = AGY_CONVERSATIONS.iter().fold(agy_home.to_path_buf(), |dir, part| dir.join(part));
     let latest: BTreeMap<String, String> = fsutil::read_json_opt(&file).ok().flatten()?;
@@ -494,9 +535,12 @@ fn model_options(kind: AgentKind) -> &'static [&'static str] {
         AgentKind::Codex | AgentKind::Kilo | AgentKind::Opencode | AgentKind::Qwen => {
             &[MODEL_OPTION, MODEL_SHORT_OPTION]
         }
-        AgentKind::Claude | AgentKind::Antigravity | AgentKind::Grok | AgentKind::Kimi | AgentKind::Pi => {
-            &[MODEL_OPTION]
-        }
+        AgentKind::Claude
+        | AgentKind::Antigravity
+        | AgentKind::Grok
+        | AgentKind::Kimi
+        | AgentKind::Pi
+        | AgentKind::Cursor => &[MODEL_OPTION],
         AgentKind::Terminal => &[],
     }
 }
@@ -589,9 +633,12 @@ fn hook_launch(config: &Config, record: &AgentRecord, program: &Path, setup: &Ho
                 Err(_) => HookLaunch::default(),
             }
         }
-        AgentKind::Antigravity | AgentKind::Grok | AgentKind::Kimi | AgentKind::Pi | AgentKind::Terminal => {
-            HookLaunch::default()
-        }
+        AgentKind::Antigravity
+        | AgentKind::Grok
+        | AgentKind::Kimi
+        | AgentKind::Pi
+        | AgentKind::Cursor
+        | AgentKind::Terminal => HookLaunch::default(),
     }
 }
 
@@ -627,6 +674,7 @@ fn chosen_session_args(kind: AgentKind, session_id: &str, resume: bool) -> Vec<S
 fn resume_args(kind: AgentKind, session_id: &str) -> Vec<String> {
     match kind {
         AgentKind::Antigravity => vec![format!("--conversation={session_id}")],
+        AgentKind::Cursor => vec!["--resume".to_string(), session_id.to_string()],
         _ => vec!["--session".to_string(), session_id.to_string()],
     }
 }
@@ -639,6 +687,7 @@ fn bypass_flag(kind: AgentKind) -> Option<&'static str> {
         AgentKind::Grok => Some("--always-approve"),
         AgentKind::Qwen => Some("--yolo"),
         AgentKind::Pi => Some("--approve"),
+        AgentKind::Cursor => Some("--force"),
         AgentKind::Terminal => None,
     }
 }
@@ -654,6 +703,7 @@ fn permission_options(kind: AgentKind) -> &'static [&'static str] {
         AgentKind::Qwen => &["--yolo", "-y", "--approval-mode"],
         AgentKind::Kimi => &["--auto", "--yolo", "-y", "--yes", "--auto-approve"],
         AgentKind::Pi => &["--approve", "-a", "--no-approve", "-na"],
+        AgentKind::Cursor => &["--force", "-f", "--yolo", "--auto-review"],
         AgentKind::Terminal => &[],
     }
 }
@@ -711,7 +761,7 @@ pub fn build_spec(
             let input = if resume { None } else { non_empty(&record.task) };
             (command, args, input)
         }
-        AgentKind::Kilo | AgentKind::Opencode | AgentKind::Antigravity | AgentKind::Kimi => {
+        AgentKind::Kilo | AgentKind::Opencode | AgentKind::Antigravity | AgentKind::Kimi | AgentKind::Cursor => {
             let resume_id =
                 record.conversation_id.clone().filter(|id| mode == LaunchMode::Resume && is_safe_session_id(id));
             let (command, mut args) = agent_command(config, record.kind);
@@ -1186,7 +1236,12 @@ impl Launcher {
     fn discover_session(&self, record: &AgentRecord) -> io::Result<Option<String>> {
         let discovers = matches!(
             record.kind,
-            AgentKind::Codex | AgentKind::Kilo | AgentKind::Opencode | AgentKind::Antigravity | AgentKind::Kimi
+            AgentKind::Codex
+                | AgentKind::Kilo
+                | AgentKind::Opencode
+                | AgentKind::Antigravity
+                | AgentKind::Kimi
+                | AgentKind::Cursor
         );
         if !discovers {
             return Ok(None);
@@ -1202,6 +1257,7 @@ impl Launcher {
         Ok(match record.kind {
             AgentKind::Codex => codex_home().and_then(|home| find_codex_session(&home, cwd, since, &claimed)),
             AgentKind::Kimi => kimi_home().and_then(|home| find_kimi_session(&home, cwd, since, &claimed)),
+            AgentKind::Cursor => cursor_home().and_then(|home| find_cursor_chat(&home, cwd, since, &claimed)),
             AgentKind::Antigravity => {
                 antigravity_home().and_then(|home| find_antigravity_conversation(&home, cwd, &claimed))
             }
@@ -1871,7 +1927,8 @@ mod tests {
             grok_command: command.clone(),
             qwen_command: command.clone(),
             kimi_command: command.clone(),
-            pi_command: command,
+            pi_command: command.clone(),
+            cursor_command: command,
             ..config_with(program)
         }
     }
@@ -1954,6 +2011,46 @@ mod tests {
     }
 
     #[test]
+    fn cursor_reopens_the_chat_it_made_in_its_folder_and_bypass_forces_its_commands() {
+        const MINE: &str = "055a398f-db14-4c5f-abbb-1bf03f8120a7";
+        const OTHER: &str = "123e4567-e89b-42d3-a456-426614174000";
+        let dir = temp_dir("cursor-chats");
+        let (home, cwd, elsewhere) = (dir.join(".cursor"), dir.join("work"), dir.join("other"));
+        let chat = |folder: &Path, id: &str| {
+            fs::create_dir_all(home.join("chats").join(cursor_workspace_key(folder)).join(id)).unwrap();
+        };
+        assert_eq!(cursor_workspace_key(Path::new("/work/app")), "7d3bc8c3c79adb12ac244d58560d89da");
+        let since = now_ms();
+        assert_eq!(find_cursor_chat(&home, &cwd, since, &[]), None, "no chat yet");
+        chat(&elsewhere, OTHER);
+        assert_eq!(find_cursor_chat(&home, &cwd, since, &[]), None, "the chat of another folder is not it");
+        chat(&cwd, MINE);
+        chat(&cwd, "not-a-chat");
+        assert_eq!(find_cursor_chat(&home, &cwd, since, &[]).as_deref(), Some(MINE));
+        assert_eq!(find_cursor_chat(&home, &cwd, since, &[MINE.to_string()]), None, "another agent has it");
+        let later = since + 10 * SESSION_CLOCK_SKEW_MS;
+        assert_eq!(find_cursor_chat(&home, &cwd, later, &[]), None, "a chat older than the agent is not it");
+
+        let config = Config { cursor_args: vec!["--model".into(), "gpt-5".into()], ..every_agent(&fake_program(&dir)) };
+        let mut cursor = record(AgentKind::Cursor, dir.clone(), "task");
+        cursor.bypass = true;
+        cursor.model = Some("sonnet-4".into());
+        let fresh = spec_for(&config, &mut cursor, LaunchMode::Fresh, &Homes::default());
+        assert_eq!(fresh.args, ["--force", "--model", "sonnet-4"]);
+        assert_eq!(fresh.initial_input.as_deref(), Some("task"));
+        cursor.conversation_id = Some(MINE.into());
+        let resumed = spec_for(&config, &mut cursor, LaunchMode::Resume, &Homes::default());
+        assert_eq!(resumed.args, ["--resume", MINE, "--force", "--model", "sonnet-4"]);
+        assert_eq!(resumed.initial_input, None, "the task is not typed again");
+
+        let chosen = Config { cursor_args: vec!["--auto-review".into()], ..every_agent(&fake_program(&dir)) };
+        cursor.model = None;
+        let reviewed = spec_for(&chosen, &mut cursor, LaunchMode::Fresh, &Homes::default());
+        assert_eq!(reviewed.args, ["--auto-review"], "the mode the user chose is left alone");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn discovered_sessions_are_resumed_with_each_agent_flag_after_its_own_args() {
         let dir = temp_dir("discovered-sessions");
         let program = fake_program(&dir);
@@ -1974,6 +2071,11 @@ mod tests {
                 AgentKind::Antigravity,
                 "055a398f-db14-4c5f-abbb-1bf03f8120a7",
                 vec!["--conversation=055a398f-db14-4c5f-abbb-1bf03f8120a7"],
+            ),
+            (
+                AgentKind::Cursor,
+                "055a398f-db14-4c5f-abbb-1bf03f8120a7",
+                vec!["--resume", "055a398f-db14-4c5f-abbb-1bf03f8120a7"],
             ),
         ];
         for (kind, id, expected) in cases {
@@ -2103,6 +2205,7 @@ mod tests {
             (AgentKind::Qwen, Some("--yolo")),
             (AgentKind::Kimi, Some("--auto")),
             (AgentKind::Pi, Some("--approve")),
+            (AgentKind::Cursor, Some("--force")),
             (AgentKind::Terminal, None),
         ];
         assert_eq!(cases.len(), AgentKind::ALL.len(), "every agent kind is covered");

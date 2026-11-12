@@ -2,7 +2,7 @@ import { wire } from './pairing';
 
 export const { UNPAIRED, OUTDATED, REPLACED } = wire;
 
-export type AgentKind = 'claude' | 'codex' | 'kilo' | 'opencode' | 'antigravity' | 'grok' | 'qwen' | 'kimi' | 'pi' | 'terminal';
+export type AgentKind = 'claude' | 'codex' | 'kilo' | 'opencode' | 'antigravity' | 'grok' | 'qwen' | 'kimi' | 'pi' | 'cursor' | 'terminal';
 export type AgentState = 'idle' | 'working' | 'paused' | 'done' | 'exited' | 'lost';
 export type TestState = 'running' | 'passed' | 'failed' | 'untrusted';
 export type Tone = 'info' | 'success' | 'warn' | 'error';

@@ -41,6 +41,7 @@ const NAMES: Record<AgentKind, string> = {
   grok: 'Grok',
   qwen: 'Qwen',
   kimi: 'Kimi',
+  cursor: 'Cursor',
 };
 const TESTS: Record<TestState, Mark> = {
   passed: { text: '✓ tests', tone: 'green' },

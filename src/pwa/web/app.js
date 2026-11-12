@@ -45,7 +45,7 @@
   const TERM_BG = 'var(--term-bg)';
   const TERM_FG = 'var(--term-fg)';
   const LABELS = { antigravity: 'agy' };
-  const NAMES = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', pi: 'Pi', kilo: 'Kilo', terminal: 'Terminal', antigravity: 'Antigravity', grok: 'Grok', qwen: 'Qwen', kimi: 'Kimi' };
+  const NAMES = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', pi: 'Pi', kilo: 'Kilo', terminal: 'Terminal', antigravity: 'Antigravity', grok: 'Grok', qwen: 'Qwen', kimi: 'Kimi', cursor: 'Cursor' };
   const KEY_GROUPS = [
     { keys: [['esc', '\x1b'], ['tab', '\t'], ['⇧tab', '\x1b[Z']] },
     { keys: [['↑', '\x1b[A'], ['↓', '\x1b[B'], ['←', '\x1b[D'], ['→', '\x1b[C'], ['⏎', '\r']] },

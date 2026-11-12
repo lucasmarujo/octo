@@ -14,6 +14,7 @@ use crate::link::Link;
 pub type Version = (u32, u32, u32);
 
 const VERSION_ARG: &str = "--version";
+const CURSOR_INSTALLER: &str = "https://cursor.com/install?win32=true";
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 const LATEST_TIMEOUT: Duration = Duration::from_secs(6);
 const MAX_LATEST_BYTES: u64 = 1024 * 1024;
@@ -64,6 +65,7 @@ pub fn latest_source(kind: AgentKind, os: Os, arch: &str) -> Option<Latest> {
         AgentKind::Qwen => Some(npm("@qwen-code/qwen-code")),
         AgentKind::Kimi => Some(Latest::Text("https://code.kimi.com/kimi-code/latest".into())),
         AgentKind::Pi => Some(Latest::Json("https://pi.dev/api/installer/releases/latest".into())),
+        AgentKind::Cursor => Some(Latest::Text(CURSOR_INSTALLER.into())),
         AgentKind::Terminal => None,
     }
 }

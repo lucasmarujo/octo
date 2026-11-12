@@ -26,6 +26,7 @@ const KIND_COLORS = {
   qwen: '#ba8cff',
   kimi: '#ec80dc',
   pi: '#aadc5a',
+  cursor: '#d6c4a0',
   terminal: '#5ad2d2',
 };
 

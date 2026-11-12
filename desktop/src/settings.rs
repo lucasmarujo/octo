@@ -107,6 +107,7 @@ fn command_mut(config: &mut Config, kind: AgentKind) -> &mut String {
         AgentKind::Qwen => &mut config.qwen_command,
         AgentKind::Kimi => &mut config.kimi_command,
         AgentKind::Pi => &mut config.pi_command,
+        AgentKind::Cursor => &mut config.cursor_command,
         AgentKind::Terminal => unreachable!("a terminal has no command of its own"),
     }
 }

@@ -44,6 +44,25 @@ const KIMI_BUSY_MARKERS: &[&str] = &["working…", "🌑", "🌒", "🌓", "🌔
 const KIMI_WAITING_MARKERS: &[&str] = &["approve once", "trust this folder?", "ready to submit your answers?"];
 const PI_WAITING_MARKERS: &[&str] = &["trust project folder?"];
 const PI_TITLE_PREFIX: &str = "π - ";
+const CURSOR_BUSY_MARKERS: &[&str] = &["ctrl+c to stop"];
+const CURSOR_WAITING_MARKERS: &[&str] = &[
+    "run this command",
+    "run this mcp tool?",
+    "write to this file?",
+    "read this file?",
+    "delete this file?",
+    "proceed with this edit?",
+    "allow this web search?",
+    "allow this web fetch?",
+    "ready to proceed?",
+    "ready to build?",
+    "press any key to log in",
+    "signing in with the browser",
+];
+const CURSOR_BUSY_TITLES: &[&str] = &["Working", "Planning", "Running shell command"];
+const CURSOR_WAITING_TITLES: &[&str] = &["Waiting for you", "Waiting for confirmation"];
+const CURSOR_OTHER_TITLES: &[&str] =
+    &["Ready", "Queued", "Reviewing changes", "Loading conversation", "Reconnecting", "Moving to cloud"];
 const QWEN_BUSY_GLYPH: char = '◐';
 const QWEN_WAITING_GLYPH: char = '✳';
 const GROK_ATTENTION: &str = "Action Required";
@@ -77,6 +96,7 @@ fn busy_markers(kind: AgentKind) -> &'static [&'static str] {
         AgentKind::Kilo | AgentKind::Opencode => OPENCODE_BUSY_MARKERS,
         AgentKind::Grok => GROK_BUSY_MARKERS,
         AgentKind::Kimi => KIMI_BUSY_MARKERS,
+        AgentKind::Cursor => CURSOR_BUSY_MARKERS,
         _ => &[],
     }
 }
@@ -90,6 +110,7 @@ fn waiting_markers(kind: AgentKind) -> &'static [&'static str] {
         AgentKind::Qwen => QWEN_WAITING_MARKERS,
         AgentKind::Kimi => KIMI_WAITING_MARKERS,
         AgentKind::Pi => PI_WAITING_MARKERS,
+        AgentKind::Cursor => CURSOR_WAITING_MARKERS,
         _ => &[],
     }
 }
@@ -108,6 +129,11 @@ fn title_signals(kind: AgentKind, title: &str) -> Signals {
             waiting: title.contains(GROK_ATTENTION),
             ..Signals::default()
         },
+        AgentKind::Cursor => {
+            let status = cursor_status(title).map(|(_, status)| status);
+            let shows = |states: &[&str]| status.as_deref().is_some_and(|status| names_state(status, states));
+            Signals { busy: shows(CURSOR_BUSY_TITLES), waiting: shows(CURSOR_WAITING_TITLES), ..Signals::default() }
+        }
         _ => Signals::default(),
     }
 }
@@ -175,6 +201,7 @@ fn generic_titles(kind: AgentKind) -> &'static [&'static str] {
         AgentKind::Qwen => &["qwen"],
         AgentKind::Kimi => &["kimi code", "kimi"],
         AgentKind::Pi => &["pi", "π"],
+        AgentKind::Cursor => &["cursor agent", "cursor"],
         AgentKind::Terminal => &[],
     }
 }
@@ -199,6 +226,21 @@ fn pi_title(text: &str) -> String {
         Some(rest) => rest.rsplit_once(TITLE_SEPARATOR).map(|(name, _)| name.trim().to_string()).unwrap_or_default(),
         None => text.trim().to_string(),
     }
+}
+
+fn names_state(status: &str, states: &[&str]) -> bool {
+    states.iter().any(|state| status.starts_with(state))
+}
+
+fn cursor_status(title: &str) -> Option<(&str, String)> {
+    let (name, status) = title.rsplit_once(TITLE_SEPARATOR)?;
+    let status = strip_title_glyphs(status);
+    let known = [CURSOR_BUSY_TITLES, CURSOR_WAITING_TITLES, CURSOR_OTHER_TITLES];
+    known.iter().any(|states| names_state(&status, states)).then_some((name, status))
+}
+
+fn cursor_title(text: &str) -> String {
+    cursor_status(text).map_or(text, |(name, _)| name).trim().to_string()
 }
 
 fn grok_title(text: &str) -> String {
@@ -227,6 +269,7 @@ pub fn activity_from_title(kind: AgentKind, title: &str) -> Option<String> {
     let text = match kind {
         AgentKind::Grok => grok_title(&text),
         AgentKind::Pi => pi_title(&text),
+        AgentKind::Cursor => cursor_title(&text),
         _ => title_prefix(kind).and_then(|prefix| text.strip_prefix(prefix)).unwrap_or(&text).trim().to_string(),
     };
     let generic = text.is_empty() || generic_titles(kind).iter().any(|name| text.eq_ignore_ascii_case(name));
@@ -611,6 +654,46 @@ mod tests {
             analyze(AgentKind::Pi, "π - app", "Trust project folder?\nC:\\work\\app\n\nThis allows pi to load").waiting
         );
         assert_eq!(analyze(AgentKind::Pi, "π - app", "> "), Signals::default());
+    }
+
+    #[test]
+    fn cursor_is_read_from_its_screen_and_from_its_title_when_the_user_turned_that_on() {
+        let working = "  Reading src/main.rs\n\n → Add a follow-up                    ctrl+c to stop\n";
+        assert_eq!(analyze(AgentKind::Cursor, "", working), Signals { busy: true, ..Signals::default() });
+        let idle = " → Plan, search, build anything\n\n / for commands · @ for files";
+        assert_eq!(analyze(AgentKind::Cursor, "", idle), Signals::default());
+        for question in [
+            "Run this command?\n  Not in allowlist: git\n → Run (y) (enter)",
+            "Run this command outside the sandbox?",
+            "Run this MCP tool?",
+            "Write to this file?\n in src/main.rs",
+            "Proceed with this edit?",
+            "Allow this web fetch?",
+            "Workspace Trust Required\nDo you trust the contents of this directory?",
+            "Cursor Agent\nv2026.11.11-b912975\nPress any key to log in...",
+            "Signing in with the browser...\nIf your browser didn't open, click this link to log in:",
+        ] {
+            let asked = format!("{question}\n ctrl+c to stop");
+            assert_eq!(
+                analyze(AgentKind::Cursor, "", &asked),
+                Signals { waiting: true, ..Signals::default() },
+                "{question}"
+            );
+        }
+
+        let titled = |title: &str| analyze(AgentKind::Cursor, title, "");
+        assert!(titled("Cursor Agent - ⏳ Working .··").busy);
+        assert!(titled("Fix login - ⌨️ Running shell command").busy);
+        assert!(titled("Fix login - 🔐 Waiting for confirmation").waiting);
+        assert!(titled("Fix login - Waiting for you").waiting, "without the emoji too");
+        assert_eq!(titled("Fix login - ✅ Ready"), Signals::default());
+        assert_eq!(titled("Fix login"), Signals::default());
+
+        assert_eq!(activity_from_title(AgentKind::Cursor, "Fix login - ⏳ Working ..."), Some("Fix login".into()));
+        assert_eq!(activity_from_title(AgentKind::Cursor, "Fix login"), Some("Fix login".into()));
+        assert_eq!(activity_from_title(AgentKind::Cursor, "Docs - API - ✅ Ready"), Some("Docs - API".into()));
+        assert_eq!(activity_from_title(AgentKind::Cursor, "Cursor Agent - ✅ Ready"), None, "no name of its own");
+        assert_eq!(activity_from_title(AgentKind::Cursor, "Cursor Agent"), None);
     }
 
     #[test]

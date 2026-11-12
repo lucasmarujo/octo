@@ -21,11 +21,12 @@ pub enum AgentKind {
     Qwen,
     Kimi,
     Pi,
+    Cursor,
     Terminal,
 }
 
 impl AgentKind {
-    pub const ALL: [AgentKind; 10] = [
+    pub const ALL: [AgentKind; 11] = [
         AgentKind::Claude,
         AgentKind::Codex,
         AgentKind::Kilo,
@@ -35,6 +36,7 @@ impl AgentKind {
         AgentKind::Qwen,
         AgentKind::Kimi,
         AgentKind::Pi,
+        AgentKind::Cursor,
         AgentKind::Terminal,
     ];
 
@@ -49,6 +51,7 @@ impl AgentKind {
             AgentKind::Qwen => "qwen",
             AgentKind::Kimi => "kimi",
             AgentKind::Pi => "pi",
+            AgentKind::Cursor => "cursor",
             AgentKind::Terminal => "terminal",
         }
     }
@@ -84,6 +87,7 @@ impl AgentKind {
             "qwen" => Some(AgentKind::Qwen),
             "kimi" => Some(AgentKind::Kimi),
             "pi" => Some(AgentKind::Pi),
+            "cursor" | "cursor-agent" => Some(AgentKind::Cursor),
             "terminal" | "term" | "shell" => Some(AgentKind::Terminal),
             _ => None,
         }
@@ -401,7 +405,8 @@ mod tests {
         assert_eq!(AgentKind::Terminal.next(), AgentKind::Claude);
         assert_eq!(AgentKind::Codex.next(), AgentKind::Kilo);
         assert_eq!(AgentKind::Kimi.next(), AgentKind::Pi);
-        assert_eq!(AgentKind::Pi.next(), AgentKind::Terminal);
+        assert_eq!(AgentKind::Pi.next(), AgentKind::Cursor);
+        assert_eq!(AgentKind::Cursor.next(), AgentKind::Terminal);
         for kind in AgentKind::ALL {
             assert_eq!(kind.next().prev(), kind);
         }
@@ -421,7 +426,9 @@ mod tests {
         assert_eq!(AgentKind::parse("gemini"), Some(AgentKind::Antigravity));
         assert_eq!(AgentKind::parse("Antigravity"), Some(AgentKind::Antigravity));
         assert_eq!(AgentKind::parse("Pi"), Some(AgentKind::Pi));
-        assert_eq!(AgentKind::names(), "claude|codex|kilo|opencode|agy|grok|qwen|kimi|pi|terminal");
+        assert_eq!(AgentKind::parse("Cursor"), Some(AgentKind::Cursor));
+        assert_eq!(AgentKind::parse("cursor-agent"), Some(AgentKind::Cursor));
+        assert_eq!(AgentKind::names(), "claude|codex|kilo|opencode|agy|grok|qwen|kimi|pi|cursor|terminal");
     }
 
     #[test]

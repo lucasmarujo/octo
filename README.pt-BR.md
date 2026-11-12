@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>Orquestre vários agentes de IA em vários projetos, de um terminal só.</b><br>
-  Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi Code, Pi e terminais comuns lado a lado, organizados em sessões.<br>
+  Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi Code, Pi, Cursor e terminais comuns lado a lado, organizados em sessões.<br>
   Binário único, nativo e sem runtime, para Windows, Linux e macOS.
 </p>
 
@@ -68,7 +68,7 @@ https://github.com/user-attachments/assets/1e8cbd53-b2b6-4318-97d8-74d33790c49c
 ## Destaques
 
 - **Todos os agentes numa tela.** Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi
-  Code, Pi e terminais agrupados por pasta, com estado, tempo, tipo, a frase do que cada um está fazendo e os
+  Code, Pi, Cursor e terminais agrupados por pasta, com estado, tempo, tipo, a frase do que cada um está fazendo e os
   subagents que o Claude Code e o Codex disparam.
 - **Estado exato, na hora.** Hooks, plugins e os protocolos de cada agente dizem quando ele está
   trabalhando, esperando você ou terminou, sem depender do texto da tela (veja
@@ -103,13 +103,15 @@ https://github.com/user-attachments/assets/1e8cbd53-b2b6-4318-97d8-74d33790c49c
 | `qwen` | Qwen Code | `qwen` | hooks (system defaults) | sem API de consumo | `--resume <id>` |
 | `kimi` | Kimi Code | `kimi` | tela | 5h, semana ou mês | `--session <id>` |
 | `pi` | Pi | `pi` | OSC 7501 | sem API de uso | `--session-id <id>` |
+| `cursor` | Cursor CLI | `cursor-agent` | tela e título da janela | sem API de uso | `--resume <id>` |
 | `terminal` | PowerShell, bash… | `shell` | atividade da saída | — | reexecuta o comando |
 
 - **Lançamento.** A tarefa entra no agente assim que ele fica pronto. No OpenCode e no Kilo ela vai pelo
   `--prompt`, que eles mesmos enviam quando terminam de carregar; nos outros, o orkai digita a tarefa e
   aperta `enter`. O Claude Code, o Grok, o Qwen Code e o Pi nascem com um id de sessão escolhido pelo orkai. Nos
   outros, o orkai descobre a sessão na hora de retomar: pelo `session list` do OpenCode/Kilo, pelo
-  `session_index.jsonl` do Kimi Code (`~/.kimi-code`) ou pelo `last_conversations.json` do Antigravity. Em
+  `session_index.jsonl` do Kimi Code (`~/.kimi-code`), pelo `last_conversations.json` do Antigravity ou pelas
+  conversas que o Cursor guarda para a pasta (`~/.cursor/chats`). Em
   cada caso, é a sessão daquela pasta criada depois do agente e que nenhum outro agente já usa.
 - **Estado exato.** Além da leitura da tela, que vale para todos:
   - OpenCode e Kilo carregam um plugin do orkai (`OPENCODE_CONFIG_CONTENT`/`KILO_CONFIG_CONTENT`, só
@@ -123,8 +125,10 @@ https://github.com/user-attachments/assets/1e8cbd53-b2b6-4318-97d8-74d33790c49c
     (`◐` e `✳`).
 
   O orkai não mexe em nenhum arquivo de configuração seu. Se você já define uma dessas variáveis, ele não a
-  substitui. O Grok Build e o Kimi Code só aceitam hooks na configuração global do usuário, então ficam
-  na leitura da tela e do título.
+  substitui. O Grok Build, o Kimi Code e o Cursor só aceitam hooks na configuração global do usuário, então
+  ficam na leitura da tela e do título. O Cursor só mostra o estado no título depois que você liga o
+  `/status-indicators` nele; um Cursor sem login conta como esperando você, e a tarefa é digitada depois
+  do login.
 - **Skills no `/`.** Cada agente sugere as skills e os comandos das pastas que ele mesmo lê, e também as
   dos outros agentes (veja [abaixo](#skills-dos-agentes-skill)).
 
@@ -397,6 +401,7 @@ aprovação. Use só em pastas e máquinas em que você confia nisso. Terminais 
 | Qwen Code | `--yolo` |
 | Kimi Code | `--auto` (o `--yolo` do Kimi ainda pergunta nas ações arriscadas) |
 | Pi | `--approve` (o Pi nunca pergunta antes de usar uma ferramenta; isto confia nas configurações e extensões `.pi` da pasta) |
+| Cursor | `--force` (o Cursor roda todo comando que não foi mandado negar) |
 
 - O modo fica gravado no agente: `ctrl+r`, `/restart` e `orkai recover` retomam a conversa ainda em bypass.
 - Se os args do agente no `config.json` já escolhem um modo de permissão (como `-a on-request` no Codex ou
@@ -427,7 +432,8 @@ pasta do `where` até a raiz do repositório:
 - **Grok Build**: `skills` e `commands` de `~/.grok`, `.grok`, `.agents`, `.claude` e `.cursor`;
 - **Qwen Code**: `~/.qwen/skills`, `~/.qwen/commands`, `.qwen/skills`, `.qwen/commands` e `.agents/skills`;
 - **Kimi Code**: `~/.kimi-code/skills`, `.kimi-code/skills` e `.agents/skills`;
-- **Pi**: `~/.pi/agent/skills`, `~/.agents/skills`, `.pi/skills` e `.agents/skills`.
+- **Pi**: `~/.pi/agent/skills`, `~/.agents/skills`, `.pi/skills` e `.agents/skills`;
+- **Cursor**: `~/.cursor/skills`, `~/.agents/skills`, `.cursor/skills` e `.agents/skills`.
 
 `tab` completa (ou estende o prefixo comum), e `/skill argumentos` + `enter` inicia um agente já
 invocando a skill. No Codex o orkai envia no formato dele (`$skill argumentos`) e no Kimi Code e no Pi como
@@ -663,6 +669,8 @@ A variável `ORKAI_HOME` muda esse local.
   "kimi_args": [],
   "pi_command": "pi",
   "pi_args": [],
+  "cursor_command": "cursor-agent",
+  "cursor_args": [],
   "notify": true,
   "notify_sound": true,
   "notify_volume": 100,
@@ -763,7 +771,7 @@ completa está em [octo.marujo.dev/privacy](https://octo.marujo.dev/privacy/). E
   instala as atualizações dele;
 - versões dos agentes: cada vez que a janela abre, o Octo lê o número público da versão de cada agente
   instalado no site de quem o faz (`downloads.claude.ai`, `registry.npmjs.org`, `x.ai`, `code.kimi.com`,
-  `pi.dev` e o servidor de atualização do Antigravity) para oferecer a atualização;
+  `pi.dev`, `cursor.com` e o servidor de atualização do Antigravity) para oferecer a atualização;
 - consumo dos planos: o token de login de cada agente vai só para o serviço que o emitiu (veja Segurança,
   acima);
 - o orkai PWA, só depois que você o liga: o quick tunnel da Cloudflare, com o `cloudflared` baixado da release

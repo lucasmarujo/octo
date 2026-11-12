@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>Orchestrate multiple AI agents across multiple projects from a single terminal.</b><br>
-  Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi Code, Pi and plain terminals side by side, organized into sessions.<br>
+  Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi Code, Pi, Cursor and plain terminals side by side, organized into sessions.<br>
   A single native binary with no runtime, for Windows, Linux and macOS.
 </p>
 
@@ -66,7 +66,7 @@ https://github.com/user-attachments/assets/1e8cbd53-b2b6-4318-97d8-74d33790c49c
 ## Highlights
 
 - **Every agent on one screen.** Claude Code, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen Code, Kimi
-  Code, Pi and terminals grouped by folder, with status, time, type, a line saying what each one is doing and the
+  Code, Pi, Cursor and terminals grouped by folder, with status, time, type, a line saying what each one is doing and the
   subagents that Claude Code and Codex spawn.
 - **Exact status, instantly.** Hooks, plugins and each agent's own protocols tell when it is working,
   waiting for you or done, without relying on the screen text (see
@@ -101,13 +101,15 @@ https://github.com/user-attachments/assets/1e8cbd53-b2b6-4318-97d8-74d33790c49c
 | `qwen` | Qwen Code | `qwen` | hooks (system defaults) | no usage API | `--resume <id>` |
 | `kimi` | Kimi Code | `kimi` | screen | 5h, weekly or monthly | `--session <id>` |
 | `pi` | Pi | `pi` | OSC 7501 | no usage API | `--session-id <id>` |
+| `cursor` | Cursor CLI | `cursor-agent` | screen and window title | no usage API | `--resume <id>` |
 | `terminal` | PowerShell, bash… | `shell` | output activity | — | reruns the command |
 
 - **Launch.** The task goes into the agent as soon as it is ready. In OpenCode and Kilo it goes through
   `--prompt`, which they send themselves once they finish loading; in the others, orkai types the task and
   presses `enter`. Claude Code, Grok, Qwen Code and Pi start with a session id chosen by orkai. For the
   others, orkai finds the session when it is time to resume: through the `session list` of OpenCode/Kilo, the
-  `session_index.jsonl` of Kimi Code (`~/.kimi-code`) or the `last_conversations.json` of Antigravity. In
+  `session_index.jsonl` of Kimi Code (`~/.kimi-code`), the `last_conversations.json` of Antigravity or the
+  chats Cursor keeps for the folder (`~/.cursor/chats`). In
   each case, it is the session of that folder created after the agent and not already used by any other agent.
 - **Exact status.** On top of reading the screen, which applies to all of them:
   - OpenCode and Kilo load an orkai plugin (`OPENCODE_CONFIG_CONTENT`/`KILO_CONFIG_CONTENT`, only in
@@ -121,8 +123,10 @@ https://github.com/user-attachments/assets/1e8cbd53-b2b6-4318-97d8-74d33790c49c
     (`◐` and `✳`).
 
   orkai doesn't touch any of your config files. If you already set one of these variables, it doesn't
-  replace it. Grok Build and Kimi Code only accept hooks in the user's global config, so they rely on
-  reading the screen and the title.
+  replace it. Grok Build, Kimi Code and Cursor only accept hooks in the user's global config, so they rely on
+  reading the screen and the title. Cursor shows its status in the title only after you turn on
+  `/status-indicators` in it; a Cursor that is not signed in counts as waiting for you, and the task is typed
+  after you sign in.
 - **Skills in `/`.** Each agent suggests the skills and commands from the folders it reads itself, and also
   the ones of the other agents (see [below](#agent-skills-skill)).
 
@@ -395,6 +399,7 @@ approval. Only use it in folders and on machines where you trust that. Terminals
 | Qwen Code | `--yolo` |
 | Kimi Code | `--auto` (Kimi's `--yolo` still asks on risky actions) |
 | Pi | `--approve` (Pi never asks before a tool call; this trusts the folder's `.pi` settings and extensions) |
+| Cursor | `--force` (Cursor runs every command it was not told to deny) |
 
 - The mode is saved with the agent: `ctrl+r`, `/restart` and `orkai recover` resume the conversation still bypassed.
 - If the agent args in `config.json` already pick a permission mode (like `-a on-request` in Codex or
@@ -425,7 +430,8 @@ the `where` folder up to the repository root:
 - **Grok Build**: `skills` and `commands` from `~/.grok`, `.grok`, `.agents`, `.claude` and `.cursor`;
 - **Qwen Code**: `~/.qwen/skills`, `~/.qwen/commands`, `.qwen/skills`, `.qwen/commands` and `.agents/skills`;
 - **Kimi Code**: `~/.kimi-code/skills`, `.kimi-code/skills` and `.agents/skills`;
-- **Pi**: `~/.pi/agent/skills`, `~/.agents/skills`, `.pi/skills` and `.agents/skills`.
+- **Pi**: `~/.pi/agent/skills`, `~/.agents/skills`, `.pi/skills` and `.agents/skills`;
+- **Cursor**: `~/.cursor/skills`, `~/.agents/skills`, `.cursor/skills` and `.agents/skills`.
 
 `tab` completes (or extends the common prefix), and `/skill arguments` + `enter` starts an agent already
 invoking the skill. In Codex orkai sends it in its format (`$skill arguments`) and in Kimi Code and Pi as
@@ -659,6 +665,8 @@ The `ORKAI_HOME` variable changes this location.
   "kimi_args": [],
   "pi_command": "pi",
   "pi_args": [],
+  "cursor_command": "cursor-agent",
+  "cursor_args": [],
   "notify": true,
   "notify_sound": true,
   "notify_volume": 100,
@@ -758,7 +766,7 @@ at [octo.marujo.dev/privacy](https://octo.marujo.dev/privacy/). They only use th
   [Auto-update](#auto-update)); the Octo from the Microsoft Store never does this, since the Store installs
   its updates;
 - agent versions: each time its window opens, Octo reads the public version number of each installed agent
-  from its maker (`downloads.claude.ai`, `registry.npmjs.org`, `x.ai`, `code.kimi.com`, `pi.dev` and the
+  from its maker (`downloads.claude.ai`, `registry.npmjs.org`, `x.ai`, `code.kimi.com`, `pi.dev`, `cursor.com` and the
   Antigravity update server) to offer an update;
 - plan usage: each agent's login token goes only to the service that issued it (see Security, above);
 - the orkai PWA, only after you turn it on: the Cloudflare quick tunnel, with `cloudflared` downloaded from

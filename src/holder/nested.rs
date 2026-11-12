@@ -12,7 +12,7 @@ pub const MAX_PROCESSES: usize = 256;
 const CLAUDE_SESSIONS_DIR: &str = "sessions";
 const QWEN_SESSIONS_DIR: &str = "sessions";
 const CLAUDE_BUSY_STATUS: &str = "busy";
-const PROGRAMS: [(&str, AgentKind); 10] = [
+const PROGRAMS: [(&str, AgentKind); 11] = [
     ("claude", AgentKind::Claude),
     ("codex", AgentKind::Codex),
     ("kilo", AgentKind::Kilo),
@@ -23,6 +23,7 @@ const PROGRAMS: [(&str, AgentKind); 10] = [
     ("qwen", AgentKind::Qwen),
     ("kimi", AgentKind::Kimi),
     ("pi", AgentKind::Pi),
+    ("cursor-agent", AgentKind::Cursor),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -354,6 +355,7 @@ mod tests {
             ("qwen", AgentKind::Qwen),
             ("kimi.exe", AgentKind::Kimi),
             ("/home/me/.local/bin/pi", AgentKind::Pi),
+            ("/home/me/.local/bin/cursor-agent", AgentKind::Cursor),
         ] {
             assert_eq!(
                 detect(&[process(3, "pwsh.exe"), process(4, name)], None, None, 1).unwrap().kind,

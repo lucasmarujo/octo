@@ -33,6 +33,8 @@ pub struct Config {
     pub kimi_args: Vec<String>,
     pub pi_command: String,
     pub pi_args: Vec<String>,
+    pub cursor_command: String,
+    pub cursor_args: Vec<String>,
     pub notify: bool,
     pub notify_sound: bool,
     #[serde(deserialize_with = "volume_within_range")]
@@ -66,6 +68,8 @@ impl Default for Config {
             kimi_args: Vec::new(),
             pi_command: "pi".to_string(),
             pi_args: Vec::new(),
+            cursor_command: "cursor-agent".to_string(),
+            cursor_args: Vec::new(),
             notify: true,
             notify_sound: true,
             notify_volume: FULL_VOLUME,
@@ -94,6 +98,7 @@ impl Config {
             AgentKind::Qwen => (&self.qwen_command, &self.qwen_args),
             AgentKind::Kimi => (&self.kimi_command, &self.kimi_args),
             AgentKind::Pi => (&self.pi_command, &self.pi_args),
+            AgentKind::Cursor => (&self.cursor_command, &self.cursor_args),
             AgentKind::Terminal => return None,
         };
         Some((command.as_str(), args.as_slice()))
@@ -125,6 +130,8 @@ mod tests {
         assert_eq!(config.kimi_command, "kimi");
         assert_eq!(config.pi_command, "pi");
         assert!(config.pi_args.is_empty(), "a config written before Pi still loads");
+        assert_eq!(config.cursor_command, "cursor-agent");
+        assert!(config.cursor_args.is_empty(), "a config written before Cursor still loads");
         assert!(config.kilo_args.is_empty());
         assert!(config.shell.is_none());
         assert!(config.notify);
@@ -183,7 +190,8 @@ mod tests {
         let defaults = Config::default();
         for kind in AgentKind::ALL.into_iter().filter(|kind| kind.is_ai()) {
             let (command, _) = defaults.agent(kind).unwrap();
-            assert_eq!(command, kind.label(), "the default command of {kind:?} is its own name");
+            let expected = if kind == AgentKind::Cursor { "cursor-agent" } else { kind.label() };
+            assert_eq!(command, expected, "the default command of {kind:?} is its own name");
         }
     }
 

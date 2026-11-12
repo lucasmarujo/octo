@@ -40,6 +40,7 @@
   --kind-qwen: #ba8cff;
   --kind-kimi: #ec80dc;
   --kind-pi: #aadc5a;
+  --kind-cursor: #d6c4a0;
   --kind-terminal: #5ad2d2;
   --kind-other: #9a9aa8;
   --ansi-0: #2c2c3a;
@@ -123,6 +124,7 @@
   --kind-qwen: #7d45cc;
   --kind-kimi: #b8409f;
   --kind-pi: #4f7d12;
+  --kind-cursor: #7a6534;
   --kind-terminal: #0f8585;
   --kind-other: #6a6a78;
   --ansi-0: #16161d;
@@ -756,6 +758,7 @@ kbd { padding: 1px 7px; border-radius: 6px; border: 1px solid var(--color-border
 .k-qwen { color: var(--kind-qwen); }
 .k-kimi { color: var(--kind-kimi); }
 .k-pi { color: var(--kind-pi); }
+.k-cursor { color: var(--kind-cursor); }
 .k-terminal { color: var(--kind-terminal); }
 .bg-claude { background: color-mix(in srgb, var(--kind-claude) 14%, transparent); }
 .bg-codex { background: color-mix(in srgb, var(--kind-codex) 14%, transparent); }
@@ -766,6 +769,7 @@ kbd { padding: 1px 7px; border-radius: 6px; border: 1px solid var(--color-border
 .bg-qwen { background: color-mix(in srgb, var(--kind-qwen) 14%, transparent); }
 .bg-kimi { background: color-mix(in srgb, var(--kind-kimi) 14%, transparent); }
 .bg-pi { background: color-mix(in srgb, var(--kind-pi) 14%, transparent); }
+.bg-cursor { background: color-mix(in srgb, var(--kind-cursor) 14%, transparent); }
 .bg-terminal { background: color-mix(in srgb, var(--kind-terminal) 14%, transparent); }
 
 :root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after {

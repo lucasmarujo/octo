@@ -231,6 +231,7 @@ impl SubagentWatcher {
                 | AgentKind::Qwen
                 | AgentKind::Kimi
                 | AgentKind::Pi
+                | AgentKind::Cursor
                 | AgentKind::Terminal => Vec::new(),
             };
             if subagents.is_empty() {
@@ -264,6 +265,7 @@ impl SubagentWatcher {
                 | AgentKind::Qwen
                 | AgentKind::Kimi
                 | AgentKind::Pi
+                | AgentKind::Cursor
                 | AgentKind::Terminal => None,
             };
             if let Some(model) = model {

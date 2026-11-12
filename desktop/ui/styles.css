@@ -40,6 +40,7 @@
   --kind-qwen: #ba8cff;
   --kind-kimi: #ec80dc;
   --kind-pi: #aadc5a;
+  --kind-cursor: #d6c4a0;
   --kind-terminal: #5ad2d2;
   --kind-other: #9a9aa8;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -110,6 +111,7 @@
   --kind-qwen: #7d45cc;
   --kind-kimi: #b8409f;
   --kind-pi: #4f7d12;
+  --kind-cursor: #7a6534;
   --kind-terminal: #0f8585;
   --kind-other: #6a6a78;
   --ansi-0: #16161d;

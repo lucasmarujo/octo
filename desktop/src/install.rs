@@ -62,6 +62,8 @@ pub const fn command(kind: AgentKind, os: Os) -> Option<&'static str> {
         (AgentKind::Kimi, Os::Mac | Os::Linux) => Some("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash"),
         (AgentKind::Pi, Os::Windows) => Some("powershell -c \"irm https://pi.dev/install.ps1 | iex\""),
         (AgentKind::Pi, Os::Mac | Os::Linux) => Some("curl -fsSL https://pi.dev/install.sh | sh"),
+        (AgentKind::Cursor, Os::Windows) => Some("irm \"https://cursor.com/install?win32=true\" | iex"),
+        (AgentKind::Cursor, Os::Mac | Os::Linux) => Some("curl https://cursor.com/install -fsS | bash"),
         (AgentKind::Terminal, _) => None,
     }
 }
@@ -264,6 +266,11 @@ mod tests {
                 AgentKind::Pi,
                 "powershell -c \"irm https://pi.dev/install.ps1 | iex\"",
                 "curl -fsSL https://pi.dev/install.sh | sh",
+            ),
+            (
+                AgentKind::Cursor,
+                "irm \"https://cursor.com/install?win32=true\" | iex",
+                "curl https://cursor.com/install -fsS | bash",
             ),
         ];
         assert_eq!(expected.len(), ai_kinds().count());
