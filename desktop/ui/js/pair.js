@@ -1,3 +1,4 @@
+import { spinner, usesKai } from './brand.js';
 import { $, h, svg } from './dom.js';
 import { closeDialog, confirm, openDialog } from './dialogs.js';
 import { SPINNER } from './format.js';
@@ -18,7 +19,6 @@ const STEPS = [
   t('Share › Add to Home Screen keeps it one tap away'),
 ];
 const PRIVACY = t('The tunnel only carries encrypted bytes; the key lives in this code, never on a server.');
-const GHOST = Array.from({ length: 21 }, (_, y) => Array.from({ length: 21 }, (_, x) => ((x * 73856093) ^ (y * 19349663)) % 7 < 3 ? '1' : '0').join(''));
 const BROWSERS = [
   [/(?:EdgiOS|EdgA|Edg)\/(\d+)/, 'Edge'],
   [/SamsungBrowser\/(\d+)/, 'Samsung Internet'],
@@ -30,6 +30,11 @@ const BROWSERS = [
 
 let timer = null;
 let shown = '';
+let lastStatus = 'off';
+
+export function phoneNow() {
+  return lastStatus;
+}
 
 export function qrPath(rows) {
   const parts = [];
@@ -128,10 +133,10 @@ function detail(label, ...value) {
 
 function statePanel(pairing) {
   const pending = pairing.enabled && pairing.phase !== 'failed';
-  const message = pairing.enabled ? waiting(pairing).text : t('Turn on to get a pairing code');
+  const message = pairing.enabled ? waiting(pairing).text : t('Turn it on to get a pairing code. End-to-end encrypted.');
+  const loading = usesKai() ? h('span', { class: 'pair-state-glyph' }, SPINNER[state.frame % SPINNER.length]) : spinner();
   return h('div', { class: 'pair-state' },
-    h('div', { class: 'pair-placeholder', 'aria-hidden': 'true' }, svg(`<svg class="pair-ghost" viewBox="0 0 21 21" shape-rendering="crispEdges"><path d="${qrPath(GHOST)}" fill="currentColor"/></svg>`),
-      h('span', { class: 'pair-placeholder-mark' }, pending ? SPINNER[state.frame % SPINNER.length] : svg(ICON_PAIR))),
+    h('span', { class: `pair-state-mark${pending ? ' loading' : ''}`, 'aria-hidden': 'true' }, pending ? loading : svg(ICON_PAIR)),
     h('div', { class: 'pair-state-message', role: 'status' }, h('strong', null, pairing.enabled ? t(pairing.phase === 'failed' ? 'Pairing needs attention' : 'Preparing a secure connection') : t('Phone access is off')), h('span', null, message)));
 }
 
@@ -144,13 +149,12 @@ function deviceCard(device) {
     device.sinceMs ? h('span', { class: 'pair-device-since', dataset: { since: device.sinceMs } }, connectedFor(device.sinceMs)) : null);
 }
 
+function paired(pairing) {
+  return Boolean(pairing.enabled && pairing.link && pairing.qr);
+}
+
 function body(pairing) {
-  if (!pairing.enabled) {
-    return statePanel(pairing);
-  }
-  if (!pairing.link || !pairing.qr) {
-    return statePanel(pairing);
-  }
+  if (!paired(pairing)) return statePanel(pairing);
   const phones = pairing.phones === 0 ? h('span', { class: 't-faint' }, t('no phone connected')) : h('span', { class: 't-green' }, t('{count} connected', { count: pairing.phones }));
   return h(
     'div',
@@ -196,13 +200,14 @@ function actions(pairing) {
   const close = h('button', { class: 'button', type: 'button', onclick: closeDialog }, t('Close'));
   if (!pairing.enabled) return [close, h('button', { class: 'button primary', type: 'button', onclick: () => act('set_phone', { on: true }) }, t('Turn on'))];
   return [
-    h('button', { class: 'button', type: 'button', onclick: renewCode }, t('New code')),
+    paired(pairing) ? h('button', { class: 'button', type: 'button', onclick: renewCode }, t('New code')) : null,
     h('button', { class: 'button warn', type: 'button', onclick: () => act('set_phone', { on: false }) }, t('Turn off')),
     close,
-  ];
+  ].filter(Boolean);
 }
 
 function markPhone(pairing) {
+  lastStatus = phoneStatus(pairing);
   $('pair').classList.toggle('connected', phoneConnected(pairing));
   renderPhoneStatus(pairing);
 }
@@ -214,8 +219,9 @@ function render(pairing) {
   shown = signature;
   const title = [h('span', null, t('Pair your phone')), statusPill(pairing)];
   const tagline = h('p', { class: 'pair-tagline' }, t('Octo on your phone, from anywhere · end-to-end encrypted'));
-  const dialog = openDialog(title, [tagline, body(pairing)], actions(pairing));
+  const dialog = openDialog(title, paired(pairing) ? [tagline, body(pairing)] : [body(pairing)], actions(pairing));
   dialog.classList.add('pairing');
+  dialog.classList.toggle('compact', !paired(pairing));
 }
 
 function statusPill(pairing) {
@@ -228,7 +234,7 @@ function stop() {
   clearInterval(timer);
   timer = null;
   shown = '';
-  $('dialog').classList.remove('pairing');
+  $('dialog').classList.remove('pairing', 'compact');
 }
 
 export function watchPhone() {

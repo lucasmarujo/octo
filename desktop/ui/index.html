@@ -132,7 +132,10 @@
               <div id="agent-actions" class="agent-actions"></div>
             </header>
             <div class="workspace">
-              <div id="terminal" class="term-frame"></div>
+              <div class="term-column">
+                <div id="term-info" class="term-info"></div>
+                <div id="terminal" class="term-frame"></div>
+              </div>
               <div id="details-resize" class="sidebar-resize details-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize the agent panel" title="Drag to resize, double click to reset" data-i18n-label="Resize the agent panel" data-i18n-title="Drag to resize, double click to reset"></div>
               <aside id="details" class="details"></aside>
             </div>
@@ -143,6 +146,7 @@
           <section id="settings-view" class="settings-view" hidden></section>
         </main>
       </div>
+      <footer id="statusbar" class="statusbar"></footer>
       <div id="toasts" class="toasts" aria-live="polite"></div>
       <div id="flyout" class="flyout" hidden></div>
       <div id="menu" class="menu" role="menu" hidden></div>

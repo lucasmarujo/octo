@@ -107,17 +107,18 @@ test('the red of the gray theme stays readable on its background and its surface
   assert.ok(contrast('#f04e5c', tokens['--color-surface']) < 4.5, 'the red of the dark theme is the reason gray has its own');
 });
 
-test('the theme picker offers dark, gray, light and system, and only those reach the page', async (context) => {
+test('the theme picker offers octo, gray, light, old and system, and only those reach the page', async (context) => {
   const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
   const offered = [...settings.match(/const THEMES = \[([\s\S]*?)\];/)[1].matchAll(/\['(\w+)', t\('(\w+)'\)\]/g)].map(([, value, text]) => [value, text]);
-  assert.deepEqual(offered, [['dark', 'Dark'], ['gray', 'Gray'], ['light', 'Light'], ['system', 'System']]);
+  assert.deepEqual(offered, [['octo', 'Octo'], ['gray', 'Gray'], ['light', 'Light'], ['old', 'Old'], ['system', 'System']]);
   const stored = new Map();
   let systemIsLight = false;
+  const inline = new Map();
   globalThis.window = {
     localStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: (key) => stored.delete(key) },
     matchMedia: () => ({ matches: systemIsLight }),
   };
-  globalThis.document = { documentElement: { dataset: {} } };
+  globalThis.document = { documentElement: { dataset: {}, style: { setProperty: (name, value) => inline.set(name, value), removeProperty: (name) => inline.delete(name) } } };
   context.after(() => {
     delete globalThis.window;
     delete globalThis.document;
@@ -133,13 +134,51 @@ test('the theme picker offers dark, gray, light and system, and only those reach
   assert.equal(applied('gray'), 'gray');
   assert.equal(themeChoice(), 'gray');
   assert.equal(applied('gray', true), 'gray', 'gray does not follow the system');
-  assert.equal(applied(null), 'dark', 'nothing stored is the dark theme');
+  assert.equal(applied(null), 'octo', 'nothing stored is the Octo theme');
   assert.equal(applied('light'), 'light');
-  assert.equal(applied('dark', true), 'dark');
-  assert.equal(applied('system', false), 'dark', 'the system resolves to dark');
+  assert.equal(applied('old', true), 'old', 'the look of older versions is one click away');
+  assert.equal(applied('system', false), 'octo', 'the system resolves to Octo');
   assert.equal(applied('system', true), 'light', 'the system resolves to light');
-  assert.equal(applied('sepia'), 'dark', 'an unknown choice falls back to dark');
+  assert.equal(applied('sepia'), 'octo', 'an unknown choice falls back to Octo');
+  assert.equal(applied('dark'), 'octo', 'the dark theme of older versions was never stored by name, so the name means nothing');
   assert.match(settings, /const THEME_KEY = 'orkai\.theme';/, 'the choice of older versions keeps working');
+  const { accentChoice } = await import('../js/settings.js');
+  assert.equal(accentChoice(), null, 'no accent chosen is the aqua of the theme');
+  applied(null);
+  assert.equal(inline.size, 0, 'the stylesheet paints the default accent');
+  stored.set('octo.accent', '#FF8A4C');
+  applied('gray');
+  assert.equal(accentChoice(), '#ff8a4c');
+  assert.equal(inline.get('--color-accent'), '#ff8a4c', 'the chosen accent paints over any theme');
+  assert.equal(inline.get('--color-accent-ink'), '#0b0c0d', 'the text on a bright accent is dark');
+  assert.ok(inline.has('--color-link'), 'links follow the accent');
+  applied('old');
+  assert.equal(inline.size, 0, 'the Old theme keeps its pink whatever accent was chosen');
+  assert.equal(accentChoice(), '#ff8a4c', 'and the choice is still there for the other themes');
+  stored.set('octo.accent', 'not a color');
+  applied(null);
+  assert.equal(inline.size, 0, 'a broken value is ignored');
+});
+
+test('the accent math keeps a color readable and a hue change vivid', async () => {
+  const { ACCENT_DEFAULT, ACCENT_PRESETS, accentInk, accentLink, hexToRgb, hueOf, normalizeHex, rgbToHex, withHue } = await import('../js/accent.js');
+  assert.equal(ACCENT_DEFAULT, '#35fddc');
+  assert.equal(ACCENT_PRESETS[0], ACCENT_DEFAULT, 'the first preset is the color of the brand');
+  assert.equal(normalizeHex('35FDDC'), '#35fddc');
+  assert.equal(normalizeHex(' #AbC '), '#aabbcc');
+  assert.equal(normalizeHex('#12345'), null);
+  assert.equal(normalizeHex(null), null);
+  assert.deepEqual(hexToRgb('#35fddc'), [53, 253, 220]);
+  assert.equal(rgbToHex([53, 253, 220]), '#35fddc');
+  assert.equal(rgbToHex([300, -4, 'x']), '#ff0000', 'channels typed by hand are clamped');
+  assert.equal(accentInk('#35fddc'), '#0b0c0d');
+  assert.equal(accentInk('#2f3cc8'), '#ffffff', 'a dark accent gets white text');
+  for (const preset of ACCENT_PRESETS) assert.ok(contrast(preset, accentInk(preset)) >= 4.5, `${preset} with its ink`);
+  assert.ok(contrast(accentLink('#35fddc', false), '#000000') > contrast('#35fddc', '#000000'), 'a link is lighter than the accent on a dark theme');
+  assert.ok(contrast(accentLink('#35fddc', true), '#ffffff') > contrast('#35fddc', '#ffffff'), 'and darker on the light theme');
+  const moved = withHue('#35fddc', 20);
+  assert.ok(Math.abs(hueOf(moved) - 20) <= 2, `hue ${hueOf(moved)}`);
+  assert.ok(Math.abs(hueOf(withHue('#808080', 200)) - 200) <= 2, 'a gray gains enough saturation to show its hue');
 });
 
 test('the gray theme has its name in Portuguese', async () => {
@@ -435,7 +474,10 @@ test('grid tiles sit edge to edge and only the title bar carries the status colo
   assert.match(css, /\.grid \{[^}]*--grid-gap: 1px;/, 'a hairline between tiles instead of a margin');
   assert.doesNotMatch(css.match(/\n\.tile \{[^}]*\}/)[0], /border-radius|border:/, 'a tile is no longer a framed card');
   assert.match(css, /\.tile \{ --tile-tone: var\(--color-text-muted\);/, 'idle and stopped agents stay gray');
-  assert.match(css, /\.tile\[data-column="working"\], \.tile\[data-column="needs"\] \{ --tile-tone: var\(--color-waiting\); \}/);
+  assert.match(css, /\.tile\[data-column="working"\] \{ --tile-tone: var\(--color-working\); \}/, 'a working agent takes the accent');
+  assert.match(css, /\.tile\[data-column="needs"\] \{ --tile-tone: var\(--color-waiting\); \}/, 'yellow is only for an agent that needs the user');
+  assert.match(css, /:root \{[^}]*--color-working: var\(--color-accent\);/);
+  assert.match(css.split(':root[data-theme="old"] {')[1].split('}')[0], /--color-working: var\(--color-waiting\);/, 'the Old theme keeps working agents yellow');
   assert.match(css, /\.tile\[data-column="done"\] \{ --tile-tone: var\(--color-done\); \}/);
   assert.match(css, /\.tile-head \{[^}]*background: color-mix\(in srgb, var\(--tile-tone\)/);
   assert.match(css, /\.tile-name \{[^}]*color: var\(--tile-tone\)/);
@@ -502,12 +544,20 @@ test('the help and the settings no longer point at the who and where labels of t
   assert.ok(!Object.hasOwn(PT, 'The program Octo runs for each agent and the extra arguments it passes. Only installed agents show up in'));
 });
 
-test('the accent of every surface is the pink of Kai', () => {
+test('the desktop accent is the aqua of Octo, and the pink of Kai lives on in the Old theme', () => {
   const pink = '#e85eb6';
   assert.match(readFileSync(join(REPO, 'desktop/ui/kai/idle.svg'), 'utf8').toLowerCase(), new RegExp(pink));
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
-  assert.equal(css.match(/--color-accent: #[0-9a-f]{6};/g).length, 2);
-  assert.ok(css.match(/--color-accent: #[0-9a-f]{6};/g).every((rule) => rule.includes(pink)));
+  const theme = (name) => css.split(name ? `:root[data-theme="${name}"] {` : ':root {')[1].split('}')[0];
+  assert.match(theme(null), /--color-accent: #35fddc;/);
+  assert.match(theme(null), /--color-accent-ink: #04201c;/);
+  assert.match(theme(null), /--color-bg: #000000;/);
+  assert.match(theme('light'), /--color-accent: #12b8a0;/, 'the aqua is darker where the background is white');
+  assert.doesNotMatch(theme('gray'), /--color-accent/, 'gray takes the accent of Octo');
+  assert.match(theme('old'), new RegExp(`--color-accent: ${pink};`));
+  assert.match(theme('old'), /--color-bg: #0e0e13;/, 'the Old theme is the dark theme of the versions before');
+  assert.equal(css.match(/--color-accent: #[0-9a-f]{6};/g).length, 3);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/octo-mark.svg'), 'utf8').toLowerCase(), /#35fddc/);
   assert.match(readFileSync(join(REPO, 'src/pwa/web/style.css'), 'utf8'), new RegExp(`--color-accent: ${pink};`));
   assert.match(readFileSync(join(REPO, 'site/assets/site.css'), 'utf8'), new RegExp(`--pink: ${pink};`));
   assert.match(rust('src/tui/theme.rs'), /ACCENT: Color = Color::Rgb\(232, 94, 182\);/);
@@ -1638,7 +1688,7 @@ test('the panel of an agent is as wide as the user left it and never scrolls sid
   assert.match(rule('.subagent-meta'), /text-overflow: ellipsis/);
   assert.match(rule('.subagent-text'), /overflow-wrap: anywhere/, 'a long path wraps');
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
-  assert.match(html, /<div id="terminal"[^>]*><\/div>\s*<div id="details-resize"[^>]*role="separator"[^>]*tabindex="0"[^>]*><\/div>\s*<aside id="details"/, 'between the terminal and the panel');
+  assert.match(html, /<div id="terminal"[^>]*><\/div>\s*<\/div>\s*<div id="details-resize"[^>]*role="separator"[^>]*tabindex="0"[^>]*><\/div>\s*<aside id="details"/, 'between the terminal and the panel');
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.equal(sidebar.match(/setPointerCapture/g).length, 1, 'both panels resize through the same code');
   assert.match(sidebar, /growKey: 'ArrowLeft'/, 'this panel grows to the left');
@@ -1771,12 +1821,14 @@ test('the tabs keep their shortcuts, drag inside the strip and can be chosen fro
   assert.match(css, /\.tab-rows \{[^}]*max-height: calc\(100vh - 72px\); overflow-y: auto;/, 'many agents scroll inside the menu');
 });
 
-test('both side panels collapse from a button at the same height, and remember it', () => {
+test('both side panels collapse from a button at the bottom, and remember it', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
-  const sidebarBottom = Number(css.match(/\.sidebar \{[^}]*padding: \d+px \d+px (\d+)px;/)[1]);
+  const BUTTON = 32;
+  const rowHeight = Number(css.match(/\.tab-status \{[^}]*height: (\d+)px;/)[1]);
   const detailsBottom = Number(css.match(/\.details-toggle \{ position: absolute; right: \d+px; bottom: (\d+)px; \}/)[1]);
-  assert.equal(detailsBottom, sidebarBottom, 'one button mirrors the other');
+  assert.equal(detailsBottom, (rowHeight - BUTTON) / 2, 'the button of the agent panel sits centered in the row under the terminal');
+  assert.match(css, /\.footer-icon \{[^}]*width: 32px; height: 32px;/);
   assert.match(css, /\.sidebar-footer \{[^}]*position: sticky; bottom: 0;/, 'a long list of sessions never pushes the button away');
   assert.match(html, /<footer id="tab-status" class="tab-status"><\/footer>\s*<button id="details-toggle"/, 'outside the panel, so it is still there to expand it');
   assert.match(css, /:root\[data-details="collapsed"\] \.details, :root\[data-details="collapsed"\] \.details-resize \{ display: none; \}/);
@@ -1796,9 +1848,9 @@ test('both side panels slide closed and open instead of jumping, and reduced mot
   assert.match(css, /:root\[data-sidebar="closing"\] \.sidebar, :root\[data-sidebar="opening"\] \.sidebar \{ overflow: hidden; transition: width var\(--motion-slow\) var\(--ease-out\); \}/);
   assert.match(css, /:root\[data-sidebar="closing"\] \.sidebar \{ width: 56px; \}/, 'the same width the collapsed sidebar has');
   assert.match(css, /:root\[data-sidebar="closing"\] \.sidebar > \*, :root\[data-sidebar="opening"\] \.sidebar > \* \{ width: calc\(var\(--sidebar\) - 24px\); \}/, 'the content keeps its width and is clipped instead of wrapping while it slides');
-  assert.match(css, /:root\[data-details="closing"\] \.details \{ width: 0; margin-left: -16px; opacity: 0; transition: width var\(--motion-slow\)/, 'the gap beside the panel closes with it');
+  assert.match(css, /:root\[data-details="closing"\] \.details \{ width: 0; padding-left: 0; padding-right: 0; border-left-width: 0; opacity: 0; transition: width var\(--motion-slow\)/, 'the padding of the panel closes with it');
   assert.match(css, /:root\[data-details="opening"\] \.details \{ animation: details-in var\(--motion-slow\) var\(--ease-out\); \}/, 'a panel that was not drawn can only grow through an animation');
-  assert.match(css, /@keyframes details-in \{ from \{ width: 0; margin-left: -16px; opacity: 0; \} \}/);
+  assert.match(css, /@keyframes details-in \{ from \{ width: 0; padding-left: 0; padding-right: 0; opacity: 0; \} \}/);
   const resizeMs = Number(readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8').match(/const RESIZE_MS = (\d+);/)[1]);
   assert.ok(resizeMs > 16, 'the terminal fits once, after the slide, not on every frame');
 });
@@ -2124,4 +2176,91 @@ test('every kind of place the core sends has its icon in the folder picker', () 
   const picker = readFileSync(new URL('../js/folders.js', import.meta.url), 'utf8');
   const icons = [...picker.match(/const PLACE_ICONS = \{([^}]+)\}/)[1].matchAll(/(\w+):/g)].map(([, kind]) => kind);
   assert.deepEqual(icons.sort(), variants.sort());
+});
+
+test('the bar under the window counts every agent, the ones working and the ones waiting', async () => {
+  const { statusCounts, usageSummary } = await import('../js/statusbar.js');
+  const list = [agent({ state: 'working' }), agent({ state: 'paused' }), agent({ state: 'paused', starting: true }), agent({ state: 'done' }), agent({ state: 'idle' })];
+  assert.deepEqual(statusCounts(list), { total: 5, working: 2, needs: 1 }, 'an agent that is still starting works, it does not wait');
+  assert.deepEqual(statusCounts([]), { total: 0, working: 0, needs: 0 });
+  const usage = [
+    { kind: 'claude', windows: [{ label: '5h', used: 61.6 }, { label: 'week', used: 23 }] },
+    { kind: 'opencode', windows: [], credits: 18 },
+  ];
+  assert.deepEqual(usageSummary(usage), [{ kind: 'claude', used: 62 }], 'the first window of each plan, and no plan without one');
+  assert.deepEqual(usageSummary(null), []);
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<footer id="statusbar" class="statusbar"><\/footer>/);
+  assert.ok(html.indexOf('id="statusbar"') > html.indexOf('id="agent-view"'), 'under the whole window, after every view');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.statusbar-brand \{[^}]*background: var\(--color-accent\); color: var\(--color-accent-ink\);/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /initStatusBar\(\{ attention: openNextAttention, phone: openPairing, updates: openUpdates \}\);/, 'each part of the bar opens what it counts');
+  const bar = readFileSync(join(REPO, 'desktop/ui/js/statusbar.js'), 'utf8');
+  assert.match(bar, /state\.version \? version : null,\n  \]\.filter\(Boolean\);/, 'a part with nothing to say is left out, never written as null');
+});
+
+test('the terminal of an agent runs edge to edge under a strip with the agent, its model and its branch', async () => {
+  const { termInfo } = await import('../js/agent.js');
+  const working = termInfo(agent({ state: 'working', model: 'claude-opus-4-5', branch: 'octo/physics-merge' }), NOW);
+  assert.deepEqual(working, { tone: 'working', kind: 'claude', model: 'opus', branch: 'octo/physics-merge', alive: '1m00s' });
+  assert.equal(termInfo(agent({ state: 'paused' }), NOW).tone, 'paused');
+  assert.equal(termInfo(agent({ state: 'idle', starting: true }), NOW).tone, 'working');
+  assert.equal(termInfo(agent({ state: 'idle' }), NOW).tone, 'quiet');
+  const stopped = termInfo(agent({ state: 'exited', kind: 'terminal' }), NOW);
+  assert.deepEqual([stopped.model, stopped.branch, stopped.alive], [null, null, null], 'nothing is invented for a stopped terminal');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const rule = (selector) => css.split(`\n${selector} {`)[1].split('}')[0];
+  assert.doesNotMatch(rule('.term-frame'), /border|border-radius/, 'the terminal is no longer a framed card');
+  assert.doesNotMatch(rule('.agent-view'), /padding|gap/, 'nothing pushes the terminal away from the edges');
+  assert.doesNotMatch(rule('.workspace'), /gap/);
+  assert.match(rule('.term-info'), /border-bottom: 1px solid var\(--color-border\)/);
+  assert.match(rule('.details'), /border-left: 1px solid var\(--color-border\)/, 'a hairline, not a gap, between the terminal and the panel');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<div class="term-column">\s*<div id="term-info" class="term-info"><\/div>\s*<div id="terminal" class="term-frame"><\/div>\s*<\/div>/);
+});
+
+test('the O replaces Kai outside the Old theme, and turns only while an agent works', () => {
+  const brand = readFileSync(join(REPO, 'desktop/ui/js/brand.js'), 'utf8');
+  assert.match(brand, /return document\.documentElement\.dataset\.theme === OLD_THEME;/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /host\.replaceChildren\(usesKai\(\) \? kai\('idle'\) : mark\(\)\);/);
+  assert.match(main, /document\.documentElement\.toggleAttribute\('data-working', working\);/);
+  assert.match(main, /new MutationObserver\(render\)\.observe\(document\.documentElement, \{ attributes: true, attributeFilter: \['data-theme'\] \}\);/, 'changing the theme swaps the mascot at once');
+  const board = readFileSync(join(REPO, 'desktop/ui/js/board.js'), 'utf8');
+  assert.match(board, /usesKai\(\) \? sleeping\(\) : mark\('octo-mark-empty'\)/, 'the empty session shows the same mark');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /:root:not\(\[data-theme="old"\]\) \.brand-mascot \{ width: 44px; height: 44px; \}/);
+  assert.match(css, /:root\[data-working\] \.brand-mascot \.octo-mark, :root\[data-working\] \.octo-mark-empty \{ animation: octo-spin [\d.]+s linear infinite; \}/);
+  assert.match(css, /@keyframes octo-spin \{ to \{ transform: rotate\(360deg\); \} \}/, 'only a transform, so the compositor turns it');
+  assert.match(css, /\.brand-mascot \.octo-mark, \.octo-mark-empty \{ animation: none !important; \}/, 'reduced motion keeps it still');
+  const drawn = css.split('\n.octo-mark {')[1].split('}')[0];
+  assert.match(drawn, /background: color-mix\(in srgb, var\(--color-accent\) 42%, #000000\);/, 'the crest is the accent, darker');
+  assert.match(drawn, / mask: url\("octo-mark\.svg"\) center \/ 100% 100% no-repeat;/, 'the file gives the shape and the accent gives the color');
+  assert.match(css.split('\n.octo-mark::before {')[1].split('}')[0], /linear-gradient\(140deg, color-mix\(in srgb, var\(--color-accent\) 30%, #ffffff\) 8%, var\(--color-accent\) 44%, color-mix\(in srgb, var\(--color-accent\) 66%, #000000\) 92%\)/, 'the ring follows the accent the user picked');
+  assert.match(brand, /return h\('span', \{ class: `octo-mark\$\{extra \? ` \$\{extra\}` : ''\}`, 'aria-hidden': 'true' \}\);/, 'no image with colors of its own');
+  assert.doesNotMatch(css.split('\n.octo-mark {')[1].split('}')[0], /animation|transform/, 'at rest the mark stands in its own orientation');
+  assert.doesNotMatch(css.split('\n.octo-mark-empty {')[1].split('}')[0], /animation|transform/);
+});
+
+test('pairing a phone asks for little room until there is a code to show', () => {
+  const pair = readFileSync(join(REPO, 'desktop/ui/js/pair.js'), 'utf8');
+  assert.doesNotMatch(pair, /GHOST|pair-placeholder/, 'no fake code while the phone access is off or starting');
+  assert.match(pair, /dialog\.classList\.toggle\('compact', !paired\(pairing\)\);/);
+  assert.match(pair, /paired\(pairing\) \? h\('button', \{ class: 'button', type: 'button', onclick: renewCode \}, t\('New code'\)\) : null,/, 'a new code only when there is a code');
+  assert.match(pair, /const loading = usesKai\(\) \? h\('span', \{ class: 'pair-state-glyph' \}, SPINNER\[state\.frame % SPINNER\.length\]\) : spinner\(\);/, 'the O turns while the tunnel opens');
+  assert.match(pair, /\$\('dialog'\)\.classList\.remove\('pairing', 'compact'\);/, 'the next dialog does not inherit the small size');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.dialog\.pairing\.compact \{ width: min\(440px, 92vw\); \}/);
+  assert.match(css, /\.octo-spin \{ animation: octo-spin 1\.2s linear infinite; \}/);
+});
+
+test('the accent color comes from presets, a hue or a hex, and is locked in the Old theme', () => {
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /const ACCENT_KEY = 'octo\.accent';/);
+  assert.match(settings, /const locked = shownTheme\(\) === OLD_THEME;/);
+  assert.match(settings, /if \(!locked\) host\.append\(accentPanel\(accent, host\)\);/, 'the Old theme shows the row and nothing to change');
+  assert.match(settings, /disabled: !accentChoice\(\), onclick: \(\) => setAccent\(ACCENT_DEFAULT\)/, 'one click goes back to the color of Octo');
+  assert.match(settings, /storage\.set\(ACCENT_KEY, hex === ACCENT_DEFAULT \? null : hex\);/, 'the default is not stored, so a new default reaches everyone who never chose');
+  assert.match(settings, /oninput: \(event\) => previewAccent\(withHue\(shownAccent\(\), Number\(event\.target\.value\)\), host\),/, 'the app repaints while the hue is dragged');
 });

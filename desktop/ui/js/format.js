@@ -7,7 +7,7 @@ export const USAGE_FOLDED = 2;
 export const SIDEBAR_DEFAULT = 248;
 export const SIDEBAR_MIN = 240;
 export const SIDEBAR_MAX = 480;
-export const DETAILS_DEFAULT = 280;
+export const DETAILS_DEFAULT = 320;
 export const DETAILS_MIN = 220;
 export const DETAILS_MAX = 560;
 export const FLYOUT_GAP = 6;
@@ -195,7 +195,7 @@ export function glyph(agent, frame) {
   if (agent.state === 'lost') return { text: '↻', tone: 't-red' };
   if (agent.state === 'exited') return { text: '✗', tone: 't-faint' };
   if (agent.kind === 'terminal') return { text: '$', tone: 't-text' };
-  if (agent.state === 'working') return { text: SPINNER[frame % SPINNER.length], tone: 't-yellow', spin: true };
+  if (agent.state === 'working') return { text: SPINNER[frame % SPINNER.length], tone: 't-working', spin: true };
   if (agent.state === 'paused') return { text: '‖', tone: 't-yellow' };
   if (agent.state === 'done') return { text: '✓', tone: 't-green' };
   return { text: '●', tone: 't-faint' };

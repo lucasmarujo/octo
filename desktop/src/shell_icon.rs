@@ -117,7 +117,7 @@ mod tests {
     use super::*;
 
     #[cfg(windows)]
-    const PREVIOUS_ICON_MARKER: &str = "deb5b2746e9cb7e3";
+    const PREVIOUS_ICON_MARKER: &str = "12089772e913d01d";
 
     fn dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -177,12 +177,11 @@ mod tests {
     }
 
     #[test]
-    fn the_icons_of_the_app_are_the_ones_rendered_from_the_vector_of_the_site() {
+    fn the_icons_of_the_app_are_the_ones_rendered_from_the_design_of_the_o() {
         let rendered = [
-            ("site/favicon.svg", include_bytes!("../../site/favicon.svg").as_slice(), 0xee17_2270_d0f2_a2bc_u64),
-            ("desktop/icons/icon.ico", include_bytes!("../icons/icon.ico").as_slice(), 0x1208_9772_e913_d01d),
-            ("desktop/icons/icon.icns", include_bytes!("../icons/icon.icns").as_slice(), 0x6d85_962b_8897_59c5),
-            ("desktop/icons/icon.png", include_bytes!("../icons/icon.png").as_slice(), 0xb16c_a29d_4c97_e0e1),
+            ("desktop/icons/icon.ico", include_bytes!("../icons/icon.ico").as_slice(), 0x53d1_8d28_19e0_4491_u64),
+            ("desktop/icons/icon.icns", include_bytes!("../icons/icon.icns").as_slice(), 0x3292_ea41_0d4c_0a45),
+            ("desktop/icons/icon.png", include_bytes!("../icons/icon.png").as_slice(), 0x9373_b5d3_0dcc_801e),
         ];
         for (file, bytes, pinned) in rendered {
             assert_eq!(fnv1a64(bytes), pinned, "{file}: render every size from the design again and pin them here");

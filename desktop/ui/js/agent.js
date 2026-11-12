@@ -1,6 +1,6 @@
 import { $, h, svg } from './dom.js';
 import { ask, confirm } from './dialogs.js';
-import { SPINNER, alive, duration, glyph, kindColor, label, plural } from './format.js';
+import { SPINNER, alive, duration, glyph, kindColor, label, plural, shortModel } from './format.js';
 import { hubText, t } from './i18n.js';
 import { ICON_BRANCH } from './icons.js';
 import { agents, now, state } from './state.js';
@@ -146,7 +146,7 @@ function subagentsSection(list) {
           h(
             'div',
             { class: 'subagent-top' },
-            h('span', { class: 'glyph t-yellow', dataset: { spin: '1' } }, SPINNER[state.frame % SPINNER.length]),
+            h('span', { class: 'glyph t-working', dataset: { spin: '1' } }, SPINNER[state.frame % SPINNER.length]),
             h('span', { class: 'subagent-role', title: sub.role }, sub.role),
             h('span', { class: 'subagent-meta', title: sub.activity || '' }, [duration(now() - sub.startedAt), sub.activity].filter(Boolean).join(' · ')),
           ),
@@ -373,10 +373,36 @@ export function renderAgentHead(agent) {
   const meta = [
     h('span', { class: 'meta-item' }, h('span', { class: 'swatch', style: `background:${agent.color}` }), agent.project),
   ];
-  if (agent.branch) meta.push(h('span', { class: 'meta-item' }, svg(ICON_BRANCH), agent.branch));
   meta.push(h('span', { class: 'meta-item meta-path selectable', title: agent.cwd }, shortPath(agent.cwd)));
-  if (agent.startedAt && alive(agent)) meta.push(h('span', { class: 'meta-item t-faint' }, t('alive {time}', { time: duration(now() - agent.startedAt) })));
   $('agent-meta').replaceChildren(...meta);
+  renderTermInfo(agent);
+}
+
+function infoTone(agent) {
+  if (agent.starting || agent.state === 'working') return 'working';
+  return ['paused', 'done', 'lost'].includes(agent.state) ? agent.state : 'quiet';
+}
+
+export function termInfo(agent, at) {
+  return {
+    tone: infoTone(agent),
+    kind: agent.kind,
+    model: shortModel(agent.model) || null,
+    branch: agent.branch || null,
+    alive: agent.startedAt && alive(agent) ? duration(at - agent.startedAt) : null,
+  };
+}
+
+function renderTermInfo(agent) {
+  const info = termInfo(agent, now());
+  refresh($('term-info'), JSON.stringify([agent.id, info]), () => [
+    h('span', { class: `term-info-dot ${info.tone}` }),
+    h('span', { class: 'term-info-kind', style: `color:${kindColor(info.kind)}` }, label(info.kind)),
+    info.model ? h('span', { class: 'term-info-item' }, info.model) : null,
+    info.branch ? h('span', { class: 'term-info-item term-info-branch', title: info.branch }, svg(ICON_BRANCH), h('span', { class: 'term-info-text' }, info.branch)) : null,
+    h('span', { class: 'grow' }),
+    info.alive ? h('span', { class: 'term-info-item t-faint' }, t('alive {time}', { time: info.alive })) : null,
+  ].filter(Boolean));
 }
 
 export function renderStatus(agent) {

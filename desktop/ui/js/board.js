@@ -21,6 +21,7 @@ import {
 } from './format.js';
 import { t } from './i18n.js';
 import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_STOP, ICON_TRASH } from './icons.js';
+import { mark, usesKai } from './brand.js';
 import { sleeping } from './kai.js';
 import { glide, motion, reducedMotion, rise, slideThumb } from './motion.js';
 import { currentProject, inSession, now, projectsInSession, setProject, state, visible } from './state.js';
@@ -180,7 +181,7 @@ function empty(session) {
   return h(
     'div',
     { class: 'empty' },
-    sleeping(),
+    usesKai() ? sleeping() : mark('octo-mark-empty'),
     h('span', { class: 'empty-title' }, t('No agents in {session} yet', { session })),
     h('span', null, t('Write a task below and press enter: the agent starts already working on it.')),
   );
@@ -217,7 +218,7 @@ export function renderBoard(handlers) {
   const board = $('board');
   const list = visible();
   if (!list.length) {
-    const signature = `empty:${state.session}`;
+    const signature = `empty:${state.session}:${usesKai()}`;
     if (board.dataset.signature !== signature) {
       board.replaceChildren(empty(state.session));
       board.dataset.signature = signature;

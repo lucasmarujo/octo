@@ -282,12 +282,49 @@ function assertIcon(png, label, { cornerAlpha = 0, box = null } = {}) {
   return shape;
 }
 
-test('o ícone do Octo é o Kai espiando pelo canto em todo lugar, e o Kai não sai de onde é mascote', () => {
-  const icons = ['desktop/icons/32x32.png', 'desktop/icons/128x128.png', 'desktop/icons/128x128@2x.png', 'desktop/icons/icon.png', 'assets/octo-kai-peek.png'];
-  const widths = icons.map((file) => assertIcon(readFileSync(join(REPO, file)), file));
-  assert.deepEqual(widths, [32, 128, 256, 512, 512]);
-  const desktop = icoFrames(readFileSync(join(REPO, 'desktop/icons/icon.ico'))).map((frame) => assertIcon(frame, 'icon.ico'));
+const OCTO_UNITS = 512;
+const OCTO_BACK = [0x0b, 0x6b, 0x60, 255];
+const OCTO_DARK = 0x30;
+
+function assertOctoIcon(png, label, { box = null } = {}) {
+  const image = decodePng(png);
+  const { shape, x: left, y: top } = box || { shape: image.width, x: 0, y: 0 };
+  const at = (u, v) => {
+    const i = ((top + Math.floor((v / OCTO_UNITS) * shape)) * image.width + left + Math.floor((u / OCTO_UNITS) * shape)) * 4;
+    return [...image.pixels.subarray(i, i + 4)];
+  };
+  const dark = ([r, g, b, a]) => r < OCTO_DARK && g < OCTO_DARK && b < OCTO_DARK && a === 255;
+  assert.equal(image.pixels[3], 0, `${label}: canto`);
+  if (shape >= 32) {
+    const diagonal = Array.from({ length: shape / 2 }, (_, i) => alphaAt(image, left + i, top + i));
+    assert.ok(diagonal.some((alpha) => alpha > 0 && alpha < 255), `${label}: canto arredondado e liso, sem degrau`);
+  }
+  if (shape < 48) return shape;
+  assert.ok(dark(at(256, 256)), `${label}: o miolo do O é o fundo grafite`);
+  assert.ok(dark(at(60, 256)), `${label}: fundo grafite fora do O`);
+  const [r, g, b, a] = at(256, 100);
+  assert.ok(g > 230 && b > 190 && r < g && a === 255, `${label}: o anel em verde-água`);
+  assert.deepEqual(at(334, 334), OCTO_BACK, `${label}: a crista escura embaixo à direita`);
+  assert.deepEqual(at(178, 178), OCTO_BACK, `${label}: a crista escura em cima à esquerda`);
+  assert.ok(dark(at(334, 178)), `${label}: sem crista em cima à direita`);
+  assert.ok(dark(at(178, 334)), `${label}: sem crista embaixo à esquerda`);
+  return shape;
+}
+
+test('o ícone do app desktop é o O do Octo: anel verde-água no grafite, com as duas cristas escuras', () => {
+  const icons = ['desktop/icons/32x32.png', 'desktop/icons/128x128.png', 'desktop/icons/128x128@2x.png', 'desktop/icons/icon.png'];
+  const widths = icons.map((file) => assertOctoIcon(readFileSync(join(REPO, file)), file));
+  assert.deepEqual(widths, [32, 128, 256, 512]);
+  const desktop = icoFrames(readFileSync(join(REPO, 'desktop/icons/icon.ico'))).map((frame) => assertOctoIcon(frame, 'icon.ico'));
   assert.deepEqual([...desktop].sort((a, b) => a - b), [16, 24, 32, 48, 64, 128, 256]);
+  const mark = readFileSync(join(REPO, 'desktop/ui/octo-mark.svg'), 'utf8');
+  assert.match(mark, /#35FDDC/i, 'a logo dentro do app é o mesmo O');
+  assert.match(mark, /fill="#0B6B60"/i, 'com a mesma crista');
+  assert.doesNotMatch(mark, /<rect/, 'sem o quadrado, que é só do ícone');
+});
+
+test('o celular e o site seguem com o Kai espiando pelo canto até o rebrand deles, e o Kai não sai de onde é mascote', () => {
+  assert.equal(assertIcon(readFileSync(join(REPO, 'assets/octo-kai-peek.png')), 'assets/octo-kai-peek.png'), 512);
   icoFrames(readFileSync(join(ROOT, 'octo-kai-peek.ico'))).forEach((frame) => assertIcon(frame, 'octo-kai-peek.ico'));
   assertIcon(readFileSync(join(ROOT, 'octo-kai-peek-touch-icon.png')), 'touch icon', { cornerAlpha: 255 });
   const favicon = read('favicon.svg');
@@ -315,7 +352,7 @@ test('no Mac a janela ocupa 824 de 1024, centrada, com a margem transparente de 
     const image = decodePng(png);
     const { shape, offset } = macInset(image.width);
     const label = `icon.icns ${image.width}`;
-    assertIcon(png, label, { box: { shape, x: offset, y: offset } });
+    assertOctoIcon(png, label, { box: { shape, x: offset, y: offset } });
     const middle = offset + Math.floor(shape / 2);
     for (let i = 0; i < image.width; i += 1) {
       const outside = i < offset || i >= offset + shape;
@@ -340,17 +377,17 @@ test('todo arquivo de ícone sai do mesmo desenho: um tamanho é igual em todo l
   assert.deepEqual(desktop.get(32), png('desktop/icons/32x32.png'));
   assert.deepEqual(desktop.get(128), png('desktop/icons/128x128.png'));
   assert.deepEqual(desktop.get(256), png('desktop/icons/128x128@2x.png'));
-  assert.deepEqual(png('assets/octo-kai-peek.png'), png('desktop/icons/icon.png'), 'o ícone do PWA é o do app');
-  for (const [size, frame] of frames('site/octo-kai-peek.ico')) assert.deepEqual(frame, desktop.get(size), `site ico ${size}`);
+  assert.notDeepEqual(png('assets/octo-kai-peek.png'), png('desktop/icons/icon.png'), 'o ícone do PWA só muda no rebrand do celular');
+  for (const [size, frame] of frames('site/octo-kai-peek.ico')) assert.notDeepEqual(frame, desktop.get(size), `o favicon do site só muda no rebrand do site, ${size}`);
   const store = 'installer/msix/Assets';
   for (const size of [16, 24, 32, 48, 256]) {
     assert.deepEqual(png(`${store}/Square44x44Logo.targetsize-${size}.png`), desktop.get(size), `Store ${size}`);
     assert.deepEqual(png(`${store}/Square44x44Logo.targetsize-${size}_altform-unplated.png`), desktop.get(size), `Store ${size} sem placa`);
   }
-  assertIcon(png(`${store}/Square44x44Logo.png`), 'Square44x44Logo');
-  assertIcon(png(`${store}/Square150x150Logo.png`), 'Square150x150Logo', { box: { shape: 144, x: 3, y: 3 } });
-  assertIcon(png(`${store}/StoreLogo.png`), 'StoreLogo', { box: { shape: 48, x: 1, y: 1 } });
-  assertIcon(png(`${store}/Wide310x150Logo.png`), 'Wide310x150Logo', { box: { shape: 144, x: 83, y: 3 } });
+  assertOctoIcon(png(`${store}/Square44x44Logo.png`), 'Square44x44Logo');
+  assertOctoIcon(png(`${store}/Square150x150Logo.png`), 'Square150x150Logo', { box: { shape: 144, x: 3, y: 3 } });
+  assertOctoIcon(png(`${store}/StoreLogo.png`), 'StoreLogo', { box: { shape: 48, x: 1, y: 1 } });
+  assertOctoIcon(png(`${store}/Wide310x150Logo.png`), 'Wide310x150Logo', { box: { shape: 144, x: 83, y: 3 } });
 });
 
 test('ícones e imagens trocados ganham nome novo, porque o nginx guarda png e ico por 30 dias', () => {

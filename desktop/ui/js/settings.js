@@ -1,3 +1,4 @@
+import { ACCENT_DEFAULT, ACCENT_PRESETS, HUE_MAX, accentTokens, hexToRgb, hueOf, normalizeHex, rgbToHex, withHue } from './accent.js';
 import { $, h, storage, svg } from './dom.js';
 import { confirm } from './dialogs.js';
 import { alive, installKind, joinArgs, kindColor, label, soundFlip, soundOn, splitArgs, volumeChanges } from './format.js';
@@ -10,10 +11,18 @@ import { toast } from './toast.js';
 import { invoke } from './transport.js';
 
 const THEME_KEY = 'orkai.theme';
+const ACCENT_KEY = 'octo.accent';
+const DEFAULT_THEME = 'octo';
+const OLD_THEME = 'old';
+const LIGHT_THEME = 'light';
+const LIGHT_ACCENT = '#12b8a0';
+const CHANNELS = ['R', 'G', 'B'];
+const CHANNEL_MAX = 255;
 const THEMES = [
-  ['dark', t('Dark')],
+  ['octo', t('Octo')],
   ['gray', t('Gray')],
   ['light', t('Light')],
+  ['old', t('Old')],
   ['system', t('System')],
 ];
 const TUNNELS = [
@@ -46,19 +55,168 @@ const mono = (text) => h('span', { class: 'mono-inline' }, text);
 
 export function themeChoice() {
   const chosen = storage.get(THEME_KEY);
-  return THEMES.some(([value]) => value === chosen) ? chosen : 'dark';
+  return THEMES.some(([value]) => value === chosen) ? chosen : DEFAULT_THEME;
+}
+
+export function accentChoice() {
+  return normalizeHex(storage.get(ACCENT_KEY));
+}
+
+function shownTheme() {
+  return document.documentElement.dataset.theme;
+}
+
+function shownAccent() {
+  return accentChoice() || (shownTheme() === LIGHT_THEME ? LIGHT_ACCENT : ACCENT_DEFAULT);
+}
+
+function applyAccent() {
+  const root = document.documentElement;
+  if (!root.style) return;
+  const accent = shownTheme() === OLD_THEME ? null : accentChoice();
+  const tokens = accentTokens(accent || ACCENT_DEFAULT, shownTheme() === LIGHT_THEME);
+  for (const [name, value] of Object.entries(tokens)) {
+    if (accent) root.style.setProperty(name, value);
+    else root.style.removeProperty(name);
+  }
 }
 
 export function applyTheme() {
   const choice = themeChoice();
-  const system = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  const system = window.matchMedia('(prefers-color-scheme: light)').matches ? LIGHT_THEME : DEFAULT_THEME;
   document.documentElement.dataset.theme = choice === 'system' ? system : choice;
+  applyAccent();
 }
 
 function setTheme(choice) {
-  storage.set(THEME_KEY, choice === 'dark' ? null : choice);
+  storage.set(THEME_KEY, choice === DEFAULT_THEME ? null : choice);
   applyTheme();
   render();
+}
+
+function storeAccent(hex) {
+  storage.set(ACCENT_KEY, hex === ACCENT_DEFAULT ? null : hex);
+  applyAccent();
+}
+
+function setAccent(hex) {
+  storeAccent(hex);
+  render();
+}
+
+function paintAccent(host) {
+  const accent = shownAccent();
+  const rgb = hexToRgb(accent);
+  for (const swatch of host.querySelectorAll('.accent-swatch')) swatch.setAttribute('aria-pressed', String(swatch.dataset.color === accent));
+  host.querySelectorAll('.accent-channel').forEach((input, index) => {
+    if (input !== document.activeElement) input.value = String(rgb[index]);
+  });
+  const hex = host.querySelector('.accent-hex');
+  if (hex && hex !== document.activeElement) hex.value = accent.toUpperCase();
+  const well = host.querySelector('.accent-well');
+  if (well && well !== document.activeElement) well.value = accent;
+  const hue = host.querySelector('.hue-slider');
+  if (hue) {
+    if (hue !== document.activeElement) hue.value = String(hueOf(accent));
+    hue.style.setProperty('--thumb', accent);
+  }
+}
+
+function previewAccent(hex, host) {
+  storeAccent(hex);
+  paintAccent(host);
+}
+
+function accentChannel(name, index, value, host) {
+  const input = h('input', {
+    class: 'accent-channel',
+    type: 'number',
+    min: '0',
+    max: String(CHANNEL_MAX),
+    value: String(value),
+    'aria-label': name,
+    oninput: (event) => previewAccent(rgbToHex(hexToRgb(shownAccent()).map((channel, at) => (at === index ? Number(event.target.value) : channel))), host),
+    onchange: () => render(),
+    onkeydown: (event) => event.key === 'Enter' && event.target.blur(),
+  });
+  return h('label', { class: 'accent-channel-box' }, h('span', null, name), input);
+}
+
+function accentPanel(accent, host) {
+  const hue = h('input', {
+    class: 'hue-slider',
+    type: 'range',
+    min: '0',
+    max: String(HUE_MAX),
+    step: '1',
+    value: String(hueOf(accent)),
+    style: `--thumb:${accent}`,
+    'aria-label': t('Hue'),
+    oninput: (event) => previewAccent(withHue(shownAccent(), Number(event.target.value)), host),
+    onchange: () => render(),
+  });
+  const rgb = hexToRgb(accent);
+  const reset = h('button', { class: 'button', type: 'button', disabled: !accentChoice(), onclick: () => setAccent(ACCENT_DEFAULT) }, t('Reset to Octo aqua'));
+  return h(
+    'div',
+    { class: 'accent-panel' },
+    h('div', { class: 'accent-hue' }, h('span', { class: 'caps' }, t('Hue')), hue),
+    h('div', { class: 'accent-channels' }, ...CHANNELS.map((name, index) => accentChannel(name, index, rgb[index], host))),
+    reset,
+  );
+}
+
+function accentControls(locked) {
+  const accent = shownAccent();
+  const host = h('div', { class: 'accent' });
+  const swatches = ACCENT_PRESETS.map((color) =>
+    h('button', {
+      class: 'accent-swatch',
+      type: 'button',
+      disabled: locked,
+      style: `--swatch:${color}`,
+      dataset: { color },
+      'aria-pressed': String(color === accent),
+      'aria-label': color.toUpperCase(),
+      title: color.toUpperCase(),
+      onclick: () => setAccent(color),
+    }),
+  );
+  const well = h('input', {
+    class: 'accent-well',
+    type: 'color',
+    value: accent,
+    disabled: locked,
+    'aria-label': t('Custom color'),
+    title: t('Custom color'),
+    oninput: (event) => previewAccent(event.target.value, host),
+    onchange: (event) => setAccent(event.target.value),
+  });
+  const hex = h('input', {
+    class: 'field accent-hex',
+    type: 'text',
+    value: accent.toUpperCase(),
+    maxlength: '7',
+    spellcheck: 'false',
+    disabled: locked,
+    'aria-label': t('Accent color'),
+    onchange: (event) => setAccent(normalizeHex(event.target.value) || accent),
+    onkeydown: (event) => event.key === 'Enter' && event.target.blur(),
+  });
+  host.append(h('div', { class: 'accent-row' }, ...swatches, h('div', { class: 'accent-custom' }, well, hex)));
+  if (!locked) host.append(accentPanel(accent, host));
+  return host;
+}
+
+function accentRow() {
+  const locked = shownTheme() === OLD_THEME;
+  const description = locked ? t('Not available in the Old theme.') : t('Buttons, focus, the cursor and every highlight of the app.');
+  return h(
+    'div',
+    { class: `setting accent-setting${locked ? ' locked' : ''}` },
+    h('div', { class: 'setting-text' }, h('span', { class: 'setting-title' }, t('Accent color')), h('span', { class: 'setting-description' }, description)),
+    accentControls(locked),
+  );
 }
 
 function segmented(options, value, onPick, label) {
@@ -397,6 +555,7 @@ function appearanceSection() {
   return section(
     h('div', { class: 'settings-heading' }, h('h2', null, t('Appearance'))),
     row(t('Theme'), t('The agent terminals follow the theme too.'), segmented(THEMES, themeChoice(), setTheme, t('Theme'))),
+    accentRow(),
     row(t('Language'), t('English by default. Applies to the whole app.'), segmented(LANGUAGES.map((entry) => [entry.code, entry.name]), language(), (code) => setLanguage(code, 'settings'), t('Language'))),
     row(
       t('Terminal shell'),

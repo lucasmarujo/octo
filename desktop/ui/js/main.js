@@ -2,6 +2,7 @@ import { nextAttention, rename, renderAgent, renderAgentHead, renderStatus, rest
 import { checkAgentUpdates, watchAgentUpdates } from './agentupdates.js';
 import { detectAlerts, notice, windowTitle } from './alerts.js';
 import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tickBoard } from './board.js';
+import { mark, usesKai } from './brand.js';
 import { initComposer, renderComposer, renderPalette, setCommandRunner, toggleWorktree } from './composer.js';
 import { renameSession, runCommand } from './commands.js';
 import { closeMenu, confirm, menuShown, showCompare, showDiff, showTests } from './dialogs.js';
@@ -21,6 +22,7 @@ import { openPairing, watchPhone } from './pair.js';
 import { applyTheme, initSound, pickSection, renderSettings, setAgentOpener, watchInstalls } from './settings.js';
 import { initDetailsWidth, initFlyout, initPanelToggles, initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
+import { initStatusBar, renderStatusBar } from './statusbar.js';
 import { initTabs, renderTabs, tabShown } from './tabs.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
@@ -81,7 +83,19 @@ function onSelect(name) {
   else onFilter();
 }
 
+function renderBrand() {
+  const host = $('brand-mascot');
+  const brand = usesKai() ? 'kai' : 'mark';
+  if (host.dataset.brand === brand) return;
+  host.dataset.brand = brand;
+  host.replaceChildren(usesKai() ? kai('idle') : mark());
+}
+
 function renderMascot() {
+  renderBrand();
+  const working = Boolean(state.overview) && state.overview.agents.some((agent) => agent.starting || agent.state === 'working');
+  document.documentElement.toggleAttribute('data-working', working);
+  if (!usesKai()) return;
   const mascot = $('brand-mascot').firstElementChild;
   const mood = moodOf(state.overview ? state.overview.agents : []);
   if (mascot && mascot.dataset.mood !== mood) mascot.dataset.mood = mood;
@@ -138,6 +152,7 @@ function render() {
   renderTabs();
   renderMascot();
   renderSidebar(onSelect, openAgent);
+  renderStatusBar();
   if (state.active === null) {
     renderHead();
     renderView();
@@ -318,6 +333,7 @@ function onMessage(message) {
       state.usage = message.entries;
       state.usageAt = Date.now();
       renderSidebar(onSelect, openAgent);
+      renderStatusBar();
       break;
     case 'notice':
       toast(hubText(message.text), message.tone);
@@ -476,7 +492,8 @@ function initWindow() {
   $('win-min').addEventListener('click', () => win.minimize());
   $('win-max').addEventListener('click', () => win.toggleMaximize());
   $('win-close').addEventListener('click', () => win.close());
-  $('brand-mascot').replaceChildren(kai('idle'));
+  renderBrand();
+  new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   $('open-help').replaceChildren(svg(ICON_HELP));
   $('open-settings').replaceChildren(svg(ICON_SETTINGS));
   $('pair').replaceChildren(svg(ICON_PAIR));
@@ -486,12 +503,13 @@ function initWindow() {
   $('open-help').addEventListener('click', () => openPage('help'));
   $('open-settings').addEventListener('click', () => openPage('settings'));
   initNotes(openUpdates);
+  initStatusBar({ attention: openNextAttention, phone: openPairing, updates: openUpdates });
 }
 
 function spin() {
   state.frame += 1;
   const text = SPINNER[state.frame % SPINNER.length];
-  for (const node of document.querySelectorAll('.tabs [data-spin], #menu [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin], #dialog [data-spin], #details [data-spin]')) node.textContent = text;
+  for (const node of document.querySelectorAll('.tabs [data-spin], #menu [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin], #dialog [data-spin], #details [data-spin], #statusbar [data-spin]')) node.textContent = text;
   spinBoard();
   spinSidebar();
 }
@@ -499,6 +517,7 @@ function spin() {
 function tick() {
   if (!state.overview) return;
   renderSidebar(onSelect, openAgent);
+  renderStatusBar();
   if (state.active === null) {
     RENDERERS[shownView()][1]();
     return;

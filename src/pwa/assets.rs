@@ -219,7 +219,11 @@ mod tests {
         assert_eq!(&icon[1..4], b"PNG");
         assert_eq!(u32::from_be_bytes(icon[16..20].try_into().unwrap()), 512);
         assert_eq!(u32::from_be_bytes(icon[20..24].try_into().unwrap()), 512);
-        assert_eq!(icon, include_bytes!("../../desktop/icons/icon.png").as_slice(), "the same icon as the desktop app");
+        assert_ne!(
+            icon,
+            include_bytes!("../../desktop/icons/icon.png").as_slice(),
+            "the phone keeps Kai until its own rebrand"
+        );
         assert_ne!(icon, include_bytes!("../../assets/orkai.png").as_slice(), "the orkai CLI sailor stays on the CLI");
         assert!(lookup("/icon.png").is_none(), "a new path, so phones drop the sailor they cached for good");
         assert!(lookup("/octo.png").is_none(), "a new path, so phones drop the old Kai icon they cached for good");
