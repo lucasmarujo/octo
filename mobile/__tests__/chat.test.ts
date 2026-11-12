@@ -1,5 +1,5 @@
 import type { Block } from '../src/core/chat';
-import { chatCapable, fold, lineKind, MAX_BLOCKS, pieces, running, spans, stepNote, stepTitle } from '../src/core/chat';
+import { chatCapable, fold, lineKind, MAX_BLOCKS, pieces, running, spans, stepNote, stepTitle, unjoined } from '../src/core/chat';
 import type { DevicePrefs } from '../src/core/devices';
 import type { Identity, Transport } from '../src/core/link';
 import { DeviceLink } from '../src/core/link';
@@ -73,6 +73,11 @@ describe('the conversation of an agent', () => {
   it('names each step by what the agent did, with the file and not its whole path', () => {
     const [, steps] = fold([], [ASKED, READ, EDIT, RUN, { kind: 'step', id: 't4', tool: 'TodoWrite', detail: '', body: [] }, { kind: 'step', id: 't5', tool: 'mcp__paper__get_jsx', detail: '', body: [] }]) as [Block, Extract<Block, { type: 'steps' }>];
     expect(steps.steps.map(stepTitle)).toEqual(['Read holder_e2e.rs', 'Edited holder_e2e.rs', 'Ran cargo test --test holder_e2e', 'Updated the plan', 'mcp__paper__get_jsx']);
+  });
+
+  it('keeps the two dashes of a flag apart, which the font of the app would join into one', () => {
+    expect(unjoined('cargo test --test holder_e2e')).toBe('cargo test -\u2060-test holder_e2e');
+    expect(unjoined('ls -la')).toBe('ls -la');
   });
 
   it('counts the lines an edit added and removed, and says when a step failed', () => {

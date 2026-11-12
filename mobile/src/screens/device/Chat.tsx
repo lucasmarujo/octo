@@ -4,14 +4,16 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { alive, elapsed, testMark } from '../../core/agents';
 import type { Block, Step } from '../../core/chat';
-import { lineKind, pieces, running, spans, stepNote, stepTitle } from '../../core/chat';
+import { lineKind, pieces, running, spans, stepNote, stepTitle, unjoined } from '../../core/chat';
 import { useSecond } from '../../core/clock';
 import type { AgentView } from '../../core/protocol';
 import { mix } from '../../theme/color';
 import { useStyles } from '../../theme/styles';
+import { useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/tokens';
 import { CAPS, mono, sans, tracking } from '../../theme/type';
 import { Spin } from '../../ui/atoms';
+import { Icon } from '../../ui/Icon';
 import { Press } from '../../ui/Press';
 import { useDevice } from './context';
 
@@ -20,8 +22,9 @@ const ARMED_MS = 3000;
 const DONE_MARK = '✓';
 const FAILED_MARK = '!';
 const QUIET_MARK = '·';
-const CLOSED_MARK = '›';
-const OPEN_MARK = '⌄';
+const CHEVRON = 14;
+const CLOSED_TURN = '-90deg';
+const OPEN_TURN = '0deg';
 const WORKING_MARK = '✳';
 
 const styles = (t: Theme) =>
@@ -48,7 +51,7 @@ const styles = (t: Theme) =>
     markText: mono(11, 700, 14),
     title: { ...sans(14, 600, 18), color: t.text, flex: 1, minWidth: 0 },
     note: { ...mono(11, 400, 14), color: t.textFaint, flexShrink: 0 },
-    chevron: { ...mono(13, 400, 16), color: t.textFaint, flexShrink: 0 },
+    chevron: { flexShrink: 0 },
     green: { color: t.done },
     red: { color: t.lost },
     accent: { color: t.accent },
@@ -117,6 +120,7 @@ function Lines({ lines, s }: { lines: string[]; s: Sheet }) {
 }
 
 function StepRow({ step, first, working, s }: { step: Step; first: boolean; working: boolean; s: Sheet }) {
+  const t = useTheme();
   const [open, setOpen] = useState(false);
   const note = stepNote(step);
   const live = !step.outcome && working;
@@ -131,7 +135,7 @@ function StepRow({ step, first, working, s }: { step: Step; first: boolean; work
           {live ? <Spin style={[s.markText, s.accent]} /> : <Text style={[s.markText, failed ? s.red : step.outcome ? s.green : s.faint]}>{failed ? FAILED_MARK : step.outcome ? DONE_MARK : QUIET_MARK}</Text>}
         </View>
         <Text style={s.title} numberOfLines={1}>
-          {stepTitle(step)}
+          {unjoined(stepTitle(step))}
         </Text>
         {changed ? (
           <Text style={s.note}>
@@ -141,7 +145,11 @@ function StepRow({ step, first, working, s }: { step: Step; first: boolean; work
         ) : note.text ? (
           <Text style={[s.note, failed && s.red]}>{note.text}</Text>
         ) : null}
-        {expandable ? <Text style={s.chevron}>{open ? OPEN_MARK : CLOSED_MARK}</Text> : null}
+        {expandable ? (
+          <View style={[s.chevron, { transform: [{ rotate: open ? OPEN_TURN : CLOSED_TURN }] }]}>
+            <Icon name="chevron" size={CHEVRON} color={t.textFaint} />
+          </View>
+        ) : null}
       </Pressable>
       {open ? (
         <View style={s.body}>
@@ -177,7 +185,7 @@ function Live({ step, s }: { step: Step; s: Sheet }) {
           <Spin style={[s.markText, s.accent]} />
         </View>
         <Text style={s.title} numberOfLines={1}>
-          {stepTitle(step)}
+          {unjoined(stepTitle(step))}
         </Text>
       </View>
       {command ? (
@@ -267,8 +275,10 @@ export function Chat({ blocks, agent }: { blocks: Block[]; agent: AgentView | nu
   const working = Boolean(agent && alive(agent) && (agent.starting || agent.state === 'working'));
   const current = working ? running(blocks) : null;
 
-  const follow = useCallback(() => {
-    if (stuck.current) list.current?.scrollToEnd({ animated: false });
+  const height = useRef(0);
+  const follow = useCallback((_width?: number, tall?: number) => {
+    if (typeof tall === 'number') height.current = tall;
+    if (stuck.current && height.current > 0) list.current?.scrollToOffset({ offset: height.current, animated: false });
   }, []);
   const scrolled = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
@@ -310,7 +320,7 @@ export function Chat({ blocks, agent }: { blocks: Block[]; agent: AgentView | nu
       renderItem={render}
       ListFooterComponent={foot || undefined}
       onContentSizeChange={follow}
-      onLayout={follow}
+      onLayout={() => follow()}
       onScroll={scrolled}
       scrollEventThrottle={64}
       keyboardShouldPersistTaps="handled"

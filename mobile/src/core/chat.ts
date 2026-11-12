@@ -40,6 +40,8 @@ const ADDED = '+';
 const REMOVED = '-';
 const FENCE = '```';
 const PATH_SEPARATOR = /[\\/]/;
+const DASHES = /--/g;
+const WORD_JOINER = '\u2060';
 const TITLES: Readonly<Record<string, string>> = {
   Read: 'Read',
   Edit: 'Edited',
@@ -117,6 +119,10 @@ export function stepTitle(step: Step): string {
   if (!step.detail) return verb;
   const detail = FILE_TOOLS.includes(step.tool) ? step.detail.split(PATH_SEPARATOR).pop() || step.detail : step.detail;
   return `${verb} ${detail}`;
+}
+
+export function unjoined(text: string): string {
+  return text.replace(DASHES, `-${WORD_JOINER}-`);
 }
 
 export function stepNote(step: Step): Note {

@@ -182,8 +182,8 @@ function Accent() {
             </Pressable>
           );
         })}
-        <Pressable style={[s.swatch, open && { borderColor: shown }]} onPress={() => setOpen(!open)} accessibilityRole="button" accessibilityLabel="custom accent color" accessibilityState={{ expanded: open }}>
-          <View style={[open ? s.swatchDotOn : s.swatchDot, s.wheel]} />
+        <Pressable style={[s.swatch, open && !locked && { borderColor: shown }]} onPress={() => setOpen(!open)} accessibilityRole="button" accessibilityLabel="custom accent color" accessibilityState={{ expanded: open }}>
+          <View style={[open && !locked ? s.swatchDotOn : s.swatchDot, s.wheel]} />
         </Pressable>
       </View>
       {open && !locked ? (
