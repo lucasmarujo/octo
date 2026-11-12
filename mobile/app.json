@@ -38,8 +38,7 @@
         "android.permission.USE_FINGERPRINT",
         "android.permission.RECEIVE_BOOT_COMPLETED"
       ],
-      "predictiveBackGestureEnabled": false,
-      "versionCode": 6
+      "predictiveBackGestureEnabled": false
     },
     "plugins": [
       [
