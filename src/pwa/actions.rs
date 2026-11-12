@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use std::thread;
 
+use crate::chat::{self, ChatPage};
 use crate::cli::DEFAULT_SIZE;
 use crate::client;
 use crate::launch;
@@ -66,6 +67,7 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         PhoneMsg::Merge { agent } => merge(hub, agent, reply),
         PhoneMsg::Peek { agents, rows } => peek(hub, agents, rows, reply),
         PhoneMsg::Details { agent } => details(hub, agent, reply),
+        PhoneMsg::Chat { agent, session, from } => chat(hub, agent, session, from, reply),
         PhoneMsg::Restart { agent } => restart(hub, agent, reply),
         PhoneMsg::CrossReview { agent, reviewer } => cross_review(hub, agent, &reviewer, reply),
         PhoneMsg::Tests { agent } => tests(hub, agent, reply),
@@ -684,6 +686,38 @@ fn details(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
     let (hub, reply) = (Arc::clone(hub), reply.clone());
     spawn("orkai-pwa-details", move || {
         let _ = reply.send(Event::Reply(BridgeMsg::Details(describe(&hub, &record))));
+    });
+}
+
+fn chat_page(hub: &Hub, record: &AgentRecord, known: Option<&str>, from: u64) -> Option<(String, ChatPage)> {
+    let status = hub.live_status(record.id);
+    let kind = status.as_ref().map_or(record.kind, |status| status.running_kind(record.kind));
+    if kind != AgentKind::Claude {
+        return None;
+    }
+    let home = launch::claude_home()?;
+    let nested = status.as_ref().and_then(|status| status.nested.as_ref());
+    let pid = nested.map_or(hub.child_pid(record.id), |nested| Some(nested.pid));
+    let session = pid
+        .and_then(|pid| crate::holder::nested::claude_session(&home, pid))
+        .or_else(|| nested.map_or(record.conversation_id.clone(), |nested| nested.conversation_id.clone()))?;
+    let cwd = nested.and_then(|nested| nested.cwd.clone()).unwrap_or_else(|| record.cwd.clone());
+    let path = chat::claude_transcript(&home, &cwd, &session)?;
+    let from = if known == Some(session.as_str()) { from } else { 0 };
+    Some((session, chat::read_claude(&path, from)))
+}
+
+fn chat(hub: &Arc<Hub>, agent: AgentId, session: Option<String>, from: u64, reply: &Sender<Event>) {
+    let Some(record) = hub.record(agent) else { return };
+    let (hub, reply) = (Arc::clone(hub), reply.clone());
+    spawn("orkai-pwa-chat", move || {
+        let message = match chat_page(&hub, &record, session.as_deref(), from) {
+            Some((session, page)) => {
+                BridgeMsg::Chat { agent, session: Some(session), next: page.next, reset: page.reset, items: page.items }
+            }
+            None => BridgeMsg::Chat { agent, session: None, next: 0, reset: true, items: Vec::new() },
+        };
+        let _ = reply.send(Event::Reply(message));
     });
 }
 

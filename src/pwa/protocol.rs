@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::chat::ChatItem;
 use crate::folders::{MakeProblem, PlaceKind};
 use crate::model::{AgentId, AgentKind, AgentState, TestState};
 
@@ -114,6 +115,13 @@ pub enum PhoneMsg {
     },
     Details {
         agent: AgentId,
+    },
+    Chat {
+        agent: AgentId,
+        #[serde(default)]
+        session: Option<String>,
+        #[serde(default)]
+        from: u64,
     },
     Restart {
         agent: AgentId,
@@ -261,6 +269,13 @@ pub enum BridgeMsg {
         previews: Vec<Preview>,
     },
     Details(Details),
+    Chat {
+        agent: AgentId,
+        session: Option<String>,
+        next: u64,
+        reset: bool,
+        items: Vec<ChatItem>,
+    },
     Tests {
         agent: AgentId,
         command: String,
@@ -763,5 +778,28 @@ mod tests {
         let peek = BridgeMsg::Peek { previews: vec![Preview { agent: 3, lines: vec![vec![("ok".into(), 2, -1, 0)]] }] };
         let text = serde_json::to_string(&peek).unwrap();
         assert_eq!(text, r#"{"type":"peek","previews":[{"agent":3,"lines":[[["ok",2,-1,0]]]}]}"#);
+    }
+
+    #[test]
+    fn a_conversation_travels_as_items_the_phone_can_draw_and_is_asked_from_where_it_stopped() {
+        let ask: PhoneMsg = serde_json::from_str(r#"{"type":"chat","agent":3}"#).unwrap();
+        assert_eq!(ask, PhoneMsg::Chat { agent: 3, session: None, from: 0 });
+        let more: PhoneMsg = serde_json::from_str(r#"{"type":"chat","agent":3,"session":"s1","from":120}"#).unwrap();
+        assert_eq!(more, PhoneMsg::Chat { agent: 3, session: Some("s1".into()), from: 120 });
+        let chat = BridgeMsg::Chat {
+            agent: 3,
+            session: Some("s1".into()),
+            next: 240,
+            reset: false,
+            items: vec![
+                ChatItem::User { text: "fix it".into() },
+                ChatItem::Step { id: "t1".into(), tool: "Bash".into(), detail: "ls".into(), body: vec!["ls".into()] },
+                ChatItem::Result { id: "t1".into(), failed: true, summary: "no".into(), body: vec![] },
+            ],
+        };
+        assert_eq!(
+            serde_json::to_string(&chat).unwrap(),
+            r#"{"type":"chat","agent":3,"session":"s1","next":240,"reset":false,"items":[{"kind":"user","text":"fix it"},{"kind":"step","id":"t1","tool":"Bash","detail":"ls","body":["ls"]},{"kind":"result","id":"t1","failed":true,"summary":"no","body":[]}]}"#
+        );
     }
 }
