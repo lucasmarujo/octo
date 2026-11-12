@@ -7,6 +7,16 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.36',
+    date: '2026-11-12',
+    en: [
+      'A paired phone can read a Claude agent as a conversation: what you asked, what Claude said and each step with its result. It needs the next version of the Octo phone app.',
+    ],
+    'pt-BR': [
+      'O celular pareado pode ler um agente Claude como uma conversa: o que você pediu, o que o Claude disse e cada passo com o resultado. Precisa da próxima versão do app do Octo no celular.',
+    ],
+  },
+  {
     version: '0.2.35',
     date: '2026-11-11',
     en: [
