@@ -38,7 +38,8 @@
         "android.permission.USE_FINGERPRINT",
         "android.permission.RECEIVE_BOOT_COMPLETED"
       ],
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "versionCode": 6
     },
     "plugins": [
       [
@@ -111,10 +112,10 @@
         }
       ]
     ],
-    "owner": "lmaorgexpo",
+    "owner": "lucasdevmj",
     "extra": {
       "eas": {
-        "projectId": "250deae1-db96-4679-9c43-b610766280db"
+        "projectId": "e9e00bc4-1375-462d-b167-2a094db3076e"
       }
     }
   }
