@@ -402,6 +402,13 @@ approval. Only use it in folders and on machines where you trust that. Terminals
 - The first time, Claude Code asks you to accept bypass mode; the task is only typed after that. Each
   agent's "trust this folder" screens still show up.
 
+## Attach files to a task
+
+In Octo, the paperclip in the task box opens the file dialog, and files dropped on the window are attached too.
+Any kind of file works, up to 20 per task. Octo doesn't copy them: the agent gets the task followed by the full
+path of each file and reads them from where they are, so a file you delete before the agent opens it is gone
+for the agent too. A terminal takes no files, and the files go with one task only.
+
 ## Agent skills (`/skill`)
 
 With an AI agent in `who`, `/` also suggests the skills and commands that agent has, read from

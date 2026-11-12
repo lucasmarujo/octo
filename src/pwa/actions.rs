@@ -32,6 +32,8 @@ use crate::worktree;
 pub const MAX_DIFF_BYTES: usize = 512 * 1024;
 pub const MAX_PEEK_AGENTS: usize = 24;
 pub const MAX_PEEK_ROWS: u16 = 40;
+pub const MAX_ATTACHMENTS: usize = 20;
+const ATTACHMENTS_HEADING: &str = "Attached files:";
 const DISCARD_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
 const DISCARD_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
@@ -180,8 +182,45 @@ pub fn resolve_dir(path: &str) -> PathBuf {
     absolute.components().collect()
 }
 
+pub fn resolve_attachments(paths: &[String]) -> Result<Vec<PathBuf>, String> {
+    if paths.len() > MAX_ATTACHMENTS {
+        return Err(format!("a task takes up to {MAX_ATTACHMENTS} attached files"));
+    }
+    let mut files: Vec<PathBuf> = Vec::with_capacity(paths.len());
+    for path in paths {
+        let file = expand_tilde(path.trim());
+        if path.chars().any(char::is_control) || !file.is_absolute() || !file.is_file() {
+            return Err(format!("{} is not a file that can be attached", path.trim()));
+        }
+        if !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    Ok(files)
+}
+
+pub fn task_with_attachments(task: &str, files: &[PathBuf]) -> String {
+    if files.is_empty() {
+        return task.to_string();
+    }
+    let listed: Vec<String> = files.iter().map(|file| format!("- {}", file.display())).collect();
+    format!(
+        "{}
+
+{ATTACHMENTS_HEADING}
+{}",
+        task.trim_end(),
+        listed.join(
+            "
+"
+        )
+    )
+    .trim_start()
+    .to_string()
+}
+
 fn start(hub: &Arc<Hub>, request: StartRequest, reply: &Sender<Event>) {
-    let StartRequest { kind, session, cwd, task, worktree, bypass, remote_control, model } = request;
+    let StartRequest { kind, session, cwd, task, worktree, bypass, remote_control, model, attachments } = request;
     if !hub.kinds().contains(&kind) {
         return notice(reply, Tone::Error, format!("{} is not installed on {}", kind.label(), hub.host()));
     }
@@ -192,7 +231,12 @@ fn start(hub: &Arc<Hub>, request: StartRequest, reply: &Sender<Event>) {
     if !hub.store().load_sessions().is_ok_and(|sessions| sessions.iter().any(|s| s.name == session)) {
         return notice(reply, Tone::Error, format!("session {session} does not exist"));
     }
+    let files = match resolve_attachments(if kind.is_ai() { &attachments } else { &[] }) {
+        Ok(files) => files,
+        Err(err) => return notice(reply, Tone::Error, err),
+    };
     let name = default_agent_name(kind, &task, |name| hub.name_taken(&session, name));
+    let task = task_with_attachments(&task, &files);
     let isolate = worktree && kind.is_ai();
     let bypass = bypass && kind.is_ai();
     let remote_control = remote_control && kind == AgentKind::Claude;
@@ -357,6 +401,7 @@ fn cross_review(hub: &Arc<Hub>, agent: AgentId, reviewer: &str, reply: &Sender<E
             bypass: false,
             remote_control: false,
             model: None,
+            attachments: Vec::new(),
         },
         reply,
     );
@@ -413,6 +458,7 @@ fn run_skill(hub: &Arc<Hub>, run: SkillRun, reply: &Sender<Event>) {
         bypass: run.bypass,
         remote_control: run.remote_control,
         model: run.model,
+        attachments: Vec::new(),
     };
     start(hub, request, reply);
 }
@@ -867,6 +913,65 @@ mod tests {
         assert_eq!(agents.len(), MAX_PEEK_AGENTS);
         assert_eq!(rows, MAX_PEEK_ROWS);
         assert_eq!(peek_bounds(vec![7], 0), (vec![7], 1));
+    }
+
+    #[test]
+    fn attached_files_are_checked_and_listed_after_the_task() {
+        let dir =
+            std::env::temp_dir().join(format!("orkai-pwa-attach-{}-{}", std::process::id(), crate::util::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (shot, notes) = (dir.join("shot one.png"), dir.join("notes.pdf"));
+        std::fs::write(&shot, b"png").unwrap();
+        std::fs::write(&notes, b"pdf").unwrap();
+        let path = |file: &PathBuf| file.to_string_lossy().into_owned();
+
+        let files = resolve_attachments(&[path(&shot), format!(" {} ", path(&notes)), path(&shot)]).unwrap();
+        assert_eq!(files, [shot.clone(), notes.clone()], "each file once, in the order chosen");
+        assert_eq!(
+            task_with_attachments(
+                "fix the layout
+",
+                &files
+            ),
+            format!(
+                "fix the layout
+
+Attached files:
+- {}
+- {}",
+                shot.display(),
+                notes.display()
+            )
+        );
+        assert_eq!(
+            task_with_attachments("", &files[..1]),
+            format!(
+                "Attached files:
+- {}",
+                shot.display()
+            ),
+            "files alone are a task"
+        );
+        assert_eq!(task_with_attachments(" as typed ", &[]), " as typed ", "a task without files is left alone");
+        assert_eq!(resolve_attachments(&[]).unwrap(), Vec::<PathBuf>::new());
+
+        let missing = resolve_attachments(&[path(&dir.join("gone.txt"))]).unwrap_err();
+        assert!(missing.contains("gone.txt") && missing.contains("not a file"), "{missing}");
+        assert!(resolve_attachments(&[path(&dir)]).is_err(), "a folder is not a file");
+        assert!(resolve_attachments(&["shot one.png".into()]).is_err(), "a relative path names no file");
+        assert!(
+            resolve_attachments(&[format!(
+                "{}
+rm -rf",
+                path(&shot)
+            )])
+            .is_err(),
+            "no line break is typed"
+        );
+        let many = vec![path(&shot); MAX_ATTACHMENTS + 1];
+        assert!(resolve_attachments(&many).unwrap_err().contains("up to 20"));
+        assert_eq!(resolve_attachments(&many[..MAX_ATTACHMENTS]).unwrap(), [shot]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

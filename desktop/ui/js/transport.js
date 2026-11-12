@@ -22,6 +22,10 @@ export function invoke(command, args) {
   return core().invoke(command, args);
 }
 
+export function onFileDrop(handler) {
+  return window.__TAURI__.webview.getCurrentWebview().onDragDropEvent((event) => handler(event.payload));
+}
+
 export function currentWindow() {
   return window.__TAURI__.window.getCurrentWindow();
 }

@@ -510,6 +510,7 @@ fn the_phone_starts_stops_and_removes_agents() {
         bypass: false,
         remote_control: false,
         model: None,
+        attachments: Vec::new(),
     }));
     let started = phone.overview_where(|overview| overview.agents.iter().any(running));
     let id = started.agents[0].id;
@@ -536,6 +537,7 @@ fn a_bad_request_from_the_phone_gets_a_notice_and_changes_nothing() {
         bypass: false,
         remote_control: false,
         model: None,
+        attachments: Vec::new(),
     }));
     let text = phone.until(|message| match message {
         BridgeMsg::Notice { text, .. } => Some(text),
@@ -654,6 +656,7 @@ fn a_window_without_a_socket_drives_the_hub_through_its_inbox() {
         bypass: false,
         remote_control: false,
         model: None,
+        attachments: Vec::new(),
     });
     peer.inbox().send(Event::Inbound(start)).unwrap();
     let started = pump_until(&mut peer, &mut window, |message| match message {
@@ -931,6 +934,7 @@ fn the_overview_counts_the_changes_of_each_worktree() {
         bypass: false,
         remote_control: false,
         model: None,
+        attachments: Vec::new(),
     });
     peer.inbox().send(Event::Inbound(start)).unwrap();
     let id = pump_until(&mut peer, &mut window, |message| match message {
@@ -1136,6 +1140,7 @@ fn launch(fx: &Fixture, phone: &mut Phone, kind: AgentKind, dir: &str, task: &st
         bypass: false,
         remote_control: false,
         model: None,
+        attachments: Vec::new(),
     }));
     cwd
 }
@@ -1230,6 +1235,48 @@ fn an_agent_launched_without_a_task_goes_to_idle_and_stays_there() {
     assert_eq!(trace.columns(), ["working", "idle"], "{}", trace.text());
     std::thread::sleep(Duration::from_millis(1_000));
     assert_eq!(fx.hub.state(id), Some(AgentState::Idle), "{}", trace.text());
+}
+
+#[test]
+fn files_attached_to_a_task_reach_the_agent_and_a_missing_one_starts_nothing() {
+    let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.overview_where(|_| true);
+    let cwd = fx.dir.join("attach");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let brief = fx.dir.join("the brief.pdf");
+    std::fs::write(&brief, b"pdf").unwrap();
+    let config = config_running(AgentKind::Kimi, fake_agent(&fx, "agent", &[Fake::Prompt, Fake::Hang]));
+    fx.hub.reconfigure(config).unwrap();
+    let start = |file: &Path| {
+        PhoneMsg::Start(StartRequest {
+            kind: AgentKind::Kimi,
+            session: "default".into(),
+            cwd: cwd.to_string_lossy().into_owned(),
+            task: "summarize these".into(),
+            worktree: false,
+            bypass: false,
+            remote_control: false,
+            model: None,
+            attachments: vec![file.to_string_lossy().into_owned()],
+        })
+    };
+
+    phone.send(&start(&fx.dir.join("gone.pdf")));
+    let text = phone.until(|message| match message {
+        BridgeMsg::Notice { text, .. } => Some(text),
+        _ => None,
+    });
+    assert!(text.contains("gone.pdf") && text.contains("not a file"), "{text}");
+    assert!(fx.store.list_agents().unwrap().is_empty(), "nothing starts without the file");
+
+    phone.send(&start(&brief));
+    let mut trace = Trace::new();
+    let id = follow(&mut phone, "attach", &mut trace, |view| !view.starting);
+    let record = fx.store.load_agent(id).unwrap();
+    assert_eq!(record.task, format!("summarize these\n\nAttached files:\n- {}", brief.display()));
+    assert_eq!(record.name, "summarize-these", "the name comes from the task alone");
 }
 
 #[test]

@@ -14,6 +14,8 @@ export const ICON_REMOTE = `<svg width="12" height="12" viewBox="0 0 12 12" fill
 
 export const ICON_OPTIONS = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 3h8M2 6h8M2 9h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 
+export const ICON_ATTACH = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M7.4 3.4L4.1 6.7a1 1 0 0 0 1.4 1.4l3.4-3.4a2 2 0 0 0-2.8-2.8L2.6 5.4a3 3 0 0 0 4.2 4.2l3-3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
 export const ICON_STOP = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.3"/></svg>`;
 
 export const ICON_TRASH = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 3.5h8M4.5 3.5V2.2h3v1.3M3.2 3.5l.5 6.3h4.6l.5-6.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;

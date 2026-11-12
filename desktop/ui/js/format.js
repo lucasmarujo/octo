@@ -54,6 +54,20 @@ export function chosenModel(models, id) {
   return (Array.isArray(models) && id && models.find((model) => model.id === id)) || null;
 }
 
+export const MAX_ATTACHMENTS = 20;
+
+export function withAttachments(current, added) {
+  const files = [...current];
+  for (const path of added) {
+    if (typeof path === 'string' && path && !files.includes(path)) files.push(path);
+  }
+  return files.slice(0, MAX_ATTACHMENTS);
+}
+
+export function fileName(path) {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
 export function optionsTone({ worktree, remote, bypass }) {
   if (bypass) return 'danger';
   if (remote) return 'caution';

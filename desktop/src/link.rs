@@ -20,6 +20,7 @@ use crate::term::{self, Console};
 use crate::updates::{self, Updates};
 use crate::{agent_updates, alerts, pair, recover, settings};
 use tauri::ipc::{Channel, InvokeResponseBody};
+use tauri_plugin_dialog::DialogExt;
 
 pub struct Link {
     hub: Arc<Hub>,
@@ -84,6 +85,20 @@ fn attach(link: State<'_, Link>, channel: Channel) -> Result<(), String> {
 #[tauri::command]
 fn send(link: State<'_, Link>, message: PhoneMsg) -> Result<(), String> {
     link.send(message)
+}
+
+#[tauri::command(async)]
+fn pick_files(window: tauri::WebviewWindow) -> Vec<String> {
+    window
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .blocking_pick_files()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|file| file.into_path().ok())
+        .map(|path| path.display().to_string())
+        .collect()
 }
 
 #[tauri::command]
@@ -158,6 +173,7 @@ pub fn run() -> io::Result<()> {
     let link = Link::new(hub);
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(link)
         .manage(Updates::default())
         .manage(Console::default())
@@ -178,6 +194,7 @@ pub fn run() -> io::Result<()> {
             open_link,
             commit_info,
             home_dir,
+            pick_files,
             settings::settings,
             settings::save_settings,
             settings::play_chime,

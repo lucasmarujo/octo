@@ -42,6 +42,7 @@ export const state = {
   remote: storage.get(REMOTE_KEY) === 'on',
   model: savedModels && typeof savedModels === 'object' && !Array.isArray(savedModels) ? savedModels : {},
   models: {},
+  attachments: [],
   history: [],
   recall: -1,
   folders: null,

@@ -219,6 +219,8 @@ pub struct StartRequest {
     pub remote_control: bool,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
+    pub attachments: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -615,6 +617,7 @@ mod tests {
                     bypass: false,
                     remote_control: false,
                     model: None,
+                    attachments: Vec::new(),
                 }),
             ),
             (
@@ -628,6 +631,7 @@ mod tests {
                     bypass: true,
                     remote_control: false,
                     model: None,
+                    attachments: Vec::new(),
                 }),
             ),
             (
@@ -641,6 +645,7 @@ mod tests {
                     bypass: false,
                     remote_control: true,
                     model: None,
+                    attachments: Vec::new(),
                 }),
             ),
             (
@@ -668,6 +673,21 @@ mod tests {
                     bypass: false,
                     remote_control: false,
                     model: Some("gpt-6-luna".into()),
+                    attachments: Vec::new(),
+                }),
+            ),
+            (
+                r#"{"type":"start","kind":"claude","session":"s","cwd":"~","task":"t","worktree":false,"attachments":["/w/a.png","/w/b.pdf"]}"#,
+                PhoneMsg::Start(StartRequest {
+                    kind: AgentKind::Claude,
+                    session: "s".into(),
+                    cwd: "~".into(),
+                    task: "t".into(),
+                    worktree: false,
+                    bypass: false,
+                    remote_control: false,
+                    model: None,
+                    attachments: vec!["/w/a.png".into(), "/w/b.pdf".into()],
                 }),
             ),
             (

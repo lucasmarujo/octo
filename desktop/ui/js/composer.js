@@ -2,9 +2,9 @@ import { $, h, svg } from './dom.js';
 import { acceptedSuggestion, matchingCommands, nextSuggestion, parseCommand } from './commands.js';
 import { closeMenu, menuShown, openMenu } from './dialogs.js';
 import { pickFolder } from './folders.js';
-import { kindColor, label, optionsTone } from './format.js';
+import { MAX_ATTACHMENTS, fileName, kindColor, label, optionsTone, withAttachments } from './format.js';
 import { t } from './i18n.js';
-import { ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_OPTIONS, ICON_REMOTE, ICON_SHIELD } from './icons.js';
+import { ICON_ATTACH, ICON_BRANCH, ICON_CHEVRON_DOWN, ICON_OPTIONS, ICON_REMOTE, ICON_SHIELD } from './icons.js';
 import { flash } from './motion.js';
 import {
   currentModel,
@@ -22,7 +22,7 @@ import {
   worktreeOn,
 } from './state.js';
 import { toast } from './toast.js';
-import { send } from './transport.js';
+import { invoke, onFileDrop, send } from './transport.js';
 
 const MAX_HEIGHT = 160;
 const MAX_SUGGESTIONS = 8;
@@ -263,6 +263,60 @@ function renderOptionsButton() {
   button.setAttribute('aria-label', name);
 }
 
+function attach(paths) {
+  const wanted = new Set([...state.attachments, ...paths]).size;
+  state.attachments = withAttachments(state.attachments, paths);
+  if (wanted > MAX_ATTACHMENTS) toast(t('A task takes up to {max} attached files.', { max: MAX_ATTACHMENTS }), 'warn');
+  renderAttachments();
+}
+
+function detach(path) {
+  state.attachments = state.attachments.filter((file) => file !== path);
+  renderAttachments();
+  $('task').focus();
+}
+
+function chooseFiles() {
+  invoke('pick_files')
+    .then((paths) => {
+      attach(paths);
+      $('task').focus();
+    })
+    .catch((error) => toast(t('could not choose the files: {error}', { error: String(error) }), 'error'));
+}
+
+function takesFiles() {
+  return currentWho() !== 'terminal' && $('composer').offsetParent !== null;
+}
+
+function onDrop(drop) {
+  const over = (drop.type === 'enter' || drop.type === 'over') && takesFiles();
+  $('composer').classList.toggle('dropping', over);
+  if (drop.type === 'drop' && takesFiles()) attach(drop.paths);
+}
+
+function renderAttachments() {
+  const ai = currentWho() !== 'terminal';
+  const files = state.attachments;
+  const name = files.length ? t('Attach files · {count} attached', { count: files.length }) : t('Attach files');
+  const button = $('attach');
+  button.hidden = !ai;
+  button.setAttribute('aria-pressed', String(files.length > 0));
+  button.setAttribute('aria-label', name);
+  button.title = files.length ? name : t('Attach files to the task, or drop them here');
+  $('attachments').hidden = !ai || files.length === 0;
+  $('attachments').replaceChildren(
+    ...files.map((path) =>
+      h(
+        'span',
+        { class: 'attachment', title: path },
+        h('span', { class: 'attachment-name' }, fileName(path)),
+        h('button', { class: 'attachment-remove', type: 'button', 'aria-label': t('Remove {name}', { name: fileName(path) }), onclick: () => detach(path) }, '×'),
+      ),
+    ),
+  );
+}
+
 function cycleWho(step) {
   const kinds = installedKinds();
   if (!kinds.length) return;
@@ -304,7 +358,7 @@ function submit(event) {
   if (text.startsWith('!')) {
     kind = 'terminal';
     command = text.slice(1).trim();
-  } else if (kind !== 'terminal' && !text) {
+  } else if (kind !== 'terminal' && !text && !state.attachments.length) {
     toast(t('Write the task first.'), 'warn');
     return;
   }
@@ -319,7 +373,10 @@ function submit(event) {
     bypass: state.bypass && ai,
     remoteControl: state.remote && kind === 'claude',
     model: ai ? currentModel()?.id || null : null,
+    attachments: ai ? state.attachments : [],
   });
+  if (ai) state.attachments = [];
+  renderAttachments();
   flash($('composer'), 'sent');
   if (text) state.history.push(raw);
   state.recall = -1;
@@ -367,6 +424,7 @@ export function renderComposer() {
   $('where').setAttribute('aria-label', `${t('Where the task runs')}: ${currentWhere()}`);
   $('where').title = currentWhere();
   renderOptionsButton();
+  renderAttachments();
   renderOptionRows();
 }
 
@@ -399,6 +457,9 @@ export function initComposer() {
     if (!menuShown()) openOptionsMenu(event);
     else closeMenu();
   });
+  $('attach').replaceChildren(svg(ICON_ATTACH));
+  $('attach').addEventListener('click', chooseFiles);
+  onFileDrop(onDrop);
   document.addEventListener('click', (event) => {
     if (!$('menu').contains(event.target)) closeMenu();
   });

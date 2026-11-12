@@ -1063,6 +1063,8 @@ test('every notice the hub sends reads in Portuguese and stays as is in English'
   assert.equal(translateHub('pt-BR', 'session work is now home'), 'a sessão work agora se chama home');
   assert.equal(translateHub('pt-BR', 'fix-login is now login'), 'fix-login agora se chama login');
   assert.equal(translateHub('pt-BR', 'exited with code 3'), 'encerrado com código 3');
+  assert.equal(translateHub('pt-BR', 'C:/work/gone.pdf is not a file that can be attached'), 'C:/work/gone.pdf não é um arquivo que possa ser anexado');
+  assert.equal(translateHub('pt-BR', 'a task takes up to 20 attached files'), 'uma tarefa aceita até 20 arquivos anexados');
   assert.equal(translateHub('pt-BR', 'a text the hub never sends'), 'a text the hub never sends');
 });
 
@@ -1263,12 +1265,41 @@ test('the options button tints like the most severe option that is on, so bypass
   assert.equal(PT['Task options'], 'Opções da tarefa');
 });
 
+test('files attached to a task are kept once each, up to the limit of the core, and sent with the launch', async () => {
+  const { MAX_ATTACHMENTS, fileName, withAttachments } = await import('../js/format.js');
+  const actions = rust('src/pwa/actions.rs');
+  assert.equal(MAX_ATTACHMENTS, Number(actions.match(/pub const MAX_ATTACHMENTS: usize = (\d+);/)[1]));
+  assert.deepEqual(withAttachments(['C:/a.png'], ['C:/b.pdf', 'C:/a.png', '', null, 'C:/b.pdf']), ['C:/a.png', 'C:/b.pdf']);
+  const many = Array.from({ length: MAX_ATTACHMENTS + 5 }, (_, index) => `/tmp/file-${index}.txt`);
+  assert.deepEqual(withAttachments(['/tmp/first.txt'], many), ['/tmp/first.txt', ...many.slice(0, MAX_ATTACHMENTS - 1)], 'the first ones stay');
+  const current = ['C:/a.png'];
+  withAttachments(current, ['C:/b.pdf']);
+  assert.deepEqual(current, ['C:/a.png'], 'the list given is not changed');
+  assert.equal(fileName('C:\\Users\\me\\shot one.png'), 'shot one.png');
+  assert.equal(fileName('/home/me/notes.pdf'), 'notes.pdf');
+  assert.equal(fileName('/home/me/folder/'), 'folder');
+  assert.equal(fileName('notes.pdf'), 'notes.pdf');
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  assert.match(composer, /attachments: ai \? state\.attachments : \[\],/, 'a terminal gets no files');
+  assert.match(composer, /if \(ai\) state\.attachments = \[\];/, 'the files go with one task only');
+  assert.match(composer, /kind !== 'terminal' && !text && !state\.attachments\.length/, 'files alone are a task');
+  assert.match(composer, /invoke\('pick_files'\)/);
+  assert.match(composer, /onFileDrop\(onDrop\);/, 'files dropped on the window are attached too');
+  assert.match(rust('desktop/src/link.rs'), /\n\s+pick_files,\n/, 'the window may ask for the file dialog');
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<div id="attachments" class="attachments" hidden><\/div>/);
+  assert.match(html, /<button id="attach" class="toggle options-button" type="button" aria-pressed="false"><\/button>/);
+  const { PT } = await import('../js/i18n.js');
+  assert.equal(PT['Attach files'], 'Anexar arquivos');
+  assert.equal(PT['Remove {name}'], 'Remover {name}');
+});
+
 test('the three options left the row of the task box for a small button right after the folder', async () => {
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
   assert.doesNotMatch(html, /id="(worktree|remote|bypass)"/);
   const row = html.split('<div class="composer-options">')[1].split('</form>')[0];
   const ids = [...row.matchAll(/<button id="(\w+)"/g)].map((match) => match[1]);
-  assert.deepEqual(ids, ['who', 'model', 'where', 'options', 'launch']);
+  assert.deepEqual(ids, ['who', 'model', 'where', 'options', 'attach', 'launch']);
   assert.match(html, /<button id="options" class="toggle options-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-pressed="false"><\/button>/);
   const { ICON_OPTIONS } = await import('../js/icons.js');
   assert.match(ICON_OPTIONS, /d="M2 3h8M2 6h8M2 9h8"/, 'three horizontal bars');

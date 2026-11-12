@@ -404,6 +404,13 @@ aprovação. Use só em pastas e máquinas em que você confia nisso. Terminais 
 - Na primeira vez, o Claude Code pede para você aceitar o modo bypass; a tarefa só é digitada depois. As
   telas de "confiar nesta pasta" de cada agente continuam aparecendo.
 
+## Anexar arquivos à tarefa
+
+No Octo, o clipe da caixa de tarefa abre o diálogo de arquivos, e arquivos soltos na janela também são anexados.
+Vale qualquer tipo de arquivo, até 20 por tarefa. O Octo não copia nada: o agente recebe a tarefa seguida do
+caminho completo de cada arquivo e os lê de onde estão, então um arquivo apagado antes de o agente abrir
+também some para ele. Um terminal não recebe arquivos, e os arquivos valem para uma tarefa só.
+
 ## Skills dos agentes (`/skill`)
 
 Com um agente de IA no `who`, o `/` também sugere as skills e os comandos que esse agente tem, lidos do
