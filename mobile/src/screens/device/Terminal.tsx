@@ -2,17 +2,18 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { LayoutChangeEvent, TextStyle } from 'react-native';
 import { Animated, Easing, PanResponder, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { testMark } from '../../core/agents';
+import { label, testMark } from '../../core/agents';
+import model from '../../core/model';
 import type { AgentView, Run } from '../../core/protocol';
 import { useStore } from '../../core/store';
 import type { ScreenState, TermSize } from '../../core/workspace';
 import { MIN_COLS, MIN_ROWS, TERM_FONT, TERM_LINE, TERM_MAX, TERM_MIN, TERM_PAD } from '../../core/workspace';
 import { mix } from '../../theme/color';
-import { useStyles } from '../../theme/styles';
+import { FILL, useStyles } from '../../theme/styles';
 import { useReduced, useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/tokens';
 import { mono, sans, TERM, termText } from '../../theme/type';
-import { toneColor } from '../../ui/atoms';
+import { kindColor, toneColor } from '../../ui/atoms';
 import { Press } from '../../ui/Press';
 import { Rise } from '../../ui/Rise';
 import { useDevice } from './context';
@@ -91,12 +92,22 @@ const Row = React.memo(function Row({ runs, font, theme }: { runs: Run[]; font: 
 
 const styles = (t: Theme) =>
   StyleSheet.create({
-    context: { flexGrow: 0, flexShrink: 0 },
+    bar: { flexDirection: 'row', alignItems: 'flex-start', flexShrink: 0 },
+    context: { flex: 1, minWidth: 0 },
     contextContent: { gap: 6, paddingHorizontal: 14, paddingBottom: 10 },
+    raw: { marginRight: 14, marginLeft: 2, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: t.borderStrong },
+    rawOn: { borderColor: mix(t.accent, 60), backgroundColor: mix(t.accent, 12) },
+    rawText: { ...mono(12, 700, 16), color: t.textMuted },
+    rawTextOn: { color: t.accent },
     chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999, backgroundColor: t.surface },
     chipText: { ...mono(12), color: t.textMuted },
     branch: { backgroundColor: mix(t.link, 12) },
-    card: { flex: 1, minHeight: 0, marginHorizontal: 10, borderRadius: 20, backgroundColor: t.termBg, borderWidth: 1, borderColor: t.border, overflow: 'hidden' },
+    card: { flex: 1, minHeight: 0, backgroundColor: t.termBg, borderTopWidth: 1, borderColor: t.border, overflow: 'hidden' },
+    hidden: { ...FILL, opacity: 0 },
+    info: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 30, paddingHorizontal: 14, borderBottomWidth: 1, borderColor: t.border, flexShrink: 0 },
+    infoDot: { width: 6, height: 6, borderRadius: 3 },
+    infoKind: mono(11, 700, 14),
+    infoText: { ...mono(11, 400, 14), color: t.textMuted },
     screen: { flex: 1, minHeight: 0, overflow: 'hidden' },
     rows: { paddingTop: TERM_PAD, paddingHorizontal: TERM_PAD },
     cursor: { position: 'absolute', top: 0, left: 0, backgroundColor: t.termFg },
@@ -106,15 +117,24 @@ const styles = (t: Theme) =>
     probe: { position: 'absolute', opacity: 0, width: 4000, flexDirection: 'row' },
   });
 
-export function Chips({ agent }: { agent: AgentView | null }) {
+type ChipsProps = {
+  agent: AgentView | null;
+  raw?: boolean;
+  onRaw?: () => void;
+};
+
+const RAW_MARK = '>_';
+
+export function Chips({ agent, raw = false, onRaw }: ChipsProps) {
   const t = useTheme();
   const s = useStyles(styles);
   if (!agent) return null;
   const changes = agent.changes && agent.changes.files ? agent.changes : null;
   const test = testMark(agent.test);
   const subs = (agent.subagents || []).length;
-  if (!agent.branch && !changes && !test && !subs) return null;
+  if (!agent.branch && !changes && !test && !subs && !onRaw) return null;
   return (
+    <View style={s.bar}>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.context} contentContainerStyle={s.contextContent}>
       {agent.branch ? (
         <View style={[s.chip, s.branch]}>
@@ -138,6 +158,12 @@ export function Chips({ agent }: { agent: AgentView | null }) {
         </View>
       ) : null}
     </ScrollView>
+      {onRaw ? (
+        <Press style={[s.raw, raw && s.rawOn]} label="raw terminal" role="switch" selected={raw} onPress={onRaw}>
+          <Text style={[s.rawText, raw && s.rawTextOn]}>{RAW_MARK}</Text>
+        </Press>
+      ) : null}
+    </View>
   );
 }
 
@@ -178,7 +204,7 @@ function Cursor({ screen, font, ratio, shift }: { screen: ScreenState; font: num
   );
 }
 
-export function Terminal() {
+export function Terminal({ agent = null, hidden = false }: { agent?: AgentView | null; hidden?: boolean }) {
   const { workspace } = useDevice();
   const t = useTheme();
   const s = useStyles(styles);
@@ -240,8 +266,16 @@ export function Terminal() {
   const shift = screen && box ? shiftFor(screen, line, box.height) : 0;
   const wide = screen ? Math.ceil(screen.cols * font * ratio) + TERM_PAD * 2 : 0;
 
+  const short = agent ? model.shortModel(agent.model) : '';
   return (
-    <View style={s.card}>
+    <View style={[s.card, hidden && s.hidden]} pointerEvents={hidden ? 'none' : 'auto'} accessibilityElementsHidden={hidden} importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}>
+      {agent ? (
+        <View style={s.info}>
+          <View style={[s.infoDot, { backgroundColor: kindColor(t, agent.kind) }]} />
+          <Text style={[s.infoKind, { color: kindColor(t, agent.kind) }]}>{label(agent.kind)}</Text>
+          {short ? <Text style={s.infoText}>{short}</Text> : null}
+        </View>
+      ) : null}
       <View style={s.probe} pointerEvents="none">
         <Text onLayout={probe} style={{ fontFamily: TERM, fontSize: PROBE_FONT, includeFontPadding: false }}>
           {PROBE}

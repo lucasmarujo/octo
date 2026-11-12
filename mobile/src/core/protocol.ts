@@ -101,6 +101,12 @@ export type Preview = {
   lines: Run[][];
 };
 
+export type ChatItem =
+  | { kind: 'user'; text: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'step'; id: string; tool: string; detail: string; body: string[] }
+  | { kind: 'result'; id: string; failed: boolean; summary: string; body: string[] };
+
 export type Welcome = { type: 'welcome'; host: string; version: string };
 export type StateMsg = { type: 'state' } & Overview;
 export type UsageMsg = { type: 'usage'; entries: UsageEntry[] };
@@ -110,8 +116,9 @@ export type FoldersMsg = { type: 'folders'; seq: number; path: string; parent: s
 export type FolderSearchMsg = { type: 'folderSearch'; seq: number; root: string; query: string; hits: FolderHit[]; truncated: boolean };
 export type DiffMsg = { type: 'diff'; agent: number; branch: string; text: string; truncated: boolean };
 export type PeekMsg = { type: 'peek'; previews: Preview[] };
+export type ChatMsg = { type: 'chat'; agent: number; session: string | null; next: number; reset: boolean; items: ChatItem[] };
 
-export type BridgeMsg = Welcome | StateMsg | UsageMsg | ScreenMsg | NoticeMsg | FoldersMsg | FolderSearchMsg | DiffMsg | PeekMsg;
+export type BridgeMsg = Welcome | StateMsg | UsageMsg | ScreenMsg | NoticeMsg | FoldersMsg | FolderSearchMsg | DiffMsg | PeekMsg | ChatMsg;
 
 export type PushTo = { token: string; device: string };
 
@@ -135,4 +142,5 @@ export type PhoneMsg =
   | { type: 'folderSearch'; root: string; query: string; seq: number }
   | { type: 'diff'; agent: number }
   | { type: 'merge'; agent: number }
-  | { type: 'peek'; agents: number[]; rows: number };
+  | { type: 'peek'; agents: number[]; rows: number }
+  | { type: 'chat'; agent: number; session: string | null; from: number };

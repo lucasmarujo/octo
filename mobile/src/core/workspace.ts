@@ -1,10 +1,12 @@
-import { waiting } from './agents';
+import { alive, waiting } from './agents';
+import type { Block } from './chat';
+import { chatCapable, fold } from './chat';
 import type { DevicePrefs } from './devices';
 import type { Buzz } from './haptics';
 import type { DeviceLink } from './link';
 import type { Asked, Choice } from './model';
 import model from './model';
-import type { AgentKind, AgentView, BridgeMsg, DiffMsg, FolderSearchMsg, FoldersMsg, Overview, PhoneMsg, Run, ScreenMsg, Tone } from './protocol';
+import type { AgentKind, AgentView, BridgeMsg, ChatMsg, DiffMsg, FolderSearchMsg, FoldersMsg, Overview, PhoneMsg, Run, ScreenMsg, Tone } from './protocol';
 import { Store } from './store';
 
 export const TERM_FONT = 12;
@@ -18,6 +20,8 @@ const PEEK_ROWS = 18;
 const PENDING_MS = 6000;
 const ANSWER_MS = 240;
 const SCROLL_EVERY_MS = 40;
+export const CHAT_EVERY_MS = 1500;
+const INTERRUPT = '';
 const ENTER = '\r';
 const FALLBACK_DIR = '~';
 const FALLBACK_KIND: AgentKind = 'terminal';
@@ -35,6 +39,14 @@ export type ScreenState = {
   scroll: number;
 };
 
+export type ChatState = {
+  agent: number;
+  session: string | null;
+  next: number;
+  blocks: Block[];
+  heard: boolean;
+};
+
 export type Approval = {
   asked: Asked;
   sig: string;
@@ -48,6 +60,7 @@ export type WorkspaceState = {
   where: string | null;
   previews: ReadonlyMap<number, Asked>;
   approval: Approval | null;
+  raw: boolean;
   entered: number;
 };
 
@@ -78,6 +91,8 @@ const NO_RUNS: Run[] = [];
 export class Workspace {
   readonly store: Store<WorkspaceState>;
   readonly screen = new Store<ScreenState | null>(null);
+  readonly chat = new Store<ChatState | null>(null);
+  private chatTimer: ReturnType<typeof setInterval> | null = null;
   private wanted: TermSize | null = null;
   private opened = false;
   private peekKey = '';
@@ -100,6 +115,7 @@ export class Workspace {
       where: null,
       previews: new Map(),
       approval: null,
+      raw: false,
       entered: 0,
     });
     this.unlisten = link.listen(message => this.hear(message));
@@ -110,6 +126,7 @@ export class Workspace {
     this.unlisten();
     if (this.answerTimer) clearTimeout(this.answerTimer);
     if (this.scrollTimer) clearTimeout(this.scrollTimer);
+    this.stopChat();
     if (this.store.get().view === 'agent') this.link.send({ type: 'close' });
     this.folders = null;
   }
@@ -176,13 +193,15 @@ export class Workspace {
     this.approvalSig = '';
     this.answeredSig = '';
     this.opened = false;
-    this.store.patch({ view: 'agent', agent: id, approval: null });
+    this.store.patch({ view: 'agent', agent: id, approval: null, raw: false });
+    this.startChat(id);
   }
 
   leaveAgent(): void {
     if (this.store.get().view !== 'agent') return;
     this.link.send({ type: 'close' });
     this.screen.set(null);
+    this.stopChat();
     this.opened = false;
     this.store.update(state => ({ ...state, view: 'overview', agent: null, approval: null, entered: state.entered + 1 }));
     this.syncPeek();
@@ -203,6 +222,15 @@ export class Workspace {
 
   refit(): void {
     if (this.wanted && this.opened) this.link.send({ type: 'size', rows: this.wanted.rows, cols: this.wanted.cols });
+  }
+
+  showRaw(raw: boolean): void {
+    this.store.patch({ raw });
+  }
+
+  interrupt(): void {
+    this.link.send({ type: 'keys', data: INTERRUPT });
+    this.effects.buzz('tap');
   }
 
   keys(data: string): void {
@@ -294,6 +322,7 @@ export class Workspace {
       case 'welcome':
         this.peekKey = '';
         this.reopen();
+        this.followChat();
         break;
       case 'state':
         this.onOverview(message);
@@ -314,9 +343,46 @@ export class Workspace {
       case 'diff':
         this.effects.diff(message);
         break;
+      case 'chat':
+        this.onChat(message);
+        break;
       default:
         break;
     }
+  }
+
+  private startChat(agent: number): void {
+    this.stopChat();
+    this.chat.set({ agent, session: null, next: 0, blocks: [], heard: false });
+    this.followChat();
+  }
+
+  private followChat(): void {
+    if (!this.chat.get() || !chatCapable(this.link.version)) return;
+    this.askChat();
+    if (!this.chatTimer) this.chatTimer = setInterval(() => this.askChat(), CHAT_EVERY_MS);
+  }
+
+  private stopChat(): void {
+    if (this.chatTimer) clearInterval(this.chatTimer);
+    this.chatTimer = null;
+    this.chat.set(null);
+  }
+
+  private askChat(): void {
+    const chat = this.chat.get();
+    if (!chat || !chatCapable(this.link.version) || this.link.store.get().phase !== 'live') return;
+    const agent = this.findAgent(chat.agent);
+    if (chat.heard && agent && !alive(agent)) return;
+    this.link.send({ type: 'chat', agent: chat.agent, session: chat.session, from: chat.next });
+  }
+
+  private onChat(message: ChatMsg): void {
+    const chat = this.chat.get();
+    if (!chat || chat.agent !== message.agent) return;
+    const fresh = message.reset || message.session !== chat.session;
+    if (!fresh && message.next === chat.next && chat.heard) return;
+    this.chat.set({ agent: chat.agent, session: message.session, next: message.next, blocks: fold(fresh ? [] : chat.blocks, message.items), heard: true });
   }
 
   private reopen(): void {

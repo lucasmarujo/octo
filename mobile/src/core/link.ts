@@ -44,6 +44,7 @@ export function ownerOf(session: string): string {
 
 export class DeviceLink {
   readonly store = new Store<LinkState>({ phase: 'connecting', overview: null, usage: null, skew: 0 });
+  version: string | null = null;
   private session: string | null = null;
   private ready = false;
   private attempt = 0;
@@ -173,6 +174,7 @@ export class DeviceLink {
   private handle(message: BridgeMsg): void {
     const previous = this.store.get().overview;
     if (message.type === 'welcome') {
+      this.version = message.version;
       this.attempt = 0;
       this.store.patch({ phase: 'live' });
     } else if (message.type === 'state') {

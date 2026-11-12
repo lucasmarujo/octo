@@ -27,6 +27,7 @@ import { AgentList, Skeleton } from './AgentList';
 import { Lost, Needs, Offline } from './Alerts';
 import { Approval, Keys } from './Approval';
 import { Board } from './Board';
+import { Chat } from './Chat';
 import type { ComposerHandle } from './Composer';
 import { Composer } from './Composer';
 import type { DeviceScope } from './context';
@@ -81,6 +82,7 @@ export function DeviceScreen({ device, link, agent: wanted, at, onBack, onMenu, 
   useEffect(() => () => workspace.dispose(), [workspace]);
 
   const scope = useMemo<DeviceScope>(() => ({ device, link, workspace }), [device, link, workspace]);
+  const chat = useStore(workspace.chat);
   scopeRef.current = scope;
 
   const state = useStore(workspace.store);
@@ -135,6 +137,8 @@ export function DeviceScreen({ device, link, agent: wanted, at, onBack, onMenu, 
   const now = link.now();
   const agent = state.view === 'agent' ? workspace.findAgent(state.agent) : null;
   const dimmed = phase === 'offline' ? styles.dimmed : null;
+  const talks = Boolean(chat && chat.session && chat.blocks.length);
+  const raw = state.raw || !talks;
 
   return (
     <DeviceContext.Provider value={scope}>
@@ -142,9 +146,12 @@ export function DeviceScreen({ device, link, agent: wanted, at, onBack, onMenu, 
         <Header onBack={onBack} onSettings={openSettings} onMenu={() => openAgentMenu(scope)} />
         {state.view === 'agent' ? (
           <Rise key="agent" replay={state.agent || 0} from={VIEW_FROM} shrink={1} style={styles.main}>
-            <Chips agent={agent} />
-            <Terminal />
-            {state.approval ? <Approval asking={state.approval} agent={agent} /> : <Keys />}
+            <Chips agent={agent} raw={raw} onRaw={talks ? () => workspace.showRaw(!state.raw) : undefined} />
+            <View style={styles.main}>
+              {raw ? null : <Chat blocks={chat ? chat.blocks : []} agent={agent} />}
+              <Terminal agent={agent} hidden={!raw} />
+            </View>
+            {state.approval ? <Approval asking={state.approval} agent={agent} /> : raw ? <Keys /> : null}
           </Rise>
         ) : (
           <Rise key="overview" from={VIEW_FROM} shrink={1} style={styles.main}>
