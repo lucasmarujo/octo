@@ -7,6 +7,18 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.37',
+    date: '2026-11-12',
+    en: [
+      'Attach files of any kind to a task: the paperclip in the task box opens the file dialog, and files dropped on the window are attached too. The agent gets the task with the path of each file, up to 20 per task.',
+      'Cursor CLI is a new agent: pick cursor in the task box. Octo shows when it is working, waiting for you or done, reopens its chat after a restart and can install it for you in Settings.',
+    ],
+    'pt-BR': [
+      'Anexe arquivos de qualquer tipo à tarefa: o clipe da caixa de tarefa abre o diálogo de arquivos, e arquivos soltos na janela também são anexados. O agente recebe a tarefa com o caminho de cada arquivo, até 20 por tarefa.',
+      'O Cursor CLI é um agente novo: escolha cursor na caixa de tarefa. O Octo mostra quando ele está trabalhando, esperando você ou concluiu, reabre a conversa dele depois de um reinício e pode instalá-lo para você nas Configurações.',
+    ],
+  },
+  {
     version: '0.2.36',
     date: '2026-11-12',
     en: [
