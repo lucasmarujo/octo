@@ -7,6 +7,24 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.35',
+    date: '2026-11-11',
+    en: [
+      'Octo has a new look: black with an aqua accent and the O as its icon. The look you knew is still there as the Old theme, in Settings > Appearance.',
+      'Pick your own accent color in Settings > Appearance: presets, a hue slider, RGB or a hex. Buttons, the cursor and the O follow it.',
+      'A bar under the window counts your agents, the ones working and the ones waiting for you, with plan usage, the phone and the version one click away.',
+      'The terminal of an agent runs edge to edge, under a strip with the agent, its model, its branch and how long it has been alive.',
+      'Pairing a phone is a small dialog until there is a code to show.',
+    ],
+    'pt-BR': [
+      'O Octo está de visual novo: preto com destaque verde-água e o O como ícone. O visual que você conhecia continua como o tema Antigo, em Configurações > Aparência.',
+      'Escolha a sua cor de destaque em Configurações > Aparência: predefinidas, matiz, RGB ou hex. Botões, cursor e o O acompanham.',
+      'Uma barra embaixo da janela conta os agentes, os que estão trabalhando e os que esperam por você, com o uso dos planos, o celular e a versão a um clique.',
+      'O terminal do agente vai de ponta a ponta, sob uma faixa com o agente, o modelo, a branch e há quanto tempo ele está vivo.',
+      'Parear o celular é um diálogo pequeno até existir um código para mostrar.',
+    ],
+  },
+  {
     version: '0.2.34',
     date: '2026-11-10',
     en: [
