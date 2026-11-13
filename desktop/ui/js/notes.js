@@ -7,6 +7,24 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.39',
+    date: '2026-11-13',
+    en: [
+      'Octo can answer your agents for you. Turn it on in the new Octo tab: when an agent stops to ask something, Octo reads the question, thinks with an agent you already have (claude or codex) and answers it, or leaves it for you with what it would say.',
+      'Three modes, for everything or per project: Observe only reports, Moderate answers what the task and your rules settle, Bypass answers everything with no limits.',
+      'Chat with Octo about everything that is running, and let it message, answer, stop or start agents. Its rules live in Markdown, one file for everything and one per project.',
+      'It is off until you turn it on, and then it stays light: no engine keeps running, it only starts while a question is being judged.',
+      'The Octo tab comes first, so alt+1 now opens it. The next version of the phone app brings Octo and attachments on launch.',
+    ],
+    'pt-BR': [
+      'O Octo pode responder os seus agentes por você. Ligue na nova aba Octo: quando um agente para para perguntar algo, o Octo lê a pergunta, pensa com um agente que você já tem (claude ou codex) e responde, ou deixa para você com o que ele diria.',
+      'Três modos, para tudo ou por projeto: Observe só relata, Moderate responde o que a tarefa e as suas regras resolvem, Bypass responde tudo, sem limites.',
+      'Converse com o Octo sobre tudo o que está rodando, e deixe que ele mande mensagens, responda, pare ou inicie agentes. As regras dele ficam em Markdown, um arquivo para tudo e um por projeto.',
+      'Ele fica desligado até você ligar, e continua leve: nenhum motor fica rodando, ele só inicia enquanto uma pergunta é avaliada.',
+      'A aba Octo vem primeiro, então alt+1 agora abre ela. A próxima versão do app do celular traz o Octo e anexos no lançamento.',
+    ],
+  },
+  {
     version: '0.2.38',
     date: '2026-11-13',
     en: [
