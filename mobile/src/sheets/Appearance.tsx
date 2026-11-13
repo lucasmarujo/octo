@@ -93,7 +93,7 @@ const styles = (t: Theme) =>
     knob: { position: 'absolute', top: 3, left: 3, width: 20, height: 20, borderRadius: 10, backgroundColor: '#ffffff', boxShadow: [{ offsetX: 0, offsetY: 1, blurRadius: 3, color: 'rgba(0, 0, 0, 0.3)' }] },
   });
 
-function Switch({ on, flip, label }: { on: boolean; flip: () => void; label: string }) {
+export function Switch({ on, flip, label }: { on: boolean; flip: () => void; label: string }) {
   const s = useStyles(styles);
   const reduced = useReduced();
   const slide = useRef(new Animated.Value(on ? 1 : 0)).current;

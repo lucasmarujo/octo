@@ -24,6 +24,7 @@ type OctoLinkEvents = {
 declare class OctoLinkModule extends NativeModule<OctoLinkEvents> {
   open(id: string, url: string, key: string, agent: string): void;
   send(id: string, text: string): void;
+  queued(id: string): number;
   close(id: string): void;
 }
 

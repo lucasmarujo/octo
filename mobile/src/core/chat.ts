@@ -61,14 +61,18 @@ const TITLES: Readonly<Record<string, string>> = {
 const FILE_TOOLS = ['Read', 'Edit', 'MultiEdit', 'NotebookEdit', 'Write'];
 const CHANGE_TOOLS = ['Edit', 'MultiEdit', 'NotebookEdit', 'Write'];
 
-export function chatCapable(version: string | null): boolean {
+export function atLeast(version: string | null, since: readonly number[]): boolean {
   if (!version) return false;
   const parts = version.split('.').map(part => Number.parseInt(part, 10));
-  for (let index = 0; index < CHAT_SINCE.length; index += 1) {
+  for (let index = 0; index < since.length; index += 1) {
     const part = Number.isFinite(parts[index]) ? parts[index] : 0;
-    if (part !== CHAT_SINCE[index]) return part > CHAT_SINCE[index];
+    if (part !== since[index]) return part > since[index];
   }
   return true;
+}
+
+export function chatCapable(version: string | null): boolean {
+  return atLeast(version, CHAT_SINCE);
 }
 
 function nextKey(blocks: Block[]): number {

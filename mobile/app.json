@@ -15,7 +15,7 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "NSCameraUsageDescription": "Octo uses the camera only to scan the pairing code Octo shows on your computer."
+        "NSCameraUsageDescription": "Octo uses the camera to scan the pairing code Octo shows on your computer and to take the photos you attach to a task."
       }
     },
     "android": {
@@ -108,6 +108,14 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#35fddc"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Octo opens your library only for the photos and videos you choose to attach to a task.",
+          "cameraPermission": "Octo uses the camera to scan the pairing code Octo shows on your computer and to take the photos you attach to a task.",
+          "microphonePermission": false
         }
       ]
     ],

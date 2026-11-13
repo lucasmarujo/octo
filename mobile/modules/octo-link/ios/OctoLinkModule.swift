@@ -21,6 +21,10 @@ public class OctoLinkModule: Module {
       self.session(id)?.send(text)
     }
 
+    Function("queued") { (id: String) -> Double in
+      Double(self.session(id)?.queued() ?? 0)
+    }
+
     Function("close") { (id: String) in
       self.take(id)?.close()
     }

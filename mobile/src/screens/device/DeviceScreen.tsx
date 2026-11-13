@@ -4,16 +4,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Device } from '../../core/devices';
 import { changeDevice, findDevice } from '../../core/devices';
+import { openFile } from '../../core/files';
 import { buzz } from '../../core/haptics';
 import type { DeviceLink } from '../../core/link';
 import { watching } from '../../core/nav';
+import { gateOf, octoCapable } from '../../core/octo';
 import type { Layout } from '../../core/settings';
 import { changeSettings, settings } from '../../core/settings';
-import { useStore } from '../../core/store';
+import { useSelect, useStore } from '../../core/store';
 import { Workspace } from '../../core/workspace';
 import { openAgentMenu } from '../../sheets/AgentMenu';
 import { openAppearance } from '../../sheets/Appearance';
+import { openAttach } from '../../sheets/Attach';
 import { openDiff } from '../../sheets/Diff';
+import { openOctoSettings } from '../../sheets/OctoSettings';
 import { openPrompt } from '../../sheets/Prompt';
 import { openUsage } from '../../sheets/Usage';
 import { openWhere } from '../../sheets/Where';
@@ -33,6 +37,7 @@ import { Composer } from './Composer';
 import type { DeviceScope } from './context';
 import { DeviceContext } from './context';
 import { Header } from './Header';
+import { Octo, OctoEntry } from './Octo';
 import { Rings } from './Rings';
 import { Sessions } from './Sessions';
 import { Chips, Terminal } from './Terminal';
@@ -76,6 +81,7 @@ export function DeviceScreen({ device, link, agent: wanted, at, onBack, onMenu, 
         },
         prefs: () => findDevice(device.id)?.prefs || NO_PREFS,
         reduced: () => settings.get().reduced,
+        open: openFile,
       }),
     [link, device.id],
   );
@@ -88,6 +94,7 @@ export function DeviceScreen({ device, link, agent: wanted, at, onBack, onMenu, 
   const state = useStore(workspace.store);
   const { phase, overview, usage } = useStore(link.store);
   const layout = useStore(settings).layout;
+  const octoReady = useSelect(workspace.octo.view, view => Boolean(view && gateOf(view) === 'ready'));
 
   useEffect(() => {
     if (wanted !== undefined) workspace.openAgent(wanted);
@@ -100,7 +107,9 @@ export function DeviceScreen({ device, link, agent: wanted, at, onBack, onMenu, 
 
   useEffect(() => {
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (workspace.store.get().view === 'agent') workspace.leaveAgent();
+      const shown = workspace.store.get().view;
+      if (shown === 'agent') workspace.leaveAgent();
+      else if (shown === 'octo') workspace.leaveOcto();
       else onBack();
       return true;
     });
@@ -139,11 +148,12 @@ export function DeviceScreen({ device, link, agent: wanted, at, onBack, onMenu, 
   const dimmed = phase === 'offline' ? styles.dimmed : null;
   const talks = Boolean(chat && chat.session && chat.blocks.length);
   const raw = state.raw || !talks;
+  const composing = state.view !== 'octo' || (state.tab === 'chat' && octoReady);
 
   return (
     <DeviceContext.Provider value={scope}>
       <View style={[styles.view, { paddingBottom: keyboard }]}>
-        <Header onBack={onBack} onSettings={openSettings} onMenu={() => openAgentMenu(scope)} />
+        <Header onBack={onBack} onSettings={openSettings} onMenu={() => openAgentMenu(scope)} onOcto={() => openOctoSettings(scope)} />
         {state.view === 'agent' ? (
           <Rise key="agent" replay={state.agent || 0} from={VIEW_FROM} shrink={1} style={styles.main}>
             <Chips agent={agent} raw={raw} onRaw={talks ? () => workspace.showRaw(!state.raw) : undefined} />
@@ -152,6 +162,13 @@ export function DeviceScreen({ device, link, agent: wanted, at, onBack, onMenu, 
               <Terminal agent={agent} hidden={!raw} />
             </View>
             {state.approval ? <Approval asking={state.approval} agent={agent} /> : raw ? <Keys /> : null}
+          </Rise>
+        ) : state.view === 'octo' ? (
+          <Rise key="octo" from={VIEW_FROM} shrink={1} style={[styles.main, { paddingBottom: composing || keyboard ? 0 : insets.bottom }]}>
+            {phase === 'offline' ? <Offline onRetry={() => link.retryNow()} /> : null}
+            <View style={[styles.main, dimmed]} pointerEvents={phase === 'offline' ? 'none' : 'auto'}>
+              <Octo />
+            </View>
           </Rise>
         ) : (
           <Rise key="overview" from={VIEW_FROM} shrink={1} style={styles.main}>
@@ -163,6 +180,7 @@ export function DeviceScreen({ device, link, agent: wanted, at, onBack, onMenu, 
                   <Lost agents={list} now={now} onRecover={() => workspace.send({ type: 'recover', session: state.filter || '' })} />
                   <View style={dimmed}>
                     <Needs agents={list} previews={state.previews} now={now} />
+                    {octoCapable(link.version) ? <OctoEntry /> : null}
                     <Rings entries={usage || []} now={now} onOpen={() => openUsage(link)} />
                     <Viewbar layout={layout} agents={list} onLayout={setLayout} />
                     {layout === 'board' && list.length ? (
@@ -178,7 +196,7 @@ export function DeviceScreen({ device, link, agent: wanted, at, onBack, onMenu, 
             </ScrollView>
           </Rise>
         )}
-        <Composer ref={composer} onWho={() => openWho(scope)} onWhere={() => openWhere(scope)} onWorktree={toggleWorktree} onBypass={toggleBypass} />
+        {composing ? <Composer ref={composer} onWho={() => openWho(scope)} onWhere={() => openWhere(scope)} onWorktree={toggleWorktree} onBypass={toggleBypass} onAttach={() => openAttach(scope)} /> : null}
       </View>
     </DeviceContext.Provider>
   );

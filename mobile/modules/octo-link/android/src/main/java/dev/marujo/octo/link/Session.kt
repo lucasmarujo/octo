@@ -57,6 +57,8 @@ internal class Session(
         }
     }
 
+    fun queued(): Long = synchronized(lock) { socket?.queueSize() ?: 0L }
+
     fun close() {
         synchronized(lock) {
             finished = true

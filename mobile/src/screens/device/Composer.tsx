@@ -1,10 +1,12 @@
-import React, { useImperativeHandle, useRef, useState } from 'react';
+import React, { useCallback, useImperativeHandle, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { alive, label } from '../../core/agents';
+import type { Attachment } from '../../core/attach';
+import { attachCapable, chipNote, fileLabel, progress, sendLabel, uploading } from '../../core/attach';
 import model from '../../core/model';
-import { useStore } from '../../core/store';
+import { useSelect, useStore } from '../../core/store';
 import { mix } from '../../theme/color';
 import { useStyles } from '../../theme/styles';
 import { useTheme } from '../../theme/ThemeContext';
@@ -26,10 +28,15 @@ type Props = {
   onWhere: () => void;
   onWorktree: () => void;
   onBypass: () => void;
+  onAttach: () => void;
 };
 
 const INPUT_MAX = 132;
 const PICK_ICON = 14;
+const NO_FILES: Attachment[] = [];
+const CHIP_MAX = 240;
+const OCTO_ASK = 'Ask Octo, or tell it what to do…';
+const OCTO_BUSY = 'Octo is thinking…';
 
 const styles = (t: Theme) =>
   StyleSheet.create({
@@ -50,12 +57,48 @@ const styles = (t: Theme) =>
     toggleText: sans(13, 700),
     worktreeOn: { backgroundColor: mix(t.link, 16) },
     bypassOn: { backgroundColor: mix(t.waiting, 16) },
+    attachOn: { backgroundColor: mix(t.accent, 14) },
+    off: { opacity: 0.4 },
+    files: { flexGrow: 0, marginRight: -12, marginLeft: -14 },
+    filesContent: { gap: 6, paddingRight: 12, paddingLeft: 14 },
+    chip: { flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: CHIP_MAX, paddingVertical: 6, paddingRight: 4, paddingLeft: 10, borderRadius: 12, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, overflow: 'hidden' },
+    chipFailed: { borderColor: mix(t.lost, 45), backgroundColor: mix(t.lost, 8, t.surface) },
+    chipBody: { flexShrink: 1, minWidth: 0 },
+    chipName: { ...mono(12, 700, 16), color: t.text },
+    chipNote: { ...mono(11, 400, 14), color: t.textFaint },
+    chipProblem: { color: t.lost },
+    chipDone: { color: t.done },
+    chipBar: { position: 'absolute', left: 0, bottom: 0, height: 2, backgroundColor: t.accent },
+    chipRemove: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
     send: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 38, minWidth: 38, paddingHorizontal: 10, borderRadius: 999, backgroundColor: t.accent, boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 18, color: mix(t.accent, 40) }] },
     sendInline: { height: 36, minWidth: 36 },
     sendLabel: { ...sans(15, 700), color: t.accentInk, paddingLeft: 6 },
   });
 
-export const Composer = React.forwardRef<ComposerHandle, Props>(function Composer({ onWho, onWhere, onWorktree, onBypass }, ref) {
+const Chip = React.memo(function Chip({ file, onRemove }: { file: Attachment; onRemove: (key: number) => void }) {
+  const t = useTheme();
+  const s = useStyles(styles);
+  const failed = file.phase === 'failed';
+  const share = file.phase === 'sending' || file.phase === 'sent' ? progress(file) : 0;
+  return (
+    <View style={[s.chip, failed && s.chipFailed]} accessibilityLabel={`${file.name}, ${chipNote(file)}`}>
+      <View style={s.chipBody}>
+        <Text style={s.chipName} numberOfLines={1}>
+          {fileLabel(file.name)}
+        </Text>
+        <Text style={[s.chipNote, failed && s.chipProblem, file.phase === 'done' && s.chipDone]} numberOfLines={failed ? 2 : 1}>
+          {chipNote(file)}
+        </Text>
+      </View>
+      <Press style={s.chipRemove} label={`remove ${file.name}`} onPress={() => onRemove(file.key)}>
+        <Icon name="close" size={12} color={t.textMuted} stroke={2.4} />
+      </Press>
+      {share ? <View style={[s.chipBar, { width: `${Math.round(share * 100)}%` }]} /> : null}
+    </View>
+  );
+});
+
+export const Composer = React.forwardRef<ComposerHandle, Props>(function Composer({ onWho, onWhere, onWorktree, onBypass, onAttach }, ref) {
   const { device, link, workspace } = useDevice();
   const t = useTheme();
   const s = useStyles(styles);
@@ -64,6 +107,8 @@ export const Composer = React.forwardRef<ComposerHandle, Props>(function Compose
   const bottom = keyboard ? 0 : insets.bottom;
   const state = useStore(workspace.store);
   const overview = useStore(link.store).overview;
+  const files = useStore(workspace.uploads.store);
+  const thinking = useSelect(workspace.octo.view, view => Boolean(view && view.thinking));
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
   const input = useRef<React.ComponentRef<typeof TextInput>>(null);
@@ -75,17 +120,37 @@ export const Composer = React.forwardRef<ComposerHandle, Props>(function Compose
     },
   }));
 
-  const inAgent = state.view === 'agent';
+  const inAgent = state.view !== 'overview';
   const who = workspace.currentWho();
-  const agent = inAgent ? workspace.findAgent(state.agent) : null;
-  const open = !inAgent && (focused || text.trim() !== '');
-  const placeholder = inAgent ? (agent && alive(agent) ? `Message ${agent.name}…` : 'this agent is not running') : who === 'terminal' ? 'Open a terminal, or type a command…' : `Ask ${label(who)} to…`;
+  const agent = state.view === 'agent' ? workspace.findAgent(state.agent) : null;
+  const attachable = !inAgent && who !== 'terminal' && attachCapable(link.version);
+  const attached = attachable ? files : NO_FILES;
+  const busy = uploading(attached);
+  const open = !inAgent && (focused || text.trim() !== '' || attached.length > 0);
+  const asking = state.view === 'octo' ? (thinking ? OCTO_BUSY : OCTO_ASK) : agent && alive(agent) ? `Message ${agent.name}…` : 'this agent is not running';
+  const placeholder = inAgent ? asking : who === 'terminal' ? 'Open a terminal, or type a command…' : `Ask ${label(who)} to…`;
 
-  const submit = () => {
-    if (!workspace.submit(text)) return;
+  const sent = () => {
     if (!inAgent) input.current?.blur();
     setText('');
   };
+  const submit = () => {
+    if (busy) {
+      workspace.uploads.cancel();
+      return;
+    }
+    if (attached.length) {
+      workspace.launch(text).then(
+        launched => {
+          if (launched) sent();
+        },
+        () => {},
+      );
+      return;
+    }
+    if (workspace.submit(text)) sent();
+  };
+  const remove = useCallback((key: number) => workspace.uploads.remove(key), [workspace]);
 
   const field = (
     <TextInput
@@ -109,9 +174,9 @@ export const Composer = React.forwardRef<ComposerHandle, Props>(function Compose
     />
   );
   const send = (
-    <Press style={[s.send, inAgent && s.sendInline]} label="send" onPress={submit}>
-      {open ? <Text style={s.sendLabel}>{`Launch ${label(who)}`}</Text> : null}
-      <Icon name="send" size={18} color={t.accentInk} stroke={2.6} />
+    <Press style={[s.send, inAgent && s.sendInline]} label={busy ? 'cancel sending the files' : 'send'} onPress={submit}>
+      {open ? <Text style={s.sendLabel}>{sendLabel(attached) || `Launch ${label(who)}`}</Text> : null}
+      <Icon name={busy ? 'close' : 'send'} size={18} color={t.accentInk} stroke={2.6} />
     </Press>
   );
 
@@ -132,6 +197,13 @@ export const Composer = React.forwardRef<ComposerHandle, Props>(function Compose
     <View style={[s.dock, s.floating, { bottom: keyboard, paddingBottom: bottom + 12 }]} pointerEvents="box-none">
       <View style={[s.composer, focused && s.focused]}>
         {field}
+        {attached.length ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.files} contentContainerStyle={s.filesContent} keyboardShouldPersistTaps="handled" accessibilityLabel="attached files">
+            {attached.map(file => (
+              <Chip key={file.key} file={file} onRemove={remove} />
+            ))}
+          </ScrollView>
+        ) : null}
         <View style={s.bar}>
           {overview ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.picks} contentContainerStyle={s.picksContent} keyboardShouldPersistTaps="handled">
@@ -144,6 +216,12 @@ export const Composer = React.forwardRef<ComposerHandle, Props>(function Compose
                 <Icon name="folder" size={12} color={t.textMuted} stroke={2.4} />
                 <Text style={s.pickText}>{model.shortPath(workspace.currentWhere())}</Text>
               </Press>
+              {attachable ? (
+                <Press style={[s.toggle, attached.length > 0 && s.attachOn, busy && s.off]} label={attached.length ? `attach files, ${attached.length} attached` : 'attach files'} disabled={busy} onPress={onAttach}>
+                  <Icon name="attach" size={14} color={attached.length ? t.accent : t.textFaint} />
+                  {attached.length ? <Text style={[s.toggleText, { color: t.accent }]}>{String(attached.length)}</Text> : null}
+                </Press>
+              ) : null}
               {who !== 'terminal' ? (
                 <>
                   <Press style={[s.toggle, prefs.worktree && s.worktreeOn]} label="own worktree" role="switch" selected={prefs.worktree} onPress={onWorktree}>

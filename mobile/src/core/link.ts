@@ -16,6 +16,7 @@ export type LinkState = {
 export type Transport = {
   open(id: string, url: string, key: string, agent: string): void;
   send(id: string, text: string): void;
+  queued(id: string): number;
   close(id: string): void;
 };
 
@@ -91,6 +92,10 @@ export class DeviceLink {
 
   send(message: PhoneMsg): void {
     if (this.session && this.ready) this.transport.send(this.session, JSON.stringify(message));
+  }
+
+  backlog(): number {
+    return this.session && this.ready ? this.transport.queued(this.session) : 0;
   }
 
   listen(heard: Heard): () => void {

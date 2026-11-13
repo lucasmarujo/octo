@@ -22,6 +22,7 @@ function transport(): Transport & { calls: Call[] } {
     calls,
     open: (id, url, key, agent) => calls.push(['open', id, url, key, agent]),
     send: (id, text) => calls.push(['send', id, text]),
+    queued: () => 0,
     close: id => calls.push(['close', id]),
   };
 }

@@ -27,7 +27,7 @@ const CLOSED_TURN = '-90deg';
 const OPEN_TURN = '0deg';
 const WORKING_MARK = '✳';
 
-const styles = (t: Theme) =>
+export const chatStyles = (t: Theme) =>
   StyleSheet.create({
     chat: { flex: 1, minHeight: 0 },
     content: { flexGrow: 1, justifyContent: 'flex-end', gap: 14, paddingTop: 4, paddingHorizontal: 16, paddingBottom: 14 },
@@ -78,9 +78,24 @@ const styles = (t: Theme) =>
     primaryText: { ...sans(14, 700, 18), color: t.accentInk },
   });
 
-type Sheet = ReturnType<typeof styles>;
+type Sheet = ReturnType<typeof chatStyles>;
 
-function Said({ text, s }: { text: string; s: Sheet }) {
+export function useFollow<T>() {
+  const list = useRef<FlatList<T>>(null);
+  const stuck = useRef(true);
+  const height = useRef(0);
+  const follow = useCallback((_width?: number, tall?: number) => {
+    if (typeof tall === 'number') height.current = tall;
+    if (stuck.current && height.current > 0) list.current?.scrollToOffset({ offset: height.current, animated: false });
+  }, []);
+  const scrolled = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    stuck.current = contentSize.height - contentOffset.y - layoutMeasurement.height < STICK_WITHIN;
+  }, []);
+  return { list, follow, scrolled };
+}
+
+export function Said({ text, s }: { text: string; s: Sheet }) {
   return (
     <View style={s.said}>
       {pieces(text).map((piece, index) =>
@@ -269,21 +284,10 @@ function Done({ agent, s }: { agent: AgentView; s: Sheet }) {
 }
 
 export function Chat({ blocks, agent }: { blocks: Block[]; agent: AgentView | null }) {
-  const s = useStyles(styles);
-  const list = useRef<FlatList<Block>>(null);
-  const stuck = useRef(true);
+  const s = useStyles(chatStyles);
+  const { list, follow, scrolled } = useFollow<Block>();
   const working = Boolean(agent && alive(agent) && (agent.starting || agent.state === 'working'));
   const current = working ? running(blocks) : null;
-
-  const height = useRef(0);
-  const follow = useCallback((_width?: number, tall?: number) => {
-    if (typeof tall === 'number') height.current = tall;
-    if (stuck.current && height.current > 0) list.current?.scrollToOffset({ offset: height.current, animated: false });
-  }, []);
-  const scrolled = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    stuck.current = contentSize.height - contentOffset.y - layoutMeasurement.height < STICK_WITHIN;
-  };
 
   const render = useCallback(
     ({ item }: { item: Block }) => {

@@ -6,8 +6,12 @@ import type { Buzz } from './haptics';
 import type { DeviceLink } from './link';
 import type { Asked, Choice } from './model';
 import model from './model';
-import type { AgentKind, AgentView, BridgeMsg, ChatMsg, DiffMsg, FolderSearchMsg, FoldersMsg, Overview, PhoneMsg, Run, ScreenMsg, Tone } from './protocol';
+import type { OctoTab } from './octo';
+import { Orchestrator } from './orchestrator';
+import type { AgentKind, AgentView, BridgeMsg, ChatMsg, DiffMsg, FolderSearchMsg, FoldersMsg, Overview, PhoneMsg, Run, ScreenMsg, StartMsg, Tone } from './protocol';
 import { Store } from './store';
+import type { Opener } from './uploads';
+import { Uploads } from './uploads';
 
 export const TERM_FONT = 12;
 export const TERM_MIN = 6;
@@ -53,8 +57,12 @@ export type Approval = {
   answered: boolean;
 };
 
+export type Home = 'overview' | 'octo';
+
 export type WorkspaceState = {
-  view: 'overview' | 'agent';
+  view: Home | 'agent';
+  home: Home;
+  tab: OctoTab;
   filter: string | null;
   agent: number | null;
   where: string | null;
@@ -75,6 +83,7 @@ export type Effects = {
   diff(message: DiffMsg): void;
   prefs(): DevicePrefs;
   reduced(): boolean;
+  open: Opener;
 };
 
 export type FolderNews = FoldersMsg | FolderSearchMsg;
@@ -92,6 +101,8 @@ export class Workspace {
   readonly store: Store<WorkspaceState>;
   readonly screen = new Store<ScreenState | null>(null);
   readonly chat = new Store<ChatState | null>(null);
+  readonly octo: Orchestrator;
+  readonly uploads: Uploads;
   private chatTimer: ReturnType<typeof setInterval> | null = null;
   private wanted: TermSize | null = null;
   private opened = false;
@@ -108,8 +119,12 @@ export class Workspace {
 
   constructor(readonly link: DeviceLink, private readonly effects: Effects) {
     const overview = link.store.get().overview;
+    this.octo = new Orchestrator(link);
+    this.uploads = new Uploads(link, effects.open);
     this.store = new Store<WorkspaceState>({
       view: 'overview',
+      home: 'overview',
+      tab: 'chat',
       filter: overview ? overview.session : null,
       agent: null,
       where: null,
@@ -120,6 +135,7 @@ export class Workspace {
     });
     this.unlisten = link.listen(message => this.hear(message));
     this.syncPeek();
+    this.octo.ask();
   }
 
   dispose(): void {
@@ -127,6 +143,7 @@ export class Workspace {
     if (this.answerTimer) clearTimeout(this.answerTimer);
     if (this.scrollTimer) clearTimeout(this.scrollTimer);
     this.stopChat();
+    this.uploads.dispose();
     if (this.store.get().view === 'agent') this.link.send({ type: 'close' });
     this.folders = null;
   }
@@ -203,7 +220,22 @@ export class Workspace {
     this.screen.set(null);
     this.stopChat();
     this.opened = false;
-    this.store.update(state => ({ ...state, view: 'overview', agent: null, approval: null, entered: state.entered + 1 }));
+    this.store.update(state => ({ ...state, view: state.home, agent: null, approval: null, entered: state.entered + 1 }));
+    this.syncPeek();
+  }
+
+  openOcto(tab?: OctoTab): void {
+    if (this.store.get().view === 'agent') this.leaveAgent();
+    this.store.update(state => ({ ...state, view: 'octo', home: 'octo', tab: tab || state.tab }));
+  }
+
+  showTab(tab: OctoTab): void {
+    this.store.patch({ tab });
+  }
+
+  leaveOcto(): void {
+    if (this.store.get().view !== 'octo') return;
+    this.store.update(state => ({ ...state, view: 'overview', home: 'overview', entered: state.entered + 1 }));
     this.syncPeek();
   }
 
@@ -281,23 +313,43 @@ export class Workspace {
       else this.link.send({ type: 'keys', data: ENTER });
       return true;
     }
-    const who = this.currentWho();
-    const ai = who !== FALLBACK_KIND;
-    if (!task && ai) {
-      this.effects.toast('Write the task first', 'info', { mark: { text: '✎', tile: 'idle' } });
+    if (state.view === 'octo') return this.octo.say(text);
+    const start = this.starting(task, false);
+    if (start) this.link.send(start);
+    return Boolean(start);
+  }
+
+  async launch(text: string): Promise<boolean> {
+    const start = this.starting(text.trim(), true);
+    if (!start) return false;
+    const attachments = await this.uploads.send();
+    if (!attachments) return false;
+    if (this.link.store.get().phase !== 'live') {
+      this.effects.toast("Can't reach the computer. The files are ready, launch again.", 'warn');
       return false;
     }
+    this.link.send({ ...start, attachments });
+    this.uploads.clear();
+    return true;
+  }
+
+  private starting(task: string, attached: boolean): StartMsg | null {
+    const who = this.currentWho();
+    const ai = who !== FALLBACK_KIND;
+    if (!task && ai && !attached) {
+      this.effects.toast('Write the task first', 'info', { mark: { text: '✎', tile: 'idle' } });
+      return null;
+    }
     const prefs = this.effects.prefs();
-    this.link.send({
+    return {
       type: 'start',
       kind: who,
-      session: state.filter || '',
+      session: this.store.get().filter || '',
       cwd: this.currentWhere(),
       task,
       worktree: prefs.worktree && ai,
       bypass: prefs.bypass && ai,
-    });
-    return true;
+    };
   }
 
   watchFolders(heard: (news: FolderNews) => void): () => void {
@@ -323,6 +375,8 @@ export class Workspace {
         this.peekKey = '';
         this.reopen();
         this.followChat();
+        this.uploads.reset();
+        this.octo.ask();
         break;
       case 'state':
         this.onOverview(message);
@@ -345,6 +399,18 @@ export class Workspace {
         break;
       case 'chat':
         this.onChat(message);
+        break;
+      case 'attached':
+        this.uploads.hear(message);
+        break;
+      case 'orchestrator':
+        this.octo.hearView(message);
+        break;
+      case 'orchestratorActivity':
+        this.octo.hearActivity(message);
+        break;
+      case 'orchestratorInstructions':
+        this.octo.hearInstructions(message);
         break;
       default:
         break;

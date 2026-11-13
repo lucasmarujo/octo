@@ -27,6 +27,8 @@ final class Session: NSObject, URLSessionWebSocketDelegate {
   private var pings: DispatchSourceTimer?
   private var awaitingPong = false
   private var finished = false
+  private let counting = NSLock()
+  private var pending = 0
 
   init(id: String, secret: Data, events: Events) {
     self.id = id
@@ -54,21 +56,32 @@ final class Session: NSObject, URLSessionWebSocketDelegate {
   }
 
   func send(_ text: String) {
+    let size = text.utf8.count
+    count(size)
     queue.async {
-      guard let channel = self.channel, !self.finished else {
+      guard let channel = self.channel, let task = self.task, !self.finished else {
+        self.count(-size)
         return
       }
       do {
         let frame = try channel.seal(Data(text.utf8))
-        self.task?.send(.data(frame)) { [weak self] error in
+        task.send(.data(frame)) { [weak self] error in
+          self?.count(-size)
           if let error {
             self?.queue.async { self?.finish(Session.abnormal, error.localizedDescription) }
           }
         }
       } catch {
+        self.count(-size)
         self.fail(error)
       }
     }
+  }
+
+  func queued() -> Int {
+    counting.lock()
+    defer { counting.unlock() }
+    return pending
   }
 
   func close() {
@@ -198,6 +211,12 @@ final class Session: NSObject, URLSessionWebSocketDelegate {
         }
       }
     }
+  }
+
+  private func count(_ bytes: Int) {
+    counting.lock()
+    pending += bytes
+    counting.unlock()
   }
 
   private func drop(_ error: Error) {

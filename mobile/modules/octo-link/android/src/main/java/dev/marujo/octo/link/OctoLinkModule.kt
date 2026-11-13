@@ -29,6 +29,10 @@ class OctoLinkModule : Module(), Session.Events {
             sessions[id]?.send(text)
         }
 
+        Function("queued") { id: String ->
+            (sessions[id]?.queued() ?: 0L).toDouble()
+        }
+
         Function("close") { id: String ->
             sessions.remove(id)?.close()
         }

@@ -28,6 +28,7 @@ function setup(version: string | null) {
       session = id;
     },
     send: (_id, text) => sent.push(JSON.parse(text)),
+    queued: () => 0,
     close: () => {},
   };
   const link = new DeviceLink('home', 'https://h', 'A'.repeat(43), wire, IDENTITY);
@@ -36,7 +37,7 @@ function setup(version: string | null) {
   const hear = (message: BridgeMsg) => link.onMessage(session, JSON.stringify(message));
   if (version) hear({ type: 'welcome', host: 'lucas-desktop', version });
   hear({ type: 'state', host: 'lucas-desktop', now: Date.now(), session: 'main', sessions: [{ name: 'main', agents: 1 }], agents: [agent({})], whereDir: '/w', dirs: {}, worktree: false, kinds: ['claude'] });
-  const workspace = new Workspace(link, { toast: jest.fn(), buzz: jest.fn(), diff: jest.fn(), prefs: () => PREFS, reduced: () => true });
+  const workspace = new Workspace(link, { toast: jest.fn(), buzz: jest.fn(), diff: jest.fn(), prefs: () => PREFS, reduced: () => true, open: jest.fn() });
   sent.length = 0;
   const asked = () => sent.filter(message => message.type === 'chat');
   return { workspace, sent, hear, asked };

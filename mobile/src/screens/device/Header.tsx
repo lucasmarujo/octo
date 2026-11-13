@@ -5,7 +5,8 @@ import { elapsed, label, status } from '../../core/agents';
 import { useSecond } from '../../core/clock';
 import type { LinkPhase } from '../../core/link';
 import model from '../../core/model';
-import { useStore } from '../../core/store';
+import { gateOf, headLine, octoMood } from '../../core/octo';
+import { useSelect, useStore } from '../../core/store';
 import { mix } from '../../theme/color';
 import { useStyles } from '../../theme/styles';
 import { useTheme } from '../../theme/ThemeContext';
@@ -19,6 +20,7 @@ type Props = {
   onBack: () => void;
   onSettings: () => void;
   onMenu: () => void;
+  onOcto: () => void;
 };
 
 type Word = {
@@ -57,14 +59,27 @@ const styles = (t: Theme) => {
   };
 };
 
-export function Header({ onBack, onSettings, onMenu }: Props) {
+export function Header({ onBack, onSettings, onMenu, onOcto }: Props) {
   const { link, workspace } = useDevice();
   const t = useTheme();
   const s = useStyles(styles);
   const sub = useStyles(subStyles);
   const state = useStore(workspace.store);
   const { phase, overview } = useStore(link.store);
+  const octoLine = useSelect(workspace.octo.view, headLine);
+  const octoFeels = useSelect(workspace.octo.view, octoMood);
+  const octoReady = useSelect(workspace.octo.view, view => Boolean(view && gateOf(view) === 'ready'));
   useSecond();
+
+  if (state.view === 'octo') {
+    return (
+      <Top title="Octo" mood={octoFeels} compact onBack={() => workspace.leaveOcto()} backLabel="back to the overview" action={octoReady ? { icon: 'settings', label: 'Octo settings', run: onOcto } : undefined}>
+        <Text style={[sub.text, s.sheet.path]} numberOfLines={1}>
+          {octoLine}
+        </Text>
+      </Top>
+    );
+  }
 
   if (state.view === 'agent') {
     const agent = workspace.findAgent(state.agent);
