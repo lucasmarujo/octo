@@ -131,6 +131,7 @@ pub fn update_ready(updates: State<'_, Updates>) -> Option<String> {
 
 #[tauri::command]
 pub fn restart_app(app: AppHandle) {
+    app.state::<crate::link::Link>().shut_down();
     app.restart();
 }
 

@@ -1,6 +1,7 @@
 import { $, h } from './dom.js';
 import { SPINNER, USAGE_WARN, label, plural, usageColor } from './format.js';
 import { language, t } from './i18n.js';
+import { MODE_WORDS, octoStatus } from './orchestrator.js';
 import { phoneNow } from './pair.js';
 import { agents, state } from './state.js';
 
@@ -29,7 +30,7 @@ function phoneText(status) {
   return { off: t('phone off'), pending: t('phone starting…'), failed: t('phone needs attention'), ready: t('phone waiting'), connected: t('phone connected') }[status];
 }
 
-function build(counts, usage, phone) {
+function build(counts, usage, phone, octo) {
   const version = state.updateReady
     ? h('button', { class: 'statusbar-item statusbar-ready', type: 'button', onclick: () => actions.updates() }, t('{version} ready · restart', { version: `v${state.updateReady}` }))
     : h('button', { class: 'statusbar-item statusbar-version', type: 'button', onclick: () => actions.updates() }, `v${state.version}`);
@@ -47,6 +48,7 @@ function build(counts, usage, phone) {
           counts.needs === 1 ? t('{count} needs you', { count: counts.needs }) : t('{count} need you', { count: counts.needs }),
         )
       : null,
+    octo ? h('span', { class: 'statusbar-item' }, t('octo: {mode} · {count} handled today', { mode: MODE_WORDS[octo.mode], count: octo.handled })) : null,
     h('span', { class: 'grow' }),
     ...usage.map((entry) => h('span', { class: 'statusbar-item', style: entry.used >= USAGE_WARN ? `color:${usageColor(entry.used)}` : '' }, `${label(entry.kind)} ${entry.used}%`)),
     h('button', { class: `statusbar-item statusbar-phone ${phone}`, type: 'button', onclick: () => actions.phone() }, phoneText(phone)),
@@ -60,8 +62,9 @@ export function renderStatusBar() {
   const counts = statusCounts(agents());
   const usage = usageSummary(state.usage);
   const phone = phoneNow();
-  const signature = JSON.stringify([counts, usage, phone, state.version, state.updateReady, language()]);
+  const octo = octoStatus(state.orchestrator);
+  const signature = JSON.stringify([counts, usage, phone, octo, state.version, state.updateReady, language()]);
   if (host.dataset.signature === signature) return;
   host.dataset.signature = signature;
-  host.replaceChildren(...build(counts, usage, phone));
+  host.replaceChildren(...build(counts, usage, phone, octo));
 }

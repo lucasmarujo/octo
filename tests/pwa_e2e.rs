@@ -1280,6 +1280,66 @@ fn files_attached_to_a_task_reach_the_agent_and_a_missing_one_starts_nothing() {
 }
 
 #[test]
+fn a_file_sent_by_the_phone_is_stored_on_the_computer_and_can_be_attached_to_a_task() {
+    use base64::Engine;
+    use orkai::pwa::uploads::MAX_PART_BYTES;
+
+    let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
+    let fx = fixture();
+    let mut phone = Phone::pair(fx.port, &fx.secret);
+    phone.overview_where(|_| true);
+    let attach = |seq: u64, name: &str, part: u32, last: bool, bytes: &[u8]| PhoneMsg::Attach {
+        seq,
+        name: name.into(),
+        part,
+        last,
+        data: base64::engine::general_purpose::STANDARD.encode(bytes),
+    };
+    let attached = |phone: &mut Phone, wanted: u64| {
+        phone.until(|message| match message {
+            BridgeMsg::Attached { seq, path, problem } if seq == wanted => Some((path, problem)),
+            _ => None,
+        })
+    };
+
+    phone.send(&attach(4, r"..\..\the brief.txt", 0, false, &vec![b'a'; MAX_PART_BYTES]));
+    phone.send(&attach(4, "", 1, true, b"end"));
+    let (path, problem) = attached(&mut phone, 4);
+    assert_eq!(problem, None);
+    let brief = PathBuf::from(path.expect("the path of the stored file"));
+    assert!(brief.starts_with(fx.store.home().attachments_dir()), "{}", brief.display());
+    assert_eq!(brief.file_name().unwrap(), "the brief.txt", "the name never leaves its folder");
+    let stored = std::fs::read(&brief).unwrap();
+    assert_eq!(stored.len(), MAX_PART_BYTES + 3, "a part of the largest size fits in one message");
+    assert!(stored.ends_with(b"aend"));
+
+    phone.send(&attach(5, "late.txt", 3, true, b"x"));
+    let (path, problem) = attached(&mut phone, 5);
+    assert_eq!(path, None);
+    assert!(problem.is_some_and(|problem| !problem.is_empty()), "a file that fails says why");
+
+    let cwd = fx.dir.join("uploaded");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let config = config_running(AgentKind::Kimi, fake_agent(&fx, "agent", &[Fake::Prompt, Fake::Hang]));
+    fx.hub.reconfigure(config).unwrap();
+    phone.send(&PhoneMsg::Start(StartRequest {
+        kind: AgentKind::Kimi,
+        session: "default".into(),
+        cwd: cwd.to_string_lossy().into_owned(),
+        task: "summarize this".into(),
+        worktree: false,
+        bypass: false,
+        remote_control: false,
+        model: None,
+        attachments: vec![brief.to_string_lossy().into_owned()],
+    }));
+    let mut trace = Trace::new();
+    let id = follow(&mut phone, "uploaded", &mut trace, |view| !view.starting);
+    let record = fx.store.load_agent(id).unwrap();
+    assert_eq!(record.task, format!("summarize this\n\nAttached files:\n- {}", brief.display()));
+}
+
+#[test]
 fn a_terminal_launched_without_a_command_ends_in_idle() {
     let _turn = orkai::util::lock(&ONE_LAUNCH_AT_A_TIME);
     let fx = fixture();

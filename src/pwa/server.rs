@@ -23,6 +23,7 @@ use crate::pwa::hub::{Device, Event, Hub, device_text, encode};
 use crate::pwa::protocol::{BridgeMsg, Greeting, PhoneMsg, Tone, VERSION};
 use crate::pwa::push;
 use crate::pwa::screen::Mirror;
+use crate::pwa::uploads::{Part, Uploads};
 use crate::tui::keys;
 use crate::tui::view::TermView;
 use crate::util::now_ms;
@@ -38,10 +39,10 @@ const TICK: Duration = Duration::from_millis(25);
 const PING_EVERY: Duration = Duration::from_secs(20);
 const SILENCE_LIMIT: Duration = Duration::from_secs(70);
 const SCREEN_EVERY: Duration = Duration::from_millis(40);
-const MAX_INBOUND_BYTES: usize = 256 * 1024;
+const MAX_INBOUND_BYTES: usize = 384 * 1024;
 const MIN_SIZE: TermSize = TermSize { rows: 8, cols: 20 };
 const MAX_SIZE: TermSize = TermSize { rows: 200, cols: 400 };
-const SUBMIT: &[u8] = b"\r";
+pub const SUBMIT: &[u8] = b"\r";
 const WHEEL_LINES: i32 = 3;
 const MAX_WHEEL_LINES: i32 = 200;
 
@@ -238,13 +239,15 @@ pub struct Peer {
     rx: Receiver<Event>,
     view: Option<View>,
     generation: u64,
+    uploads: Uploads,
 }
 
 impl Peer {
     pub fn join(hub: &Arc<Hub>) -> Self {
         let (tx, rx) = mpsc::channel();
         let id = hub.join(tx.clone());
-        Self { id, hub: Arc::clone(hub), tx, rx, view: None, generation: 0 }
+        let uploads = Uploads::new(hub.store().home());
+        Self { id, hub: Arc::clone(hub), tx, rx, view: None, generation: 0, uploads }
     }
 
     pub fn inbox(&self) -> Sender<Event> {
@@ -294,6 +297,15 @@ impl Peer {
             PhoneMsg::Scroll { lines } => {
                 if let Some(view) = self.view.as_mut() {
                     view.scroll(lines);
+                }
+            }
+            PhoneMsg::Attach { seq, name, part, last, data } => {
+                if let Some(stored) = self.uploads.take(&Part { seq, name: &name, part, last, data: &data }) {
+                    let (path, problem) = match stored {
+                        Ok(path) => (Some(path.to_string_lossy().into_owned()), None),
+                        Err(problem) => (None, Some(problem)),
+                    };
+                    out.send(&BridgeMsg::Attached { seq, path, problem })?;
                 }
             }
             PhoneMsg::LinkAt { row, col } => {

@@ -1016,6 +1016,266 @@ button.statusbar-item:hover { color: var(--color-text); }
 .board:not([hidden]), .list:not([hidden]), .grid:not([hidden]) { animation: view-in var(--motion-base) var(--ease-out); }
 .composer.sent .caret { animation: caret-sent 420ms var(--ease-out); }
 
+.orchestrator { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+.orchestrator-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 14px; margin-bottom: 6px; padding: 0 8px; text-align: left; }
+.orchestrator-head:hover .caps { color: var(--color-text-muted); }
+.orchestrator-mode { font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--color-accent); }
+.orchestrator-mode.off { color: var(--color-text-faint); }
+.orchestrator-nav { display: flex; flex-direction: column; gap: 2px; }
+.orchestrator-row { gap: 10px; padding: 0 10px; font-weight: 500; }
+.orchestrator-row svg { flex-shrink: 0; }
+.orchestrator-row[aria-current="true"] { background: var(--color-surface-raised); color: var(--color-text); font-weight: 600; }
+:root[data-sidebar="collapsed"] .orchestrator { display: none; }
+.octo-badge, .tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 16px; flex-shrink: 0; padding: 0 5px; border-radius: 8px; background: var(--color-waiting); color: var(--color-waiting-ink); font-family: var(--font-mono); font-size: 11px; font-weight: 700; line-height: 14px; }
+.tab[data-tab="octo"] > svg { color: var(--color-accent); }
+.octo { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.octo:not([hidden]) { animation: view-in var(--motion-slow) var(--ease-out); }
+.octo-head { display: flex; align-items: center; gap: 16px; height: 72px; flex-shrink: 0; padding: 0 32px; border-bottom: 1px solid var(--color-border); }
+.octo-headline { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.octo-title { font-size: 24px; font-weight: 800; line-height: 26px; letter-spacing: -0.02em; }
+.octo-subtitle { overflow: hidden; color: var(--color-text-muted); line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.octo-subtitle-needs { color: var(--color-waiting); font-weight: 600; }
+.octo-engine { display: flex; align-items: center; gap: 8px; height: 32px; flex-shrink: 0; padding: 0 10px 0 12px; border: 1px solid var(--color-border-strong); border-radius: 8px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
+.octo-engine:hover { background: var(--color-surface); }
+.octo-engine-word { color: var(--color-text-faint); }
+.octo-engine-kind { font-size: var(--text-sm); font-weight: 700; }
+.segmented.octo-mode { flex-shrink: 0; box-shadow: inset 0 0 0 1px var(--color-border); }
+.segmented.octo-mode button { color: var(--color-text-muted); }
+.segmented.octo-mode button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-accent-ink); font-weight: 700; }
+.segmented.octo-mode.sliding::before { background: var(--color-accent); box-shadow: none; }
+.segmented.octo-mode.sliding button[aria-pressed="true"] { background: transparent; }
+.octo-problem { flex-shrink: 0; padding: 8px 32px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-lost) 8%, transparent); color: var(--color-lost); font-size: var(--text-sm); line-height: 18px; }
+.octo-body { display: flex; flex: 1; min-height: 0; animation: view-in var(--motion-base) var(--ease-out); }
+.octo-slot { display: contents; }
+.octo-chip, .octo-decision, .octo-need, .octo-line, .octo-radio, .octo-choice, .octo-engine, .octo-summary, .octo-file-tab, .octo-quiet, .octo-project-mode { transition: background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out); }
+.octo-chat-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.octo-thread { display: flex; flex-direction: column; gap: 24px; flex: 1; min-height: 0; padding: 24px 48px 20px; overflow-y: auto; }
+.octo-thread > :first-child { margin-top: auto; }
+.octo-msg { display: flex; align-items: flex-start; gap: 14px; flex-shrink: 0; }
+.octo-msg.you { justify-content: flex-end; }
+.octo-bubble { max-width: 520px; padding: 10px 16px; border-radius: 14px 14px 4px 14px; background: var(--color-surface-raised); font-size: var(--text-md); line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.octo-ring { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; color: var(--color-accent); }
+.octo-ring svg { width: 20px; height: 20px; }
+.octo-ring.large { width: 44px; height: 44px; }
+.octo-ring.large svg { width: 44px; height: 44px; }
+.octo-msg-body { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+.octo-msg-text { max-width: 660px; font-size: var(--text-md); line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.octo-msg.failed .octo-ring, .octo-msg.failed .octo-msg-text { color: var(--color-lost); }
+.octo-msg-actions { display: flex; flex-direction: column; gap: 2px; max-width: 660px; }
+.octo-msg-action { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 18px; overflow-wrap: anywhere; }
+.octo-msg-action::before { content: "↳ "; color: var(--color-text-faint); }
+.octo-thinking { display: flex; align-items: center; gap: 8px; height: 24px; color: var(--color-text-muted); }
+.octo-under { display: flex; flex-direction: column; gap: 14px; flex-shrink: 0; max-width: 698px; padding-left: 38px; }
+.octo-card { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 18px; border: 1px solid var(--color-waiting); border-radius: var(--radius-lg); background: var(--color-surface); }
+.octo-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.octo-card-mark, .octo-decision-mark, .octo-rail-mark, .octo-detail-mark { flex-shrink: 0; color: var(--color-waiting); font-family: var(--font-mono); font-weight: 700; }
+.octo-card-mark { width: 10px; font-size: var(--text-base); line-height: 18px; }
+.octo-agent { overflow: hidden; color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 700; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.octo-card .octo-agent { font-size: var(--text-base); }
+.octo-project, .octo-kind { font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; white-space: nowrap; }
+.octo-project { color: var(--color-text-faint); }
+.octo-age { min-width: 36px; flex-shrink: 0; color: var(--color-text-faint); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; text-align: right; white-space: nowrap; }
+.octo-age.t-yellow { color: var(--color-waiting); }
+.octo-card-wait { flex-shrink: 0; color: var(--color-waiting); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
+.octo-asks { display: flex; flex-direction: column; gap: 6px; }
+.octo-asks-text { font-size: var(--text-md); font-weight: 500; line-height: 22px; overflow-wrap: anywhere; }
+.octo-would { display: flex; flex-direction: column; gap: 6px; padding-left: 12px; border-left: 2px solid var(--color-accent); }
+.octo-would.failed { border-left-color: var(--color-lost); }
+.octo-would-text { line-height: 21px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.octo-would-reason { color: var(--color-text-muted); font-size: var(--text-sm); line-height: 19px; overflow-wrap: anywhere; }
+.octo-card-actions { display: flex; align-items: center; gap: 8px; }
+.octo-card-actions .button { border-color: var(--color-border-strong); }
+.octo-card-actions .button.waiting { height: 32px; padding: 0 14px; border-color: transparent; }
+.octo-quiet { color: var(--color-text-muted); font-size: var(--text-sm); font-weight: 500; line-height: 16px; }
+.octo-quiet:hover { color: var(--color-text); }
+.octo-summary { display: flex; align-items: center; gap: 10px; height: 40px; flex-shrink: 0; padding: 0 14px; border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-muted); text-align: left; }
+.octo-summary:hover { background: var(--color-surface); }
+.octo-summary-mark { color: var(--color-done); font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 700; }
+.octo-summary-text { color: var(--color-text); font-weight: 500; line-height: 18px; }
+.octo-more { align-self: flex-start; font-weight: 500; }
+.octo-composer { gap: 14px; margin: 0 48px 24px; padding: 16px 16px 14px 18px; border-color: var(--color-border-strong); }
+.octo-composer .composer-options { gap: 8px; }
+.octo-rail { display: flex; flex-direction: column; gap: 24px; width: 320px; flex-shrink: 0; padding: 20px 16px; border-left: 1px solid var(--color-border); overflow-y: auto; }
+.octo-rail-block { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+.octo-rail-head { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
+.octo-rail-mark { font-size: var(--text-sm); line-height: 16px; }
+.octo-rail-title { flex: 1; font-size: var(--text-md); font-weight: 700; line-height: 18px; }
+.octo-rail-count { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
+.octo-rail-note { padding: 0 4px; color: var(--color-text-faint); font-size: var(--text-sm); line-height: 18px; }
+.octo-need { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--color-surface); text-align: left; }
+.octo-need:hover { background: var(--color-surface-raised); }
+.octo-need-head { display: flex; align-items: center; gap: 8px; }
+.octo-need-head .octo-agent { flex: 1; min-width: 0; line-height: 16px; }
+.octo-need-head .octo-age, .octo-done .octo-age { min-width: 0; font-size: 11px; line-height: 14px; }
+.octo-need-question { display: -webkit-box; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.octo-need-meta { color: var(--color-text-faint); font-family: var(--font-mono); font-size: 11px; line-height: 14px; }
+.octo-done-list { display: flex; flex-direction: column; gap: 9px; padding: 0 4px; }
+.octo-done { display: flex; align-items: baseline; gap: 8px; }
+.octo-done-mark { width: 10px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
+.octo-done-text { flex: 1; min-width: 0; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; overflow-wrap: anywhere; }
+.octo-done-name { color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-xs); }
+.octo-rail .octo-more { margin: 2px 4px 0; }
+.octo-fleet { display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; margin-top: auto; padding: 16px 4px 0; border-top: 1px solid var(--color-border); }
+.octo-fleet .octo-rail-head { align-items: baseline; padding: 0; }
+.octo-fleet-legend { display: flex; gap: 14px; font-family: var(--font-mono); font-size: 11px; line-height: 14px; white-space: nowrap; }
+.octo-bar { display: flex; gap: 2px; height: 6px; flex-shrink: 0; border-radius: 2px; overflow: hidden; }
+.octo-bar .working { background: var(--color-working); }
+.octo-bar .needs { background: var(--color-waiting); }
+.octo-bar .done { background: var(--color-done); }
+.octo-bar .idle { background: var(--color-border-strong); }
+.octo-queue { display: flex; flex-direction: column; gap: 18px; flex: 1; min-width: 0; padding: 20px 24px 20px 32px; overflow-y: auto; }
+.octo-toolbar { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.octo-toolbar .filter { border-color: var(--color-border-strong); color: var(--color-text); }
+.octo-chips { display: flex; gap: 8px; }
+.octo-chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; flex-shrink: 0; padding: 0 12px; border-radius: 8px; color: var(--color-text-muted); font-size: var(--text-sm); font-weight: 500; line-height: 16px; white-space: nowrap; }
+.octo-chip:hover { color: var(--color-text); }
+.octo-chip[aria-pressed="true"] { background: var(--color-surface-raised); color: var(--color-text); font-weight: 600; }
+.octo-chip-count { color: var(--color-text-faint); font-family: var(--font-mono); font-size: var(--text-xs); }
+.octo-chip-count.t-yellow { color: var(--color-waiting); }
+.octo-group { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.octo-group.tight { gap: 2px; }
+.octo-decision { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); text-align: left; }
+.octo-decision:hover { border-color: var(--color-border-strong); }
+.octo-decision.selected { border-color: var(--color-waiting); }
+.octo-decision-mark { width: 10px; font-size: var(--text-sm); line-height: 18px; }
+.octo-decision-body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.octo-decision-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.octo-decision-question { line-height: 20px; overflow-wrap: anywhere; }
+.octo-decision .octo-age { line-height: 20px; }
+.octo-tag { flex-shrink: 0; padding: 3px 7px; border: 1px solid var(--color-border-strong); border-radius: 6px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: 11px; line-height: 14px; white-space: nowrap; }
+.octo-section-label { display: flex; align-items: baseline; gap: 10px; padding: 4px 2px; }
+.octo-section-label .caps { flex: 1; }
+.octo-section-label .link-button { font-weight: 500; }
+.octo-line { display: flex; align-items: center; gap: 12px; min-height: 32px; flex-shrink: 0; padding: 0 14px; border-radius: 8px; text-align: left; }
+button.octo-line:hover, button.octo-line.selected { background: var(--color-surface); }
+.octo-line.handled { min-height: 36px; border-top: 1px solid var(--color-border); border-radius: 0; }
+.octo-line-mark { display: flex; width: 10px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--text-sm); line-height: 18px; }
+.octo-line-name, .octo-line-project { width: 150px; flex-shrink: 0; overflow: hidden; color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-sm); line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.octo-line-project { color: var(--color-text-faint); font-size: var(--text-xs); }
+.octo-line-text { flex: 1; min-width: 0; overflow: hidden; color: var(--color-text-muted); line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.octo-line-by { flex-shrink: 0; color: var(--color-text-faint); font-family: var(--font-mono); font-size: 11px; line-height: 14px; }
+.octo-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; padding: 40px 24px; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-md); color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; text-align: center; }
+.octo-empty-title { color: var(--color-text); font-size: var(--text-md); font-weight: 700; }
+.octo-detail { display: flex; flex-direction: column; width: 440px; flex-shrink: 0; border-left: 1px solid var(--color-border); background: var(--color-surface); overflow-y: auto; }
+.octo-detail-body { display: flex; flex-direction: column; gap: 18px; flex: 1 0 auto; padding: 20px 24px; }
+.octo-detail-head { display: flex; flex-direction: column; gap: 6px; }
+.octo-detail-title { display: flex; align-items: center; gap: 10px; }
+.octo-detail-title .link-button { flex-shrink: 0; font-weight: 500; }
+.octo-detail-mark { font-size: var(--text-md); line-height: 20px; }
+.octo-detail-name { flex: 1; min-width: 0; overflow: hidden; font-family: var(--font-mono); font-size: 16px; font-weight: 700; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.octo-detail-meta { color: var(--color-text-faint); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
+.octo-detail-part { display: flex; flex-direction: column; gap: 8px; }
+.octo-tool { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.octo-tool-name { margin-right: 8px; color: var(--color-text); font-weight: 700; }
+.octo-context { max-height: 168px; margin: 0; padding: 10px 12px; border-left: 1px solid var(--color-border-strong); border-radius: 0 6px 6px 0; background: var(--color-bg); color: var(--color-text-muted); font-family: var(--font-mono); font-size: 11px; line-height: 16px; white-space: pre; overflow: auto; }
+.octo-detail-question { font-size: 16px; font-weight: 600; line-height: 23px; overflow-wrap: anywhere; }
+.octo-answer { padding: 12px 14px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); font-size: var(--text-base); line-height: 21px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.octo-answer-edit { width: 100%; min-height: 96px; outline: none; resize: vertical; user-select: text; }
+.octo-answer-edit:focus { border-color: var(--color-accent); }
+.octo-answer-edit:focus-visible { outline: none; }
+.octo-detail-keys { color: var(--color-text-faint); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
+.octo-detail-problem { color: var(--color-lost); font-size: var(--text-sm); line-height: 19px; overflow-wrap: anywhere; }
+.octo-remember { display: flex; align-items: center; gap: 10px; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; cursor: pointer; }
+.octo-remember-project { color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-xs); }
+.octo-check { width: 16px; height: 16px; flex-shrink: 0; margin: 0; border: 1px solid var(--color-border-strong); border-radius: 4px; background: transparent; cursor: pointer; appearance: none; }
+.octo-check:checked { border-color: var(--color-accent); background: var(--color-accent); box-shadow: inset 0 0 0 3px var(--color-surface); }
+.field.octo-rule { width: 100%; margin-top: -8px; background: var(--color-bg); }
+.field.octo-rule:disabled { display: none; }
+.octo-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.octo-detail-actions .button { height: 36px; border-color: var(--color-border-strong); font-size: var(--text-base); }
+.octo-detail-actions .button.waiting { flex: 1; justify-content: center; border-color: transparent; }
+.octo-activity { flex-direction: column; padding: 20px 32px 0; }
+.octo-log-head { border-bottom: 1px solid var(--color-border-strong); border-radius: 0; }
+.octo-log-head .caps { color: var(--color-text-faint); font-size: 11px; line-height: 14px; }
+.octo-log { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-bottom: 20px; overflow-y: auto; }
+.octo-log .octo-line.handled:first-child { border-top: 0; }
+.octo-log .octo-empty { margin-top: 18px; }
+.octo-activity .octo-line-by { width: 76px; }
+.octo-activity .octo-age { width: 64px; }
+.octo-older { align-self: center; flex-shrink: 0; margin-top: 14px; }
+.octo-projects { flex-direction: column; padding: 20px 32px 0; }
+.octo-projects .octo-toolbar { margin-bottom: 14px; }
+.octo-search { display: flex; align-items: center; gap: 10px; width: 300px; height: 32px; flex-shrink: 0; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text-faint); cursor: text; }
+.octo-search:focus-within { border-color: var(--color-border-strong); }
+.octo-search svg { width: 13px; height: 13px; flex-shrink: 0; }
+.octo-search-input { flex: 1; min-width: 0; padding: 0; border: 0; outline: none; background: transparent; color: var(--color-text); font-family: var(--font-sans); font-size: var(--text-base); line-height: 18px; user-select: text; }
+.octo-search-input::placeholder { color: var(--color-text-faint); }
+.octo-search-input:focus-visible { outline: none; }
+.octo-sorted { color: var(--color-text-faint); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
+.octo-table-head, .octo-project-row { display: flex; align-items: center; gap: 16px; flex-shrink: 0; padding: 0 12px; }
+.octo-table-head { height: 32px; border-bottom: 1px solid var(--color-border-strong); }
+.octo-table { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.octo-table .octo-empty { margin-top: 18px; }
+.octo-project-row { height: 48px; border-bottom: 1px solid var(--color-border); }
+.octo-project-name { width: 200px; flex-shrink: 0; overflow: hidden; font-family: var(--font-mono); font-size: var(--text-base); font-weight: 700; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.octo-project-agents { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+.octo-project-agents .octo-bar { width: 120px; }
+.octo-project-count, .octo-project-needs, .octo-project-handled { font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
+.octo-project-count, .octo-project-handled { color: var(--color-text-muted); }
+.octo-project-needs { color: var(--color-waiting); }
+.octo-project-says { width: 230px; flex-shrink: 0; overflow: hidden; font-size: var(--text-sm); line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.octo-project-handled { width: 64px; flex-shrink: 0; text-align: right; }
+.octo-project-mode { display: flex; align-items: center; gap: 6px; width: 120px; flex-shrink: 0; color: var(--color-text); font-size: var(--text-sm); font-weight: 600; line-height: 16px; text-align: left; }
+.octo-project-mode svg { color: var(--color-text-faint); }
+.octo-project-mode.observe { color: var(--color-text-muted); font-weight: 500; }
+.octo-project-mode.bypass { color: var(--color-accent); }
+.octo-table-head .caps { color: var(--color-text-faint); font-family: var(--font-mono); font-size: 11px; font-weight: 400; line-height: 14px; }
+.octo-table-foot { display: flex; align-items: center; height: 48px; flex-shrink: 0; padding: 0 12px; color: var(--color-text-faint); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
+.octo-settings-main { display: flex; flex-direction: column; gap: 28px; flex: 1; min-width: 0; padding: 24px 28px 24px 32px; overflow-y: auto; }
+.octo-section { display: flex; flex-direction: column; flex-shrink: 0; }
+.octo-settings .settings-heading.with-text { padding-bottom: 12px; }
+.octo-settings .settings-heading p { font-size: var(--text-base); line-height: 20px; }
+.octo-section .setting { border-top: 1px solid var(--color-border); }
+.octo-engines { display: flex; gap: 10px; }
+.octo-engine-card { display: flex; flex-direction: column; gap: 10px; flex: 1 1 0; min-width: 0; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); }
+.octo-engine-card.primary { border-color: var(--color-accent); }
+.octo-engine-head { display: flex; align-items: center; gap: 8px; }
+.octo-engine-head .caps { flex: 1; }
+.octo-engine-status { font-family: var(--font-mono); font-size: 11px; line-height: 14px; }
+.octo-engine-pick { display: flex; align-items: center; gap: 8px; color: var(--color-text-muted); text-align: left; }
+.octo-engine-name { flex: 1; font-family: var(--font-mono); font-size: 16px; font-weight: 700; line-height: 20px; }
+.octo-engine-note { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
+.field.octo-engine-model { width: 100%; height: 30px; background: var(--color-bg); font-size: var(--text-xs); }
+.octo-radios { display: flex; flex-direction: column; gap: 8px; }
+.octo-radio { display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); text-align: left; }
+.octo-radio:hover { border-color: var(--color-border-strong); }
+.octo-radio[aria-checked="true"] { border-color: var(--color-accent); background: var(--color-surface); cursor: default; }
+.octo-radio-dot { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; border: 1.5px solid var(--color-text-faint); border-radius: 50%; }
+.octo-radio[aria-checked="true"] .octo-radio-dot { border-color: var(--color-accent); }
+.octo-radio[aria-checked="true"] .octo-radio-dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); }
+.octo-radio-text { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.octo-radio-title { font-size: var(--text-md); font-weight: 700; line-height: 18px; }
+.octo-radio-description { color: var(--color-text-muted); line-height: 20px; }
+.octo-instructions { display: flex; flex-direction: column; gap: 14px; width: 460px; min-height: 0; flex-shrink: 0; padding: 24px; border-left: 1px solid var(--color-border); background: var(--color-surface); }
+.octo-instructions .settings-heading.with-text { padding-bottom: 0; }
+.octo-file-tabs { display: flex; flex-wrap: wrap; gap: 4px; max-height: 92px; flex-shrink: 0; overflow-y: auto; }
+.octo-file-tab { height: 28px; flex-shrink: 0; padding: 0 10px; border-radius: 8px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; white-space: nowrap; }
+.octo-file-tab:hover { color: var(--color-text); }
+.octo-file-tab[aria-selected="true"] { background: var(--color-surface-raised); color: var(--color-text); font-weight: 700; }
+.octo-editor { flex: 1; min-height: 0; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-md); outline: none; background: var(--color-bg); color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 20px; resize: none; user-select: text; }
+.octo-editor:focus { border-color: var(--color-border-strong); }
+.octo-editor:focus-visible { outline: none; }
+.octo-editor-limit { color: var(--color-lost); font-size: var(--text-xs); line-height: 16px; }
+.octo-editor-foot { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.octo-editor-path { flex: 1; min-width: 0; color: var(--color-text-faint); font-family: var(--font-mono); font-size: 11px; line-height: 14px; overflow-wrap: anywhere; }
+.octo-intro { display: flex; align-items: flex-start; justify-content: center; flex: 1; min-height: 0; padding: 48px 32px; overflow-y: auto; }
+.octo-intro-card { display: flex; flex-direction: column; gap: 20px; width: min(620px, 100%); padding: 28px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); }
+.octo-intro-title { margin: 0; font-size: 24px; font-weight: 800; line-height: 28px; letter-spacing: -0.02em; }
+.octo-intro-text { color: var(--color-text-muted); font-size: var(--text-md); line-height: 22px; }
+.octo-intro-step { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.octo-intro .segmented { background: var(--color-bg); }
+.octo-choices { display: flex; gap: 8px; }
+.octo-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 150px; padding: 10px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); text-align: left; }
+.octo-choice[aria-pressed="true"] { border-color: var(--color-accent); }
+.octo-choice:disabled { opacity: 0.5; cursor: default; }
+.octo-choice-kind { font-family: var(--font-mono); font-size: var(--text-md); font-weight: 700; line-height: 20px; }
+.octo-choice-note { color: var(--color-text-faint); font-family: var(--font-mono); font-size: 11px; line-height: 14px; }
+.octo-intro-note { color: var(--color-waiting); font-size: var(--text-sm); line-height: 19px; }
+.octo-intro-mode { min-height: 38px; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 19px; }
+.octo-intro-start { align-self: flex-start; height: 36px; }
+.help-octo { flex: 1 1 100%; }
+.help-octo .help-row-text { line-height: 19px; }
+
 .tip { position: fixed; z-index: 40; max-width: 300px; padding: 6px 10px; border-radius: 7px; background: var(--color-surface-raised); border: 1px solid var(--color-border-strong); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); color: var(--color-text); font-size: var(--text-xs); line-height: 16px; white-space: pre-line; overflow-wrap: anywhere; pointer-events: none; opacity: 0; visibility: hidden; transform: translateY(var(--tip-from, -4px)) scale(0.97); transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-base) var(--ease-out), visibility 0s linear var(--motion-base); }
 .tip[data-side="above"] { --tip-from: 4px; }
 .tip.shown { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }

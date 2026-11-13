@@ -1,5 +1,15 @@
 export const ICON_OVERVIEW = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="1" y="1" width="5" height="12" rx="1.5" stroke="currentColor" stroke-width="1.4"/><rect x="8" y="1" width="5" height="7" rx="1.5" stroke="currentColor" stroke-width="1.4"/></svg>`;
 
+export const ICON_OCTO = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="2.6"/></svg>`;
+
+export const ICON_CHAT = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 3.2A1.2 1.2 0 0 1 3.2 2h7.6A1.2 1.2 0 0 1 12 3.2v5.6A1.2 1.2 0 0 1 10.8 10H6l-3 2.4V10A1.2 1.2 0 0 1 2 8.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+
+export const ICON_DECISIONS = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 8.5h2.8l1 1.8h2.4l1-1.8H12M2 8.5L3.6 3h6.8L12 8.5V11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+
+export const ICON_ACTIVITY = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.5 7h2.3l1.6-4 2.6 8 1.7-4h2.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+export const ICON_PROJECTS = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M1.8 4a1 1 0 0 1 1-1h2.6l1.2 1.4h4.6a1 1 0 0 1 1 1V10.5a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+
 export const ICON_CHEVRON_DOWN = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 export const ICON_CHEVRON_RIGHT = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M3.5 2l3 3-3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;

@@ -10,6 +10,7 @@ use crate::launch;
 use crate::launch::LaunchMode;
 use crate::model::{AgentId, AgentKind, AgentRecord, AgentState, NewAgent, validate_agent_name};
 use crate::models;
+use crate::orchestrator::{relay, runner};
 use crate::paths::{expand_tilde, user_home};
 use crate::project;
 use crate::protocol::ClientMsg;
@@ -37,11 +38,11 @@ const ATTACHMENTS_HEADING: &str = "Attached files:";
 const DISCARD_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
 const DISCARD_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
-fn notice(reply: &Sender<Event>, tone: Tone, text: impl Into<String>) {
+pub(crate) fn notice(reply: &Sender<Event>, tone: Tone, text: impl Into<String>) {
     let _ = reply.send(Event::Reply(BridgeMsg::Notice { text: text.into(), tone }));
 }
 
-fn spawn(name: &str, work: impl FnOnce() + Send + 'static) {
+pub(crate) fn spawn(name: &str, work: impl FnOnce() + Send + 'static) {
     let _ = thread::Builder::new().name(name.to_string()).spawn(work);
 }
 
@@ -99,6 +100,21 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         },
         PhoneMsg::MoveAgent { agent, session } => move_agent(hub, agent, &session, reply),
         PhoneMsg::Trust { cwd, command } => trust(hub, &cwd, command, reply),
+        PhoneMsg::Orchestrator => match hub.orchestrator() {
+            Some(octo) => octo.show(hub, reply),
+            None => {
+                let _ = reply.send(Event::Reply(BridgeMsg::Orchestrator(hub.followed())));
+            }
+        },
+        PhoneMsg::OrchestratorInstructions { project } => runner::instructions(hub, project, reply),
+        PhoneMsg::OrchestratorSaveInstructions { project, text } => {
+            runner::save_instructions(hub, project, text, reply);
+        }
+        PhoneMsg::OrchestratorActivity { before } => runner::activity(hub, before, reply),
+        command @ (PhoneMsg::OrchestratorSet(_)
+        | PhoneMsg::OrchestratorAnswer(_)
+        | PhoneMsg::OrchestratorChat { .. }
+        | PhoneMsg::OrchestratorClearChat) => orchestrate(hub, command, reply),
         PhoneMsg::Sync
         | PhoneMsg::Device { .. }
         | PhoneMsg::Open { .. }
@@ -107,9 +123,17 @@ pub fn handle(hub: &Arc<Hub>, message: PhoneMsg, reply: &Sender<Event>) {
         | PhoneMsg::Keys { .. }
         | PhoneMsg::Send { .. }
         | PhoneMsg::Paste { .. }
+        | PhoneMsg::Attach { .. }
         | PhoneMsg::Key { .. }
         | PhoneMsg::LinkAt { .. }
         | PhoneMsg::Scroll { .. } => {}
+    }
+}
+
+fn orchestrate(hub: &Arc<Hub>, command: PhoneMsg, reply: &Sender<Event>) {
+    match hub.orchestrator() {
+        Some(octo) => octo.command(hub, command, reply),
+        None => relay::forward(hub, &command, reply),
     }
 }
 
@@ -219,7 +243,7 @@ pub fn task_with_attachments(task: &str, files: &[PathBuf]) -> String {
     .to_string()
 }
 
-fn start(hub: &Arc<Hub>, request: StartRequest, reply: &Sender<Event>) {
+pub(crate) fn start(hub: &Arc<Hub>, request: StartRequest, reply: &Sender<Event>) {
     let StartRequest { kind, session, cwd, task, worktree, bypass, remote_control, model, attachments } = request;
     if !hub.kinds().contains(&kind) {
         return notice(reply, Tone::Error, format!("{} is not installed on {}", kind.label(), hub.host()));

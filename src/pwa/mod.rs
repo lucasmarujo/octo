@@ -11,3 +11,4 @@ pub mod qr;
 pub mod screen;
 pub mod server;
 pub mod tunnel;
+pub mod uploads;

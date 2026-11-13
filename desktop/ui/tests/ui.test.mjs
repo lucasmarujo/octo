@@ -1882,9 +1882,11 @@ test('the tabs of older versions gain a pinned overview once, and a saved choice
   });
   stored.set('orkai.tabs', JSON.stringify([7, 'settings']));
   const upgraded = await import('../js/state.js?tabs=upgraded');
-  assert.deepEqual(upgraded.state.tabs, ['overview', 7, 'settings']);
-  assert.deepEqual([...upgraded.state.pinned], ['overview']);
+  assert.deepEqual(upgraded.state.tabs, ['octo', 'overview', 7, 'settings'], 'the Octo tab comes first, pinned next to the overview');
+  assert.deepEqual([...upgraded.state.pinned], ['overview', 'octo']);
+  assert.deepEqual(JSON.parse(stored.get('orkai.tabs')), ['octo', 'overview', 7, 'settings'], 'and is saved at once, so it is offered a single time');
   upgraded.pinTab('overview', false);
+  upgraded.pinTab('octo', false);
   assert.deepEqual(JSON.parse(stored.get('octo.pinnedTabs')), []);
   const unpinned = await import('../js/state.js?tabs=unpinned');
   assert.deepEqual([...unpinned.state.pinned], [], 'the pin taken off stays off after a restart');
@@ -2354,4 +2356,429 @@ test('the accent color comes from presets, a hue or a hex, and is locked in the 
   assert.match(settings, /disabled: !accentChoice\(\), onclick: \(\) => setAccent\(ACCENT_DEFAULT\)/, 'one click goes back to the color of Octo');
   assert.match(settings, /storage\.set\(ACCENT_KEY, hex === ACCENT_DEFAULT \? null : hex\);/, 'the default is not stored, so a new default reaches everyone who never chose');
   assert.match(settings, /oninput: \(event\) => previewAccent\(withHue\(shownAccent\(\), Number\(event\.target\.value\)\), host\),/, 'the app repaints while the hue is dragged');
+});
+
+const OCTO_PROJECTS = Array.from({ length: 22 }, (unused, index) => `team/project-${String(index + 1).padStart(2, '0')}`);
+const OCTO_SIZES = [12, 8, 4, 16, 11, 9, 7, 6, 5, 4, 3, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1];
+
+function fleet() {
+  const states = ['working', 'working', 'working', 'done', 'idle', 'paused'];
+  const list = [];
+  OCTO_PROJECTS.forEach((project, at) => {
+    for (let index = 0; index < OCTO_SIZES[at]; index++) {
+      const id = list.length + 1;
+      list.push(agent({ id, name: `${project.split('/')[1]}-agent-${index + 1}`, project, color: '#5ad2d2', state: states[id % states.length], starting: id % 17 === 0, model: 'claude-opus-4-5', branch: index ? `branch-${index}` : null }));
+    }
+  });
+  return list;
+}
+
+function decision(overrides) {
+  return { id: 1, agent: 1, name: 'checkout-redesign', kind: 'claude', session: 'default', project: OCTO_PROJECTS[0], since: NOW - 252_000, status: 'needsYou', question: 'Drop the legacy table?', context: ['row one', 'row two'], tool: null, suggestion: null, tag: null, problem: null, ...overrides };
+}
+
+function handledEntry(overrides) {
+  return { seq: 1, at: NOW - 12_000, agent: 2, name: 'physics-merge', kind: 'claude', project: OCTO_PROJECTS[3], question: 'Run npm test?', summary: 'Allowed npm test', by: 'rule', outcome: 'answered', mode: 'moderate', ...overrides };
+}
+
+function octoMessage(overrides) {
+  return {
+    type: 'orchestrator',
+    enabled: true,
+    mode: 'moderate',
+    projects: [{ path: OCTO_PROJECTS[2], mode: 'observe' }, { path: OCTO_PROJECTS[3], mode: 'bypass' }],
+    primary: 'claude',
+    secondary: 'codex',
+    primaryModel: 'opus',
+    secondaryModel: null,
+    engines: [{ kind: 'claude', installed: true }, { kind: 'codex', installed: true }],
+    decisions: [
+      decision({ id: 1, suggestion: { keys: null, text: 'No. Keep the table.', summary: 'Keep the table', reason: 'It cannot be undone.' }, tag: 'irreversible' }),
+      decision({ id: 2, agent: 13, name: 'auth-tokens', kind: 'codex', project: OCTO_PROJECTS[1], since: NOW - 120_000, question: 'Rotate the keys now?', suggestion: { keys: ['2'], text: null, summary: 'Ship behind a flag', reason: 'Both are valid.' } }),
+      decision({ id: 3, agent: 21, name: 'pricing-page', kind: 'cursor', project: OCTO_PROJECTS[0], since: NOW - 48_000, question: 'Which copy?', problem: 'claude is not signed in' }),
+      decision({ id: 4, agent: 30, name: 'search-index', project: OCTO_PROJECTS[9], since: NOW - 6_000, status: 'deciding', question: 'Plan approval' }),
+      decision({ id: 5, agent: 31, name: 'ios-build', project: OCTO_PROJECTS[1], since: NOW - 1_000, status: 'deciding', question: 'Permission' }),
+    ],
+    handled: [
+      handledEntry({ seq: 9, at: NOW - 12_000 }),
+      handledEntry({ seq: 8, at: NOW - 60_000, name: 'docker-install', project: OCTO_PROJECTS[6], summary: 'Approved the plan', by: 'octo' }),
+      handledEntry({ seq: 7, at: NOW - 900_000, name: 'asset-pipeline', project: OCTO_PROJECTS[3], summary: 'Denied rm -rf dist', outcome: 'denied' }),
+    ],
+    handledToday: 212,
+    handledByProject: [{ path: OCTO_PROJECTS[0], count: 31 }, { path: OCTO_PROJECTS[3], count: 47 }],
+    chat: [
+      { at: NOW - 60_000, role: 'you', text: 'Anything stuck?', actions: [], failed: false },
+      { at: NOW - 50_000, role: 'octo', text: 'Nothing is stuck.', actions: ['Sent "run the tests" to physics-merge'], failed: false },
+    ],
+    thinking: false,
+    problem: null,
+    ...overrides,
+  };
+}
+
+test('an orchestrator the hub never described, or described with fields the app does not know, reads as off and empty', async () => {
+  const { OFF_VIEW, navCounts, needsCount, octoStatus, orchestratorView } = await import('../js/orchestrator.js');
+  const off = { enabled: false, mode: 'moderate', projects: [], primary: null, secondary: null, primaryModel: null, secondaryModel: null, engines: [], decisions: [], handled: [], handledToday: 0, handledByProject: [], chat: [], thinking: false, problem: null };
+  assert.deepEqual(OFF_VIEW, off);
+  for (const message of [null, undefined, {}, 'orchestrator', 7, { type: 'orchestrator' }]) assert.deepEqual(orchestratorView(message), off);
+  const odd = orchestratorView({
+    enabled: 'yes',
+    mode: 'turbo',
+    projects: [{ path: 'a/b', mode: 'bypass' }, { path: 'a/c', mode: 'turbo' }, null, { mode: 'observe' }],
+    primary: '',
+    engines: [{ kind: 'claude', installed: 1 }, { installed: true }, null],
+    decisions: [{ id: 'x' }, null, { id: 4, status: 'later', context: 'not rows', suggestion: { summary: 'no keys and no text' }, tool: { detail: 'no name' } }],
+    handled: [{ at: 1 }, { seq: 3, mode: 'turbo' }],
+    handledToday: -2,
+    handledByProject: 'none',
+    chat: [{ role: 'robot', text: 'hi', actions: [1, 'ran it', ''] }, { role: 'you' }],
+    thinking: 1,
+    problem: 12,
+    future: { anything: true },
+  });
+  assert.equal(odd.enabled, false, 'only a true turns Octo on');
+  assert.equal(odd.mode, 'moderate');
+  assert.deepEqual(odd.projects, [{ path: 'a/b', mode: 'bypass' }]);
+  assert.deepEqual(odd.engines, [{ kind: 'claude', installed: false }]);
+  assert.deepEqual(odd.decisions.map((item) => [item.id, item.status, item.context, item.suggestion, item.tool]), [[4, 'deciding', [], null, null]]);
+  assert.deepEqual(odd.handled.map((entry) => [entry.seq, entry.mode, entry.summary]), [[3, 'moderate', '']]);
+  assert.equal(odd.handledToday, 0);
+  assert.deepEqual(odd.handledByProject, []);
+  assert.deepEqual(odd.chat, [{ at: 0, role: 'octo', text: 'hi', actions: ['ran it'], failed: false }]);
+  assert.equal(odd.thinking, false);
+  assert.equal(odd.problem, null);
+  assert.equal(Object.hasOwn(odd, 'future'), false);
+  assert.equal(needsCount(null), 0, 'no badge before the hub answers');
+  assert.equal(octoStatus(null), null);
+  const waitingButOff = orchestratorView(octoMessage({ enabled: false }));
+  assert.equal(needsCount(waitingButOff), 0, 'nothing nags while Octo is off');
+  assert.equal(octoStatus(waitingButOff), null, 'and the bar under the window says nothing about it');
+  assert.deepEqual(navCounts(waitingButOff, fleet()), { mode: null, needs: 0, handled: 0, agents: 104, projects: 22 });
+  assert.deepEqual(navCounts(OFF_VIEW, []), { mode: null, needs: 0, handled: 0, agents: 0, projects: 0 }, 'before the first state there is no fleet either');
+});
+
+test('what Octo says when it cannot go on is translated', async () => {
+  const { translateHub } = await import('../js/i18n.js');
+  const runner = readFileSync(join(REPO, 'src/orchestrator/runner.rs'), 'utf8');
+  for (const name of ['NO_ENGINE', 'DID_NOT_TAKE', 'BUSY', 'NOT_PENDING', 'NO_THREAD', 'STOPPED']) {
+    const text = runner.match(new RegExp(`const ${name}: &str = "([^"]+)";`))[1];
+    assert.notEqual(translateHub('pt-BR', text), text, text);
+    assert.equal(translateHub('en', text), text);
+  }
+  assert.equal(translateHub('pt-BR', 'Octo already answered 5 questions in a row here; this one is yours'), 'o Octo já respondeu 5 perguntas seguidas aqui; esta é sua');
+});
+
+test('the rail lists what Octo settled, not what it left for you or what you answered', async () => {
+  const { handledByOcto, orchestratorView } = await import('../js/orchestrator.js');
+  const handled = [
+    handledEntry({ seq: 4, by: 'you', outcome: 'answered' }),
+    handledEntry({ seq: 3, by: 'octo', outcome: 'escalated' }),
+    handledEntry({ seq: 2, by: 'rule', outcome: 'answered' }),
+    handledEntry({ seq: 1, by: 'octo', outcome: 'denied' }),
+  ];
+  assert.deepEqual(handledByOcto(orchestratorView(octoMessage({ handled }))).map((entry) => entry.seq), [2, 1]);
+  const page = readFileSync(join(REPO, 'desktop/ui/js/octo.js'), 'utf8');
+  assert.match(page, /const recent = handledByOcto\(current\)\.slice\(0, RAIL_HANDLED\);/);
+});
+
+test('the Octo tab, the sidebar and the bar under the window count the decisions that need you', async () => {
+  const { MODE_WORDS, deciding, navCounts, needsCount, needsYou, octoStatus, orchestratorView } = await import('../js/orchestrator.js');
+  const view = orchestratorView(octoMessage());
+  assert.deepEqual(needsYou(view).map((item) => item.id), [1, 2, 3], 'oldest first, as the hub sends them');
+  assert.deepEqual(deciding(view).map((item) => item.id), [4, 5]);
+  assert.equal(needsCount(view), 3, 'a decision Octo is still judging is not yours yet');
+  assert.deepEqual(navCounts(view, fleet()), { mode: 'moderate', needs: 3, handled: 212, agents: 104, projects: 22 });
+  assert.deepEqual(octoStatus(view), { mode: 'moderate', handled: 212 });
+  assert.equal(MODE_WORDS[octoStatus(view).mode], 'moderate');
+  const bar = readFileSync(join(REPO, 'desktop/ui/js/statusbar.js'), 'utf8');
+  assert.match(bar, /octo \? h\('span', \{ class: 'statusbar-item' \}, t\('octo: \{mode\} · \{count\} handled today', \{ mode: MODE_WORDS\[octo\.mode\], count: octo\.handled \}\)\) : null,/);
+  assert.match(bar, /JSON\.stringify\(\[counts, usage, phone, octo, state\.version/, 'the bar repaints when the mode or the count changes');
+  const tabs = readFileSync(join(REPO, 'desktop/ui/js/tabs.js'), 'utf8');
+  assert.match(tabs, /if \(Object\.hasOwn\(actions\.pages, id\)\) return \[id, pageBadge\(id\)\];/, 'the tab strip repaints when the count changes');
+  assert.match(tabs, /info\.badge \? h\('span', \{ class: 'tab-badge' \}, String\(info\.badge\)\) : null,/, 'no badge at zero');
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /octo: \{ label: t\('Octo'\), icon: ICON_OCTO, render: renderOcto, badge: \(\) => needsCount\(state\.orchestrator\) \},/);
+});
+
+test('the fleet and the projects of Octo come from the agents on the overview, a hundred of them across 22 projects', async () => {
+  const { filterProjects, fleetCounts, orchestratorView, projectFilterCounts, projectRows, projectSays } = await import('../js/orchestrator.js');
+  const agents = fleet();
+  const view = orchestratorView(octoMessage());
+  const counts = fleetCounts(agents);
+  assert.equal(agents.length, 104);
+  assert.equal(counts.total, 104);
+  assert.equal(counts.working + counts.needs + counts.done + counts.idle, 104, 'every agent is in exactly one part of the bar');
+  for (const key of ['working', 'needs', 'done', 'idle']) assert.equal(counts[key], agents.filter((item) => column(item) === key).length, key);
+  assert.deepEqual(fleetCounts([]), { total: 0, working: 0, needs: 0, done: 0, idle: 0 });
+  const rows = projectRows(agents, view);
+  assert.equal(rows.length, 22);
+  assert.deepEqual(rows.slice(0, 2).map((row) => [row.project, row.needs]), [[OCTO_PROJECTS[0], 2], [OCTO_PROJECTS[1], 1]], 'the projects that need you come first');
+  const quiet = rows.slice(2);
+  assert.ok(quiet.every((row) => row.needs === 0));
+  assert.deepEqual(quiet.map((row) => row.counts.total), [...quiet.map((row) => row.counts.total)].sort((a, b) => b - a), 'then the ones with more agents');
+  assert.equal(quiet[0].project, OCTO_PROJECTS[3]);
+  const byName = new Map(rows.map((row) => [row.project, row]));
+  assert.deepEqual(byName.get(OCTO_PROJECTS[0]).says, { kind: 'needs', text: 'Drop the legacy table?' }, 'the question waiting the longest');
+  assert.deepEqual(byName.get(OCTO_PROJECTS[1]).says, { kind: 'needs', text: 'Rotate the keys now?' }, 'a question for you wins over one Octo is still judging');
+  assert.deepEqual(byName.get(OCTO_PROJECTS[9]).says, { kind: 'deciding', text: '' });
+  assert.deepEqual(byName.get(OCTO_PROJECTS[3]).says, { kind: 'handled', text: 'Allowed npm test' }, 'the newest thing Octo did there');
+  assert.deepEqual(byName.get(OCTO_PROJECTS[6]).says, { kind: 'handled', text: 'Approved the plan' });
+  assert.deepEqual(byName.get(OCTO_PROJECTS[20]).says, { kind: 'none', text: '' });
+  assert.deepEqual(projectSays(view, OCTO_PROJECTS[9]), { kind: 'deciding', text: '' });
+  assert.deepEqual(projectSays(view, 'never/seen'), { kind: 'none', text: '' });
+  assert.deepEqual([byName.get(OCTO_PROJECTS[0]).handled, byName.get(OCTO_PROJECTS[3]).handled, byName.get(OCTO_PROJECTS[5]).handled], [31, 47, 0]);
+  assert.deepEqual([byName.get(OCTO_PROJECTS[2]).mode, byName.get(OCTO_PROJECTS[2]).override], ['observe', 'observe']);
+  assert.deepEqual([byName.get(OCTO_PROJECTS[0]).mode, byName.get(OCTO_PROJECTS[0]).override], ['moderate', null], 'a project without its own mode follows the default');
+  assert.equal(byName.get(OCTO_PROJECTS[0]).counts.total, 12);
+  assert.deepEqual(projectFilterCounts(rows), { all: 22, needs: 2, bypass: 1 });
+  assert.deepEqual(filterProjects(rows, '', 'all').length, 22);
+  assert.deepEqual(filterProjects(rows, '  PROJECT-07 ', 'all').map((row) => row.project), [OCTO_PROJECTS[6]], 'by project, whatever the case');
+  assert.deepEqual(filterProjects(rows, 'project-22-agent-1', 'all').map((row) => row.project), [OCTO_PROJECTS[21]], 'or by the name of an agent in it');
+  assert.deepEqual(filterProjects(rows, 'nothing like this', 'all'), []);
+  assert.deepEqual(filterProjects(rows, '', 'needs').map((row) => row.project), [OCTO_PROJECTS[0], OCTO_PROJECTS[1]]);
+  assert.deepEqual(filterProjects(rows, '', 'bypass').map((row) => row.project), [OCTO_PROJECTS[3]]);
+  assert.deepEqual(filterProjects(rows, 'project-01', 'bypass'), []);
+  const bypassing = projectRows(agents, orchestratorView(octoMessage({ mode: 'bypass', projects: [] })));
+  assert.equal(projectFilterCounts(bypassing).bypass, 22, 'a project on the default mode counts as what the default is');
+  assert.deepEqual(projectRows([], view), [], 'no overview yet, no rows');
+  assert.equal(projectRows(agents, orchestratorView(null)).every((row) => row.says.kind === 'none' && row.needs === 0 && row.mode === 'moderate'), true);
+});
+
+test('the queue of decisions shows what each filter promises and keeps the selection while it is still there', async () => {
+  const { RECENT_MS, byWord, decisionMeta, decisionProjects, orchestratorView, outcomeMark, pickDecision, shortAge, shownDecisions, suggestionText } = await import('../js/orchestrator.js');
+  const view = orchestratorView(octoMessage());
+  const all = shownDecisions(view, 'needs', null, NOW);
+  assert.deepEqual([all.needs.map((item) => item.id), all.deciding.map((item) => item.id), all.handled.map((entry) => entry.seq)], [[1, 2, 3], [4, 5], [9, 8]], 'what needs you, what Octo is judging, and what it handled in the last 10 minutes');
+  assert.equal(RECENT_MS, 600_000);
+  assert.deepEqual(shownDecisions(view, 'needs', null, NOW + RECENT_MS).handled, [], 'older than that is in Activity');
+  const judging = shownDecisions(view, 'deciding', null, NOW);
+  assert.deepEqual([judging.needs, judging.deciding.map((item) => item.id), judging.handled], [[], [4, 5], []]);
+  const done = shownDecisions(view, 'handled', null, NOW);
+  assert.deepEqual([done.needs, done.deciding, done.handled.map((entry) => entry.seq)], [[], [], [9, 8, 7]], 'every entry the hub sent, not one more');
+  const one = shownDecisions(view, 'needs', OCTO_PROJECTS[1], NOW);
+  assert.deepEqual([one.needs.map((item) => item.id), one.deciding.map((item) => item.id), one.handled], [[2], [5], []]);
+  assert.deepEqual(shownDecisions(view, 'handled', OCTO_PROJECTS[3], NOW).handled.map((entry) => entry.seq), [9, 7]);
+  assert.deepEqual(decisionProjects(view), [OCTO_PROJECTS[0], OCTO_PROJECTS[1], OCTO_PROJECTS[3], OCTO_PROJECTS[6], OCTO_PROJECTS[9]]);
+  assert.equal(pickDecision(null, all), 1, 'the oldest question is open when nothing was picked');
+  assert.equal(pickDecision(2, all), 2);
+  assert.equal(pickDecision(5, all), 5, 'one Octo is still judging can be opened too');
+  assert.equal(pickDecision(99, all), 1, 'an answered decision gives way to the next');
+  assert.equal(pickDecision(1, one), 2, 'and so does one the project filter hides');
+  assert.equal(pickDecision(4, done), null);
+  assert.equal(pickDecision(null, shownDecisions(orchestratorView(null), 'needs', null, NOW)), null, 'nothing pending, nothing selected');
+  const [first, second, third] = view.decisions;
+  assert.deepEqual(decisionMeta(first, agent({ model: 'claude-opus-4-5', branch: 'checkout-v2' })), [OCTO_PROJECTS[0], 'claude opus', 'checkout-v2', 'irreversible']);
+  assert.deepEqual(decisionMeta(second, null), [OCTO_PROJECTS[1], 'codex'], 'an agent that is gone still shows its project and kind');
+  assert.equal(suggestionText(first.suggestion), 'No. Keep the table.');
+  assert.equal(suggestionText(second.suggestion), 'Ship behind a flag', 'keys are shown as what they mean');
+  assert.equal(suggestionText(third.suggestion), '');
+  assert.deepEqual(view.handled.map((entry) => [outcomeMark(entry).text, byWord(entry)]), [['✓', 'rule'], ['✓', 'judgment'], ['✕', 'rule']]);
+  assert.deepEqual([outcomeMark({ outcome: 'escalated' }).tone, outcomeMark({ outcome: 'failed' }).tone, outcomeMark({ outcome: 'new' }).text], ['t-yellow', 't-red', '·']);
+  assert.equal(byWord({ by: 'you' }), 'you');
+  assert.deepEqual([shortAge(48_000), shortAge(252_000), shortAge(7_500_000), shortAge(200 * 3_600_000), shortAge(-5)], ['48s', '4m', '2h', '8d', '0s'], 'the leading unit of the same duration the cards tick');
+});
+
+test('every control of Octo sends the message of the contract, and nothing more', async () => {
+  const orchestrator = await import('../js/orchestrator.js');
+  const { activityRequest, answerMessage, chatMessage, clearChatMessage, enabledMessage, engineMessage, instructionsRequest, modeMessage, modelMessage, needsBypassConfirm, orchestratorView, projectModeMessage, saveInstructionsMessage, suggestionAnswer, turnOnMessage, viewRequest } = orchestrator;
+  const view = orchestratorView(octoMessage());
+  const [withText, withKeys, without] = view.decisions;
+  assert.deepEqual(viewRequest(), { type: 'orchestrator' });
+  assert.deepEqual(modeMessage('observe'), { type: 'orchestratorSet', mode: 'observe' });
+  assert.deepEqual(projectModeMessage('acme/web', 'bypass'), { type: 'orchestratorSet', project: { path: 'acme/web', mode: 'bypass' } });
+  assert.deepEqual(projectModeMessage('acme/web', null), { type: 'orchestratorSet', project: { path: 'acme/web', mode: null } }, 'back to the default clears the override');
+  assert.deepEqual(projectModeMessage('acme/web', 'turbo'), { type: 'orchestratorSet', project: { path: 'acme/web', mode: null } });
+  assert.deepEqual(enabledMessage(false), { type: 'orchestratorSet', enabled: false });
+  assert.deepEqual(turnOnMessage('codex', 'observe'), { type: 'orchestratorSet', enabled: true, primary: 'codex', mode: 'observe' });
+  assert.deepEqual(engineMessage('primary', 'codex'), { type: 'orchestratorSet', primary: 'codex' });
+  assert.deepEqual(engineMessage('secondary', null), { type: 'orchestratorSet', secondary: null }, 'None clears the secondary');
+  assert.deepEqual(modelMessage('primary', ' opus '), { type: 'orchestratorSet', primaryModel: 'opus' });
+  assert.deepEqual(modelMessage('secondary', '  '), { type: 'orchestratorSet', secondaryModel: null }, 'an emptied field goes back to the default model');
+  assert.deepEqual(answerMessage(7, 'suggestion'), { type: 'orchestratorAnswer', decision: 7, how: 'suggestion' });
+  assert.deepEqual(answerMessage(7, 'text', { text: 'keep it' }), { type: 'orchestratorAnswer', decision: 7, how: 'text', text: 'keep it' });
+  assert.deepEqual(answerMessage(7, 'keys', { keys: ['2', 'Enter'] }), { type: 'orchestratorAnswer', decision: 7, how: 'keys', keys: ['2', 'Enter'] });
+  assert.deepEqual(answerMessage(7, 'allow'), { type: 'orchestratorAnswer', decision: 7, how: 'allow' });
+  assert.deepEqual(answerMessage(7, 'dismiss'), { type: 'orchestratorAnswer', decision: 7, how: 'dismiss' });
+  assert.deepEqual(answerMessage(7, 'allow', { remember: '  never drop tables without asking ' }), { type: 'orchestratorAnswer', decision: 7, how: 'allow', remember: 'never drop tables without asking' });
+  assert.deepEqual(answerMessage(7, 'allow', { remember: '   ' }), { type: 'orchestratorAnswer', decision: 7, how: 'allow' }, 'a ticked box with no rule remembers nothing');
+  assert.deepEqual(answerMessage(7, 'dismiss', { remember: 'a rule' }), { type: 'orchestratorAnswer', decision: 7, how: 'dismiss' }, 'a dismissed question teaches nothing');
+  assert.deepEqual(suggestionAnswer(withText, null, ''), { type: 'orchestratorAnswer', decision: 1, how: 'suggestion' });
+  assert.deepEqual(suggestionAnswer(withText, ' No. Keep the table. ', ''), { type: 'orchestratorAnswer', decision: 1, how: 'suggestion' }, 'opened for editing and left as it was');
+  assert.deepEqual(suggestionAnswer(withText, 'No, and open a follow-up task.', 'ask before dropping'), { type: 'orchestratorAnswer', decision: 1, how: 'text', text: 'No, and open a follow-up task.', remember: 'ask before dropping' });
+  assert.deepEqual(suggestionAnswer(withText, '   ', ''), { type: 'orchestratorAnswer', decision: 1, how: 'suggestion' }, 'an emptied edit falls back to what Octo said');
+  assert.deepEqual(suggestionAnswer(withKeys, null, ''), { type: 'orchestratorAnswer', decision: 2, how: 'suggestion' }, 'the hub presses the keys it suggested');
+  assert.deepEqual(suggestionAnswer(withKeys, 'behind a flag', ''), { type: 'orchestratorAnswer', decision: 2, how: 'text', text: 'behind a flag' });
+  assert.deepEqual(suggestionAnswer(without, 'use the short copy', ''), { type: 'orchestratorAnswer', decision: 3, how: 'text', text: 'use the short copy' });
+  assert.equal(suggestionAnswer(without, '', ''), null, 'with no suggestion and nothing typed there is nothing to send');
+  assert.deepEqual(chatMessage(view, '  what is stuck?  '), { type: 'orchestratorChat', text: 'what is stuck?' });
+  assert.equal(chatMessage(view, '   '), null);
+  assert.equal(chatMessage(orchestratorView(octoMessage({ thinking: true })), 'again'), null, 'one turn at a time: nothing is sent while Octo thinks');
+  assert.equal(chatMessage(orchestratorView(octoMessage({ enabled: false })), 'hello'), null);
+  assert.deepEqual(clearChatMessage(), { type: 'orchestratorClearChat' });
+  assert.deepEqual(instructionsRequest(null), { type: 'orchestratorInstructions', project: null });
+  assert.deepEqual(instructionsRequest('acme/web'), { type: 'orchestratorInstructions', project: 'acme/web' });
+  assert.deepEqual(saveInstructionsMessage(null, '# rules'), { type: 'orchestratorSaveInstructions', project: null, text: '# rules' });
+  assert.deepEqual(saveInstructionsMessage('acme/web', ''), { type: 'orchestratorSaveInstructions', project: 'acme/web', text: '' });
+  assert.deepEqual(activityRequest(null), { type: 'orchestratorActivity', before: null });
+  assert.deepEqual(activityRequest(undefined), { type: 'orchestratorActivity', before: null });
+  assert.deepEqual(activityRequest(251), { type: 'orchestratorActivity', before: 251 });
+  assert.deepEqual([needsBypassConfirm('bypass', 'moderate'), needsBypassConfirm('bypass', 'observe'), needsBypassConfirm('bypass', 'bypass'), needsBypassConfirm('moderate', 'bypass'), needsBypassConfirm('observe', 'moderate')], [true, true, false, false, false], 'only going into Bypass asks first');
+  const builders = Object.values(orchestrator).filter((value) => typeof value === 'function' && /Message$|Request$/.test(value.name));
+  const sent = new Set(builders.map((build) => build(build === chatMessage ? view : 'primary', 'x').type));
+  assert.deepEqual([...sent].sort(), ['orchestrator', 'orchestratorActivity', 'orchestratorAnswer', 'orchestratorChat', 'orchestratorClearChat', 'orchestratorInstructions', 'orchestratorSaveInstructions', 'orchestratorSet']);
+  const protocol = rust('src/pwa/protocol.rs');
+  for (const type of sent) assert.match(protocol, new RegExp(`\\b${type[0].toUpperCase()}${type.slice(1)}\\b`), `the hub knows ${type}`);
+});
+
+test('the engine of Octo is one the user has installed, and the secondary is never the primary again', async () => {
+  const { ENGINE_KINDS, engineInstalled, engineKinds, installedEngines, orchestratorView, secondaryChoices, startChoice } = await import('../js/orchestrator.js');
+  const both = orchestratorView(octoMessage());
+  const codexOnly = orchestratorView(octoMessage({ primary: null, engines: [{ kind: 'claude', installed: false }, { kind: 'codex', installed: true }] }));
+  const none = orchestratorView(octoMessage({ engines: [{ kind: 'claude', installed: false }, { kind: 'codex', installed: false }] }));
+  assert.deepEqual(installedEngines(both), ['claude', 'codex']);
+  assert.deepEqual([engineInstalled(codexOnly, 'claude'), engineInstalled(codexOnly, 'codex'), engineInstalled(codexOnly, 'kilo')], [false, true, false]);
+  assert.equal(startChoice(both, null), 'claude', 'the engine already set');
+  assert.equal(startChoice(both, 'codex'), 'codex', 'or the one just picked');
+  assert.equal(startChoice(codexOnly, 'claude'), 'codex', 'never one that is not installed');
+  assert.equal(startChoice(none, 'claude'), null, 'with none installed Octo cannot be turned on');
+  assert.deepEqual(engineKinds(none), ['claude', 'codex']);
+  assert.deepEqual(engineKinds(orchestratorView(null)), ENGINE_KINDS, 'the intro names the engines before the hub lists them');
+  assert.deepEqual(secondaryChoices(both), ['codex']);
+  assert.deepEqual(secondaryChoices(codexOnly), ['codex']);
+});
+
+test('the activity pages and the instruction files of Octo are merged, bounded and only saved when changed', async () => {
+  const { INSTRUCTIONS_MAX_BYTES, activityPage, canSaveInstructions, instructionTabs, instructionsFile, instructionsTooLong, mergeActivity, orchestratorView } = await import('../js/orchestrator.js');
+  const view = orchestratorView(octoMessage());
+  const page = activityPage({ type: 'orchestratorActivity', items: [handledEntry({ seq: 8 }), handledEntry({ seq: 6 }), { at: 3 }, null], next: 5 });
+  assert.deepEqual([page.items.map((entry) => entry.seq), page.next], [[8, 6], 5]);
+  assert.deepEqual(activityPage({ items: 'none', next: 'soon' }), { items: [], next: null });
+  assert.deepEqual(activityPage(null), { items: [], next: null });
+  assert.deepEqual(mergeActivity(view.handled, page.items).map((entry) => entry.seq), [9, 8, 7, 6], 'newest first, each entry once');
+  assert.equal(mergeActivity(view.handled, page.items)[1].summary, 'Approved the plan', 'the live entry wins over the page');
+  assert.deepEqual(mergeActivity([], []), []);
+  const tabs = instructionTabs(fleet(), orchestratorView(octoMessage({ projects: [{ path: 'gone/project', mode: 'observe' }, { path: OCTO_PROJECTS[0], mode: 'bypass' }] })));
+  assert.equal(tabs[0], null, 'OCTO.md comes first');
+  assert.equal(tabs.length, 24, 'then every project with agents and every project with its own mode, once');
+  assert.ok(tabs.includes('gone/project'));
+  assert.deepEqual(instructionTabs([], orchestratorView(null)), [null]);
+  assert.deepEqual(instructionsFile({ type: 'orchestratorInstructions', project: null, text: '# rules', path: '/home/OCTO.md' }), { project: null, text: '# rules', path: '/home/OCTO.md' });
+  assert.deepEqual(instructionsFile({ project: 'acme/web' }), { project: 'acme/web', text: '', path: '' });
+  assert.equal(INSTRUCTIONS_MAX_BYTES, 64 * 1024);
+  assert.equal(canSaveInstructions(null, 'typed before the file arrived'), false);
+  assert.equal(canSaveInstructions('# rules', '# rules'), false, 'nothing changed, nothing to save');
+  assert.equal(canSaveInstructions('# rules', '# rules\n- one more'), true);
+  assert.equal(canSaveInstructions('# rules', ''), true, 'an emptied file is a change');
+  assert.equal(instructionsTooLong('a'.repeat(INSTRUCTIONS_MAX_BYTES)), false);
+  assert.equal(instructionsTooLong('a'.repeat(INSTRUCTIONS_MAX_BYTES + 1)), true);
+  assert.equal(instructionsTooLong('ã'.repeat(INSTRUCTIONS_MAX_BYTES / 2 + 1)), true, 'counted in bytes, like the hub counts');
+  assert.equal(canSaveInstructions('', 'a'.repeat(INSTRUCTIONS_MAX_BYTES + 1)), false);
+});
+
+test('Octo repaints only what changed and never under a field someone is typing in', async () => {
+  const { chatKeys, chatSignature, decisionSignature, detailSignature, activitySignature, octoView, orchestratorView } = await import('../js/orchestrator.js');
+  const view = orchestratorView(octoMessage());
+  const again = orchestratorView(octoMessage());
+  assert.deepEqual(view.decisions.map(decisionSignature), again.decisions.map(decisionSignature), 'the same data keeps every card');
+  assert.deepEqual(view.handled.map(activitySignature), again.handled.map(activitySignature));
+  assert.deepEqual(view.chat.map(chatSignature), again.chat.map(chatSignature));
+  const scrolled = orchestratorView(octoMessage({ decisions: [decision({ id: 1, context: ['another screen'] })] })).decisions[0];
+  const plain = orchestratorView(octoMessage({ decisions: [decision({ id: 1 })] })).decisions[0];
+  assert.equal(decisionSignature(scrolled), decisionSignature(plain), 'a row does not show the screen, so the screen does not rebuild it');
+  assert.notEqual(detailSignature(scrolled, null), detailSignature(plain, null), 'the open decision does');
+  assert.notEqual(decisionSignature(plain), decisionSignature({ ...plain, status: 'deciding' }));
+  assert.notEqual(detailSignature(plain, null), detailSignature(plain, agent({ branch: 'checkout-v2' })));
+  assert.deepEqual(chatKeys([{ role: 'you', at: 5 }, { role: 'octo', at: 5 }, { role: 'octo', at: 5 }, { role: 'you', at: 6 }]), ['you:5', 'octo:5', 'octo:5#1', 'you:6'], 'two entries of the same instant never share a node');
+  assert.deepEqual(['chat', 'decisions', 'activity', 'projects', 'settings', 'board', null, undefined].map(octoView), ['chat', 'decisions', 'activity', 'projects', 'settings', 'chat', 'chat', 'chat'], 'the last view opens again, and anything else opens the chat');
+  const pure = readFileSync(join(REPO, 'desktop/ui/js/orchestrator.js'), 'utf8');
+  assert.doesNotMatch(pure, /document\.|window\.|\$\(|from '\.\/(dom|state|transport)\.js'/, 'the data of Octo is shaped without a page');
+  const octo = readFileSync(join(REPO, 'desktop/ui/js/octo.js'), 'utf8');
+  assert.doesNotMatch(octo, /setInterval|setTimeout|requestAnimationFrame/, 'no timer of its own: the hub broadcasts and the app already ticks');
+  assert.match(octo, /const typing = \(node\) => node\.contains\(document\.activeElement\) && document\.activeElement\.matches\('textarea, input\[type="text"\]'\);/);
+  assert.match(octo, /if \(hit && typing\(hit\.node\)\) return hit\.node;\n\s*return keep\(nodes, key, signature, build\);/, 'a block with the caret in it is never swapped');
+  assert.match(octo, /const node = hit && typing\(hit\.node\) \? hit\.node : keep\(details, decision\.id, detailSignature/, 'nor the decision being answered');
+  assert.match(octo, /if \(host\.dataset\.signature === String\(version\)\) return;/, 'the thread is left alone until the hub sends another view');
+  assert.match(octo, /if \(files\.drafts\.has\(file\.project\)\) paintInstructionsFoot\(panel\.node\);\n\s*else showInstructionsTab\(panel\.node\);/, 'a file that arrives never overwrites what is being written');
+  assert.match(octo, /storage\.set\(VIEW_KEY, shownView\);/);
+  assert.match(octo, /let shownView = octoView\(storage\.get\(VIEW_KEY\)\);/);
+  assert.match(octo, /if \(shownView === 'activity'\) \{\n\s*log\.older = \[\];\n\s*log\.next = null;\n\s*log\.loading = true;\n\s*send\(activityRequest\(null\)\);/, 'the activity log is asked for when its view opens, and starts over each time');
+  assert.equal(octo.match(/send\(activityRequest\(/g).length, 2, 'the first page and Load older, nothing polls');
+  assert.equal(octo.match(/send\(instructionsRequest\(/g).length, 1, 'a file is read once per tab each time the settings open');
+  assert.match(octo, /if \(!message\) return;\n\s*send\(message\);\n\s*input\.value = '';/, 'the text stays in the box when nothing was sent');
+  assert.match(octo, /if \(event\.key !== 'Enter' \|\| event\.shiftKey\) return;/);
+  assert.match(octo, /input\.setRangeText\('\\n', input\.selectionStart, input\.selectionEnd, 'end'\);/, 'alt enter is a new line');
+  assert.match(octo, /form\.querySelector\('button\[type="submit"\]'\)\.disabled = current\.thinking;/, 'the box itself stays open, so the next message can be written while Octo thinks');
+});
+
+test('Bypass is confirmed in plain words before the default mode or a project goes into it', () => {
+  const octo = readFileSync(join(REPO, 'desktop/ui/js/octo.js'), 'utf8');
+  assert.match(octo, /text: t\('Octo will answer every question and allow everything on its own, with no block list and no limits\. Nothing waits for you\.'\),\n\s*action: t\('Use Bypass'\),\n\s*danger: true,/);
+  assert.match(octo, /if \(needsBypassConfirm\(mode, view\(\)\.mode\) && !\(await confirmBypass\(null\)\)\) \{\n\s*redraw\('mode', 'modes'\);\n\s*return;\n\s*\}\n\s*send\(modeMessage\(mode\)\);/, 'a refusal puts the switch back and sends nothing');
+  assert.match(octo, /if \(needsBypassConfirm\(mode \|\| view\(\)\.mode, row\.mode\) && !\(await confirmBypass\(row\.project\)\)\) return;\n\s*send\(projectModeMessage\(row\.project, mode\)\);/, 'also when the default it goes back to is Bypass');
+  assert.match(octo, /if \(mode === 'bypass' && !\(await confirmBypass\(null\)\)\) return;\n\s*send\(turnOnMessage\(primary, mode\)\);/, 'and when Octo is turned on straight into it');
+});
+
+test('Octo is a pinned tab with its own block in the sidebar, a view of its own and no cost while it is off', async () => {
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<section class="orchestrator">\s*<button id="open-octo" class="orchestrator-head" type="button"[^>]*>\s*<span class="caps" data-i18n="Orchestrator">Orchestrator<\/span>\s*<span id="octo-mode" class="orchestrator-mode"><\/span>\s*<\/button>\s*<nav id="octo-nav" class="orchestrator-nav"[^>]*><\/nav>\s*<\/section>\s*<section class="sessions">/, 'above the sessions');
+  assert.match(html, /<section id="octo-view" class="octo" hidden><\/section>/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /const VIEWS = \['overview', 'agent-view', 'help-view', 'settings-view', 'octo-view'\];/);
+  assert.match(main, /state\.version = message\.version;\n\s*send\(viewRequest\(\)\);\n\s*break;/, 'asked once each time the app connects');
+  assert.equal(main.match(/viewRequest\(\)/g).length, 1, 'and never polled');
+  assert.match(main, /case 'orchestrator':\n\s*state\.orchestrator = orchestratorView\(message\);\n\s*renderTabs\(\);\n\s*renderOctoNav\(\);\n\s*renderStatusBar\(\);\n\s*if \(state\.active === OCTO_TAB\) renderOcto\(\);\n\s*break;/, 'the page is only painted while it is the one on screen');
+  assert.match(main, /case 'orchestratorInstructions':\n\s*showInstructions\(message\);/);
+  assert.match(main, /case 'orchestratorActivity':\n\s*showActivity\(message\);/);
+  assert.match(main, /\} else if \(state\.active === OCTO_TAB\) \{\n\s*renderOcto\(\);\n\s*\}/, 'a new overview repaints the fleet and the projects');
+  assert.match(main, /if \(state\.active === OCTO_TAB\) tickOcto\(\);/, 'the waiting times tick on the clock the app already has');
+  assert.match(main, /#statusbar \[data-spin\], #octo-view \[data-spin\]'\)/);
+  assert.match(main, /initOcto\(\{ openAgent, openPage \}\);/, 'Open agent goes through the same door as every card');
+  const { OCTO_TAB, OVERVIEW_TAB } = await import('../js/format.js');
+  assert.equal(OCTO_TAB, 'octo');
+  const stored = new Map();
+  globalThis.window = { localStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: (key) => stored.delete(key) } };
+  try {
+    const fresh = await import('../js/state.js?octo=fresh');
+    assert.deepEqual(fresh.state.tabs, [OCTO_TAB, OVERVIEW_TAB]);
+    assert.deepEqual([...fresh.state.pinned].sort(), [OCTO_TAB, OVERVIEW_TAB]);
+    assert.equal(fresh.state.orchestrator, null);
+    assert.equal(stored.get('octo.octoTab'), 'on');
+    stored.set('orkai.tabs', JSON.stringify([OVERVIEW_TAB, 4]));
+    stored.set('octo.pinnedTabs', JSON.stringify([OVERVIEW_TAB]));
+    const closed = await import('../js/state.js?octo=closed');
+    assert.deepEqual(closed.state.tabs, [OVERVIEW_TAB, 4], 'closed by the user, it is not brought back');
+    stored.delete('octo.octoTab');
+    stored.set('orkai.tabs', JSON.stringify([OVERVIEW_TAB, 4, OCTO_TAB]));
+    const moved = await import('../js/state.js?octo=moved');
+    assert.deepEqual(moved.state.tabs, [OCTO_TAB, OVERVIEW_TAB, 4], 'offered once, and never twice in the strip');
+  } finally {
+    delete globalThis.window;
+  }
+  const { ICON_ACTIVITY, ICON_CHAT, ICON_DECISIONS, ICON_OCTO, ICON_PROJECTS } = await import('../js/icons.js');
+  for (const icon of [ICON_ACTIVITY, ICON_CHAT, ICON_DECISIONS, ICON_OCTO, ICON_PROJECTS]) assert.match(icon, /^<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">.*currentColor.*<\/svg>$/);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.octo:not\(\[hidden\]\) \{ animation: view-in var\(--motion-slow\) var\(--ease-out\); \}/);
+  assert.match(css, /:root\[data-sidebar="collapsed"\] \.orchestrator \{ display: none; \}/);
+  assert.match(css, /\.tab\[data-tab="octo"\] > svg \{ color: var\(--color-accent\); \}/);
+  assert.match(css, /\.octo-badge, \.tab-badge \{[^}]*background: var\(--color-waiting\); color: var\(--color-waiting-ink\);/);
+  const rules = css.split('\n').filter((line) => /^(\.octo-(?!mark|spin)|\.orchestrator|\.segmented\.octo-mode|\.field\.octo)/.test(line));
+  assert.ok(rules.length > 150, `only ${rules.length} rules found`);
+  for (const rule of rules) assert.doesNotMatch(rule, /#[0-9a-fA-F]{3,8}\b|rgba?\(/, `only theme tokens, so every theme works: ${rule.slice(0, 60)}`);
+});
+
+test('the help explains the three modes of Octo, its engine and its instructions in both languages', async () => {
+  const { HELP } = await import('../js/help.js');
+  const { MODE_TEXTS } = await import('../js/orchestrator.js');
+  const [en, pt] = [HELP.en.octo, HELP['pt-BR'].octo];
+  assert.equal(en[0], 'Octo, the orchestrator');
+  assert.equal(pt[0], 'Octo, o orquestrador');
+  assert.deepEqual(en[1].map(([name]) => name), ['Observe', 'Moderate', 'Bypass', 'Engine', 'OCTO.md']);
+  assert.deepEqual(pt[1].map(([name]) => name), ['Observar', 'Moderado', 'Bypass', 'Motor', 'OCTO.md']);
+  for (const [, text] of [...en[1], ...pt[1]]) assert.ok(text.length > 30 && text.endsWith('.'), text);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/help.js'), 'utf8'), /h\('div', \{ class: 'help-group help-octo' \}, h\('span', \{ class: 'caps help-group-title' \}, copy\.octo\[0\]\), \.\.\.copy\.octo\[1\]\.map\(shortcut\)\),/);
+  assert.deepEqual(MODE_TEXTS, {
+    observe: 'Octo watches and reports. It never answers an agent. Every question comes to you, with what it would have said.',
+    moderate: 'Octo answers what your rules and the task already settle. Anything truly open, irreversible or outside the task waits for you.',
+    bypass: 'Octo decides everything and allows everything, with no limits. Nothing waits for you. You read what it did in Activity.',
+  });
 });

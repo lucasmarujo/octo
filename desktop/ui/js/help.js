@@ -29,6 +29,16 @@ export const HELP = {
       ['↻', 't-red', () => ['Interrupted — ', key('ctrl R'), ' recovers']],
       ['✗', 't-faint', 'Ended'],
     ],
+    octo: [
+      'Octo, the orchestrator',
+      [
+        ['Observe', 'Octo never answers an agent. Every question comes to you, with what it would have said.'],
+        ['Moderate', 'Octo answers what your rules and the task settle. Anything open, irreversible or outside the task waits for you.'],
+        ['Bypass', 'Octo decides everything and allows everything, with no limits. Nothing waits for you.'],
+        ['Engine', 'Octo thinks with an agent you already have, Claude or Codex, on your own plan. A second one takes over when the first fails.'],
+        ['OCTO.md', 'Your instructions in Markdown, one file for everything and one per project. Octo reads them before every decision.'],
+      ],
+    ],
   },
   'pt-BR': {
     title: 'Como usar o Octo',
@@ -54,6 +64,16 @@ export const HELP = {
       ['$', 't-text strong', 'Terminal'],
       ['↻', 't-red', () => ['Interrompido — ', key('ctrl R'), ' recupera']],
       ['✗', 't-faint', 'Encerrado'],
+    ],
+    octo: [
+      'Octo, o orquestrador',
+      [
+        ['Observar', 'O Octo nunca responde a um agente. Toda pergunta chega a você, com o que ele teria respondido.'],
+        ['Moderado', 'O Octo responde o que as suas regras e a tarefa resolvem. O que estiver em aberto, for irreversível ou fugir da tarefa espera por você.'],
+        ['Bypass', 'O Octo decide tudo e permite tudo, sem limites. Nada espera por você.'],
+        ['Motor', 'O Octo pensa com um agente que você já tem, Claude ou Codex, no seu próprio plano. Um segundo assume quando o primeiro falha.'],
+        ['OCTO.md', 'As suas instruções em Markdown, um arquivo para tudo e um por projeto. O Octo lê antes de cada decisão.'],
+      ],
     ],
   },
 };
@@ -107,6 +127,7 @@ export function renderHelp() {
       { class: 'help-reference' },
       ...copy.groups.map(([title, rows]) => h('div', { class: 'help-group' }, h('span', { class: 'caps help-group-title' }, title), ...rows.map(shortcut))),
       h('div', { class: 'help-group help-states' }, h('span', { class: 'caps help-group-title' }, copy.states), ...copy.legend.map(legendRow)),
+      h('div', { class: 'help-group help-octo' }, h('span', { class: 'caps help-group-title' }, copy.octo[0]), ...copy.octo[1].map(shortcut)),
     ),
   );
 }

@@ -14,6 +14,7 @@ pub mod migrate;
 pub mod model;
 pub mod models;
 pub mod notify;
+pub mod orchestrator;
 pub mod paths;
 pub mod project;
 pub mod protocol;

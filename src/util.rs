@@ -137,9 +137,76 @@ pub fn rfc3339_to_ms(text: &str) -> Option<u64> {
     u64::try_from(seconds * 1_000 + millis).ok()
 }
 
+pub const DAY_MS: u64 = 86_400_000;
+const MINUTE_MS: i64 = 60_000;
+const MAX_OFFSET_MS: i64 = 18 * 60 * MINUTE_MS;
+
+#[cfg(unix)]
+pub fn local_offset_ms(now_ms: u64) -> i64 {
+    let Ok(seconds) = libc::time_t::try_from(now_ms / 1_000) else { return 0 };
+    let mut local: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&seconds, &mut local) }.is_null() {
+        return 0;
+    }
+    let offset: i64 = local.tm_gmtoff;
+    offset.saturating_mul(1_000).clamp(-MAX_OFFSET_MS, MAX_OFFSET_MS)
+}
+
+#[cfg(windows)]
+pub fn local_offset_ms(_now_ms: u64) -> i64 {
+    const NAME_UNITS: usize = 32;
+    const DATE_FIELDS: usize = 8;
+    const DAYLIGHT: u32 = 2;
+    const INVALID: u32 = u32::MAX;
+
+    #[repr(C)]
+    struct TimeZoneInformation {
+        bias: i32,
+        standard_name: [u16; NAME_UNITS],
+        standard_date: [u16; DATE_FIELDS],
+        standard_bias: i32,
+        daylight_name: [u16; NAME_UNITS],
+        daylight_date: [u16; DATE_FIELDS],
+        daylight_bias: i32,
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetTimeZoneInformation(information: *mut TimeZoneInformation) -> u32;
+    }
+
+    let mut zone: TimeZoneInformation = unsafe { std::mem::zeroed() };
+    let season = unsafe { GetTimeZoneInformation(&mut zone) };
+    if season == INVALID {
+        return 0;
+    }
+    let seasonal = if season == DAYLIGHT { zone.daylight_bias } else { zone.standard_bias };
+    let minutes = i64::from(zone.bias) + i64::from(seasonal);
+    (-minutes * MINUTE_MS).clamp(-MAX_OFFSET_MS, MAX_OFFSET_MS)
+}
+
+pub fn day_of(ms: u64, offset_ms: i64) -> i64 {
+    let local = i64::try_from(ms).unwrap_or(i64::MAX).saturating_add(offset_ms);
+    local.div_euclid(i64::try_from(DAY_MS).unwrap_or(i64::MAX))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_day_follows_the_clock_of_the_computer_and_not_utc() {
+        let nine_at_night_in_brasilia = 3 * DAY_MS;
+        assert_eq!(day_of(nine_at_night_in_brasilia, 0), 3);
+        assert_eq!(day_of(nine_at_night_in_brasilia, -3 * 60 * MINUTE_MS), 2, "it is still the day before at home");
+        assert_eq!(day_of(nine_at_night_in_brasilia + 3 * 3_600_000, -3 * 60 * MINUTE_MS), 3);
+        assert_eq!(day_of(0, 9 * 60 * MINUTE_MS), 0);
+        assert_eq!(day_of(DAY_MS - 1, 60 * MINUTE_MS), 1, "east of Greenwich the day starts earlier");
+        assert_eq!(day_of(0, -MINUTE_MS), -1);
+        let offset = local_offset_ms(now_ms());
+        assert!(offset.abs() <= MAX_OFFSET_MS, "{offset}");
+        assert_eq!(offset % MINUTE_MS, 0, "an offset is a whole number of minutes");
+    }
 
     #[test]
     fn uuid_v4_has_canonical_shape_and_version_bits() {

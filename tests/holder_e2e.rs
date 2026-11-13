@@ -510,9 +510,12 @@ fn hook_events_from_the_agent_drive_its_state() {
     let working = wait_for_state(&rx, AgentState::Working);
     assert!(working.turn_started_ms.is_some());
 
-    let permission = br#"{"session_id":"s","hook_event_name":"PermissionRequest","tool_name":"Bash"}"#;
+    let permission = br#"{"session_id":"s","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"npm test","description":"Run the suite"}}"#;
     assert!(run_hook(&fx, &["claude", &id], permission).success());
-    wait_for_state(&rx, AgentState::Paused);
+    let paused = wait_for_state(&rx, AgentState::Paused);
+    let asked = orkai::hooks::read_ask(fx.store.home(), record.id).expect("the hook left what the agent asked");
+    assert_eq!((asked.tool.as_str(), asked.detail.as_str()), ("Bash", "npm test\nRun the suite"));
+    assert_eq!(asked.at_ms, paused.state_since_ms, "the ask belongs to the pause it caused");
     std::thread::sleep(Duration::from_millis(DONE_GRACE_MS + 1_000));
     assert_eq!(probe(&fx.store, record.id).state(), AgentState::Paused, "a pending permission must stay paused");
 

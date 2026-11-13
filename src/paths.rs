@@ -106,6 +106,10 @@ impl Home {
         self.agent_dir(id).join("hooks")
     }
 
+    pub fn ask_file(&self, id: AgentId) -> PathBuf {
+        self.agent_dir(id).join("ask.json")
+    }
+
     pub fn claude_settings_file(&self, id: AgentId) -> PathBuf {
         self.agent_dir(id).join("claude-settings.json")
     }
@@ -132,6 +136,14 @@ impl Home {
 
     pub fn trusted_file(&self) -> PathBuf {
         self.root.join("trusted.json")
+    }
+
+    pub fn attachments_dir(&self) -> PathBuf {
+        self.root.join("attachments")
+    }
+
+    pub fn orchestrator_dir(&self) -> PathBuf {
+        self.root.join("orchestrator")
     }
 
     pub fn icon_file(&self) -> PathBuf {

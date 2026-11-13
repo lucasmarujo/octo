@@ -5,6 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::chat::ChatItem;
 use crate::folders::{MakeProblem, PlaceKind};
 use crate::model::{AgentId, AgentKind, AgentState, TestState};
+use crate::orchestrator::{ActivityEntry, OrchestratorView, SettingsChange, UserAnswer};
 
 pub const VERSION: u32 = 2;
 
@@ -192,6 +193,30 @@ pub enum PhoneMsg {
         #[serde(default)]
         command: Option<String>,
     },
+    Attach {
+        seq: u64,
+        name: String,
+        part: u32,
+        last: bool,
+        data: String,
+    },
+    Orchestrator,
+    OrchestratorSet(SettingsChange),
+    OrchestratorAnswer(UserAnswer),
+    OrchestratorChat {
+        text: String,
+    },
+    OrchestratorClearChat,
+    OrchestratorInstructions {
+        project: Option<String>,
+    },
+    OrchestratorSaveInstructions {
+        project: Option<String>,
+        text: String,
+    },
+    OrchestratorActivity {
+        before: Option<u64>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -201,7 +226,7 @@ pub struct Push {
     pub device: String,
 }
 
-fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(deserializer: D) -> Result<Option<T>, D::Error> {
+pub fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(deserializer: D) -> Result<Option<T>, D::Error> {
     T::deserialize(deserializer).map(Some)
 }
 
@@ -306,6 +331,21 @@ pub enum BridgeMsg {
         cwd: String,
         repo: String,
         command: String,
+    },
+    Attached {
+        seq: u64,
+        path: Option<String>,
+        problem: Option<String>,
+    },
+    Orchestrator(OrchestratorView),
+    OrchestratorInstructions {
+        project: Option<String>,
+        text: String,
+        path: String,
+    },
+    OrchestratorActivity {
+        items: Vec<ActivityEntry>,
+        next: Option<u64>,
     },
 }
 
@@ -725,6 +765,162 @@ mod tests {
         for (text, expected) in cases {
             assert_eq!(serde_json::from_str::<PhoneMsg>(text).unwrap(), expected, "{text}");
         }
+    }
+
+    #[test]
+    fn the_messages_to_the_orchestrator_read_the_way_the_window_writes_them() {
+        use crate::orchestrator::{How, Mode, ProjectChange};
+        let answer = |how, text: Option<&str>, keys: Option<&[&str]>, remember: Option<&str>| {
+            PhoneMsg::OrchestratorAnswer(UserAnswer {
+                decision: 7,
+                how,
+                text: text.map(str::to_string),
+                keys: keys.map(|keys| keys.iter().map(|key| (*key).to_string()).collect()),
+                remember: remember.map(str::to_string),
+            })
+        };
+        let cases = [
+            (r#"{"type":"orchestrator"}"#, PhoneMsg::Orchestrator),
+            (r#"{"type":"orchestratorSet"}"#, PhoneMsg::OrchestratorSet(SettingsChange::default())),
+            (
+                r#"{"type":"orchestratorSet","enabled":true,"mode":"moderate"}"#,
+                PhoneMsg::OrchestratorSet(SettingsChange {
+                    enabled: Some(true),
+                    mode: Some(Mode::Moderate),
+                    ..SettingsChange::default()
+                }),
+            ),
+            (
+                r#"{"type":"orchestratorSet","project":{"path":"dev/octo","mode":"bypass"},"primary":"claude","primaryModel":"opus"}"#,
+                PhoneMsg::OrchestratorSet(SettingsChange {
+                    project: Some(ProjectChange { path: "dev/octo".into(), mode: Some(Mode::Bypass) }),
+                    primary: Some(Some(AgentKind::Claude)),
+                    primary_model: Some(Some("opus".into())),
+                    ..SettingsChange::default()
+                }),
+            ),
+            (
+                r#"{"type":"orchestratorSet","project":{"path":"dev/octo","mode":null},"secondary":null,"secondaryModel":null}"#,
+                PhoneMsg::OrchestratorSet(SettingsChange {
+                    project: Some(ProjectChange { path: "dev/octo".into(), mode: None }),
+                    secondary: Some(None),
+                    secondary_model: Some(None),
+                    ..SettingsChange::default()
+                }),
+            ),
+            (
+                r#"{"type":"orchestratorAnswer","decision":7,"how":"suggestion"}"#,
+                answer(How::Suggestion, None, None, None),
+            ),
+            (
+                r#"{"type":"orchestratorAnswer","decision":7,"how":"text","text":"keep it","remember":"keep the old endpoint"}"#,
+                answer(How::Text, Some("keep it"), None, Some("keep the old endpoint")),
+            ),
+            (
+                r#"{"type":"orchestratorAnswer","decision":7,"how":"keys","keys":["ArrowDown","Enter"]}"#,
+                answer(How::Keys, None, Some(&["ArrowDown", "Enter"]), None),
+            ),
+            (r#"{"type":"orchestratorAnswer","decision":7,"how":"allow"}"#, answer(How::Allow, None, None, None)),
+            (r#"{"type":"orchestratorAnswer","decision":7,"how":"dismiss"}"#, answer(How::Dismiss, None, None, None)),
+            (
+                r#"{"type":"orchestratorChat","text":"what is running?"}"#,
+                PhoneMsg::OrchestratorChat { text: "what is running?".into() },
+            ),
+            (r#"{"type":"orchestratorClearChat"}"#, PhoneMsg::OrchestratorClearChat),
+            (
+                r#"{"type":"orchestratorInstructions","project":null}"#,
+                PhoneMsg::OrchestratorInstructions { project: None },
+            ),
+            (
+                r#"{"type":"orchestratorInstructions","project":"dev/octo"}"#,
+                PhoneMsg::OrchestratorInstructions { project: Some("dev/octo".into()) },
+            ),
+            (
+                r#"{"type":"orchestratorSaveInstructions","project":null,"text":"- be brief"}"#,
+                PhoneMsg::OrchestratorSaveInstructions { project: None, text: "- be brief".into() },
+            ),
+            (r#"{"type":"orchestratorActivity","before":null}"#, PhoneMsg::OrchestratorActivity { before: None }),
+            (r#"{"type":"orchestratorActivity","before":51}"#, PhoneMsg::OrchestratorActivity { before: Some(51) }),
+        ];
+        for (text, expected) in cases {
+            assert_eq!(serde_json::from_str::<PhoneMsg>(text).unwrap(), expected, "{text}");
+        }
+        for refused in [
+            r#"{"type":"orchestratorSet","mode":"yolo"}"#,
+            r#"{"type":"orchestratorSet","primary":"notepad"}"#,
+            r#"{"type":"orchestratorAnswer","decision":7,"how":"force"}"#,
+            r#"{"type":"orchestratorAnswer","how":"allow"}"#,
+            r#"{"type":"orchestratorChat"}"#,
+            r#"{"type":"orchestratorSaveInstructions","project":null}"#,
+        ] {
+            assert!(serde_json::from_str::<PhoneMsg>(refused).is_err(), "{refused}");
+        }
+    }
+
+    #[test]
+    fn the_orchestrator_view_flattens_into_its_message_and_the_replies_are_plain_camel_case() {
+        use crate::orchestrator::{By, Mode, Outcome};
+        let view =
+            OrchestratorView { enabled: true, mode: Mode::Moderate, thinking: true, ..OrchestratorView::default() };
+        let value = serde_json::to_value(BridgeMsg::Orchestrator(view.clone())).unwrap();
+        assert_eq!(value["type"], "orchestrator");
+        assert_eq!(
+            (&value["enabled"], &value["mode"], &value["thinking"]),
+            (&true.into(), &"moderate".into(), &true.into())
+        );
+        assert_eq!(value["handledToday"], 0);
+        let back: BridgeMsg = serde_json::from_value(value).unwrap();
+        assert_eq!(back, BridgeMsg::Orchestrator(view));
+
+        let rules =
+            BridgeMsg::OrchestratorInstructions { project: None, text: "- be brief".into(), path: "/h/OCTO.md".into() };
+        assert_eq!(
+            serde_json::to_string(&rules).unwrap(),
+            r#"{"type":"orchestratorInstructions","project":null,"text":"- be brief","path":"/h/OCTO.md"}"#
+        );
+        let entry = ActivityEntry {
+            seq: 51,
+            at: 9,
+            agent: 3,
+            name: "api".into(),
+            kind: AgentKind::Claude,
+            project: "dev/octo".into(),
+            question: "npm test".into(),
+            summary: "Allowed npm test".into(),
+            by: By::Octo,
+            outcome: Outcome::Answered,
+            mode: Mode::Moderate,
+        };
+        let page = BridgeMsg::OrchestratorActivity { items: vec![entry], next: Some(51) };
+        assert_eq!(
+            serde_json::to_string(&page).unwrap(),
+            r#"{"type":"orchestratorActivity","items":[{"seq":51,"at":9,"agent":3,"name":"api","kind":"claude","project":"dev/octo","question":"npm test","summary":"Allowed npm test","by":"octo","outcome":"answered","mode":"moderate"}],"next":51}"#
+        );
+        let last = BridgeMsg::OrchestratorActivity { items: Vec::new(), next: None };
+        assert_eq!(serde_json::to_string(&last).unwrap(), r#"{"type":"orchestratorActivity","items":[],"next":null}"#);
+    }
+
+    #[test]
+    fn a_file_travels_from_the_phone_in_numbered_parts_and_is_answered_once() {
+        let part: PhoneMsg =
+            serde_json::from_str(r#"{"type":"attach","seq":4,"name":"shot.png","part":0,"last":false,"data":"aGk="}"#)
+                .unwrap();
+        let expected = PhoneMsg::Attach { seq: 4, name: "shot.png".into(), part: 0, last: false, data: "aGk=".into() };
+        assert_eq!(part, expected);
+        assert!(
+            serde_json::from_str::<PhoneMsg>(r#"{"type":"attach","seq":4,"name":"x","part":0,"data":""}"#).is_err()
+        );
+        let stored = BridgeMsg::Attached { seq: 4, path: Some("/h/attachments/ab/shot.png".into()), problem: None };
+        assert_eq!(
+            serde_json::to_string(&stored).unwrap(),
+            r#"{"type":"attached","seq":4,"path":"/h/attachments/ab/shot.png","problem":null}"#
+        );
+        let refused =
+            BridgeMsg::Attached { seq: 5, path: None, problem: Some("the file is larger than 25 MiB".into()) };
+        assert_eq!(
+            serde_json::to_string(&refused).unwrap(),
+            r#"{"type":"attached","seq":5,"path":null,"problem":"the file is larger than 25 MiB"}"#
+        );
     }
 
     #[test]

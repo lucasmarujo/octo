@@ -1,5 +1,5 @@
 import { storage } from './dom.js';
-import { DEFAULT_GRID_SIZE, GRID_SIZES, OVERVIEW_TAB, arrangeTabs, chosenModel } from './format.js';
+import { DEFAULT_GRID_SIZE, GRID_SIZES, OCTO_TAB, OVERVIEW_TAB, arrangeTabs, chosenModel } from './format.js';
 
 const SESSION_KEY = 'orkai.session';
 const EXPANDED_KEY = 'orkai.expanded';
@@ -11,6 +11,7 @@ const REMOTE_KEY = 'orkai.remote';
 const MODEL_KEY = 'octo.model';
 const TABS_KEY = 'orkai.tabs';
 const PINNED_TABS_KEY = 'octo.pinnedTabs';
+const OCTO_TAB_KEY = 'octo.octoTab';
 const VIEW_KEY = 'orkai.view';
 const GRID_KEY = 'orkai.grid';
 const PROJECT_KEY = 'orkai.project';
@@ -22,12 +23,16 @@ const savedPins = storage.json(PINNED_TABS_KEY, null);
 const savedModels = storage.json(MODEL_KEY, {});
 const savedTabs = storage.json(TABS_KEY, []);
 const pinnedTabs = new Set(Array.isArray(savedPins) ? savedPins : [OVERVIEW_TAB]);
+const openTabs = Array.isArray(savedPins) ? savedTabs : [OVERVIEW_TAB, ...savedTabs];
+const octoTabOffered = storage.get(OCTO_TAB_KEY) !== null;
+if (!octoTabOffered) pinnedTabs.add(OCTO_TAB);
 
 export const state = {
   host: '',
   version: '',
   overview: null,
   usage: null,
+  orchestrator: null,
   usageAt: 0,
   usageOpen: storage.get(USAGE_KEY) === 'open',
   skew: 0,
@@ -46,7 +51,7 @@ export const state = {
   history: [],
   recall: -1,
   folders: null,
-  tabs: arrangeTabs(Array.isArray(savedPins) ? savedTabs : [OVERVIEW_TAB, ...savedTabs], pinnedTabs),
+  tabs: arrangeTabs(octoTabOffered ? openTabs : [OCTO_TAB, ...openTabs.filter((id) => id !== OCTO_TAB)], pinnedTabs),
   pinned: pinnedTabs,
   movingTab: null,
   active: null,
@@ -62,6 +67,11 @@ export const state = {
   skills: null,
   updateReady: null,
 };
+
+if (!octoTabOffered) {
+  storage.set(OCTO_TAB_KEY, 'on');
+  saveTabs();
+}
 
 export function findAgent(id) {
   return agents().find((agent) => agent.id === id) || null;

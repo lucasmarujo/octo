@@ -14,6 +14,11 @@ export function tabShown(id) {
   return id === OVERVIEW_TAB ? state.active === null : state.active === id;
 }
 
+function pageBadge(id) {
+  const page = actions.pages[id];
+  return page.badge ? page.badge() : 0;
+}
+
 function closable(id) {
   return id !== OVERVIEW_TAB || state.tabs.length > 1;
 }
@@ -22,7 +27,7 @@ function tabInfo(id) {
   if (id === OVERVIEW_TAB) return { name: t('Overview'), mark: svg(ICON_OVERVIEW), labelClass: 'tab-label' };
   if (Object.hasOwn(actions.pages, id)) {
     const page = actions.pages[id];
-    return { name: page.label, mark: svg(page.icon), labelClass: 'tab-label' };
+    return { name: page.label, mark: svg(page.icon), labelClass: 'tab-label', badge: pageBadge(id) };
   }
   const agent = findAgent(id);
   if (!agent) return null;
@@ -137,6 +142,7 @@ function tabButton(id) {
     },
     info.mark,
     h('span', { class: info.labelClass }, info.name),
+    info.badge ? h('span', { class: 'tab-badge' }, String(info.badge)) : null,
     pinned ? unpinner(id, info.name) : closable(id) ? closer(id, info.name) : null,
   );
 }
@@ -186,7 +192,8 @@ function openTabsMenu() {
 export function renderTabs() {
   const host = $('tabs');
   const signature = JSON.stringify([state.active, state.movingTab, [...state.pinned], state.tabs.map((id) => {
-    if (id === OVERVIEW_TAB || Object.hasOwn(actions.pages, id)) return id;
+    if (id === OVERVIEW_TAB) return id;
+    if (Object.hasOwn(actions.pages, id)) return [id, pageBadge(id)];
     const agent = findAgent(id);
     return agent ? [id, agent.name, agent.state, agent.kind, agent.starting] : null;
   })]);

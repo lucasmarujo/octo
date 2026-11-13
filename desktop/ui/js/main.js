@@ -9,15 +9,17 @@ import { closeMenu, confirm, menuShown, showCompare, showDiff, showTests } from 
 import { showFolderMade, showFolderSearch, showFolders } from './folders.js';
 import { $, svg } from './dom.js';
 import { initAgentDrag } from './drag.js';
-import { OVERVIEW_TAB, SPINNER, alive, tabAfterClosing } from './format.js';
+import { OCTO_TAB, OVERVIEW_TAB, SPINNER, alive, tabAfterClosing } from './format.js';
 import { deactivateGrid, gridAgents, peekRequest, renderGrid, rowsOnScreen, tickGrid } from './grid.js';
 import { renderHelp } from './help.js';
 import { applyStatic, hubText, language, pageToReopen, t } from './i18n.js';
-import { ICON_HELP, ICON_PAIR, ICON_SETTINGS } from './icons.js';
+import { ICON_HELP, ICON_OCTO, ICON_PAIR, ICON_SETTINGS } from './icons.js';
 import { glyph as kai, moodOf } from './kai.js';
 import { initTooltips } from './motion.js';
 import { renderList, tickList } from './list.js';
 import { initNotes } from './notes.js';
+import { initOcto, renderOcto, renderOctoNav, showActivity, showInstructions, tickOcto } from './octo.js';
+import { needsCount, orchestratorView, viewRequest } from './orchestrator.js';
 import { openPairing, watchPhone } from './pair.js';
 import { applyTheme, initSound, pickSection, renderSettings, setAgentOpener, watchInstalls } from './settings.js';
 import { initDetailsWidth, initFlyout, initPanelToggles, initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
@@ -36,10 +38,11 @@ const PEEK_STALE_MS = 10_000;
 const DETAILS_MS = 3000;
 const RENDERERS = { board: [renderBoard, tickBoard], list: [renderList, tickList], grid: [renderGrid, tickGrid] };
 const PAGES = {
+  octo: { label: t('Octo'), icon: ICON_OCTO, render: renderOcto, badge: () => needsCount(state.orchestrator) },
   help: { label: t('How to use'), icon: ICON_HELP, render: renderHelp },
   settings: { label: t('Settings'), icon: ICON_SETTINGS, render: renderSettings },
 };
-const VIEWS = ['overview', 'agent-view', 'help-view', 'settings-view'];
+const VIEWS = ['overview', 'agent-view', 'help-view', 'settings-view', 'octo-view'];
 
 const handlers = { open: (agent) => openAgent(agent), term: terminalHandlers(gridShortcut) };
 let terminal = null;
@@ -152,6 +155,7 @@ function render() {
   renderTabs();
   renderMascot();
   renderSidebar(onSelect, openAgent);
+  renderOctoNav();
   renderStatusBar();
   if (state.active === null) {
     renderHead();
@@ -160,6 +164,8 @@ function render() {
   } else if (watching()) {
     const agent = findAgent(state.active);
     if (agent) renderAgent(agent);
+  } else if (state.active === OCTO_TAB) {
+    renderOcto();
   }
 }
 
@@ -183,6 +189,7 @@ function openPage(name) {
   state.active = name;
   show(`${name}-view`);
   renderTabs();
+  renderOctoNav();
   PAGES[name].render();
 }
 
@@ -311,6 +318,7 @@ function onMessage(message) {
     case 'welcome':
       state.host = message.host;
       state.version = message.version;
+      send(viewRequest());
       break;
     case 'state':
       state.skew = Date.now() - message.now;
@@ -334,6 +342,19 @@ function onMessage(message) {
       state.usageAt = Date.now();
       renderSidebar(onSelect, openAgent);
       renderStatusBar();
+      break;
+    case 'orchestrator':
+      state.orchestrator = orchestratorView(message);
+      renderTabs();
+      renderOctoNav();
+      renderStatusBar();
+      if (state.active === OCTO_TAB) renderOcto();
+      break;
+    case 'orchestratorInstructions':
+      showInstructions(message);
+      break;
+    case 'orchestratorActivity':
+      showActivity(message);
       break;
     case 'notice':
       toast(hubText(message.text), message.tone);
@@ -518,7 +539,7 @@ function initWindow() {
 function spin() {
   state.frame += 1;
   const text = SPINNER[state.frame % SPINNER.length];
-  for (const node of document.querySelectorAll('.tabs [data-spin], #menu [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin], #dialog [data-spin], #details [data-spin], #statusbar [data-spin]')) node.textContent = text;
+  for (const node of document.querySelectorAll('.tabs [data-spin], #menu [data-spin], .agent-title [data-spin], #list [data-spin], #grid [data-spin], #dialog [data-spin], #details [data-spin], #statusbar [data-spin], #octo-view [data-spin]')) node.textContent = text;
   spinBoard();
   spinSidebar();
 }
@@ -531,6 +552,7 @@ function tick() {
     RENDERERS[shownView()][1]();
     return;
   }
+  if (state.active === OCTO_TAB) tickOcto();
   if (!watching()) return;
   const agent = findAgent(state.active);
   if (agent) {
@@ -558,6 +580,7 @@ function start() {
   initFlyout();
   setCommandRunner((text) => runCommand(text, commands));
   setAgentOpener(openAgent);
+  initOcto({ openAgent, openPage });
   $('recover').addEventListener('click', () => send({ type: 'recover', session: state.session }));
   $('session-title').addEventListener('dblclick', () => state.session && renameSession(state.session));
   $('agent-title').addEventListener('dblclick', () => watching() && findAgent(state.active) && rename(findAgent(state.active)));

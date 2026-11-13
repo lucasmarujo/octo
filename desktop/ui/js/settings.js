@@ -219,7 +219,7 @@ function accentRow() {
   );
 }
 
-function segmented(options, value, onPick, label) {
+export function segmented(options, value, onPick, label) {
   return h(
     'div',
     { class: 'segmented', role: 'group', 'aria-label': label },
@@ -229,7 +229,7 @@ function segmented(options, value, onPick, label) {
   );
 }
 
-function toggle(on, onFlip, label) {
+export function toggle(on, onFlip, label) {
   const flip = (event) => {
     event.currentTarget.setAttribute('aria-checked', String(!on));
     settle(() => onFlip(!on));
@@ -237,7 +237,7 @@ function toggle(on, onFlip, label) {
   return h('button', { class: 'switch', type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': label, onclick: flip }, h('span', { class: 'switch-knob' }));
 }
 
-function field(value, placeholder, onSave, classes) {
+export function field(value, placeholder, onSave, classes) {
   return h('input', {
     class: `field ${classes || ''}`,
     type: 'text',

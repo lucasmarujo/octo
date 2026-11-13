@@ -32,6 +32,7 @@ const SESSION_CLOCK_SKEW_MS: u64 = 60_000;
 const OUTPUT_POLL: Duration = Duration::from_millis(20);
 const MAX_OUTPUT_BYTES: u64 = 4 * 1024 * 1024;
 const OUTPUT_DRAIN: Duration = Duration::from_secs(2);
+const MAX_ERROR_BYTES: usize = 16 * 1024;
 const SESSION_LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const SESSION_LIST_LIMIT: &str = "100";
 const LISTED_SESSION_PREFIX: &str = "ses_";
@@ -301,13 +302,70 @@ pub fn without_console(command: &mut Command) -> &mut Command {
 }
 
 pub fn command_output(command: &mut Command, timeout: Duration) -> Option<String> {
-    let command = without_console(command).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    capped_output(command, None, MAX_OUTPUT_BYTES, timeout, |_| {}).map(|reply| reply.output)
+}
+
+pub struct Reply {
+    pub output: String,
+    pub errors: String,
+}
+
+pub fn command_reply(
+    command: &mut Command,
+    input: Vec<u8>,
+    limit: u64,
+    timeout: Duration,
+    spawned: impl FnOnce(u32),
+) -> Option<Reply> {
+    capped_output(command, Some(input), limit, timeout, spawned)
+}
+
+fn tail_of(mut source: impl io::Read, limit: usize) -> String {
+    let mut kept: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 4 * 1024];
+    while let Ok(read) = source.read(&mut chunk) {
+        if read == 0 {
+            break;
+        }
+        kept.extend_from_slice(&chunk[..read]);
+        let extra = kept.len().saturating_sub(limit);
+        kept.drain(..extra);
+    }
+    String::from_utf8_lossy(&kept).into_owned()
+}
+
+fn capped_output(
+    command: &mut Command,
+    input: Option<Vec<u8>>,
+    limit: u64,
+    timeout: Duration,
+    spawned: impl FnOnce(u32),
+) -> Option<Reply> {
+    let piped = |wanted: bool| if wanted { Stdio::piped() } else { Stdio::null() };
+    let fed = input.is_some();
+    let command = without_console(command).stdin(piped(fed)).stdout(Stdio::piped()).stderr(piped(fed));
+    if fed {
+        lead_own_group(command);
+    }
     let mut child = command.spawn().ok()?;
+    spawned(child.id());
     let stdout = child.stdout.take()?;
+    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+        thread::spawn(move || {
+            let _ = io::Write::write_all(&mut stdin, &input);
+        });
+    }
+    let errors = child.stderr.take().map(|stderr| {
+        let (sender, received) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let _ = sender.send(tail_of(stderr, MAX_ERROR_BYTES));
+        });
+        received
+    });
     let (sender, received) = std::sync::mpsc::channel();
     thread::spawn(move || {
         let mut text = String::new();
-        let read = io::Read::read_to_string(&mut io::Read::take(stdout, MAX_OUTPUT_BYTES), &mut text);
+        let read = io::Read::read_to_string(&mut io::Read::take(stdout, limit), &mut text);
         let _ = sender.send(read.ok().map(|_| text));
     });
     let deadline = Instant::now() + timeout;
@@ -316,13 +374,19 @@ pub fn command_output(command: &mut Command, timeout: Duration) -> Option<String
             Ok(Some(_)) => break,
             Ok(None) if Instant::now() < deadline => thread::sleep(OUTPUT_POLL),
             _ => {
-                kill_process_tree(child.id());
+                if fed {
+                    kill_process_group(child.id())
+                } else {
+                    kill_process_tree(child.id())
+                }
                 let _ = child.wait();
                 return None;
             }
         }
     }
-    received.recv_timeout(deadline.saturating_duration_since(Instant::now()).max(OUTPUT_DRAIN)).ok()?
+    let output = received.recv_timeout(OUTPUT_DRAIN).ok()??;
+    let errors = errors.and_then(|received| received.recv_timeout(OUTPUT_DRAIN).ok()).unwrap_or_default();
+    Some(Reply { output, errors })
 }
 
 fn sorted_dir_names(path: &Path) -> Vec<String> {
@@ -545,7 +609,7 @@ fn model_options(kind: AgentKind) -> &'static [&'static str] {
     }
 }
 
-fn without_model(args: Vec<String>, kind: AgentKind) -> Vec<String> {
+pub fn without_model(args: Vec<String>, kind: AgentKind) -> Vec<String> {
     let options = model_options(kind);
     let mut kept = Vec::with_capacity(args.len());
     let mut args = args.into_iter().peekable();
@@ -1103,6 +1167,31 @@ pub fn kill_process_tree(pid: u32) {
             }
         }
     }
+}
+
+#[cfg(unix)]
+fn lead_own_group(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(windows)]
+fn lead_own_group(_command: &mut Command) {}
+
+#[cfg(unix)]
+pub fn kill_process_group(pid: u32) {
+    if let Ok(pid) = libc::pid_t::try_from(pid)
+        && pid > 0
+    {
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+}
+
+#[cfg(windows)]
+pub fn kill_process_group(pid: u32) {
+    kill_process_tree(pid);
 }
 
 #[derive(Clone)]
@@ -2487,6 +2576,93 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(10), "a child left holding the output never blocks the caller");
     }
 
+    #[test]
+    fn command_reply_feeds_the_input_closes_it_and_caps_what_comes_back() {
+        let echo = || {
+            let (program, args): (&str, &[&str]) = if cfg!(windows) { ("findstr", &["/r", "^"]) } else { ("cat", &[]) };
+            let mut command = Command::new(program);
+            command.args(args);
+            command
+        };
+        let mut pid = 0;
+        let echoed =
+            command_reply(&mut echo(), b"b\na\n".to_vec(), 1024, Duration::from_secs(20), |spawned| pid = spawned)
+                .unwrap();
+        assert_eq!(
+            echoed.output.lines().collect::<Vec<_>>(),
+            ["b", "a"],
+            "the program saw its input and the end of it"
+        );
+        assert_eq!(echoed.errors, "");
+        assert_ne!(pid, 0, "the caller learns which process to stop");
+        let capped = command_reply(&mut echo(), b"b\na\n".to_vec(), 1, Duration::from_secs(20), |_| {}).unwrap();
+        assert_eq!(capped.output, "b");
+        let big = b"x\n".repeat(1024 * 1024);
+        let cut = command_reply(&mut echo(), big, 16, Duration::from_secs(60), |_| {}).unwrap().output;
+        assert!(cut.len() == 16 && cut.starts_with('x'), "an input larger than a pipe never blocks the caller");
+        let (program, ignores): (&str, Vec<&str>) = if cfg!(windows) {
+            ("cmd.exe", vec!["/d", "/c", "ping -n 30 127.0.0.1 >nul"])
+        } else {
+            ("/bin/sh", vec!["-c", "sleep 30"])
+        };
+        let started = Instant::now();
+        let hung = command_reply(
+            Command::new(program).args(&ignores),
+            b"hi".to_vec(),
+            1024,
+            Duration::from_millis(300),
+            |_| {},
+        );
+        assert!(hung.is_none());
+        assert!(started.elapsed() < Duration::from_secs(20));
+        let missing = &mut Command::new("orkai-definitely-missing-program");
+        assert!(command_reply(missing, Vec::new(), 1024, Duration::from_secs(1), |_| {}).is_none());
+    }
+
+    #[test]
+    fn a_fed_program_stopped_with_its_group_takes_what_it_started_along_and_returns_at_once() {
+        let (program, wraps): (&str, Vec<&str>) = if cfg!(windows) {
+            ("cmd.exe", vec!["/d", "/c", "ping -n 60 127.0.0.1 && echo done"])
+        } else {
+            ("/bin/sh", vec!["-c", "sleep 60 && echo done"])
+        };
+        let (started, pid) = std::sync::mpsc::channel();
+        let waiting = thread::spawn(move || {
+            let mut command = Command::new(program);
+            command.args(&wraps);
+            command_reply(&mut command, Vec::new(), 1024, Duration::from_secs(50), |spawned| {
+                let _ = started.send(spawned);
+            })
+            .map(|reply| reply.output)
+        });
+        let pid = pid.recv_timeout(Duration::from_secs(20)).unwrap();
+        thread::sleep(Duration::from_millis(500));
+        let stopped = Instant::now();
+        kill_process_group(pid);
+        let said = waiting.join().unwrap();
+        assert!(said.is_none_or(|output| !output.contains("done")), "the wrapper did not get to finish");
+        assert!(
+            stopped.elapsed() < Duration::from_secs(15),
+            "a program left behind by the wrapper never keeps the caller waiting"
+        );
+    }
+
+    #[test]
+    fn command_reply_keeps_the_end_of_what_the_program_complained_about() {
+        let (program, complains): (&str, Vec<&str>) = if cfg!(windows) {
+            ("cmd.exe", vec!["/d", "/c", "echo first 1>&2 & echo not logged in 1>&2 & echo said"])
+        } else {
+            ("/bin/sh", vec!["-c", "echo first 1>&2; echo not logged in 1>&2; echo said"])
+        };
+        let reply =
+            command_reply(Command::new(program).args(&complains), Vec::new(), 1024, Duration::from_secs(20), |_| {})
+                .unwrap();
+        assert_eq!(reply.output.trim(), "said");
+        assert_eq!(reply.errors.lines().map(str::trim).collect::<Vec<_>>(), ["first", "not logged in"]);
+        assert_eq!(tail_of(&b"0123456789"[..], 4), "6789", "only the end of a long complaint is kept");
+        assert_eq!(tail_of(&b""[..], 4), "");
+    }
+
     fn sources(dir: &Path, found: &mut Vec<PathBuf>) {
         for entry in fs::read_dir(dir).unwrap().flatten() {
             let path = entry.path();
@@ -2500,7 +2676,7 @@ mod tests {
 
     #[test]
     fn no_program_the_core_runs_opens_a_console_window_on_windows() {
-        const SAFE: [&str; 3] = ["without_console(", "command_output(", "spawn_detached("];
+        const SAFE: [&str; 4] = ["without_console(", "command_output(", "command_reply(", "spawn_detached("];
         const ALLOWED: [(&str, &str, &str); 7] = [
             ("browser.rs", "Command::new(program).args(args).arg(url)", "the openers are windowed programs"),
             (

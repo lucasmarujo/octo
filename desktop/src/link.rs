@@ -14,7 +14,7 @@ use orkai::util::lock;
 use orkai::worktree;
 use serde::Serialize;
 use tauri::webview::PageLoadEvent;
-use tauri::{Manager, State};
+use tauri::{Manager, RunEvent, State};
 
 use crate::term::{self, Console};
 use crate::updates::{self, Updates};
@@ -46,6 +46,12 @@ impl Link {
 
     pub fn hub(&self) -> &Hub {
         &self.hub
+    }
+
+    pub fn shut_down(&self) {
+        if let Some(octo) = self.hub.orchestrator() {
+            octo.shut_down();
+        }
     }
 
     fn attach(&self, channel: Channel) -> Result<(), String> {
@@ -155,7 +161,7 @@ fn open_link(url: String) -> Result<(), String> {
 }
 
 fn open_hub(home: &Home) -> io::Result<Arc<Hub>> {
-    let hub = Hub::open(home)?;
+    let hub = Hub::open_orchestrating(home)?;
     launch::prune_holder_binaries(home, hub.launcher().holder_exe());
     Ok(hub)
 }
@@ -216,8 +222,14 @@ pub fn run() -> io::Result<()> {
             term::term_resize,
             term::term_close
         ])
-        .run(tauri::generate_context!())
-        .map_err(io::Error::other)
+        .build(tauri::generate_context!())
+        .map_err(io::Error::other)?
+        .run(|app, event| {
+            if matches!(event, RunEvent::Exit) {
+                app.state::<Link>().shut_down();
+            }
+        });
+    Ok(())
 }
 
 #[cfg(test)]
@@ -413,6 +425,13 @@ mod tests {
         assert!(running.exists(), "an agent still running keeps the holder its hooks call");
         assert!(other.exists(), "only holders are removed");
         assert!(hub.launcher().holder_exe().exists(), "the holder of this version stays");
+        let octo = hub.orchestrator().expect("the hub of the desktop app is the one that orchestrates");
+        assert!(!octo.is_enabled() && !octo.is_awake(), "Octo watches nothing until it is turned on");
+        let written: Vec<_> =
+            std::fs::read_dir(home.orchestrator_dir()).unwrap().flatten().map(|entry| entry.file_name()).collect();
+        assert_eq!(written, ["desktop.lock"], "opening the app only says it is here, for the phone");
+        assert!(orkai::orchestrator::relay::desktop_present(&home));
+        Link::new(Arc::clone(&hub)).shut_down();
         drop(hub);
         let _ = std::fs::remove_dir_all(&dir);
     }

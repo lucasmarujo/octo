@@ -18,11 +18,12 @@ use crate::pwa::hub::{Device, Hub};
 use crate::pwa::push;
 use crate::pwa::server::Server;
 use crate::pwa::tunnel::{self, QuickTunnel, Tunnel, TunnelKind};
+use crate::pwa::uploads;
 use crate::store::Store;
 use crate::util::{lock, now_ms};
 
 pub const COMMAND: &str = "__pwa";
-pub const VERSION: u32 = 18;
+pub const VERSION: u32 = 19;
 pub const DEFAULT_PORT: u16 = 7470;
 pub const STALE_AFTER_MS: u64 = 15_000;
 pub const LINK_KEY: &str = "k";
@@ -207,6 +208,7 @@ pub fn wait_until(home: &Home, timeout: Duration, mut done: impl FnMut(Option<&I
 }
 
 pub fn run(home: &Home, tunnel: TunnelKind, port: u16) -> io::Result<()> {
+    uploads::sweep(home, std::time::SystemTime::now());
     let hub = Hub::open(home)?;
     let store = hub.store().clone();
     let exe = std::env::current_exe()?;

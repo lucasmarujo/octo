@@ -29,6 +29,10 @@ pub const MAX_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_EVENTS_PER_POLL: usize = 64;
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 const QUESTION_TOOLS: [&str; 4] = ["AskUserQuestion", "ExitPlanMode", "ask_user_question", "exit_plan_mode"];
+pub const MAX_ASK_DETAIL_BYTES: usize = 4 * 1024;
+const SHELL_TOOL: &str = "Bash";
+const QUESTION_TOOL: &str = "AskUserQuestion";
+const PLAN_TOOL: &str = "ExitPlanMode";
 const PLUGIN_TEMPLATE: &str = r#"import { spawn } from "node:child_process"
 
 const program = __ORKAI_PROGRAM__
@@ -103,6 +107,20 @@ struct ClaudeInput {
     tool_name: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Ask {
+    pub tool: String,
+    pub detail: String,
+    pub at_ms: u64,
+}
+
+#[derive(Deserialize)]
+struct ClaudeAsk {
+    tool_name: String,
+    #[serde(default)]
+    tool_input: serde_json::Value,
+}
+
 #[derive(Deserialize)]
 struct CodexNotification {
     #[serde(rename = "type")]
@@ -119,6 +137,71 @@ pub fn claude_signal(input: &[u8]) -> Option<HookSignal> {
         "Stop" | "StopFailure" => Some(HookSignal::Finished),
         _ => None,
     }
+}
+
+pub fn is_question_tool(tool: &str) -> bool {
+    QUESTION_TOOLS.contains(&tool)
+}
+
+fn text_of<'a>(input: &'a serde_json::Value, field: &str) -> Option<&'a str> {
+    input.get(field).and_then(serde_json::Value::as_str).map(str::trim).filter(|text| !text.is_empty())
+}
+
+fn asked_questions(input: &serde_json::Value) -> Option<String> {
+    let questions = input.get("questions")?.as_array()?;
+    let mut lines = Vec::new();
+    for question in questions {
+        lines.extend(text_of(question, "question").map(str::to_string));
+        let options = question.get("options").and_then(serde_json::Value::as_array);
+        for (index, option) in options.into_iter().flatten().enumerate() {
+            let label = text_of(option, "label").or_else(|| option.as_str());
+            lines.extend(label.map(|label| format!("  {}. {label}", index + 1)));
+        }
+    }
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+fn cut_to_bytes(text: &str, limit: usize) -> &str {
+    let mut end = text.len().min(limit);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
+pub fn ask_detail(tool: &str, input: &serde_json::Value) -> String {
+    let command = || {
+        let command = text_of(input, "command")?;
+        Some(match text_of(input, "description") {
+            Some(description) => format!("{command}\n{description}"),
+            None => command.to_string(),
+        })
+    };
+    let detail = match tool {
+        SHELL_TOOL => command(),
+        QUESTION_TOOL => asked_questions(input),
+        PLAN_TOOL => text_of(input, "plan").map(str::to_string),
+        _ => text_of(input, "file_path").map(str::to_string),
+    };
+    let detail = detail.unwrap_or_else(|| if input.is_null() { String::new() } else { input.to_string() });
+    cut_to_bytes(&detail, MAX_ASK_DETAIL_BYTES).to_string()
+}
+
+pub fn claude_ask(input: &[u8], at_ms: u64) -> Option<Ask> {
+    let asked: ClaudeAsk = serde_json::from_slice(input).ok()?;
+    let detail = ask_detail(&asked.tool_name, &asked.tool_input);
+    Some(Ask { tool: asked.tool_name, detail, at_ms })
+}
+
+pub fn write_ask(home: &Home, id: AgentId, ask: &Ask) -> io::Result<()> {
+    if !home.agent_dir(id).is_dir() {
+        return Err(io::Error::new(io::ErrorKind::NotFound, format!("agent {id} not found")));
+    }
+    fsutil::write_json_atomic(&home.ask_file(id), ask)
+}
+
+pub fn read_ask(home: &Home, id: AgentId) -> Option<Ask> {
+    fsutil::read_json_opt(&home.ask_file(id)).ok().flatten()
 }
 
 pub fn codex_signal(payload: &str) -> Option<HookSignal> {
@@ -182,8 +265,21 @@ pub fn write_event(home: &Home, id: AgentId, event: HookEvent) -> io::Result<()>
     fsutil::write_json_atomic(&dir.join(name), &event)
 }
 
+pub fn record_claude(home: &Home, id: AgentId, input: &[u8], at_ms: u64) -> io::Result<()> {
+    let Some(signal) = claude_signal(input) else { return Ok(()) };
+    if signal == HookSignal::Waiting
+        && let Some(ask) = claude_ask(input, at_ms)
+    {
+        let _ = write_ask(home, id, &ask);
+    }
+    write_event(home, id, HookEvent { signal, at_ms })
+}
+
 pub fn record(home: &Home, id: AgentId, source: &str, payload: Option<&str>) -> io::Result<()> {
     let at_ms = now_ms();
+    if source == CLAUDE_SOURCE {
+        return record_claude(home, id, &read_payload(io::stdin().lock()), at_ms);
+    }
     match signal_from(source, payload, io::stdin().lock()) {
         Some(signal) => write_event(home, id, HookEvent { signal, at_ms }),
         None => Ok(()),
@@ -402,6 +498,92 @@ mod tests {
         assert_eq!(claude("SessionStart", None), None);
         assert_eq!(claude_signal(b"not json"), None);
         assert_eq!(claude_signal(b"{}"), None);
+    }
+
+    #[test]
+    fn what_a_tool_asks_is_told_in_a_few_plain_lines() {
+        let bash = serde_json::json!({ "command": " npm test ", "description": "Run the suite", "timeout": 5 });
+        assert_eq!(ask_detail("Bash", &bash), "npm test\nRun the suite");
+        assert_eq!(ask_detail("Bash", &serde_json::json!({ "command": "ls" })), "ls");
+        let question = serde_json::json!({ "questions": [
+            { "question": "Which database?", "header": "DB", "multiSelect": false,
+              "options": [{ "label": "Postgres", "description": "the usual" }, { "label": "SQLite" }] },
+            { "question": "Add tests?", "options": [{ "label": "Yes" }, { "label": "No" }] }
+        ]});
+        assert_eq!(
+            ask_detail("AskUserQuestion", &question),
+            "Which database?\n  1. Postgres\n  2. SQLite\nAdd tests?\n  1. Yes\n  2. No"
+        );
+        assert_eq!(
+            ask_detail("ExitPlanMode", &serde_json::json!({ "plan": "1. read\n2. write" })),
+            "1. read\n2. write"
+        );
+        let edit = serde_json::json!({ "file_path": "/w/src/main.rs", "old_string": "a", "new_string": "b" });
+        assert_eq!(ask_detail("Edit", &edit), "/w/src/main.rs");
+        assert_eq!(ask_detail("Write", &serde_json::json!({ "file_path": "/w/new.rs", "content": "x" })), "/w/new.rs");
+        assert_eq!(
+            ask_detail("WebFetch", &serde_json::json!({ "url": "https://x.dev" })),
+            r#"{"url":"https://x.dev"}"#
+        );
+        assert_eq!(
+            ask_detail("Bash", &serde_json::json!({ "cmd": "ls" })),
+            r#"{"cmd":"ls"}"#,
+            "an unknown shape is shown"
+        );
+        assert_eq!(ask_detail("Stop", &serde_json::Value::Null), "");
+    }
+
+    #[test]
+    fn a_long_request_is_cut_at_four_kibibytes_on_a_character() {
+        let long = serde_json::json!({ "command": "é".repeat(MAX_ASK_DETAIL_BYTES) });
+        let detail = ask_detail("Bash", &long);
+        assert_eq!(detail.len(), MAX_ASK_DETAIL_BYTES);
+        assert!(detail.chars().all(|c| c == 'é'));
+        let odd = serde_json::json!({ "command": format!("a{}", "é".repeat(MAX_ASK_DETAIL_BYTES)) });
+        assert_eq!(ask_detail("Bash", &odd).len(), MAX_ASK_DETAIL_BYTES - 1, "never in the middle of a character");
+    }
+
+    #[test]
+    fn a_claude_agent_that_waits_leaves_what_it_asked_next_to_its_signal() {
+        let dir = temp_dir("ask");
+        let home = Home::at(&dir);
+        fs::create_dir_all(home.agent_dir(4)).unwrap();
+        let mut inbox = HookInbox::open(home.hooks_dir(4));
+        assert_eq!(read_ask(&home, 4), None);
+
+        let permission = br#"{"session_id":"s","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm -rf build","description":"Clean the build"}}"#;
+        record_claude(&home, 4, permission, 1_000).unwrap();
+        assert_eq!(home.ask_file(4), home.agent_dir(4).join("ask.json"));
+        assert_eq!(
+            read_ask(&home, 4),
+            Some(Ask { tool: "Bash".into(), detail: "rm -rf build\nClean the build".into(), at_ms: 1_000 })
+        );
+        assert_eq!(inbox.take(), [HookEvent { signal: HookSignal::Waiting, at_ms: 1_000 }]);
+
+        let busy = br#"{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}"#;
+        record_claude(&home, 4, busy, 2_000).unwrap();
+        assert_eq!(read_ask(&home, 4).unwrap().at_ms, 1_000, "only a signal that waits writes what was asked");
+        assert_eq!(inbox.take(), [HookEvent { signal: HookSignal::Busy, at_ms: 2_000 }]);
+
+        let question = br#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which one?","options":[{"label":"A"},{"label":"B"}]}]}}"#;
+        record_claude(&home, 4, question, 3_000).unwrap();
+        let asked = read_ask(&home, 4).unwrap();
+        assert_eq!(
+            (asked.tool.as_str(), asked.detail.as_str(), asked.at_ms),
+            ("AskUserQuestion", "Which one?\n  1. A\n  2. B", 3_000)
+        );
+        assert!(is_question_tool(&asked.tool) && !is_question_tool("Bash"));
+        assert_eq!(inbox.take(), [HookEvent { signal: HookSignal::Waiting, at_ms: 3_000 }]);
+
+        record_claude(&home, 4, br#"{"hook_event_name":"PermissionRequest"}"#, 4_000).unwrap();
+        assert_eq!(read_ask(&home, 4).unwrap().at_ms, 3_000, "a request that names no tool keeps the last one");
+        assert_eq!(inbox.take(), [HookEvent { signal: HookSignal::Waiting, at_ms: 4_000 }], "and still signals");
+
+        record_claude(&home, 4, b"not json", 5_000).unwrap();
+        assert!(inbox.take().is_empty());
+        assert_eq!(record_claude(&home, 9, permission, 6_000).unwrap_err().kind(), io::ErrorKind::NotFound);
+        assert!(!home.agent_dir(9).exists(), "nothing is written for an agent that does not exist");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

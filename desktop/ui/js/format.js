@@ -102,6 +102,7 @@ export function canMove(agent, session) {
 }
 
 export const OVERVIEW_TAB = 'overview';
+export const OCTO_TAB = 'octo';
 
 export function arrangeTabs(tabs, pinned) {
   return [...tabs.filter((id) => pinned.has(id)), ...tabs.filter((id) => !pinned.has(id))];
