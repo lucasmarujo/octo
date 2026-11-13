@@ -7,6 +7,16 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.38',
+    date: '2026-11-13',
+    en: [
+      'A running agent takes files and images like in any terminal: drop files on its terminal and their paths are typed, and paste a copied image with ctrl+v to hand it to the agent.',
+    ],
+    'pt-BR': [
+      'Um agente rodando recebe arquivos e imagens como em qualquer terminal: solte arquivos sobre o terminal dele e os caminhos são digitados, e cole uma imagem copiada com ctrl+v para entregá-la ao agente.',
+    ],
+  },
+  {
     version: '0.2.37',
     date: '2026-11-12',
     en: [
