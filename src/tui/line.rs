@@ -146,8 +146,8 @@ impl LineInput {
         }
         let end = self.chars[start..].iter().position(|c| *c == '\n').map_or(self.chars.len(), |at| start + at);
         let mut used = 0usize;
-        for index in start..end {
-            let w = UnicodeWidthChar::width(self.chars[index]).unwrap_or(0);
+        for (index, c) in self.chars.iter().enumerate().take(end).skip(start) {
+            let w = UnicodeWidthChar::width(*c).unwrap_or(0);
             if used + w > column {
                 return Some(if w == 2 && column == used + 1 { index + 1 } else { index });
             }
