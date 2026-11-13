@@ -1,5 +1,10 @@
 export const $ = (id) => document.getElementById(id);
 
+export function elementAt(position) {
+  if (!position) return null;
+  return document.elementFromPoint(position.x / window.devicePixelRatio, position.y / window.devicePixelRatio);
+}
+
 export function h(tag, props, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props || {})) {

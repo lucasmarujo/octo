@@ -218,6 +218,7 @@ export const PT = {
   'Remove {name}': 'Remover {name}',
   'A task takes up to {max} attached files.': 'Uma tarefa aceita até {max} arquivos anexados.',
   'could not choose the files: {error}': 'não foi possível escolher os arquivos: {error}',
+  'could not paste the image: {error}': 'não foi possível colar a imagem: {error}',
   Bypass: 'Bypass',
   'Remote Control': 'Remote Control',
   'New Claude agents start with Remote Control: continue them from claude.ai or the Claude app': 'Os agentes Claude novos começam com Remote Control: continue de claude.ai ou do app do Claude',
@@ -462,6 +463,8 @@ export const HUB = [
   [/^that model name is not valid$/, () => 'esse nome de modelo não é válido'],
   [/^(.+) is not a file that can be attached$/, (m) => `${m[1]} não é um arquivo que possa ser anexado`],
   [/^a task takes up to (\d+) attached files$/, (m) => `uma tarefa aceita até ${m[1]} arquivos anexados`],
+  [/^this is not an image that can be pasted$/, () => 'isto não é uma imagem que possa ser colada'],
+  [/^the image is larger than (\d+) MB$/, (m) => `a imagem tem mais de ${m[1]} MB`],
   [
     /^starting (\S+) (\S+?)( in a new worktree)?( with permissions bypassed)?…$/,
     (m) => `iniciando ${m[1]} ${m[2]}${m[3] ? ' num worktree novo' : ''}${m[4] ? ' sem pedir permissões' : ''}…`,

@@ -26,7 +26,7 @@ import { initStatusBar, renderStatusBar } from './statusbar.js';
 import { initTabs, renderTabs, tabShown } from './tabs.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
-import { channel, connect, currentWindow, invoke, send } from './transport.js';
+import { channel, connect, currentWindow, invoke, onFileDrop, send } from './transport.js';
 
 const SPIN_MS = 100;
 const TICK_MS = 1000;
@@ -451,6 +451,13 @@ function openLink(url) {
   invoke('open_link', { url }).catch((err) => toast(String(err), 'warn'));
 }
 
+function pasteImage(bytes) {
+  return invoke('paste_image', bytes).catch((error) => {
+    toast(t('could not paste the image: {error}', { error: hubText(String(error)) }), 'error');
+    return null;
+  });
+}
+
 function terminalHandlers(shortcut) {
   return {
     open: (agent, size, onFrame) => invoke('term_open', { agent, rows: size.rows, cols: size.cols, channel: channel(onFrame) }),
@@ -459,6 +466,8 @@ function terminalHandlers(shortcut) {
     close: (session) => invoke('term_close', { session }).catch(() => {}),
     link: openLink,
     copy,
+    image: pasteImage,
+    drops: onFileDrop,
     shortcut,
   };
 }

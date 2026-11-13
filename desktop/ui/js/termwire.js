@@ -5,6 +5,10 @@ export const LINK_RECORD_OSC = 7502;
 
 const ANSI = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'];
 const SELECTION_ALPHA = '59';
+const WINDOWS_PATH = /^(?:[A-Za-z]:[\\/]|\\\\)/;
+const WINDOWS_QUOTED = /[\s&()[\]{}^=;!'+,`~%]/;
+const SHELL_ESCAPED = /[\s"'`$&|;<>()*?!#[\]{}\\]/g;
+const IMAGE_TYPE = 'image/';
 const utf8 = new TextDecoder();
 
 function bytesOf(payload) {
@@ -49,11 +53,29 @@ export function findLinks(line, records) {
   return found;
 }
 
-export function keyRoute(event, hasSelection) {
+function pathAsInput(path) {
+  if (WINDOWS_PATH.test(path)) return WINDOWS_QUOTED.test(path) ? `"${path}"` : path;
+  return path.replace(SHELL_ESCAPED, '\\$&');
+}
+
+export function pathsAsInput(paths) {
+  const files = paths.filter((path) => typeof path === 'string' && path);
+  return files.length ? `${files.map(pathAsInput).join(' ')} ` : '';
+}
+
+export function pastedImage(clipboard) {
+  if (!clipboard || clipboard.getData('text/plain')) return null;
+  for (const item of clipboard.items) {
+    if (item.kind === 'file' && item.type.startsWith(IMAGE_TYPE)) return item.getAsFile();
+  }
+  return null;
+}
+
+export function keyRoute(event, hasSelection, mac = false) {
   const ctrl = event.ctrlKey && !event.altKey && !event.metaKey;
   const key = event.key.toLowerCase();
   if (ctrl && !event.shiftKey && key === 'c' && hasSelection) return 'copy';
-  if ((ctrl && key === 'v') || (event.shiftKey && event.key === 'Insert')) return 'paste';
+  if ((ctrl && key === 'v' && !mac) || (event.shiftKey && event.key === 'Insert')) return 'paste';
   return 'terminal';
 }
 

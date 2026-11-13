@@ -6,6 +6,7 @@ mod install;
 mod link;
 mod login_path;
 mod pair;
+mod paste;
 mod recover;
 mod settings;
 #[cfg(any(windows, target_os = "macos"))]

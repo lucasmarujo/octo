@@ -414,6 +414,10 @@ Any kind of file works, up to 20 per task. Octo doesn't copy them: the agent get
 path of each file and reads them from where they are, so a file you delete before the agent opens it is gone
 for the agent too. A terminal takes no files, and the files go with one task only.
 
+An agent that is already running takes files the way it does in any terminal: drop them on its terminal and
+Octo types their paths, and paste a copied image with `ctrl+v` and Octo saves it and types the path of the
+saved file. Pasted images stay in the `pasted` folder of Octo's data for a week.
+
 ## Agent skills (`/skill`)
 
 With an AI agent in `who`, `/` also suggests the skills and commands that agent has, read from

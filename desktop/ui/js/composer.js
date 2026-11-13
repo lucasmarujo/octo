@@ -1,4 +1,4 @@
-import { $, h, svg } from './dom.js';
+import { $, elementAt, h, svg } from './dom.js';
 import { acceptedSuggestion, matchingCommands, nextSuggestion, parseCommand } from './commands.js';
 import { closeMenu, menuShown, openMenu } from './dialogs.js';
 import { pickFolder } from './folders.js';
@@ -28,6 +28,7 @@ const MAX_HEIGHT = 160;
 const MAX_SUGGESTIONS = 8;
 const SKILLS_TTL_MS = 5000;
 const MODELS_TTL_MS = 60_000;
+const LIVE_TERMINAL = '.term-frame[data-status="live"], .grid-term[data-status="live"]';
 const TASK_OPTIONS = [
   { name: t('Worktree'), icon: ICON_BRANCH, tone: 'var(--color-link)', title: t('Each new AI agent runs in its own git worktree and octo/<name> branch'), on: worktreeOn, set: setWorktree },
   { name: t('Remote Control'), icon: ICON_REMOTE, tone: 'var(--color-waiting)', title: t('New Claude agents start with Remote Control: continue them from claude.ai or the Claude app'), on: () => state.remote, set: setRemote },
@@ -289,10 +290,15 @@ function takesFiles() {
   return currentWho() !== 'terminal' && $('composer').offsetParent !== null;
 }
 
+function onTerminal(drop) {
+  const target = elementAt(drop.position);
+  return Boolean(target && target.closest(LIVE_TERMINAL));
+}
+
 function onDrop(drop) {
-  const over = (drop.type === 'enter' || drop.type === 'over') && takesFiles();
-  $('composer').classList.toggle('dropping', over);
-  if (drop.type === 'drop' && takesFiles()) attach(drop.paths);
+  const mine = takesFiles() && !onTerminal(drop);
+  $('composer').classList.toggle('dropping', mine && (drop.type === 'enter' || drop.type === 'over'));
+  if (drop.type === 'drop' && mine) attach(drop.paths);
 }
 
 function renderAttachments() {

@@ -816,6 +816,64 @@ test('keys in the agent terminal copy a selection, paste through the browser and
   assert.equal(keyRoute(key('v', { ctrlKey: true }), false), 'paste');
   assert.equal(keyRoute(key('Insert', { shiftKey: true }), false), 'paste');
   assert.equal(keyRoute(key('a'), true), 'terminal');
+  assert.equal(keyRoute(key('v', { ctrlKey: true }), false, true), 'terminal', 'on a Mac ctrl+v is a key of the agent, which reads the clipboard itself');
+  assert.equal(keyRoute(key('Insert', { shiftKey: true }), false, true), 'paste');
+});
+
+test('files dropped on an agent terminal are typed as paths the way a native terminal types them', async () => {
+  const { pathsAsInput } = await import('../js/termwire.js');
+  assert.equal(pathsAsInput(['C:\\work\\shot.png']), 'C:\\work\\shot.png ');
+  assert.equal(pathsAsInput(['C:\\Users\\me\\My Pictures\\shot (1).png']), '"C:\\Users\\me\\My Pictures\\shot (1).png" ');
+  assert.equal(pathsAsInput(['\\\\server\\share\\a b.pdf']), '"\\\\server\\share\\a b.pdf" ');
+  assert.equal(pathsAsInput(['/home/me/shot.png']), '/home/me/shot.png ');
+  assert.equal(pathsAsInput(["/Users/me/Screen Shot (1) it's $5.png"]), "/Users/me/Screen\\ Shot\\ \\(1\\)\\ it\\'s\\ \\$5.png ");
+  assert.equal(pathsAsInput(['C:/a.txt', '/b c.txt']), 'C:/a.txt /b\\ c.txt ', 'every file of one drop goes in one line');
+  assert.equal(pathsAsInput([]), '');
+  assert.equal(pathsAsInput([null, '', 7]), '', 'what is not a path types nothing');
+});
+
+test('an image on the clipboard is found only when there is no text to paste', async () => {
+  const { pastedImage } = await import('../js/termwire.js');
+  const file = { name: 'image.png' };
+  const clipboard = (text, items) => ({ getData: (type) => (type === 'text/plain' ? text : ''), items });
+  const image = { kind: 'file', type: 'image/png', getAsFile: () => file };
+  const html = { kind: 'string', type: 'text/html', getAsFile: () => null };
+  const pdf = { kind: 'file', type: 'application/pdf', getAsFile: () => ({ name: 'a.pdf' }) };
+  assert.equal(pastedImage(clipboard('', [html, image])), file);
+  assert.equal(pastedImage(clipboard('some text', [image])), null, 'text is pasted as text, as in any terminal');
+  assert.equal(pastedImage(clipboard('', [html, pdf])), null);
+  assert.equal(pastedImage(clipboard('', [])), null);
+  assert.equal(pastedImage(null), null);
+});
+
+test('an agent terminal takes dropped files and pasted images, and the task box leaves them to it', () => {
+  const terminal = readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8');
+  assert.match(terminal, /this\.screen\.addEventListener\('paste', \(event\) => this\.onPaste\(event\), true\);/, 'the image is taken before xterm reads the text');
+  assert.match(terminal, /this\.handlers\.drops\(\(drop\) => this\.onDrop\(drop\)\);/);
+  assert.match(terminal, /this\.host\.dataset\.status === 'live' && this\.host\.contains\(elementAt\(drop\.position\)\)/, 'only the terminal under the pointer takes the files');
+  assert.match(terminal, /this\.xterm\.paste\(text\);/, 'paths go as a paste, bracketed when the agent asked for it');
+  assert.match(terminal, /this\.handlers\.image\(new Uint8Array\(buffer\)\)/);
+  assert.match(terminal, /if \(path && generation === this\.generation\) this\.typePaths\(\[path\]\);/, 'an image saved after the terminal moved on is not typed into another agent');
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /invoke\('paste_image', bytes\)/, 'the image travels as raw bytes');
+  assert.match(main, /image: pasteImage,\n\s+drops: onFileDrop,/);
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  assert.match(composer, /const mine = takesFiles\(\) && !onTerminal\(drop\);/);
+  assert.match(composer, /if \(drop\.type === 'drop' && mine\) attach\(drop\.paths\);/);
+  const dom = readFileSync(join(REPO, 'desktop/ui/js/dom.js'), 'utf8');
+  assert.match(dom, /position\.x \/ window\.devicePixelRatio, position\.y \/ window\.devicePixelRatio/, 'the drop arrives in physical pixels');
+  assert.match(rust('desktop/src/link.rs'), /\n\s+paste::paste_image,\n/, 'the window may save a pasted image');
+  assert.match(rust('desktop/src/paste.rs'), /InvokeBody::Raw\(bytes\)/);
+});
+
+test('a pasted image that is refused says why in the language of the interface', async () => {
+  const { translateHub } = await import('../js/i18n.js');
+  const paste = rust('desktop/src/paste.rs');
+  assert.match(paste, /"this is not an image that can be pasted"/);
+  assert.match(paste, /"the image is larger than \{\} MB"/);
+  assert.equal(translateHub('pt-BR', 'this is not an image that can be pasted'), 'isto não é uma imagem que possa ser colada');
+  assert.equal(translateHub('pt-BR', 'the image is larger than 32 MB'), 'a imagem tem mais de 32 MB');
+  assert.equal(translateHub('en', 'the image is larger than 32 MB'), 'the image is larger than 32 MB');
 });
 
 test('the agent terminal takes its colors from the theme tokens', async () => {

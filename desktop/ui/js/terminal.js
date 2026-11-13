@@ -1,7 +1,7 @@
-import { h } from './dom.js';
+import { elementAt, h } from './dom.js';
 import { t } from './i18n.js';
 import { palette } from './palette.js';
-import { LINK_RECORD_OSC, decodeFrame, findLinks, keyRoute, parseLinkRecord, terminalTheme } from './termwire.js';
+import { LINK_RECORD_OSC, decodeFrame, findLinks, keyRoute, parseLinkRecord, pastedImage, pathsAsInput, terminalTheme } from './termwire.js';
 
 const DEFAULT = -1;
 const TRUECOLOR = 256;
@@ -22,6 +22,7 @@ const FALLBACK_SIZE = { rows: 24, cols: 80 };
 const RESIZE_MS = 60;
 const REOPEN_MS = 2000;
 const CONNECT_RETRY_MS = 3000;
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const encoder = new TextEncoder();
 
 function color(value) {
@@ -117,6 +118,8 @@ export class Terminal {
     this.xterm.onWriteParsed(() => this.showLive());
     this.xterm.textarea.addEventListener('focus', () => this.host.classList.add('focused'));
     this.xterm.textarea.addEventListener('blur', () => this.host.classList.remove('focused'));
+    this.screen.addEventListener('paste', (event) => this.onPaste(event), true);
+    this.handlers.drops((drop) => this.onDrop(drop));
     new ResizeObserver(() => {
       clearTimeout(this.resizeTimer);
       this.resizeTimer = setTimeout(() => this.refit(), RESIZE_MS);
@@ -139,7 +142,7 @@ export class Terminal {
       event.preventDefault();
       return false;
     }
-    const route = keyRoute(event, this.xterm.hasSelection());
+    const route = keyRoute(event, this.xterm.hasSelection(), MAC);
     if (route === 'copy') {
       this.handlers.copy(this.xterm.getSelection());
       this.xterm.clearSelection();
@@ -147,6 +150,37 @@ export class Terminal {
       return false;
     }
     return route !== 'paste';
+  }
+
+  takesInput() {
+    return this.session !== null && !this.ended;
+  }
+
+  typePaths(paths) {
+    const text = pathsAsInput(paths);
+    if (!text || !this.takesInput()) return;
+    this.xterm.paste(text);
+    this.xterm.focus();
+  }
+
+  onDrop(drop) {
+    const over = drop.type !== 'leave' && this.host.dataset.status === 'live' && this.host.contains(elementAt(drop.position));
+    this.host.classList.toggle('dropping', over && drop.type !== 'drop');
+    if (over && drop.type === 'drop') this.typePaths(drop.paths);
+  }
+
+  onPaste(event) {
+    const image = pastedImage(event.clipboardData);
+    if (!image) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const generation = this.generation;
+    image
+      .arrayBuffer()
+      .then((buffer) => this.handlers.image(new Uint8Array(buffer)))
+      .then((path) => {
+        if (path && generation === this.generation) this.typePaths([path]);
+      });
   }
 
   follow(event, url) {

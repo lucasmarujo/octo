@@ -18,7 +18,7 @@ use tauri::{Manager, State};
 
 use crate::term::{self, Console};
 use crate::updates::{self, Updates};
-use crate::{agent_updates, alerts, pair, recover, settings};
+use crate::{agent_updates, alerts, pair, paste, recover, settings};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri_plugin_dialog::DialogExt;
 
@@ -208,6 +208,7 @@ pub fn run() -> io::Result<()> {
             pair::pairing,
             pair::set_phone,
             pair::renew_phone,
+            paste::paste_image,
             updates::update_ready,
             updates::restart_app,
             term::term_open,

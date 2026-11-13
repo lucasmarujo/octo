@@ -49,6 +49,10 @@ impl Home {
         self.root.join("worktrees")
     }
 
+    pub fn pasted_dir(&self) -> PathBuf {
+        self.root.join("pasted")
+    }
+
     pub fn worktree_roots(&self) -> Vec<PathBuf> {
         let legacy = self
             .root

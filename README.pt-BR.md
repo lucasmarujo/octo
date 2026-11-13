@@ -416,6 +416,10 @@ Vale qualquer tipo de arquivo, até 20 por tarefa. O Octo não copia nada: o age
 caminho completo de cada arquivo e os lê de onde estão, então um arquivo apagado antes de o agente abrir
 também some para ele. Um terminal não recebe arquivos, e os arquivos valem para uma tarefa só.
 
+Um agente que já está rodando recebe arquivos como em qualquer terminal: solte-os sobre o terminal dele e o
+Octo digita os caminhos, e cole uma imagem copiada com `ctrl+v` que o Octo a salva e digita o caminho do
+arquivo salvo. As imagens coladas ficam na pasta `pasted` dos dados do Octo por uma semana.
+
 ## Skills dos agentes (`/skill`)
 
 Com um agente de IA no `who`, o `/` também sugere as skills e os comandos que esse agente tem, lidos do
