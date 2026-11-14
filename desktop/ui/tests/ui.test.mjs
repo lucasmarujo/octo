@@ -1536,7 +1536,7 @@ test('remote control is off until chosen and only for Claude', async () => {
   assert.match(commands, /type: 'race'[^}]*remoteControl: state\.remote/);
   assert.match(commands, /type: 'skill'[^}]*remoteControl: state\.remote/);
   const actions = rust('src/pwa/actions.rs');
-  assert.match(actions, /let remote_control = remote_control && kind == AgentKind::Claude;/);
+  assert.match(actions, /remote_control: remote_control && kind == AgentKind::Claude,/);
   assert.match(actions, /let remote_control = remote_control && draft\.kind == AgentKind::Claude;/);
   assert.match(rust('src/launch.rs'), /if record\.remote_control \{\n\s*args\.push\("--remote-control"\.to_string\(\)\);/);
 });
