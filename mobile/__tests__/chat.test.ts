@@ -1,5 +1,5 @@
 import type { Block } from '../src/core/chat';
-import { chatCapable, fold, lineKind, MAX_BLOCKS, pieces, running, spans, stepNote, stepTitle, unjoined } from '../src/core/chat';
+import { chatCapable, COLUMN_CHAR_PX, COLUMN_PADDING_PX, columnWidths, fold, lineKind, MAX_BLOCKS, MAX_COLUMN_PX, MAX_TABLE_ROWS, MIN_COLUMN_PX, pieces, running, spans, stepNote, stepTitle, unjoined } from '../src/core/chat';
 import type { DevicePrefs } from '../src/core/devices';
 import type { Identity, Transport } from '../src/core/link';
 import { DeviceLink } from '../src/core/link';
@@ -97,12 +97,74 @@ describe('the conversation of an agent', () => {
 
   it('sets code apart from the text around it', () => {
     expect(pieces('Run this:\n```bash\ncargo test\n```\nand tell me.')).toEqual([
-      { code: false, text: 'Run this:' },
-      { code: true, text: 'cargo test' },
-      { code: false, text: 'and tell me.' },
+      { kind: 'text', text: 'Run this:' },
+      { kind: 'code', text: 'cargo test' },
+      { kind: 'text', text: 'and tell me.' },
     ]);
-    expect(pieces('just text')).toEqual([{ code: false, text: 'just text' }]);
+    expect(pieces('just text')).toEqual([{ kind: 'text', text: 'just text' }]);
     expect(pieces('')).toEqual([]);
+  });
+
+  it('turns a markdown table into rows and columns instead of a wall of pipes', () => {
+    const said = [
+      '**Modified Files**',
+      '',
+      '| Arquivo | Seção | Motivo |',
+      '|---|---|---|',
+      '| `infra/compose/docker-compose.stack.yml` | Serviço `autoheal` | Autoheal por ambiente |',
+      '| README.md | Deploy |',
+      '| a \\| b | c | d | extra |',
+      '',
+      'Commit 986948d.',
+    ].join('\n');
+    expect(pieces(said)).toEqual([
+      { kind: 'text', text: '**Modified Files**' },
+      {
+        kind: 'table',
+        table: {
+          head: ['Arquivo', 'Seção', 'Motivo'],
+          rows: [
+            ['`infra/compose/docker-compose.stack.yml`', 'Serviço `autoheal`', 'Autoheal por ambiente'],
+            ['README.md', 'Deploy', ''],
+            ['a | b', 'c', 'd'],
+          ],
+        },
+      },
+      { kind: 'text', text: 'Commit 986948d.' },
+    ]);
+  });
+
+  it('reads aligned tables, tables without outer pipes and tables right after the text', () => {
+    expect(pieces('Results:\n| Test | Time |\n|:---|---:|\n| unit | 3s |')).toEqual([
+      { kind: 'text', text: 'Results:' },
+      { kind: 'table', table: { head: ['Test', 'Time'], rows: [['unit', '3s']] } },
+    ]);
+    expect(pieces('a | b\n--- | ---\n1 | 2\n\nafter')).toEqual([
+      { kind: 'table', table: { head: ['a', 'b'], rows: [['1', '2']] } },
+      { kind: 'text', text: 'after' },
+    ]);
+    expect(pieces('| only | head |\n|---|---|')).toEqual([{ kind: 'table', table: { head: ['only', 'head'], rows: [] } }]);
+  });
+
+  it('leaves pipes that are not a table alone', () => {
+    expect(pieces('use a | b to pipe\nand c | d too')).toEqual([{ kind: 'text', text: 'use a | b to pipe\nand c | d too' }]);
+    expect(pieces('| a | b |\n|---|')).toEqual([{ kind: 'text', text: '| a | b |\n|---|' }]);
+    expect(pieces('Title | x\n---')).toEqual([{ kind: 'text', text: 'Title | x\n---' }]);
+    expect(pieces('```\n| a | b |\n|---|---|\n```')).toEqual([{ kind: 'code', text: '| a | b |\n|---|---|' }]);
+  });
+
+  it('keeps a long table bounded', () => {
+    const rows = Array.from({ length: MAX_TABLE_ROWS + 50 }, (_, at) => `| ${at} | x |`);
+    const [piece] = pieces(['| n | v |', '|---|---|', ...rows, '', 'end'].join('\n'));
+    expect(piece.kind === 'table' && piece.table.rows.length).toBe(MAX_TABLE_ROWS);
+  });
+
+  it('sizes each column by its longest cell, within limits', () => {
+    const widths = columnWidths({ head: ['a', 'Motivo'], rows: [['**ok**', 'x'.repeat(200)]] });
+    expect(widths[0]).toBe(MIN_COLUMN_PX);
+    expect(widths[1]).toBe(MAX_COLUMN_PX);
+    const middle = columnWidths({ head: ['`twelve chars`'], rows: [] });
+    expect(middle[0]).toBe(Math.ceil(12 * COLUMN_CHAR_PX) + COLUMN_PADDING_PX);
   });
 
   it('reads titles, bold words, inline code and lists the way the agent meant them', () => {

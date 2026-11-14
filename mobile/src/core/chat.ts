@@ -22,10 +22,12 @@ export type Note = {
   removed: number;
 };
 
-export type Piece = {
-  code: boolean;
-  text: string;
+export type Table = {
+  head: string[];
+  rows: string[][];
 };
+
+export type Piece = { kind: 'text'; text: string } | { kind: 'code'; text: string } | { kind: 'table'; table: Table };
 
 export type Span = {
   text: string;
@@ -144,14 +146,77 @@ export function lineKind(line: string): 'add' | 'del' | 'ctx' {
   return line.startsWith(REMOVED) ? 'del' : 'ctx';
 }
 
+const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+const ESCAPED_PIPE = /\\\|/g;
+const PIPE = '|';
+const HELD_PIPE = '\u0000';
+const HELD_PIPES = /\u0000/g;
+const MARKS = /\*\*|`/g;
+export const MAX_TABLE_ROWS = 200;
+export const COLUMN_CHAR_PX = 7.5;
+export const COLUMN_PADDING_PX = 20;
+export const MIN_COLUMN_PX = 64;
+export const MAX_COLUMN_PX = 240;
+
+function cells(line: string): string[] {
+  let row = line.trim().replace(ESCAPED_PIPE, HELD_PIPE);
+  if (row.startsWith(PIPE)) row = row.slice(1);
+  if (row.endsWith(PIPE)) row = row.slice(0, -1);
+  return row.split(PIPE).map(cell => cell.trim().replace(HELD_PIPES, PIPE));
+}
+
+function fit(row: string[], width: number): string[] {
+  return Array.from({ length: width }, (_, at) => row[at] ?? '');
+}
+
+function startsTable(lines: string[], at: number): boolean {
+  const next = lines[at + 1];
+  return lines[at].includes(PIPE) && next !== undefined && next.includes(PIPE) && TABLE_RULE.test(next) && cells(next).length === cells(lines[at]).length;
+}
+
+function prose(text: string): Piece[] {
+  const lines = text.split('\n');
+  const found: Piece[] = [];
+  let kept: string[] = [];
+  const flush = () => {
+    const said = kept.join('\n').trim();
+    if (said) found.push({ kind: 'text', text: said });
+    kept = [];
+  };
+  let at = 0;
+  while (at < lines.length) {
+    if (!startsTable(lines, at)) {
+      kept.push(lines[at]);
+      at += 1;
+      continue;
+    }
+    flush();
+    const head = cells(lines[at]);
+    const rows: string[][] = [];
+    at += 2;
+    while (at < lines.length && lines[at].trim() && lines[at].includes(PIPE)) {
+      if (rows.length < MAX_TABLE_ROWS) rows.push(fit(cells(lines[at]), head.length));
+      at += 1;
+    }
+    found.push({ kind: 'table', table: { head, rows } });
+  }
+  flush();
+  return found;
+}
+
 export function pieces(text: string): Piece[] {
-  return text
-    .split(FENCE)
-    .map((part, index) => {
-      const code = index % 2 === 1;
-      return { code, text: code ? part.replace(/^[\w+-]*\n/, '').replace(/\n$/, '') : part.trim() };
-    })
-    .filter(piece => piece.text !== '');
+  return text.split(FENCE).flatMap((part, index): Piece[] => {
+    if (index % 2 === 0) return prose(part);
+    const code = part.replace(/^[\w+-]*\n/, '').replace(/\n$/, '');
+    return code === '' ? [] : [{ kind: 'code', text: code }];
+  });
+}
+
+export function columnWidths(table: Table): number[] {
+  return table.head.map((title, column) => {
+    const longest = [title, ...table.rows.map(row => row[column])].reduce((most, cell) => Math.max(most, cell.replace(MARKS, '').length), 0);
+    return Math.min(MAX_COLUMN_PX, Math.max(MIN_COLUMN_PX, Math.ceil(longest * COLUMN_CHAR_PX) + COLUMN_PADDING_PX));
+  });
 }
 
 const HEADING = /^#{1,6}\s+/;

@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent, TextStyle } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { alive, elapsed, testMark } from '../../core/agents';
-import type { Block, Step } from '../../core/chat';
-import { lineKind, pieces, running, spans, stepNote, stepTitle, unjoined } from '../../core/chat';
+import type { Block, Step, Table } from '../../core/chat';
+import { columnWidths, lineKind, pieces, running, spans, stepNote, stepTitle, unjoined } from '../../core/chat';
 import { useSecond } from '../../core/clock';
 import type { AgentView } from '../../core/protocol';
 import { mix } from '../../theme/color';
@@ -39,6 +39,13 @@ export const chatStyles = (t: Theme) =>
     inlineCode: { ...mono(13, 400, 22), color: t.link },
     code: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
     codeText: { ...mono(11, 400, 16), color: t.textMuted },
+    table: { flexGrow: 0, overflow: 'hidden', borderRadius: 12, borderWidth: 1, borderColor: t.border, backgroundColor: t.surface },
+    tableRow: { flexDirection: 'row' },
+    tableHead: { backgroundColor: t.surfaceRaised },
+    tableCell: { paddingVertical: 8, paddingHorizontal: 10 },
+    tableDivided: { borderLeftWidth: 1, borderColor: t.border },
+    tableText: { ...sans(13, 400, 18), color: t.text },
+    tableHeadText: { ...sans(13, 700, 18), color: t.text },
     card: { borderRadius: 14, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, overflow: 'hidden' },
     live: { backgroundColor: mix(t.accent, 5), borderColor: mix(t.accent, 40) },
     divided: { borderTopWidth: 1, borderColor: t.border },
@@ -95,26 +102,52 @@ export function useFollow<T>() {
   return { list, follow, scrolled };
 }
 
+function Spans({ text, style, s }: { text: string; style: TextStyle; s: Sheet }) {
+  return (
+    <Text style={style} selectable>
+      {spans(text).map((span, at) => (
+        <Text key={at} style={span.code ? s.inlineCode : span.bold ? s.strong : null}>
+          {span.text}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+
+function Grid({ table, s }: { table: Table; s: Sheet }) {
+  const widths = columnWidths(table);
+  const row = (cells: string[], head: boolean, index: number) => (
+    <View key={index} style={[s.tableRow, index > 0 && s.divided, head && s.tableHead]}>
+      {cells.map((cell, column) => (
+        <View key={column} style={[s.tableCell, column > 0 && s.tableDivided, { width: widths[column] }]}>
+          <Spans text={cell} style={head ? s.tableHeadText : s.tableText} s={s} />
+        </View>
+      ))}
+    </View>
+  );
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.table} accessibilityLabel="table">
+      <View>{[table.head, ...table.rows].map((cells, index) => row(cells, index === 0, index))}</View>
+    </ScrollView>
+  );
+}
+
 export function Said({ text, s }: { text: string; s: Sheet }) {
   return (
     <View style={s.said}>
-      {pieces(text).map((piece, index) =>
-        piece.code ? (
-          <View key={index} style={s.code}>
-            <Text style={s.codeText} selectable>
-              {piece.text}
-            </Text>
-          </View>
-        ) : (
-          <Text key={index} style={s.text} selectable>
-            {spans(piece.text).map((span, at) => (
-              <Text key={at} style={span.code ? s.inlineCode : span.bold ? s.strong : null}>
-                {span.text}
+      {pieces(text).map((piece, index) => {
+        if (piece.kind === 'table') return <Grid key={index} table={piece.table} s={s} />;
+        if (piece.kind === 'code') {
+          return (
+            <View key={index} style={s.code}>
+              <Text style={s.codeText} selectable>
+                {piece.text}
               </Text>
-            ))}
-          </Text>
-        ),
-      )}
+            </View>
+          );
+        }
+        return <Spans key={index} text={piece.text} style={s.text} s={s} />;
+      })}
     </View>
   );
 }
