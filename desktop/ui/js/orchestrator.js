@@ -25,6 +25,7 @@ const OUTCOME_MARKS = {
   denied: { text: '✕', tone: 't-red' },
   escalated: { text: '‖', tone: 't-yellow' },
   failed: { text: '!', tone: 't-red' },
+  finished: { text: '■', tone: 't-muted' },
 };
 const UNKNOWN_MARK = { text: '·', tone: 't-faint' };
 
@@ -49,6 +50,7 @@ function decisionOf(entry) {
     suggestion: suggestionOf(entry.suggestion),
     tag: textOf(entry.tag),
     problem: textOf(entry.problem),
+    ended: entry.ended === true,
   };
 }
 
@@ -241,7 +243,7 @@ export function pickDecision(selected, shown) {
 
 export function decisionMeta(decision, agent) {
   const model = agent ? shortModel(agent.model) : '';
-  return [decision.project, [label(decision.kind), model].filter(Boolean).join(' '), agent && agent.branch ? agent.branch : null, decision.tag].filter(Boolean);
+  return [decision.project, [label(decision.kind), model].filter(Boolean).join(' '), agent && agent.branch ? agent.branch : null, decision.ended ? t('ended its turn') : null, decision.tag].filter(Boolean);
 }
 
 export function suggestionText(suggestion) {
@@ -319,6 +321,17 @@ export function modelMessage(slot, model) {
   return { type: 'orchestratorSet', [`${slot}Model`]: String(model || '').trim() || null };
 }
 
+export function engineModelChoices(models, chosen) {
+  const listed = (Array.isArray(models) ? models : []).map((model) => ({ id: model.id, name: model.name || model.id, description: model.description || '' }));
+  const custom = chosen && !listed.some((model) => model.id === chosen) ? [{ id: chosen, name: chosen, description: '' }] : [];
+  return [{ id: null, name: t('Default model'), description: t('Whatever the agent is set to use') }, ...listed, ...custom];
+}
+
+export function engineModelName(models, chosen) {
+  const choice = engineModelChoices(models, chosen).find((model) => model.id === (chosen || null));
+  return choice.name;
+}
+
 export function answerMessage(decision, how, options = {}) {
   const message = { type: 'orchestratorAnswer', decision, how };
   if (how === 'text') message.text = options.text;
@@ -357,7 +370,7 @@ export function activityRequest(before) {
 }
 
 export function decisionSignature(decision) {
-  return JSON.stringify([decision.id, decision.status, decision.name, decision.kind, decision.project, decision.since, decision.question, decision.tag, decision.problem, decision.suggestion]);
+  return JSON.stringify([decision.id, decision.status, decision.name, decision.kind, decision.project, decision.since, decision.question, decision.tag, decision.problem, decision.suggestion, decision.ended]);
 }
 
 export function detailSignature(decision, agent) {

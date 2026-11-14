@@ -1,4 +1,5 @@
 import { $, h, keep, place, storage, svg } from './dom.js';
+import { askModelsOf } from './composer.js';
 import { ask, closeMenu, confirm, menuShown, openMenu } from './dialogs.js';
 import { OCTO_TAB, SPINNER, duration, kindColor, label, plural } from './format.js';
 import { hubText, t } from './i18n.js';
@@ -32,6 +33,8 @@ import {
   engineInstalled,
   engineKinds,
   engineMessage,
+  engineModelChoices,
+  engineModelName,
   filterProjects,
   fleetCounts,
   handledByOcto,
@@ -61,8 +64,8 @@ import {
   suggestionText,
   turnOnMessage,
 } from './orchestrator.js';
-import { field, segmented, toggle } from './settings.js';
-import { agents, findAgent, now, state } from './state.js';
+import { segmented, toggle } from './settings.js';
+import { agents, findAgent, modelsOf, now, state } from './state.js';
 import { toast } from './toast.js';
 import { send } from './transport.js';
 
@@ -881,8 +884,28 @@ function engineMenu(slot, current) {
   return slot === 'primary' ? items : [menuItem(t('None'), current.secondary === null, () => send(engineMessage(slot, null))), ...items];
 }
 
+function modelMenu(slot, current) {
+  const chosen = current[`${slot}Model`];
+  return engineModelChoices(modelsOf(current[slot]), chosen).map((model) => {
+    const item = menuItem(model.name, model.id === chosen, () => send(modelMessage(slot, model.id)));
+    item.title = model.description || model.name;
+    return item;
+  });
+}
+
+function modelPick(slot, current) {
+  const name = engineModelName(modelsOf(current[slot]), current[`${slot}Model`]);
+  return h(
+    'button',
+    { class: 'octo-engine-model', type: 'button', 'aria-haspopup': 'menu', 'aria-label': `${t('Model Octo thinks with')}: ${name}`, title: t('Model Octo thinks with'), onclick: (event) => toggleMenu(event, () => modelMenu(slot, view())) },
+    h('span', { class: 'octo-engine-model-name' }, name),
+    svg(ICON_CHEVRON_DOWN),
+  );
+}
+
 function engineCard(slot, current) {
   const kind = current[slot];
+  askModelsOf(kind);
   const installed = kind !== null && engineInstalled(current, kind);
   const status = kind === null ? null : h('span', { class: `octo-engine-status ${installed ? 't-green' : 't-red'}` }, installed ? `● ${t('installed')}` : t('not installed'));
   const note = slot === 'primary' ? t('Thinks first, on the plan you already have.') : kind === null ? t('Nothing takes over when the primary fails.') : t('Takes over when the primary fails.');
@@ -897,7 +920,7 @@ function engineCard(slot, current) {
       svg(ICON_CHEVRON_DOWN),
     ),
     h('span', { class: 'octo-engine-note' }, note),
-    kind === null ? null : field(current[`${slot}Model`] || '', t('default model'), (value) => send(modelMessage(slot, value)), 'octo-engine-model'),
+    kind === null ? null : modelPick(slot, current),
   );
 }
 
@@ -1033,7 +1056,7 @@ function settingsBody(current) {
     h('div', { class: 'octo-body octo-settings' }, h('div', { class: 'octo-settings-main' }, h('div', { class: 'octo-slot' }), h('div', { class: 'octo-slot' }), h('div', { class: 'octo-slot' })), keep(nodes, 'settings:instructions', '', instructionsFrame)),
   );
   const [engines, modes, power] = body.querySelector('.octo-settings-main').children;
-  place(engines, [block('engines', JSON.stringify([current.primary, current.secondary, current.primaryModel, current.secondaryModel, current.engines]), () => enginesSection(current))]);
+  place(engines, [block('engines', JSON.stringify([current.primary, current.secondary, current.primaryModel, current.secondaryModel, current.engines, modelsOf(current.primary), modelsOf(current.secondary)]), () => enginesSection(current))]);
   place(modes, [block('modes', current.mode, () => modesSection(current))]);
   place(power, [block('power', String(current.enabled), () => powerSection(current))]);
   paintInstructions(body.querySelector('.octo-instructions'), current);

@@ -58,12 +58,15 @@ function askSkills() {
   send({ type: 'skills', kind: currentWho(), cwd: currentWhere() });
 }
 
-function askModels() {
-  const kind = currentWho();
+export function askModelsOf(kind) {
   const known = state.models[kind];
-  if (kind === 'terminal' || (known && Date.now() - known.at < MODELS_TTL_MS)) return;
+  if (!kind || kind === 'terminal' || (known && Date.now() - known.at < MODELS_TTL_MS)) return;
   state.models[kind] = { list: known ? known.list : [], at: Date.now() };
   send({ type: 'models', kind });
+}
+
+function askModels() {
+  askModelsOf(currentWho());
 }
 
 function typedWord() {

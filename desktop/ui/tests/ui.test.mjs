@@ -2647,6 +2647,51 @@ test('the engine of Octo is one the user has installed, and the secondary is nev
   assert.deepEqual(secondaryChoices(codexOnly), ['codex']);
 });
 
+test('the model of an engine is picked from the models that agent offers, never typed', async () => {
+  const { engineModelChoices, engineModelName, modelMessage } = await import('../js/orchestrator.js');
+  const offered = [
+    { id: 'claude-opus-5-5', name: 'Opus 5.5', description: 'Most capable' },
+    { id: 'claude-haiku-5-5', name: '', description: '' },
+  ];
+  const choices = engineModelChoices(offered, 'claude-opus-5-5');
+  assert.deepEqual(choices.map((choice) => [choice.id, choice.name]), [[null, 'Default model'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-haiku-5-5', 'claude-haiku-5-5']], 'the default comes first and a model without a name shows its id');
+  assert.equal(choices[1].description, 'Most capable');
+  assert.equal(engineModelName(offered, 'claude-opus-5-5'), 'Opus 5.5');
+  assert.equal(engineModelName(offered, null), 'Default model');
+  const typedBefore = engineModelChoices(offered, 'my-router-model');
+  assert.deepEqual(typedBefore.at(-1), { id: 'my-router-model', name: 'my-router-model', description: '' }, 'a model typed in an earlier version is still shown and can be kept');
+  assert.equal(engineModelName(offered, 'my-router-model'), 'my-router-model');
+  assert.deepEqual(engineModelChoices(undefined, null).map((choice) => choice.id), [null], 'before the list arrives only the default is offered');
+  assert.deepEqual(modelMessage('primary', choices[1].id), { type: 'orchestratorSet', primaryModel: 'claude-opus-5-5' });
+  assert.deepEqual(modelMessage('primary', choices[0].id), { type: 'orchestratorSet', primaryModel: null });
+  const octo = readFileSync(join(REPO, 'desktop/ui/js/octo.js'), 'utf8');
+  const card = octo.split('function modelMenu(slot, current)')[1].split('function sectionHead(')[0];
+  assert.match(card, /engineModelChoices\(modelsOf\(current\[slot\]\), chosen\)/, 'the menu lists what the engine offers');
+  assert.match(card, /askModelsOf\(kind\);/, 'the list is asked for when the card is drawn');
+  assert.match(card, /'aria-haspopup': 'menu'/);
+  assert.doesNotMatch(card, /field\(|<input|h\('input'/, 'no free text field is left');
+  assert.match(octo, /modelsOf\(current\.primary\), modelsOf\(current\.secondary\)\]\), \(\) => enginesSection\(current\)/, 'the card is redrawn when the models arrive');
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /case 'models':[\s\S]{0,160}if \(state\.active === OCTO_TAB\) renderOcto\(\);/);
+  const composer = readFileSync(join(REPO, 'desktop/ui/js/composer.js'), 'utf8');
+  assert.match(composer, /export function askModelsOf\(kind\) \{\n\s*const known = state\.models\[kind\];\n\s*if \(!kind \|\| kind === 'terminal' \|\| \(known && Date\.now\(\) - known\.at < MODELS_TTL_MS\)\) return;/, 'one request per kind per minute');
+});
+
+test('a turn that ended waiting is a decision like a pause, told apart, and a finished one is logged', async () => {
+  const { decisionMeta, decisionSignature, handledByOcto, orchestratorView, outcomeMark } = await import('../js/orchestrator.js');
+  const message = octoMessage();
+  message.decisions[0].ended = true;
+  message.handled[0].outcome = 'finished';
+  const view = orchestratorView(message);
+  const [ended, paused] = view.decisions;
+  assert.deepEqual([ended.ended, paused.ended], [true, false], 'a hub that never says it sends a pause');
+  assert.ok(decisionMeta(ended, null).includes('ended its turn'));
+  assert.ok(!decisionMeta(paused, null).includes('ended its turn'));
+  assert.notEqual(decisionSignature(ended), decisionSignature({ ...ended, ended: false }), 'the card is redrawn when it changes');
+  assert.deepEqual(outcomeMark({ outcome: 'finished' }), { text: '■', tone: 't-muted' });
+  assert.ok(handledByOcto(view).some((entry) => entry.outcome === 'finished'), 'what Octo saw finish is part of what it handled');
+});
+
 test('the activity pages and the instruction files of Octo are merged, bounded and only saved when changed', async () => {
   const { INSTRUCTIONS_MAX_BYTES, activityPage, canSaveInstructions, instructionTabs, instructionsFile, instructionsTooLong, mergeActivity, orchestratorView } = await import('../js/orchestrator.js');
   const view = orchestratorView(octoMessage());

@@ -380,6 +380,7 @@ function onMessage(message) {
     case 'models':
       state.models[message.kind] = { list: message.models, at: Date.now() };
       renderComposer();
+      if (state.active === OCTO_TAB) renderOcto();
       break;
     case 'skills':
       state.skills = { kind: message.kind, cwd: message.cwd, names: message.skills.map((skill) => skill.name), at: Date.now() };
