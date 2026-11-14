@@ -117,14 +117,14 @@ fn load_tunnel(home: &Home) -> Option<QuickTunnel> {
     fsutil::read_json_opt(&tunnel_path(home)).ok().flatten()
 }
 
-fn saved_tunnel(home: &Home) -> io::Result<QuickTunnel> {
+fn saved_tunnel(home: &Home) -> io::Result<(QuickTunnel, bool)> {
     if let Some(saved) = load_tunnel(home) {
-        return Ok(saved);
+        return Ok((saved, false));
     }
     let created = tunnel::create_quick_tunnel()?;
     fsutil::write_json_atomic(&tunnel_path(home), &created)?;
     diag(home, &format!("created and saved the quick tunnel {}", created.url()));
-    Ok(created)
+    Ok((created, true))
 }
 
 pub fn read_info(home: &Home) -> Option<Info> {
@@ -341,9 +341,12 @@ impl Supervisor {
             }
         }
         match self.connect() {
-            Ok(tunnel) => {
+            Ok((tunnel, moved)) => {
                 let url = tunnel.url().to_string();
                 diag(self.state.home(), &format!("the {} tunnel is up at {url}", tunnel.kind().label()));
+                if moved {
+                    push::announce_move(self.state.home(), &url);
+                }
                 self.backoff = RETRY_FIRST;
                 self.tunnel = Some(tunnel);
                 self.state.update(|info| {
@@ -380,10 +383,15 @@ impl Supervisor {
     fn forget_tunnel(&self, url: &str) {
         let home = self.state.home();
         let _ = fsutil::remove_file_if_exists(&tunnel_path(home));
-        diag(home, &format!("cloudflare no longer knows the tunnel {url}; a new one replaces it, scan the new code"));
+        diag(
+            home,
+            &format!(
+                "cloudflare no longer knows the tunnel {url}; a new one replaces it and the paired phones are told its address"
+            ),
+        );
     }
 
-    fn connect(&self) -> io::Result<Tunnel> {
+    fn connect(&self) -> io::Result<(Tunnel, bool)> {
         let (home, port, kind) = {
             let info = lock(&self.state.info);
             (self.state.home().clone(), info.port, info.tunnel)
@@ -398,12 +406,13 @@ impl Supervisor {
                     }
                 };
                 self.enter(Phase::Connecting);
-                let saved = saved_tunnel(&home)?;
-                tunnel::cloudflare(&home, &program, port, &saved, &|| self.state.stop_requested())
+                let (saved, created) = saved_tunnel(&home)?;
+                let opened = tunnel::cloudflare(&home, &program, port, &saved, &|| self.state.stop_requested())?;
+                Ok((opened, created))
             }
             TunnelKind::Tailscale => {
                 self.enter(Phase::Connecting);
-                tunnel::tailscale(port)
+                tunnel::tailscale(port).map(|opened| (opened, false))
             }
         }
     }
@@ -559,7 +568,11 @@ mod tests {
             hostname: "boost-rid-constant-tmp.trycloudflare.com".into(),
         };
         fsutil::write_json_atomic(&tunnel_path(&home), &saved).unwrap();
-        assert_eq!(saved_tunnel(&home).unwrap(), saved, "a saved tunnel is reused, so its link never changes");
+        assert_eq!(
+            saved_tunnel(&home).unwrap(),
+            (saved, false),
+            "a saved tunnel is reused, so its link never changes and the phones are not told it moved"
+        );
         let notified = crate::pwa::protocol::Push { token: "ExponentPushToken[abc]".into(), device: "d1".into() };
         push::register(&home, Some("c1"), Some(&notified));
         assert_eq!(push::phones(&home).len(), 1);

@@ -3,6 +3,7 @@ import { changeDevice, devices } from './devices';
 import type { Heard, Identity, Transport } from './link';
 import { DeviceLink, ownerOf } from './link';
 import type { AgentView, BridgeMsg, Overview } from './protocol';
+import type { Moved } from './push';
 import { push } from './push';
 import { Store } from './store';
 
@@ -68,6 +69,10 @@ export class Links {
     };
   }
 
+  follow(moved: Moved): void {
+    this.of(moved.device)?.follow(moved.url);
+  }
+
   onReady(session: string): void {
     this.of(ownerOf(session))?.onReady(session);
   }
@@ -130,7 +135,7 @@ export class Links {
 
   private hear(device: string): Heard {
     return (message: BridgeMsg, previous: Overview | null) => {
-      if (message.type === 'welcome') changeDevice(device, { name: message.host });
+      if (message.type === 'welcome') changeDevice(device, { name: message.host, url: this.of(device)?.address() });
       if (message.type !== 'state') return;
       for (const attention of attentionOf(device, previous, message)) {
         for (const noticed of [...this.noticed]) noticed(attention);

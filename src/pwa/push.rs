@@ -28,6 +28,7 @@ const SOUND: &str = "default";
 const PRIORITY: &str = "high";
 const FAILED: &str = "error";
 const UNREGISTERED: &str = "DeviceNotRegistered";
+pub const MOVED_BODY: &str = "Octo is back online at a new address. Open the app to reconnect.";
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Phone {
@@ -43,11 +44,24 @@ pub struct Target {
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct Moved {
+    pub device: String,
+    pub moved: String,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum Payload {
+    Agent(Target),
+    Moved(Moved),
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
     pub to: String,
     pub body: String,
-    pub data: Target,
+    pub data: Payload,
     pub sound: &'static str,
     pub priority: &'static str,
     pub channel_id: &'static str,
@@ -133,11 +147,25 @@ pub fn messages(phones: &[Phone], alerts: &[Alert]) -> Vec<Message> {
             alerts.iter().map(move |alert| Message {
                 to: phone.token.clone(),
                 body: alert.message(),
-                data: Target { device: phone.device.clone(), agent: alert.id },
+                data: Payload::Agent(Target { device: phone.device.clone(), agent: alert.id }),
                 sound: SOUND,
                 priority: PRIORITY,
                 channel_id: CHANNEL,
             })
+        })
+        .collect()
+}
+
+pub fn moved(phones: &[Phone], address: &str) -> Vec<Message> {
+    phones
+        .iter()
+        .map(|phone| Message {
+            to: phone.token.clone(),
+            body: MOVED_BODY.to_string(),
+            data: Payload::Moved(Moved { device: phone.device.clone(), moved: address.to_string() }),
+            sound: SOUND,
+            priority: PRIORITY,
+            channel_id: CHANNEL,
         })
         .collect()
 }
@@ -177,8 +205,7 @@ fn post(url: &str, batch: &[Message]) -> io::Result<Vec<u8>> {
         .map_err(|e| io::Error::other(format!("{url}: {e}")))
 }
 
-pub fn deliver_to(home: &Home, url: &str, alerts: &[Alert]) {
-    let outgoing = messages(&phones(home), alerts);
+fn send(home: &Home, url: &str, outgoing: &[Message]) {
     let mut gone = HashSet::new();
     for batch in outgoing.chunks(BATCH) {
         match post(url, batch) {
@@ -193,6 +220,24 @@ pub fn deliver_to(home: &Home, url: &str, alerts: &[Alert]) {
     if let Err(error) = keep(home, &left) {
         bridge::diag(home, &format!("could not forget the phones that left: {error}"));
     }
+}
+
+pub fn deliver_to(home: &Home, url: &str, alerts: &[Alert]) {
+    send(home, url, &messages(&phones(home), alerts));
+}
+
+pub fn announce_move_to(home: &Home, url: &str, address: &str) {
+    send(home, url, &moved(&phones(home), address));
+}
+
+pub fn announce_move(home: &Home, address: &str) {
+    if phones(home).is_empty() {
+        return;
+    }
+    let (home, address) = (home.clone(), address.to_string());
+    let _ = thread::Builder::new()
+        .name("orkai-push-moved".into())
+        .spawn(move || announce_move_to(&home, EXPO_PUSH_URL, &address));
 }
 
 pub fn notify(home: &Home, alerts: &[Alert]) {
@@ -327,7 +372,10 @@ mod tests {
             })
         );
         assert_eq!(sent[1].body, "docs finished");
-        assert_eq!((sent[3].to.as_str(), &sent[3].data), (OTHER, &Target { device: "d2".into(), agent: 7 }));
+        assert_eq!(
+            (sent[3].to.as_str(), &sent[3].data),
+            (OTHER, &Payload::Agent(Target { device: "d2".into(), agent: 7 }))
+        );
     }
 
     #[test]
@@ -340,11 +388,7 @@ mod tests {
         assert!(unregistered(&batch, br#"{"errors":[{"code":"PUSH_TOO_MANY_EXPERIENCE_IDS"}]}"#).is_empty());
     }
 
-    #[test]
-    fn the_desktop_posts_the_alerts_to_the_push_service_and_forgets_uninstalled_phones() {
-        let home = home();
-        register(&home, Some("c1"), Some(&push(TOKEN, "d1")));
-        register(&home, Some("c2"), Some(&push(OTHER, "d2")));
+    fn push_service(answer: &'static str) -> (String, mpsc::Receiver<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/--/api/v2/push/send", listener.local_addr().unwrap());
         let (tx, rx) = mpsc::channel();
@@ -370,11 +414,20 @@ mod tests {
                     }
                 }
             }
-            let answer =
-                r#"{"data":[{"status":"ok","id":"1"},{"status":"error","details":{"error":"DeviceNotRegistered"}}]}"#;
             write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len()).unwrap();
             tx.send(String::from_utf8(request).unwrap()).unwrap();
         });
+        (url, rx)
+    }
+
+    #[test]
+    fn the_desktop_posts_the_alerts_to_the_push_service_and_forgets_uninstalled_phones() {
+        let home = home();
+        register(&home, Some("c1"), Some(&push(TOKEN, "d1")));
+        register(&home, Some("c2"), Some(&push(OTHER, "d2")));
+        let (url, rx) = push_service(
+            r#"{"data":[{"status":"ok","id":"1"},{"status":"error","details":{"error":"DeviceNotRegistered"}}]}"#,
+        );
         deliver_to(&home, &url, &[alert(3, "fix-login", AgentState::Done)]);
         let request = rx.recv_timeout(Duration::from_secs(10)).unwrap();
         assert!(request.starts_with("POST /--/api/v2/push/send"));
@@ -383,6 +436,59 @@ mod tests {
         assert_eq!(body[1]["to"], OTHER);
         assert_eq!(body[0]["body"], "fix-login finished");
         assert_eq!(phones(&home), [phone("c1", TOKEN, "d1")], "the uninstalled phone gets no more pushes");
+        std::fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn a_new_address_reaches_every_phone_with_the_computer_it_belongs_to_and_no_name() {
+        let list = [phone("c1", TOKEN, "d1"), phone("c2", OTHER, "d2")];
+        let sent = moved(&list, "https://new.trycloudflare.com");
+        assert_eq!(
+            serde_json::to_value(&sent).unwrap(),
+            serde_json::json!([
+                {
+                    "to": TOKEN,
+                    "body": MOVED_BODY,
+                    "data": { "device": "d1", "moved": "https://new.trycloudflare.com" },
+                    "sound": "default",
+                    "priority": "high",
+                    "channelId": "agents"
+                },
+                {
+                    "to": OTHER,
+                    "body": MOVED_BODY,
+                    "data": { "device": "d2", "moved": "https://new.trycloudflare.com" },
+                    "sound": "default",
+                    "priority": "high",
+                    "channelId": "agents"
+                }
+            ])
+        );
+        assert!(moved(&[], "https://new.trycloudflare.com").is_empty());
+    }
+
+    #[test]
+    fn the_desktop_tells_the_phones_its_new_address_in_one_request() {
+        let home = home();
+        register(&home, Some("c1"), Some(&push(TOKEN, "d1")));
+        register(&home, Some("c2"), Some(&push(OTHER, "d2")));
+        let (url, rx) = push_service(r#"{"data":[{"status":"ok","id":"1"},{"status":"ok","id":"2"}]}"#);
+        announce_move_to(&home, &url, "https://new.trycloudflare.com");
+        let request = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        let body: serde_json::Value = serde_json::from_str(&request[request.find("\r\n\r\n").unwrap() + 4..]).unwrap();
+        assert_eq!(body.as_array().map(Vec::len), Some(2), "one batch for every phone");
+        assert_eq!(body[0]["data"], serde_json::json!({ "device": "d1", "moved": "https://new.trycloudflare.com" }));
+        assert_eq!(body[1]["to"], OTHER);
+        assert_eq!(phones(&home).len(), 2);
+        std::fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn without_phones_a_new_address_is_not_announced() {
+        let home = home();
+        announce_move_to(&home, "http://127.0.0.1:9/never", "https://new.trycloudflare.com");
+        announce_move(&home, "https://new.trycloudflare.com");
+        assert!(!bridge::log_path(&home).exists(), "with no phone there is no request to fail");
         std::fs::remove_dir_all(home.root()).unwrap();
     }
 

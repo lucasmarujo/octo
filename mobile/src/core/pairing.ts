@@ -31,6 +31,12 @@ export function parsePairingLink(text: string, allowLocal: boolean): Pairing | n
   return { url: `${scheme}://${origin[2].toLowerCase()}`, key };
 }
 
+export function secureOrigin(text: string): string | null {
+  const origin = ORIGIN.exec(String(text || '').trim());
+  if (!origin || origin[1].toLowerCase() !== SECURE) return null;
+  return `${SECURE}://${origin[2].toLowerCase()}`;
+}
+
 export function socketUrl(url: string): string {
   const at = url.indexOf('://');
   const scheme = url.slice(0, at) as keyof typeof SOCKET;

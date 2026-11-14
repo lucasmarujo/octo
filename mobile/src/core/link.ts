@@ -52,6 +52,7 @@ export class DeviceLink {
   private opened = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pushToken: string | null | undefined = undefined;
+  private fallback: string | null = null;
   private readonly heard = new Set<Heard>();
   private readonly flashes = new Map<number, Flash>();
 
@@ -71,8 +72,22 @@ export class DeviceLink {
     return this.url === url && this.key === key;
   }
 
+  address(): string {
+    return this.url;
+  }
+
+  follow(url: string): void {
+    if (url === this.url) return;
+    this.fallback = this.fallback ?? this.url;
+    this.drop();
+    this.url = url;
+    this.attempt = 0;
+    this.connect();
+  }
+
   retarget(url: string, key: string): void {
     this.drop();
+    this.fallback = null;
     this.url = url;
     this.key = key;
     this.attempt = 0;
@@ -158,7 +173,12 @@ export class DeviceLink {
     if (session !== this.session) return;
     this.session = null;
     this.ready = false;
-    const stopped = CLOSED[code];
+    const tried = this.fallback !== null;
+    if (this.fallback !== null) {
+      this.url = this.fallback;
+      this.fallback = null;
+    }
+    const stopped = tried ? undefined : CLOSED[code];
     if (stopped) {
       this.store.patch({ phase: stopped });
       return;
@@ -179,6 +199,7 @@ export class DeviceLink {
   private handle(message: BridgeMsg): void {
     const previous = this.store.get().overview;
     if (message.type === 'welcome') {
+      this.fallback = null;
       this.version = message.version;
       this.attempt = 0;
       this.store.patch({ phase: 'live' });

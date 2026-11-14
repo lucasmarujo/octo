@@ -101,12 +101,12 @@ export function forgetDevice(id: string): void {
   keep(devices.get().filter(device => device.id !== id));
 }
 
-export function changeDevice(id: string, part: Partial<Pick<Device, 'name' | 'prefs'>>): void {
+export function changeDevice(id: string, part: Partial<Pick<Device, 'name' | 'prefs' | 'url'>>): void {
   const list = devices.get();
   const known = list.find(device => device.id === id);
   if (!known) return;
-  const next = { ...known, ...part };
-  if (next.name === known.name && next.prefs === known.prefs) return;
+  const next = { ...known, ...part, url: part.url || known.url };
+  if (next.name === known.name && next.prefs === known.prefs && next.url === known.url) return;
   keep(list.map(device => (device.id === id ? next : device)));
 }
 

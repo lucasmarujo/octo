@@ -4,7 +4,7 @@ import { devices } from '../src/core/devices';
 import { attentionOf, Links, STALE_AFTER_MS } from '../src/core/links';
 import type { AgentView, Overview } from '../src/core/protocol';
 import { OUTDATED, REPLACED, UNPAIRED } from '../src/core/protocol';
-import { push, pushTarget, shown } from '../src/core/push';
+import { latestMoves, movedTarget, push, pushTarget, shown } from '../src/core/push';
 
 jest.mock('../src/core/storage', () => ({ load: jest.fn(async () => null), save: jest.fn(async () => {}) }));
 
@@ -187,6 +187,82 @@ describe('a link to one computer', () => {
     expect(wire.calls[wire.calls.length - 1].slice(2, 4)).toEqual(['wss://new/ws', 'B'.repeat(43)]);
     expect(link.store.get().overview).toBeNull();
     expect(link.targets('https://new', 'B'.repeat(43))).toBe(true);
+  });
+});
+
+describe('a computer that comes back at a new address', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const PREFS = { who: null, worktree: false, bypass: false };
+  const opens = (wire: ReturnType<typeof transport>) => wire.calls.filter(call => call[0] === 'open');
+
+  it('is followed only once the new address proves it holds the pairing key, and then kept', () => {
+    const wire = transport();
+    const links = new Links(wire);
+    devices.set([{ id: 'home', url: 'https://old.trycloudflare.com', key: KEY, name: 'home', addedAt: 0, prefs: PREFS }]);
+    links.start(IDENTITY);
+    const first = opens(wire)[0][1];
+    links.onClosed(first, 1006);
+    links.follow({ device: 'home', url: 'https://new.trycloudflare.com' });
+    const tried = opens(wire).pop()!;
+    expect(tried.slice(2, 4)).toEqual(['wss://new.trycloudflare.com/ws', KEY]);
+    expect(devices.get()[0].url).toBe('https://old.trycloudflare.com');
+    links.onReady(tried[1]);
+    expect(devices.get()[0].url).toBe('https://old.trycloudflare.com');
+    links.onMessage(tried[1], JSON.stringify({ type: 'welcome', host: 'lucas-desktop', version: '0.2.40' }));
+    expect(devices.get()[0]).toMatchObject({ id: 'home', url: 'https://new.trycloudflare.com', name: 'lucas-desktop', key: KEY });
+    expect(links.of('home')!.store.get().phase).toBe('live');
+    expect(opens(wire)).toHaveLength(2);
+    links.shut();
+    devices.set([]);
+  });
+
+  it('is given up when it does not answer with the key, even if it claims the phone was forgotten', () => {
+    const wire = transport();
+    const link = new DeviceLink('home', 'https://old.trycloudflare.com', KEY, wire, IDENTITY);
+    opened(link, wire);
+    link.follow('https://forged.trycloudflare.com');
+    const tried = opens(wire).pop()!;
+    expect(tried[2]).toBe('wss://forged.trycloudflare.com/ws');
+    link.onClosed(tried[1], UNPAIRED);
+    expect(link.store.get().phase).toBe('offline');
+    expect(link.address()).toBe('https://old.trycloudflare.com');
+    jest.advanceTimersByTime(RETRY[0]);
+    expect(opens(wire).pop()![2]).toBe('wss://old.trycloudflare.com/ws');
+  });
+
+  it('is ignored when it is the address the phone already uses', () => {
+    const wire = transport();
+    const link = new DeviceLink('home', 'https://same.trycloudflare.com', KEY, wire, IDENTITY);
+    opened(link, wire);
+    link.follow('https://same.trycloudflare.com');
+    expect(opens(wire)).toHaveLength(1);
+    expect(wire.calls.filter(call => call[0] === 'close')).toEqual([]);
+  });
+
+  it('is read from a notification only when it names a secure address', () => {
+    expect(movedTarget({ device: 'home', moved: 'https://New.trycloudflare.com/' })).toEqual({ device: 'home', url: 'https://new.trycloudflare.com' });
+    for (const junk of [null, 'home', { device: 'home' }, { device: 'home', moved: 'http://new.example' }, { device: 'home', moved: 'javascript:alert(1)' }, { device: 4, moved: 'https://x' }, { device: 'home', agent: 3 }]) {
+      expect(movedTarget(junk)).toBeNull();
+    }
+    expect(pushTarget({ device: 'home', moved: 'https://x.trycloudflare.com' })).toBeNull();
+  });
+
+  it('keeps only the newest address of each computer among the notifications left in the tray', () => {
+    const found = latestMoves([
+      { id: 'a', date: 10, data: { device: 'home', moved: 'https://first.trycloudflare.com' } },
+      { id: 'b', date: 30, data: { device: 'home', moved: 'https://second.trycloudflare.com' } },
+      { id: 'c', date: 20, data: { device: 'work', moved: 'https://work.trycloudflare.com' } },
+      { id: 'd', date: 40, data: { device: 'home', agent: 2 } },
+      { id: 'e', date: 50, data: { device: 'home', moved: 'ftp://bad' } },
+    ]);
+    expect(found.moves).toEqual([
+      { device: 'home', url: 'https://second.trycloudflare.com' },
+      { device: 'work', url: 'https://work.trycloudflare.com' },
+    ]);
+    expect(found.ids).toEqual(['a', 'b', 'c']);
+    expect(latestMoves([])).toEqual({ moves: [], ids: [] });
   });
 });
 
