@@ -147,6 +147,18 @@ pub enum ChatAction {
         task: String,
         #[serde(default)]
         session: Option<String>,
+        #[serde(default)]
+        model: Option<String>,
+    },
+    Restart {
+        agent: AgentId,
+    },
+    Remove {
+        agent: AgentId,
+    },
+    Rename {
+        agent: AgentId,
+        name: String,
     },
 }
 
@@ -395,12 +407,45 @@ mod tests {
                     kind: "claude".into(),
                     cwd: "~/dev/app".into(),
                     task: "fix it".into(),
-                    session: None
+                    session: None,
+                    model: None
                 }),
                 None,
                 None,
             ],
             "an action written wrongly is skipped without losing the others"
+        );
+    }
+
+    #[test]
+    fn a_chat_answer_can_start_with_a_model_and_restart_remove_or_rename_an_agent() {
+        let answer: ChatAnswer = first_object(
+            r#"{"reply":"ok","actions":[
+ {"type":"start","kind":"claude","cwd":"~/dev/app","model":"fable","session":"work"},
+ {"type":"restart","agent":5},
+ {"type":"remove","agent":6},
+ {"type":"rename","agent":7,"name":"api"},
+ {"type":"rename","agent":7},
+ {"type":"remove"}
+]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            answer.actions(),
+            [
+                Some(ChatAction::Start {
+                    kind: "claude".into(),
+                    cwd: "~/dev/app".into(),
+                    task: String::new(),
+                    session: Some("work".into()),
+                    model: Some("fable".into())
+                }),
+                Some(ChatAction::Restart { agent: 5 }),
+                Some(ChatAction::Remove { agent: 6 }),
+                Some(ChatAction::Rename { agent: 7, name: "api".into() }),
+                None,
+                None,
+            ]
         );
     }
 

@@ -150,16 +150,13 @@ fn stop(hub: &Hub, agent: AgentId, reply: &Sender<Event>) {
     hub.nudge();
 }
 
-fn remove(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
-    let Some(record) = hub.record(agent) else { return };
-    if !matches!(hub.state(agent), Some(AgentState::Exited | AgentState::Lost)) {
-        return notice(reply, Tone::Warn, format!("stop {} before removing it", record.name));
-    }
-    if let Err(err) = hub.store().remove_agent(agent) {
-        return notice(reply, Tone::Error, format!("could not remove {}: {err}", record.name));
-    }
+pub(crate) fn is_stopped(hub: &Hub, agent: AgentId) -> bool {
+    matches!(hub.state(agent), Some(AgentState::Exited | AgentState::Lost))
+}
+
+pub(crate) fn remove_stopped(hub: &Hub, record: AgentRecord, reply: &Sender<Event>) -> std::io::Result<()> {
+    hub.store().remove_agent(record.id)?;
     hub.nudge();
-    notice(reply, Tone::Info, format!("{} removed", record.name));
     if let Some(worktree) = record.worktree {
         let (home, reply, name) = (hub.store().home().clone(), reply.clone(), record.name);
         spawn("orkai-pwa-discard", move || {
@@ -168,21 +165,35 @@ fn remove(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
             }
         });
     }
+    Ok(())
+}
+
+fn remove(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
+    let Some(record) = hub.record(agent) else { return };
+    if !is_stopped(hub, agent) {
+        return notice(reply, Tone::Warn, format!("stop {} before removing it", record.name));
+    }
+    let name = record.name.clone();
+    match remove_stopped(hub, record, reply) {
+        Ok(()) => notice(reply, Tone::Info, format!("{name} removed")),
+        Err(err) => notice(reply, Tone::Error, format!("could not remove {name}: {err}")),
+    }
+}
+
+pub(crate) fn rename_agent(hub: &Hub, agent: AgentId, name: &str) -> Result<Option<(String, String)>, String> {
+    let name = validate_agent_name(name)?;
+    let Ok(mut record) = hub.store().load_agent(agent) else { return Ok(None) };
+    let old = std::mem::replace(&mut record.name, name.clone());
+    hub.store().save_agent(&record).map_err(|err| format!("rename failed: {err}"))?;
+    hub.nudge();
+    Ok(Some((old, name)))
 }
 
 fn rename(hub: &Hub, agent: AgentId, name: &str, reply: &Sender<Event>) {
-    let name = match validate_agent_name(name) {
-        Ok(name) => name,
-        Err(err) => return notice(reply, Tone::Error, err),
-    };
-    let Ok(mut record) = hub.store().load_agent(agent) else { return };
-    let old = std::mem::replace(&mut record.name, name.clone());
-    match hub.store().save_agent(&record) {
-        Ok(()) => {
-            hub.nudge();
-            notice(reply, Tone::Success, format!("{old} is now {name}"));
-        }
-        Err(err) => notice(reply, Tone::Error, format!("rename failed: {err}")),
+    match rename_agent(hub, agent, name) {
+        Ok(Some((old, name))) => notice(reply, Tone::Success, format!("{old} is now {name}")),
+        Ok(None) => {}
+        Err(err) => notice(reply, Tone::Error, err),
     }
 }
 
@@ -243,42 +254,67 @@ pub fn task_with_attachments(task: &str, files: &[PathBuf]) -> String {
     .to_string()
 }
 
-pub(crate) fn start(hub: &Arc<Hub>, request: StartRequest, reply: &Sender<Event>) {
+pub(crate) struct Launch {
+    draft: NewAgent,
+    isolate: bool,
+    bypass: bool,
+    remote_control: bool,
+    model: Option<String>,
+}
+
+impl Launch {
+    pub(crate) fn describe(&self) -> String {
+        let place = if self.isolate { " in a new worktree" } else { "" };
+        let mode = if self.bypass { " with permissions bypassed" } else { "" };
+        format!("starting {} {}{place}{mode}…", self.draft.kind.label(), self.draft.name)
+    }
+
+    pub(crate) fn run(self, hub: &Hub) -> std::io::Result<AgentRecord> {
+        let Launch { draft, isolate, bypass, remote_control, model } = self;
+        let launched = hub.launcher().create(draft, DEFAULT_SIZE, isolate, bypass, remote_control, model);
+        hub.nudge();
+        launched
+    }
+}
+
+pub(crate) fn prepare(hub: &Hub, request: StartRequest) -> Result<Launch, String> {
     let StartRequest { kind, session, cwd, task, worktree, bypass, remote_control, model, attachments } = request;
     if !hub.kinds().contains(&kind) {
-        return notice(reply, Tone::Error, format!("{} is not installed on {}", kind.label(), hub.host()));
+        return Err(format!("{} is not installed on {}", kind.label(), hub.host()));
     }
     let cwd = resolve_dir(&cwd);
     if !cwd.is_dir() {
-        return notice(reply, Tone::Error, format!("{} is not a folder", cwd.display()));
+        return Err(format!("{} is not a folder", cwd.display()));
     }
     if !hub.store().load_sessions().is_ok_and(|sessions| sessions.iter().any(|s| s.name == session)) {
-        return notice(reply, Tone::Error, format!("session {session} does not exist"));
+        return Err(format!("session {session} does not exist"));
     }
-    let files = match resolve_attachments(if kind.is_ai() { &attachments } else { &[] }) {
-        Ok(files) => files,
-        Err(err) => return notice(reply, Tone::Error, err),
-    };
-    let name = default_agent_name(kind, &task, |name| hub.name_taken(&session, name));
-    let task = task_with_attachments(&task, &files);
-    let isolate = worktree && kind.is_ai();
-    let bypass = bypass && kind.is_ai();
-    let remote_control = remote_control && kind == AgentKind::Claude;
+    let files = resolve_attachments(if kind.is_ai() { &attachments } else { &[] })?;
     let model = model.map(|model| model.trim().to_string()).filter(|model| !model.is_empty() && kind.is_ai());
     if model.as_deref().is_some_and(|model| !models::is_valid_id(model)) {
-        return notice(reply, Tone::Error, "that model name is not valid");
+        return Err("that model name is not valid".to_string());
     }
-    let place = if isolate { " in a new worktree" } else { "" };
-    let mode = if bypass { " with permissions bypassed" } else { "" };
-    notice(reply, Tone::Info, format!("starting {} {name}{place}{mode}…", kind.label()));
-    let draft = NewAgent { session, name, kind, cwd, task };
+    let name = default_agent_name(kind, &task, |name| hub.name_taken(&session, name));
+    let task = task_with_attachments(&task, &files);
+    Ok(Launch {
+        draft: NewAgent { session, name, kind, cwd, task },
+        isolate: worktree && kind.is_ai(),
+        bypass: bypass && kind.is_ai(),
+        remote_control: remote_control && kind == AgentKind::Claude,
+        model,
+    })
+}
+
+pub(crate) fn start(hub: &Arc<Hub>, request: StartRequest, reply: &Sender<Event>) {
+    let launch = match prepare(hub, request) {
+        Ok(launch) => launch,
+        Err(err) => return notice(reply, Tone::Error, err),
+    };
+    notice(reply, Tone::Info, launch.describe());
     let (hub, reply) = (Arc::clone(hub), reply.clone());
-    spawn("orkai-pwa-launch", move || {
-        match hub.launcher().create(draft, DEFAULT_SIZE, isolate, bypass, remote_control, model) {
-            Ok(record) => notice(&reply, Tone::Success, format!("{} {} started", record.kind.label(), record.name)),
-            Err(err) => notice(&reply, Tone::Error, format!("could not start the agent: {err}")),
-        }
-        hub.nudge();
+    spawn("orkai-pwa-launch", move || match launch.run(&hub) {
+        Ok(record) => notice(&reply, Tone::Success, format!("{} {} started", record.kind.label(), record.name)),
+        Err(err) => notice(&reply, Tone::Error, format!("could not start the agent: {err}")),
     });
 }
 
@@ -303,7 +339,7 @@ pub fn recover_all(hub: &Arc<Hub>, reply: &Sender<Event>) -> usize {
 
 fn restart(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
     let Some(record) = hub.record(agent) else { return };
-    if !matches!(hub.state(agent), Some(AgentState::Exited | AgentState::Lost)) {
+    if !is_stopped(hub, agent) {
         return notice(reply, Tone::Error, format!("{} is still running", record.name));
     }
     notice(reply, Tone::Info, format!("restarting {}…", record.name));

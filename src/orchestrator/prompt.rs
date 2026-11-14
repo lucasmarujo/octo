@@ -1,4 +1,4 @@
-use crate::model::{AgentId, AgentState};
+use crate::model::{AgentId, AgentKind, AgentState};
 use crate::orchestrator::{ChatEntry, ChatRole, Decision, DecisionStatus, Mode, cut, one_line};
 use crate::pwa::protocol::AgentView;
 
@@ -24,10 +24,14 @@ const CHAT_FORMAT: &str = r#"Answer with exactly one JSON object and nothing els
 - reply: what you say to the user, in the language the user wrote in.
 - read: up to 4 agent ids whose screens you need to see before answering. You are then asked once more with them.
 - actions: up to 8 things to do now, only when the user asked for them:
-  {"type":"send","agent":N,"text":"..."} types a message into an agent and submits it.
+  {"type":"start","kind":"claude","cwd":"...","task":"...","model":"..."|null,"session":"..."|null} starts a new agent in this app. cwd is the full path of the project folder. model is one of the models listed for that kind, or null for its default. session is one of the sessions, or null for the session of the agents already in that folder.
+  {"type":"send","agent":N,"text":"..."} types a message into an agent and submits it. To change the model of a running claude agent, send it "/model <id>".
   {"type":"answer","decision":N,"keys":[...]|null,"text":"..."|null} answers a pending decision.
   {"type":"stop","agent":N} stops an agent.
-  {"type":"start","kind":"claude","cwd":"...","task":"...","session":"..."|null} starts a new agent."#;
+  {"type":"restart","agent":N} starts a stopped agent again in its own conversation.
+  {"type":"remove","agent":N} removes a stopped agent from the app.
+  {"type":"rename","agent":N,"name":"..."} renames an agent.
+- The result of each action is shown to the user under your reply, so say what you are doing, never that it is already done."#;
 const NO_MORE_READS: &str = "These are the screens you asked for. Answer now; you cannot ask to read again.";
 
 pub fn mode_rule(mode: Mode) -> &'static str {
@@ -91,12 +95,14 @@ pub fn judgement(case: &Case) -> String {
 }
 
 fn board_line(agent: &AgentView) -> String {
+    let model = agent.model.as_deref().map_or_else(String::new, |model| format!(" model {model}"));
     format!(
-        "#{} {} ({}) project {} — {} — {}",
+        "#{} {} ({}{model}) project {} session {} — {} — {}",
         agent.id,
         agent.name,
         agent.kind.label(),
         agent.project,
+        agent.session,
         agent.state.label(),
         one_line(&agent.activity, MAX_ACTIVITY_CHARS)
     )
@@ -129,8 +135,14 @@ fn history_line(entry: &ChatEntry) -> String {
     format!("{who}: {}", entry.text)
 }
 
+fn models_line((kind, models): &(AgentKind, Vec<String>)) -> String {
+    format!("{}: {}", kind.label(), models.join(", "))
+}
+
 pub struct Talk<'a> {
     pub global: &'a str,
+    pub sessions: &'a [String],
+    pub models: &'a [(AgentKind, Vec<String>)],
     pub agents: &'a [AgentView],
     pub decisions: &'a [Decision],
     pub history: &'a [ChatEntry],
@@ -143,6 +155,8 @@ pub fn chat(talk: &Talk) -> String {
     [
         format!("{ROLE} The user is talking to you about what is running.\n"),
         section("Instructions for every project", talk.global),
+        section("Sessions", &talk.sessions.join(", ")),
+        section("Models you can start agents with", &lines(talk.models.iter().map(models_line).collect())),
         format!("{UNTRUSTED}\n"),
         section("Agents", &board(talk.agents)),
         section("Pending decisions", &lines(talk.decisions.iter().map(pending_line).collect())),
@@ -164,7 +178,6 @@ pub fn chat_with_screens(first: &str, screens: &[(AgentId, Vec<String>)]) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::AgentKind;
     use crate::orchestrator::{Input, Suggestion, ToolAsk};
 
     fn decision() -> Decision {
@@ -271,10 +284,17 @@ mod tests {
         ];
         let lines: Vec<String> = board(&agents).lines().map(str::to_string).collect();
         assert_eq!(lines.len(), 3);
-        assert!(lines[0].starts_with("#2 agent-2 (codex) project dev/octo — paused — aaa"), "{}", lines[0]);
-        assert_eq!(lines[0].chars().filter(|c| *c == 'a').count(), MAX_ACTIVITY_CHARS + 2, "the activity is cut");
-        assert_eq!(lines[1], "#1 agent-1 (codex) project dev/octo — working — running the tests");
-        assert_eq!(lines[2], "#3 agent-3 (codex) project dev/octo — idle — ");
+        assert!(
+            lines[0].starts_with("#2 agent-2 (codex) project dev/octo session default — paused — aaa"),
+            "{}",
+            lines[0]
+        );
+        assert_eq!(lines[0].chars().filter(|c| *c == 'a').count(), MAX_ACTIVITY_CHARS + 3, "the activity is cut");
+        assert_eq!(lines[1], "#1 agent-1 (codex) project dev/octo session default — working — running the tests");
+        assert_eq!(lines[2], "#3 agent-3 (codex) project dev/octo session default — idle — ");
+        let chosen =
+            AgentView { model: Some("gpt-6-luna".into()), session: "work".into(), ..agent(4, AgentState::Idle, "") };
+        assert_eq!(board(&[chosen]), "#4 agent-4 (codex model gpt-6-luna) project dev/octo session work — idle — ");
         let many: Vec<AgentView> = (1..=200).map(|id| agent(id, AgentState::Idle, "")).collect();
         assert_eq!(board(&many).lines().count(), MAX_BOARD_AGENTS);
         assert_eq!(board(&[]), "");
@@ -292,8 +312,15 @@ mod tests {
             ..decision()
         };
         let agents = [agent(3, AgentState::Paused, "asking")];
+        let sessions = ["default".to_string(), "work".to_string()];
+        let models = [
+            (AgentKind::Claude, vec!["opus".to_string(), "fable".to_string()]),
+            (AgentKind::Codex, vec!["gpt-6-luna".to_string()]),
+        ];
         let talk = Talk {
             global: "- be brief",
+            sessions: &sessions,
+            models: &models,
             agents: &agents,
             decisions: std::slice::from_ref(&waiting),
             history: &history,
@@ -303,17 +330,33 @@ mod tests {
         for part in [
             "The user is talking to you",
             "Instructions for every project:\n- be brief",
-            "Agents:\n#3 agent-3 (codex) project dev/octo — paused — asking",
+            "Sessions:\ndefault, work",
+            "Models you can start agents with:\nclaude: opus, fable\ncodex: gpt-6-luna",
+            "Agents:\n#3 agent-3 (codex) project dev/octo session default — paused — asking",
             "decision 7 — agent #3 api — waiting for the user — npm test — suggested: Allow npm test",
             "Octo: all quiet",
             "The user says:\nwhat is agent 3 doing?",
             r#"{"reply":"...","read":[agent ids]|null,"actions":[...]|null}"#,
+            r#"{"type":"start","kind":"claude","cwd":"...","task":"...","model":"..."|null,"session":"..."|null}"#,
+            r#"{"type":"restart","agent":N}"#,
+            r#"{"type":"remove","agent":N}"#,
+            r#"{"type":"rename","agent":N,"name":"..."}"#,
+            "never that it is already done",
         ] {
             assert!(prompt.contains(part), "{part}\n---\n{prompt}");
         }
         assert!(prompt.contains("User: old 9") && !prompt.contains("User: old 8"), "only the last twelve are sent");
-        let quiet = chat(&Talk { global: "", agents: &[], decisions: &[], history: &[], message: "hi" });
+        let quiet = chat(&Talk {
+            global: "",
+            sessions: &[],
+            models: &[],
+            agents: &[],
+            decisions: &[],
+            history: &[],
+            message: "hi",
+        });
         assert!(quiet.contains("Agents:\n(none)") && quiet.contains("Pending decisions:\n(none)"));
+        assert!(quiet.contains("Models you can start agents with:\n(none)"));
     }
 
     #[test]

@@ -234,3 +234,48 @@ fn in_moderate_mode_octo_answers_a_paused_agent_through_the_engine_cli_and_logs_
     assert!(after.decisions.is_empty());
     assert_eq!(after.handled.len(), 1, "the pause Octo answered is not logged again when it ends");
 }
+
+fn starting_engine(dir: &Path, cwd: &Path) -> (String, Vec<String>) {
+    let cwd = cwd.to_string_lossy().replace('\\', "/");
+    let said = format!(
+        r#"{{"reply":"Starting it.","actions":[{{"type":"start","kind":"kimi","cwd":"{cwd}","task":"","model":"k2-turbo","session":null}}]}}"#
+    );
+    let output = format!(r#"{{"type":"result","is_error":false,"result":{}}}"#, serde_json::to_string(&said).unwrap());
+    let ps1 = format!("$null = [Console]::In.ReadToEnd()\n[Console]::Out.Write('{output}')\n");
+    let sh = format!("cat > /dev/null\nprintf '%s' '{output}'\n");
+    script(dir, "starter", &ps1, &sh)
+}
+
+#[test]
+fn from_the_chat_octo_starts_an_agent_in_the_app_with_the_model_asked_for_and_in_a_session_that_exists() {
+    let fx = fixture();
+    let cwd = fx.dir.join("limes");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let (claude_command, claude_args) = starting_engine(&fx.dir, &cwd);
+    let (kimi_command, kimi_args) = asking_agent(&fx.dir);
+    fx.hub.reconfigure(Config { kimi_command, kimi_args, claude_command, claude_args, ..Config::default() }).unwrap();
+    let mut remembered = fx.store.load_ui();
+    remembered.session = "gone".into();
+    fx.store.save_ui(&remembered).unwrap();
+
+    let mut peer = Peer::join(&fx.hub);
+    let mut window = Window(Vec::new());
+    let engine = SettingsChange { primary: Some(Some(AgentKind::Claude)), ..SettingsChange::default() };
+    peer.handle(PhoneMsg::OrchestratorSet(engine), &mut window).unwrap();
+    view_where(&mut peer, &mut window, |view| view.primary == Some(AgentKind::Claude));
+    let ask = PhoneMsg::OrchestratorChat { text: "start a kimi agent in limes on k2-turbo".into() };
+    peer.handle(ask, &mut window).unwrap();
+
+    let answered = view_where(&mut peer, &mut window, |view| view.chat.len() == 2 && !view.thinking);
+    let said = &answered.chat[1];
+    assert_eq!((said.text.as_str(), said.failed), ("Starting it.", false));
+    assert_eq!(said.actions.len(), 1);
+    assert!(said.actions[0].starts_with("Started kimi "), "{:?}", said.actions);
+    assert!(said.actions[0].contains(" on k2-turbo in ") && said.actions[0].ends_with(", session default"));
+
+    let agent = state_of(&mut peer, &mut window, "limes", AgentState::Paused);
+    let record = fx.store.load_agent(agent).unwrap();
+    assert_eq!((record.kind, record.session.as_str()), (AgentKind::Kimi, "default"), "not the session that is gone");
+    assert_eq!(record.model.as_deref(), Some("k2-turbo"));
+    assert!(said.actions[0].contains(&format!("(#{agent})")), "the action names the agent that really started");
+}

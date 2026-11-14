@@ -1,18 +1,21 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::io;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::cli::SUBMIT_DELAY;
+use crate::cli::{DEFAULT_SIZE, SUBMIT_DELAY};
 use crate::client;
 use crate::config::Config;
 use crate::holder::detect::DONE_GRACE_MS;
 use crate::holder::term::encode_typed_text;
 use crate::hooks;
-use crate::model::{AgentId, AgentKind, AgentState};
+use crate::launch::LaunchMode;
+use crate::model::{AgentId, AgentKind, AgentRecord, AgentState};
+use crate::models;
 use crate::orchestrator::engine::{Call, Engine};
 use crate::orchestrator::logs::{self, Activity, Handled, Journal, Talk};
 use crate::orchestrator::prompt::{self, Case, MAX_CHAT_HISTORY, MAX_TASK_CHARS, Rules};
@@ -29,7 +32,7 @@ use crate::paths::Home;
 use crate::protocol::ClientMsg;
 use crate::pwa::actions::{self, notice, spawn};
 use crate::pwa::hub::{Event, Hub};
-use crate::pwa::protocol::{BridgeMsg, PhoneMsg, StartRequest, Tone};
+use crate::pwa::protocol::{AgentView, BridgeMsg, PhoneMsg, StartRequest, Tone};
 use crate::pwa::server::SUBMIT;
 use crate::store::Store;
 use crate::termfmt;
@@ -280,6 +283,51 @@ fn find(decisions: &mut BTreeMap<AgentId, Open>, id: u64) -> Option<&mut Open> {
 
 pub fn engine_views(installed: &[AgentKind]) -> Vec<EngineView> {
     ENGINES.iter().map(|kind| EngineView { kind: *kind, installed: installed.contains(kind) }).collect()
+}
+
+fn session_names(store: &Store) -> Vec<String> {
+    store.load_sessions().unwrap_or_default().into_iter().map(|session| session.name).collect()
+}
+
+fn start_models(installed: &[AgentKind]) -> Vec<(AgentKind, Vec<String>)> {
+    installed
+        .iter()
+        .map(|kind| (*kind, models::available(*kind).into_iter().map(|model| model.id).collect::<Vec<_>>()))
+        .filter(|(_, ids)| !ids.is_empty())
+        .collect()
+}
+
+pub fn session_for(
+    requested: Option<&str>,
+    cwd: &Path,
+    sessions: &[String],
+    agents: &[AgentView],
+    remembered: &str,
+) -> Option<String> {
+    let beside = agents
+        .iter()
+        .filter(|agent| actions::resolve_dir(&agent.cwd) == cwd)
+        .max_by_key(|agent| agent.id)
+        .map(|agent| agent.session.as_str());
+    requested
+        .into_iter()
+        .chain(beside)
+        .chain(Some(remembered))
+        .chain(sessions.first().map(String::as_str))
+        .find(|name| sessions.iter().any(|session| session == name))
+        .map(str::to_string)
+}
+
+fn started(record: &AgentRecord) -> String {
+    let model = record.model.as_deref().map_or_else(String::new, |model| format!(" on {model}"));
+    format!(
+        "Started {} {} (#{}){model} in {}, session {}",
+        record.kind.label(),
+        record.name,
+        record.id,
+        record.cwd.display(),
+        record.session
+    )
 }
 
 pub fn sight_of(seen: &[Sighting], agent: AgentId) -> Option<Sight> {
@@ -943,7 +991,17 @@ impl Orchestrator {
         }
         let global = instructions::read(&self.home, None).unwrap_or_default();
         let agents = hub.agent_views();
-        let talk = prompt::Talk { global: &global, agents: &agents, decisions: &decisions, history: &history, message };
+        let sessions = session_names(hub.store());
+        let models = start_models(&hub.kinds());
+        let talk = prompt::Talk {
+            global: &global,
+            sessions: &sessions,
+            models: &models,
+            agents: &agents,
+            decisions: &decisions,
+            history: &history,
+            message,
+        };
         let first = prompt::chat(&talk);
         let launcher = hub.launcher();
         let config = launcher.config();
@@ -1020,24 +1078,74 @@ impl Orchestrator {
                     Err(err) => format!("Could not stop {name}: {err}"),
                 }
             }
-            Some(ChatAction::Start { kind, cwd, task, session }) => {
+            Some(ChatAction::Start { kind, cwd, task, session, model }) => {
                 let Some(kind) = AgentKind::parse(&kind) else {
                     return format!("Could not start {kind}: it is not an agent Octo knows");
                 };
-                let session = session.map(|session| session.trim().to_string()).filter(|session| !session.is_empty());
+                let label = kind.label();
+                let folder = actions::resolve_dir(&cwd);
+                let requested = session.as_deref().map(str::trim).filter(|session| !session.is_empty());
+                let sessions = session_names(hub.store());
+                let remembered = hub.store().load_ui().session;
+                let Some(session) = session_for(requested, &folder, &sessions, &hub.agent_views(), &remembered) else {
+                    return format!("Could not start {label}: there is no session to put it in");
+                };
                 let request = StartRequest {
                     kind,
-                    session: session.unwrap_or_else(|| hub.store().load_ui().session),
-                    cwd: cwd.clone(),
+                    session,
+                    cwd: folder.to_string_lossy().into_owned(),
                     task,
                     worktree: false,
                     bypass: false,
                     remote_control: false,
-                    model: None,
+                    model,
                     attachments: Vec::new(),
                 };
-                actions::start(hub, request, reply);
-                format!("Starting {} in {cwd}", kind.label())
+                let launch = match actions::prepare(hub, request) {
+                    Ok(launch) => launch,
+                    Err(err) => return format!("Could not start {label}: {err}"),
+                };
+                match launch.run(hub) {
+                    Ok(record) => started(&record),
+                    Err(err) => format!("Could not start {label} in {}: {err}", folder.display()),
+                }
+            }
+            Some(ChatAction::Restart { agent }) => {
+                let name = name_of(agent);
+                let Some(mut record) = hub.record(agent) else {
+                    return format!("Could not restart {name}: there is no such agent");
+                };
+                if !actions::is_stopped(hub, agent) {
+                    return format!("Could not restart {name}: it is still running");
+                }
+                let Some(_relaunch) = hub.try_relaunch(agent) else { return format!("{name} is already starting") };
+                let restarted = hub.launcher().start(&mut record, LaunchMode::Resume, DEFAULT_SIZE);
+                hub.nudge();
+                match restarted {
+                    Ok(()) => format!("Restarted {name}"),
+                    Err(err) => format!("Could not restart {name}: {err}"),
+                }
+            }
+            Some(ChatAction::Remove { agent }) => {
+                let name = name_of(agent);
+                let Some(record) = hub.record(agent) else {
+                    return format!("Could not remove {name}: there is no such agent");
+                };
+                if !actions::is_stopped(hub, agent) {
+                    return format!("Could not remove {name}: stop it first");
+                }
+                match actions::remove_stopped(hub, record, reply) {
+                    Ok(()) => format!("Removed {name}"),
+                    Err(err) => format!("Could not remove {name}: {err}"),
+                }
+            }
+            Some(ChatAction::Rename { agent, name: wanted }) => {
+                let name = name_of(agent);
+                match actions::rename_agent(hub, agent, &wanted) {
+                    Ok(Some((old, new))) => format!("Renamed {old} to {new}"),
+                    Ok(None) => format!("Could not rename {name}: there is no such agent"),
+                    Err(err) => format!("Could not rename {name}: {err}"),
+                }
             }
         }
     }
@@ -1195,6 +1303,61 @@ pub fn activity(hub: &Hub, before: Option<u64>, reply: &Sender<Event>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn placed(id: AgentId, session: &str, cwd: &Path) -> AgentView {
+        AgentView {
+            id,
+            session: session.into(),
+            name: format!("agent-{id}"),
+            kind: AgentKind::Claude,
+            state: AgentState::Idle,
+            starting: false,
+            activity: String::new(),
+            task: String::new(),
+            cwd: cwd.to_string_lossy().into_owned(),
+            project: String::new(),
+            color: String::new(),
+            started_at: None,
+            state_since: None,
+            turn_started: None,
+            last_turn: None,
+            branch: None,
+            exit: None,
+            changes: None,
+            test: None,
+            subagents: Vec::new(),
+            model: None,
+        }
+    }
+
+    #[test]
+    fn a_new_agent_goes_to_a_session_that_exists_even_when_the_remembered_one_is_gone() {
+        let home = std::env::temp_dir();
+        let (limes, other) = (home.join("limes"), home.join("other"));
+        let sessions = ["teste".to_string(), "work".to_string()];
+        let agents = [placed(3, "teste", &other), placed(5, "work", &limes), placed(4, "teste", &limes)];
+        let pick = |requested: Option<&str>, cwd: &Path, remembered: &str| {
+            session_for(requested, cwd, &sessions, &agents, remembered)
+        };
+        assert_eq!(
+            pick(Some("teste"), &limes, "default").as_deref(),
+            Some("teste"),
+            "the one asked for, when it exists"
+        );
+        assert_eq!(
+            pick(Some("ghost"), &limes, "default").as_deref(),
+            Some("work"),
+            "else the newest agent's beside it"
+        );
+        assert_eq!(pick(None, &limes, "default").as_deref(), Some("work"));
+        assert_eq!(pick(None, &home.join("new"), "work").as_deref(), Some("work"), "else the remembered one");
+        assert_eq!(
+            pick(None, &home.join("new"), "default").as_deref(),
+            Some("teste"),
+            "a remembered session that is gone falls back to the first one"
+        );
+        assert_eq!(session_for(None, &limes, &[], &agents, "default"), None, "no session, nowhere to start");
+    }
 
     #[test]
     fn the_engines_are_claude_and_codex_whether_installed_or_not() {

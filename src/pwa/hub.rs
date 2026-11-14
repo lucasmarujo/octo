@@ -2329,7 +2329,7 @@ mod tests {
                     format!("Answered decision {}: Pressed 1", pending.id),
                     format!("Decision {} is no longer pending", pending.id),
                     "Stopping gamma".to_string(),
-                    "Starting claude in ~".to_string(),
+                    "Could not start claude: claude is not installed on host".to_string(),
                     "Could not start notepad: it is not an agent Octo knows".to_string(),
                     "Could not send to #999: it is not running".to_string(),
                     "Skipped an action Octo wrote wrongly".to_string(),
@@ -2338,12 +2338,6 @@ mod tests {
             assert_eq!(typed_into(&alpha_holder, 2), sent(&[b"run the tests", b"\r"]));
             assert_eq!(typed_into(&beta_holder, 1), sent(&[b"1"]));
             assert_eq!(typed_into(&gamma_holder, 1), sent(&[KILLED]));
-            let (tone, refused) = fx.notice();
-            assert_eq!(tone, Tone::Error, "{refused}");
-            assert!(
-                refused.contains("claude is not installed"),
-                "the start goes through the same checks as the window"
-            );
             assert_eq!(fx.decision_of(beta), None);
             let logged =
                 view.handled.iter().find(|entry| entry.agent == beta && entry.outcome == Outcome::Answered).unwrap();
@@ -2388,6 +2382,56 @@ mod tests {
             fx.octo().clear_chat(&fx.hub);
             assert!(fx.view().chat.is_empty());
             until("the cleared conversation leaves the disk", || (!journal.exists()).then_some(()));
+        }
+
+        #[test]
+        fn from_the_chat_octo_renames_removes_and_restarts_agents_and_says_what_really_happened() {
+            let fx = fixture_with(
+                "crud",
+                Duration::ZERO,
+                Box::new(|_, prompt| {
+                    if !prompt.contains(CHAT_PROMPT) {
+                        return Ok(ESCALATE.to_string());
+                    }
+                    let (alpha, gamma) = (id_on_board(prompt, "alpha"), id_on_board(prompt, "gamma"));
+                    Ok(format!(
+                        r#"{{"reply":"On it.","actions":[
+ {{"type":"rename","agent":{alpha},"name":"   "}},
+ {{"type":"remove","agent":{alpha}}},
+ {{"type":"restart","agent":{alpha}}},
+ {{"type":"remove","agent":{gamma}}},
+ {{"type":"remove","agent":999}},
+ {{"type":"restart","agent":999}},
+ {{"type":"rename","agent":999,"name":"x"}},
+ {{"type":"rename","agent":{alpha},"name":"  api  "}}
+]}}"#
+                    ))
+                }),
+            );
+            fx.enable(Mode::Observe);
+            let (alpha, _alpha_holder) = fx.agent("alpha", AgentKind::Codex, 100);
+            fx.status(alpha, AgentState::Working, 100);
+            let (gamma, _gamma_holder) = fx.agent("gamma", AgentKind::Codex, 100);
+            fx.status(gamma, AgentState::Exited, 100);
+
+            fx.octo().chat(&fx.hub, "tidy up", &fx.reply);
+            let view = until("Octo answers", || Some(fx.view()).filter(|view| !view.thinking && view.chat.len() == 2));
+            assert_eq!(
+                view.chat[1].actions,
+                [
+                    "Could not rename alpha: agent name cannot be empty",
+                    "Could not remove alpha: stop it first",
+                    "Could not restart alpha: it is still running",
+                    "Removed gamma",
+                    "Could not remove #999: there is no such agent",
+                    "Could not restart #999: there is no such agent",
+                    "Could not rename #999: there is no such agent",
+                    "Renamed alpha to api",
+                ]
+            );
+            assert_eq!(fx.store.load_agent(alpha).unwrap().name, "api");
+            assert!(fx.store.load_agent(gamma).is_err(), "the stopped agent left the store");
+            assert!(fx.store.load_agent(alpha).is_ok(), "a running agent is never removed");
         }
 
         #[test]
