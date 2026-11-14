@@ -7,6 +7,20 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.40',
+    date: '2026-11-14',
+    en: [
+      'Octo starts the agents it says it starts. It used to put them in a session that no longer existed and still say they were starting; now each start shows what really happened, with the agent, its folder and its session, or why it could not.',
+      'Ask Octo for a model when it starts an agent, such as "claude on fable", and let it restart, remove and rename agents too.',
+      'The phone stays paired when the computer comes back at a new address. After the computer was off for a while the phone needed the code scanned again; now Octo sends the new address in a notification and the phone moves there by itself, once the computer proves it holds the pairing key. Needs the next version of the phone app.',
+    ],
+    'pt-BR': [
+      'O Octo inicia os agentes que ele diz que inicia. Antes ele os colocava numa sessão que não existia mais e ainda dizia que estavam iniciando; agora cada início mostra o que de fato aconteceu, com o agente, a pasta e a sessão, ou por que não deu.',
+      'Peça um modelo ao Octo quando ele iniciar um agente, como "claude no fable", e deixe ele reiniciar, remover e renomear agentes também.',
+      'O celular continua pareado quando o computador volta com um endereço novo. Depois de o computador ficar desligado por um tempo, era preciso escanear o código de novo; agora o Octo manda o endereço novo numa notificação e o celular passa para ele sozinho, assim que o computador prova que tem a chave de pareamento. Precisa da próxima versão do app do celular.',
+    ],
+  },
+  {
     version: '0.2.39',
     date: '2026-11-13',
     en: [
