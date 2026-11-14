@@ -15,13 +15,54 @@ const PROJECT_KEY_CHARS: usize = 16;
 const PROJECT_SUFFIX: &str = ".md";
 pub const DEFAULT: &str = "# Octo's instructions
 
+Octo reads this file before it answers an agent or you. Write here what holds for every project. What holds for one project goes in that project's own instructions.
+
+## How Octo works
+
+- Octo acts for you. It keeps every agent moving until the task it was given is really finished: built, tested and delivered, not just described.
+- An agent that stops is not done because it stopped. Octo reads what it said. When it left a question, a pending item, a choice or a blocker, Octo settles it and tells the agent to go on.
+- An answer to an agent is one direct, complete message: it settles every point the agent raised, says what to do next and says what finished means.
+- Octo checks before it trusts. When an agent says something is done and did not show the proof the task calls for (the tests run, the build passing, the deploy answering), Octo asks for it.
+- When an agent keeps losing the thread or fails twice at the same step, Octo changes the approach: a clearer instruction, a smaller step or a stronger model.
+- Octo tells you what happened in a few plain lines, in your language: what was delivered, what it decided and why.
+
+## How Octo decides
+
+- The task comes first, then these instructions, then what the project already does.
+- Prefer the smallest change that finishes the task.
+- Between two reasonable options, take the one that is easier to undo.
+- Reading files, searching, building, running tests and committing to a working branch are always fine.
+- Secrets stay out of logs, commits and messages.
+
+## What needs care
+
+In Observe and Moderate these wait for you. In Bypass Octo decides them too, and says in its report that it did.
+
+- Deleting data, or files outside the project.
+- Force pushes and rewriting shared history.
+- Deploying to production and changing production settings.
+- Creating, changing or moving credentials.
+- Spending money.
+
+## My rules
+
+Write your own rules below. They win over everything above.
+
+";
+const EARLIER_DEFAULTS: [&str; 1] = ["# Octo's instructions
+
 Octo reads this file before it answers an agent or you. Write here what holds for every project.
 
 - Prefer the smallest change that finishes the task the agent was given.
 - Reading files, searching, building and running tests are fine.
 - Deleting files outside the project, force pushes and changes to credentials wait for me.
 - When an agent asks something the task does not settle, ask me.
-";
+"];
+
+fn is_untouched_earlier_default(text: &str) -> bool {
+    let text = text.replace("\r\n", "\n");
+    EARLIER_DEFAULTS.iter().any(|earlier| earlier.trim() == text.trim())
+}
 
 pub fn file(home: &Home, project: Option<&str>) -> PathBuf {
     let dir = home.orchestrator_dir();
@@ -61,9 +102,10 @@ fn write(path: &Path, text: &str) -> io::Result<()> {
 pub fn read(home: &Home, project: Option<&str>) -> io::Result<String> {
     let path = file(home, project);
     match (read_capped(&path)?, project) {
-        (Some(text), _) => Ok(text),
+        (Some(text), Some(_)) => Ok(text),
+        (Some(text), None) if !is_untouched_earlier_default(&text) => Ok(text),
         (None, Some(_)) => Ok(String::new()),
-        (None, None) => {
+        (Some(_), None) | (None, None) => {
             write(&path, DEFAULT)?;
             Ok(DEFAULT.to_string())
         }
@@ -112,6 +154,37 @@ mod tests {
         fs::write(&path, "").unwrap();
         assert_eq!(read(&home, None).unwrap(), "", "a file emptied on purpose stays empty");
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_default_of_an_earlier_version_is_replaced_only_while_nobody_changed_it() {
+        let (dir, home) = temp_home("earlier");
+        let path = file(&home, None);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let earlier = EARLIER_DEFAULTS[0];
+        fs::write(&path, earlier).unwrap();
+        assert_eq!(read(&home, None).unwrap(), DEFAULT);
+        assert_eq!(fs::read_to_string(&path).unwrap(), DEFAULT, "the file itself is brought up to date");
+        fs::write(&path, earlier.replace('\n', "\r\n")).unwrap();
+        assert_eq!(read(&home, None).unwrap(), DEFAULT, "an editor that only changed the line endings changed nothing");
+        let mine = format!("{earlier}- always use pnpm\n");
+        fs::write(&path, &mine).unwrap();
+        assert_eq!(read(&home, None).unwrap(), mine, "a file the user wrote in is theirs");
+        save(&home, Some("dev/octo"), earlier).unwrap();
+        assert_eq!(read(&home, Some("dev/octo")).unwrap(), earlier, "a project file is never replaced");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_default_says_how_octo_works_decides_and_what_needs_care() {
+        for part in ["## How Octo works", "## How Octo decides", "## What needs care", "## My rules"] {
+            assert!(DEFAULT.contains(part), "{part}");
+        }
+        assert!(DEFAULT.contains("An agent that stops is not done because it stopped."));
+        assert!(DEFAULT.contains("In Bypass Octo decides them too"));
+        assert!(!DEFAULT.contains("ask me"), "the default never tells Octo to hand a decision back in every mode");
+        assert!(DEFAULT.len() < MAX_BYTES / 16);
+        assert!(!is_untouched_earlier_default(DEFAULT));
     }
 
     #[test]
