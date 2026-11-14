@@ -127,6 +127,58 @@ pub fn read_claude(path: &Path, from: u64) -> ChatPage {
     ChatPage { items, next: start + complete as u64, reset: rewound || first }
 }
 
+fn full_texts(line: &str) -> Vec<String> {
+    let Ok(record) = serde_json::from_str::<Record>(line) else { return Vec::new() };
+    if record.is_meta || record.is_sidechain || record.is_compact_summary || record.kind != ASSISTANT {
+        return Vec::new();
+    }
+    let Some(Message { content: Value::Array(blocks) }) = record.message else { return Vec::new() };
+    blocks
+        .into_iter()
+        .filter_map(|block| serde_json::from_value::<Block>(block).ok())
+        .filter(|block| block.kind == "text")
+        .filter_map(|block| block.text)
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .collect()
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LastTurn {
+    pub asked: String,
+    pub said: String,
+}
+
+fn asked_in(line: &str) -> Option<String> {
+    if !line.contains(USER_TYPE) {
+        return None;
+    }
+    items_of(line).into_iter().rev().find_map(|item| match item {
+        ChatItem::User { text } => Some(text),
+        ChatItem::Text { .. } | ChatItem::Step { .. } | ChatItem::Result { .. } => None,
+    })
+}
+
+pub fn last_turn(path: &Path, max_chars: usize) -> LastTurn {
+    let Ok(len) = fs::metadata(path).map(|meta| meta.len()) else { return LastTurn::default() };
+    let Some(bytes) = window(path, len.saturating_sub(WINDOW_BYTES), WINDOW_BYTES) else { return LastTurn::default() };
+    let text = String::from_utf8_lossy(&bytes);
+    let mut asked = String::new();
+    let mut said: Vec<String> = Vec::new();
+    for line in text.lines().filter(|line| spoken(line)) {
+        match asked_in(line) {
+            Some(text) => {
+                asked = text;
+                said.clear();
+            }
+            None => said.extend(full_texts(line)),
+        }
+    }
+    let whole = said.join("\n\n");
+    let skipped = whole.chars().count().saturating_sub(max_chars);
+    LastTurn { asked, said: whole.chars().skip(skipped).collect() }
+}
+
 fn weight(item: &ChatItem) -> usize {
     let lines = |body: &[String]| body.iter().map(String::len).sum::<usize>();
     match item {
@@ -384,6 +436,35 @@ mod tests {
         );
         assert_eq!(page.next, text.len() as u64);
         assert!(page.reset, "the first page replaces whatever the phone had");
+    }
+
+    #[test]
+    fn the_last_turn_is_what_the_agent_was_asked_and_everything_it_said_since_keeping_its_end() {
+        let dir = temp_dir("reply");
+        let long = format!("{}\nWhich one do I deploy?", "z".repeat(TEXT_MAX_CHARS * 2));
+        let text = [
+            user("fix the login"),
+            says("An older answer."),
+            user("now ship it"),
+            says("  I checked the pipeline.  "),
+            uses("t1", "Bash", serde_json::json!({ "command": "git status" })),
+            returns("t1", serde_json::json!("clean"), false),
+            line(serde_json::json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "text", "text": "from a subagent" }] } })),
+            says(&long),
+        ]
+        .concat();
+        let path = transcript(&dir, &text);
+        let whole = last_turn(&path, usize::MAX);
+        assert_eq!(whole.asked, "now ship it", "not the task it started with");
+        assert!(whole.said.starts_with("I checked the pipeline.\n\nzzz"), "a tool result is not a new question");
+        assert!(!whole.said.contains("An older answer") && !whole.said.contains("from a subagent"));
+        assert!(whole.said.ends_with("Which one do I deploy?"), "a long message is not cut where it asks");
+        assert_eq!(last_turn(&path, 22).said, "Which one do I deploy?");
+        fs::write(&path, [user("hello")].concat()).unwrap();
+        let unanswered = last_turn(&path, 100);
+        assert_eq!((unanswered.asked.as_str(), unanswered.said.as_str()), ("hello", ""), "nothing was said yet");
+        assert_eq!(last_turn(&dir.join("missing.jsonl"), 100), LastTurn::default());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

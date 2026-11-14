@@ -161,7 +161,13 @@ impl Tracked {
     fn sighting(&self) -> Sighting {
         let sight = match (&self.status, self.is_dead()) {
             (None, false) => Sight::Unknown,
-            (Some(status), false) => Sight::of(status.state, status.state_since_ms),
+            (Some(status), false) => {
+                let turn_ended = status.running_kind(self.record.kind).is_ai()
+                    && status.last_turn_ms.is_some()
+                    && status.turn_started_ms.is_none()
+                    && self.subagents.is_empty();
+                Sight::of(status.state, status.state_since_ms, turn_ended)
+            }
             (_, true) => Sight::Other,
         };
         (self.record.id, sight)
@@ -497,6 +503,10 @@ impl Hub {
 
     pub fn child_pid(&self, id: AgentId) -> Option<u32> {
         self.inner().agents.get(&id).filter(|tracked| !tracked.is_dead()).and_then(|tracked| tracked.child_pid)
+    }
+
+    pub fn sight(&self, id: AgentId) -> Option<Sight> {
+        self.inner().agents.get(&id).map(|tracked| tracked.sighting().1)
     }
 
     pub fn live_status(&self, id: AgentId) -> Option<StatusReport> {
@@ -1405,7 +1415,9 @@ mod tests {
         use crate::hooks::{self, Ask};
         use crate::model::NewAgent;
         use crate::orchestrator::engine::Call;
-        use crate::orchestrator::runner::{MAX_ANSWERS_IN_A_ROW, SETTLE as FOLLOW_AFTER};
+        use crate::orchestrator::runner::{
+            MAX_ANSWERS_IN_A_ROW, MAX_REPLIES_IN_A_ROW, SETTLE as FOLLOW_AFTER, too_many_replies,
+        };
         use crate::orchestrator::{
             By, ChatRole, Decision, DecisionStatus, How, MAX_ENGINE_PROCESSES, Mode, OrchestratorView, Outcome,
             ProjectChange, SettingsChange, UserAnswer, instructions, relay,
@@ -1422,6 +1434,10 @@ mod tests {
 ```"#;
         const TYPE_YES: &str = r#"{"action":"answer","text":"yes","summary":"Told it to go on","reason":"safe"}"#;
         const ESCALATE: &str = r#"{"action":"escalate","keys":["2"],"summary":"Refuse the tests","reason":"they deploy","tag":"irreversible"}"#;
+        const UNSURE: &str = r#"{"action":"escalate","summary":"","reason":"the screen says too little"}"#;
+        const TURN_ENDED: &str = "ended its turn and went quiet";
+        const REPLY: &str = r#"{"action":"reply","text":"use postgres and go on","question":"Which database should it use?","summary":"Chose postgres","reason":"the task says so","tag":null,"report":"It asked which database; I told it postgres."}"#;
+        const FINISHED: &str = r#"{"action":"done","summary":"Fixed the login","reason":"nothing is pending","report":"The login fix is done and tested."}"#;
         const KILLED: &[u8] = b"<kill>";
         const WAIT: Duration = Duration::from_secs(60);
         const SETTLE: Duration = Duration::from_millis(300);
@@ -1562,6 +1578,13 @@ mod tests {
                 (status.state, status.state_since_ms) = (state, since);
             }
 
+            fn ended(&self, id: AgentId, since: u64) {
+                let mut inner = self.hub.inner();
+                let status = inner.agents.get_mut(&id).unwrap().status.as_mut().unwrap();
+                (status.state, status.state_since_ms) = (AgentState::Done, since);
+                (status.turn_started_ms, status.last_turn_ms) = (None, Some(1_000));
+            }
+
             fn view(&self) -> OrchestratorView {
                 self.octo().view()
             }
@@ -1699,6 +1722,34 @@ mod tests {
                 "nothing is decided before it reports"
             );
             assert_eq!(sight(Link::Lost(None), Some(paused.clone())).1, Sight::Other, "a dead agent asks nothing");
+            let over = |state| StatusReport {
+                state,
+                state_since_ms: 90,
+                last_turn_ms: Some(4_000),
+                ..report_of_a_run(1, state)
+            };
+            assert_eq!(sight(Link::Pending, Some(over(AgentState::Done))).1, Sight::Ended(90));
+            assert_eq!(
+                sight(Link::Pending, Some(over(AgentState::Idle))).1,
+                Sight::Ended(90),
+                "a turn the user already looked at ended all the same"
+            );
+            let fresh = StatusReport { last_turn_ms: None, ..over(AgentState::Idle) };
+            assert_eq!(sight(Link::Pending, Some(fresh)).1, Sight::Other, "an agent that never worked ended nothing");
+            let running = StatusReport { turn_started_ms: Some(80), ..over(AgentState::Done) };
+            assert_eq!(sight(Link::Pending, Some(running)).1, Sight::Other);
+            let mut helped = tracked_agent(record.clone(), Link::Pending, Some(over(AgentState::Done)));
+            helped.subagents = vec![Subagent {
+                id: "a1".into(),
+                role: "explore".into(),
+                description: String::new(),
+                activity: String::new(),
+                started_at_ms: 1,
+            }];
+            assert_eq!(helped.sighting().1, Sight::Other, "its subagents are still at work");
+            let shell = AgentRecord { kind: AgentKind::Terminal, ..record.clone() };
+            let quiet = tracked_agent(shell, Link::Pending, Some(over(AgentState::Idle)));
+            assert_eq!(quiet.sighting().1, Sight::Other, "a terminal that went quiet waits for nobody");
             let exit = ExitInfo { code: Some(0), error: None, at_ms: 1 };
             assert_eq!(sight(Link::Exited(exit), Some(paused)).1, Sight::Other);
             let _ = std::fs::remove_dir_all(&dir);
@@ -1915,7 +1966,7 @@ mod tests {
 
         #[test]
         fn an_ask_left_by_an_earlier_pause_is_not_taken_for_this_one() {
-            let fx = fixture("stale-ask", ESCALATE);
+            let fx = fixture("stale-ask", UNSURE);
             fx.enable(Mode::Bypass);
             let (id, holder) = fx.agent("alpha", AgentKind::Claude, 500);
             let old = Ask { tool: "Bash".into(), detail: "rm -rf build".into(), at_ms: 499 };
@@ -1926,7 +1977,7 @@ mod tests {
             assert_eq!(decision.question, QUESTION, "the screen is what says what it asks now");
             assert!(
                 decision.problem.unwrap().starts_with("Octo could not decide"),
-                "bypass that escalates waits with why"
+                "bypass waits only when Octo names no answer at all"
             );
             nothing_typed(&holder);
         }
@@ -2256,6 +2307,148 @@ mod tests {
             assert!(fx.view().handled.is_empty());
         }
 
+        #[test]
+        fn in_bypass_octo_answers_an_agent_that_ended_its_turn_waiting_and_tells_the_chat() {
+            let reviews = AtomicUsize::new(0);
+            let script: Script = Box::new(move |_, _| {
+                Ok(if reviews.fetch_add(1, Ordering::SeqCst) == 0 { REPLY } else { FINISHED }.to_string())
+            });
+            let fx = fixture_with("ended", Duration::ZERO, script);
+            fx.enable(Mode::Bypass);
+            let (id, holder) = fx.agent("alpha", AgentKind::Codex, 100);
+            let first = now_ms() + 1;
+            fx.ended(id, first);
+            fx.hub.orchestrate(true);
+            assert_eq!(typed_into(&holder, 2), sent(&[b"use postgres and go on", b"\r"]));
+            let told = until("the chat is told", || Some(fx.view().chat).filter(|chat| chat.len() == 1));
+            assert_eq!(told[0].role, ChatRole::Octo);
+            assert_eq!(told[0].text, format!("alpha (#{id}): It asked which database; I told it postgres."));
+            assert_eq!(told[0].actions, ["Sent to alpha: use postgres and go on"]);
+            let logged = fx.view().handled;
+            assert_eq!((logged[0].by, logged[0].outcome, logged[0].mode), (By::Octo, Outcome::Answered, Mode::Bypass));
+            assert_eq!(
+                (logged[0].summary.as_str(), logged[0].question.as_str()),
+                ("Chose postgres", "Which database should it use?")
+            );
+            let calls = fx.engine.calls();
+            assert_eq!(calls.len(), 1);
+            assert!(calls[0].2.contains(TURN_ENDED) && calls[0].2.contains("Mode: bypass."), "{}", calls[0].2);
+            assert!(calls[0].2.contains("Task: task of alpha") && calls[0].2.contains(QUESTION), "{}", calls[0].2);
+
+            fx.status(id, AgentState::Working, first + 10);
+            fx.hub.orchestrate(true);
+            assert!(fx.view().decisions.is_empty(), "the agent went on with the answer");
+            fx.ended(id, first + 20);
+            fx.hub.orchestrate(true);
+            let done = until("the end is logged", || Some(fx.view()).filter(|view| view.handled.len() == 2));
+            assert_eq!(
+                (done.handled[0].by, done.handled[0].outcome, done.handled[0].summary.as_str()),
+                (By::Octo, Outcome::Finished, "Fixed the login")
+            );
+            assert_eq!(done.handled[0].question, "Finished its turn", "nothing was asked, so nothing is quoted");
+            assert_eq!(done.chat[1].text, format!("alpha (#{id}): The login fix is done and tested."));
+            assert_eq!(done.chat[1].actions, ["Fixed the login"]);
+            assert!(done.decisions.is_empty(), "a finished agent leaves nothing pending");
+            assert_eq!(done.handled_today, 1, "a turn that only ended is not a decision Octo took");
+            fx.hub.orchestrate(true);
+            nothing_typed(&holder);
+            assert_eq!(fx.engine.calls().len(), 2, "the same end is reviewed once");
+        }
+
+        #[test]
+        fn a_reply_reaches_an_agent_that_takes_pastes_as_one_paste_with_its_lines_kept() {
+            const LINES: &str =
+                r#"{"action":"reply","text":"1) use @postgres\n2) then deploy","summary":"Chose postgres"}"#;
+            let fx = fixture("ended-paste", LINES);
+            fx.enable(Mode::Bypass);
+            let pasting: Screens = Arc::new(|_| format!("\u{1b}[?2004h{SCREEN}"));
+            let (id, holder) = fx.agent_showing("alpha", AgentKind::Codex, 100, pasting);
+            fx.ended(id, now_ms() + 1);
+            fx.hub.orchestrate(true);
+            assert_eq!(
+                typed_into(&holder, 2),
+                sent(&[b"\x1b[200~1) use @postgres\n2) then deploy\x1b[201~", b"\r"]),
+                "nothing in it is read as a key, and it is submitted once"
+            );
+            let told = until("the chat is told", || Some(fx.view().chat).filter(|chat| chat.len() == 1));
+            assert_eq!(told[0].actions, ["Sent to alpha: 1) use @postgres 2) then deploy"]);
+            assert_eq!(told[0].text, format!("alpha (#{id}): Chose postgres"), "with no report the summary is told");
+        }
+
+        #[test]
+        fn in_observe_a_turn_that_ended_waiting_is_left_for_you_with_what_octo_would_reply() {
+            let fx = fixture("ended-observe", REPLY);
+            fx.enable(Mode::Observe);
+            let (id, holder) = fx.agent("alpha", AgentKind::Codex, 100);
+            let since = now_ms() + 1;
+            fx.ended(id, since);
+            fx.hub.orchestrate(true);
+            let decision = fx.waits_for_you(id);
+            assert!(decision.ended, "the window can tell it from a pause");
+            assert_eq!((decision.since, decision.question.as_str()), (since, "Which database should it use?"));
+            assert_eq!(decision.suggestion.as_ref().unwrap().text.as_deref(), Some("use postgres and go on"));
+            assert_eq!(decision.problem, None);
+            nothing_typed(&holder);
+            let view = fx.view();
+            assert_eq!(view.chat[0].actions, ["Left for you: Which database should it use?"]);
+            assert_eq!((view.handled[0].by, view.handled[0].outcome), (By::Octo, Outcome::Escalated));
+            let answer =
+                UserAnswer { decision: decision.id, how: How::Suggestion, text: None, keys: None, remember: None };
+            fx.octo().answer_from_user(&fx.hub, answer, &fx.reply);
+            assert_eq!(typed_into(&holder, 2), sent(&[b"use postgres and go on", b"\r"]));
+            thread::sleep(FOLLOW_AFTER + SETTLE);
+            let stuck = fx.waits_for_you(id);
+            assert_eq!(
+                stuck.problem.as_deref(),
+                Some("Octo's answer did not take; answer it yourself"),
+                "an agent that stays quiet after the reply comes back to the user"
+            );
+        }
+
+        #[test]
+        fn a_turn_that_ended_before_octo_was_watching_is_not_reviewed() {
+            let fx = fixture("ended-old", REPLY);
+            let (old, holder) = fx.agent("old", AgentKind::Codex, 100);
+            fx.ended(old, now_ms().saturating_sub(60_000));
+            fx.enable(Mode::Bypass);
+            for _ in 0..2 {
+                fx.hub.orchestrate(true);
+            }
+            thread::sleep(SETTLE);
+            assert!(fx.engine.calls().is_empty(), "what ended while Octo was off is not Octo's to answer");
+            assert!(fx.view().decisions.is_empty() && fx.view().chat.is_empty());
+            nothing_typed(&holder);
+        }
+
+        #[test]
+        fn after_twenty_replies_in_a_row_the_next_turn_end_is_left_to_the_user_until_they_speak() {
+            let fx = fixture("ended-limit", REPLY);
+            fx.enable(Mode::Bypass);
+            let (id, holder) = fx.agent("alpha", AgentKind::Codex, 100);
+            let mut since = now_ms() + 1;
+            let mut end_turn = || {
+                fx.status(id, AgentState::Working, since);
+                fx.hub.orchestrate(true);
+                since += 10;
+                fx.ended(id, since);
+                fx.hub.orchestrate(true);
+            };
+            let limit = usize::from(MAX_REPLIES_IN_A_ROW);
+            for round in 1..=limit {
+                end_turn();
+                assert_eq!(typed_into(&holder, 2)[0], b"use postgres and go on");
+                until("the reply is counted", || (fx.view().chat.len() == round).then_some(()));
+            }
+            end_turn();
+            assert_eq!(fx.waits_for_you(id).problem, Some(too_many_replies()));
+            nothing_typed(&holder);
+            assert_eq!(fx.engine.calls().len(), limit, "the turn end beyond the limit is not judged");
+            fx.octo().chat(&fx.hub, "go on with it", &fx.reply);
+            until("octo answered the user", || (!fx.view().thinking).then_some(()));
+            end_turn();
+            assert_eq!(typed_into(&holder, 2)[0], b"use postgres and go on", "the user spoke: Octo replies again");
+        }
+
         const CHAT_PROMPT: &str = "The user is talking to you";
         const SECOND_ROUND: &str = "you cannot ask to read again";
 
@@ -2354,7 +2547,10 @@ mod tests {
             let board: Vec<&str> = turns[0].lines().filter(|line| line.contains(" (codex) project ")).collect();
             assert_eq!(board.len(), 3);
             assert!(board[0].starts_with(&format!("#{beta} beta (codex)")) && board[0].contains("paused"), "{board:?}");
-            assert!(turns[0].contains(&format!("decision {} — agent #{beta} beta — waiting for the user", pending.id)));
+            assert!(
+                turns[0]
+                    .contains(&format!("decision {} — agent #{beta} beta paused — waiting for the user", pending.id))
+            );
             assert!(turns[0].contains("The user says:\nwhat is alpha doing?") && !turns[0].contains(SECOND_ROUND));
             assert!(!turns[0].contains("User: what is alpha doing?"), "the message is not repeated as history");
             let screen = format!("Screen of agent #{alpha}, last rows:\n$ agent\n{QUESTION}");

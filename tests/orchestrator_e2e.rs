@@ -22,6 +22,9 @@ const HOST: &str = "testhost";
 const QUESTION: &str = "Do you want to run the tests? (y/n)";
 const ANSWER_FILE: &str = "answer.txt";
 const PROMPT_FILE: &str = "prompt.txt";
+const REVIEW_FILE: &str = "review.txt";
+const TURN_ENDED: &str = "ended its turn and went quiet";
+const REVIEW: &str = r#"{\"action\":\"done\",\"summary\":\"Ran the tests\",\"reason\":\"nothing is pending\",\"report\":\"The tests ran and nothing is pending.\"}"#;
 const VERDICT: &str = r#"{\"action\":\"answer\",\"keys\":null,\"text\":\"yes\",\"summary\":\"Told it to run the tests\",\"reason\":\"the task asks for them\",\"tag\":null,\"deny\":false}"#;
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -90,13 +93,16 @@ sleep 120
 fn judging_engine(dir: &Path) -> (String, Vec<String>) {
     let ps1 = format!(
         "$prompt = [Console]::In.ReadToEnd()
-[IO.File]::WriteAllText(\"$PSScriptRoot\\{PROMPT_FILE}\", $prompt)
-[Console]::Out.Write('{{\"type\":\"result\",\"is_error\":false,\"result\":\"{VERDICT}\"}}')
+$file = if ($prompt.Contains('{TURN_ENDED}')) {{ '{REVIEW_FILE}' }} else {{ '{PROMPT_FILE}' }}
+[IO.File]::WriteAllText(\"$PSScriptRoot\\$file\", $prompt)
+[Console]::Out.Write('{{\"type\":\"result\",\"is_error\":false,\"result\":\"{VERDICT} {REVIEW}\"}}')
 "
     );
     let sh = format!(
-        "cat > \"$(dirname \"$0\")/{PROMPT_FILE}\"
-printf '%s' '{{\"type\":\"result\",\"is_error\":false,\"result\":\"{VERDICT}\"}}'
+        "prompt=$(cat)
+case \"$prompt\" in *'{TURN_ENDED}'*) file={REVIEW_FILE} ;; *) file={PROMPT_FILE} ;; esac
+printf '%s' \"$prompt\" > \"$(dirname \"$0\")/$file\"
+printf '%s' '{{\"type\":\"result\",\"is_error\":false,\"result\":\"{VERDICT} {REVIEW}\"}}'
 "
     );
     script(dir, "engine", &ps1, &sh)
@@ -227,12 +233,19 @@ fn in_moderate_mode_octo_answers_a_paused_agent_through_the_engine_cli_and_logs_
     }
     let journal = std::fs::read_to_string(&journal).unwrap();
     let logged: Vec<ActivityEntry> = journal.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
-    assert_eq!(logged, std::slice::from_ref(entry), "the activity is on disk as it was shown");
+    assert_eq!(logged.first(), Some(entry), "the activity is on disk as it was shown");
 
     state_of(&mut peer, &mut window, "asks", AgentState::Done);
-    let after = fx.hub.orchestrator().unwrap().view();
-    assert!(after.decisions.is_empty());
-    assert_eq!(after.handled.len(), 1, "the pause Octo answered is not logged again when it ends");
+    let reviewed = view_where(&mut peer, &mut window, |view| view.handled.len() == 2);
+    let ended = &reviewed.handled[0];
+    assert_eq!((ended.by, ended.outcome, ended.summary.as_str()), (By::Octo, Outcome::Finished, "Ran the tests"));
+    assert!(reviewed.decisions.is_empty(), "an agent that really finished leaves nothing pending");
+    assert_eq!(reviewed.handled_today, 1, "the pause Octo answered is not counted again when the turn ends");
+    assert_eq!(reviewed.chat.len(), 1, "Octo tells the chat what the agent delivered");
+    assert!(reviewed.chat[0].text.ends_with("The tests ran and nothing is pending."), "{:?}", reviewed.chat);
+    let review = std::fs::read_to_string(fx.dir.join(REVIEW_FILE)).unwrap();
+    assert!(review.contains(TURN_ENDED) && review.contains("Mode: moderate."), "{review}");
+    assert!(review.contains("thanks"), "the engine read what the agent left on its screen: {review}");
 }
 
 fn starting_engine(dir: &Path, cwd: &Path) -> (String, Vec<String>) {

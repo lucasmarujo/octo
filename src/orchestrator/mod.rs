@@ -59,6 +59,7 @@ pub enum Outcome {
     Denied,
     Escalated,
     Failed,
+    Finished,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +135,8 @@ pub struct Decision {
     pub suggestion: Option<Suggestion>,
     pub tag: Option<String>,
     pub problem: Option<String>,
+    #[serde(default)]
+    pub ended: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -224,12 +227,24 @@ pub struct UserAnswer {
 pub enum Sight {
     Unknown,
     Paused(u64),
+    Ended(u64),
     Other,
 }
 
 impl Sight {
-    pub fn of(state: AgentState, since: u64) -> Self {
-        if state == AgentState::Paused { Sight::Paused(since) } else { Sight::Other }
+    pub fn of(state: AgentState, since: u64, turn_ended: bool) -> Self {
+        match state {
+            AgentState::Paused => Sight::Paused(since),
+            AgentState::Done | AgentState::Idle if turn_ended => Sight::Ended(since),
+            _ => Sight::Other,
+        }
+    }
+
+    pub fn since(self) -> Option<u64> {
+        match self {
+            Sight::Paused(since) | Sight::Ended(since) => Some(since),
+            Sight::Unknown | Sight::Other => None,
+        }
     }
 }
 
@@ -262,8 +277,15 @@ mod tests {
             serde_json::json!(["octo", "rule", "you"])
         );
         assert_eq!(
-            serde_json::to_value([Outcome::Answered, Outcome::Denied, Outcome::Escalated, Outcome::Failed]).unwrap(),
-            serde_json::json!(["answered", "denied", "escalated", "failed"])
+            serde_json::to_value([
+                Outcome::Answered,
+                Outcome::Denied,
+                Outcome::Escalated,
+                Outcome::Failed,
+                Outcome::Finished
+            ])
+            .unwrap(),
+            serde_json::json!(["answered", "denied", "escalated", "failed", "finished"])
         );
         let hows: Vec<How> = serde_json::from_str(r#"["suggestion","text","keys","allow","dismiss"]"#).unwrap();
         assert_eq!(hows, [How::Suggestion, How::Text, How::Keys, How::Allow, How::Dismiss]);
@@ -333,11 +355,14 @@ mod tests {
             suggestion: None,
             tag: Some("no rule yet".into()),
             problem: None,
+            ended: false,
         };
         assert_eq!(
             serde_json::to_string(&decision).unwrap(),
-            r#"{"id":4,"agent":2,"name":"api","kind":"claude","session":"default","project":"dev/octo","since":9,"status":"needsYou","question":"Run npm test?","context":["Run npm test?"],"tool":{"name":"Bash","detail":"npm test"},"suggestion":null,"tag":"no rule yet","problem":null}"#
+            r#"{"id":4,"agent":2,"name":"api","kind":"claude","session":"default","project":"dev/octo","since":9,"status":"needsYou","question":"Run npm test?","context":["Run npm test?"],"tool":{"name":"Bash","detail":"npm test"},"suggestion":null,"tag":"no rule yet","problem":null,"ended":false}"#
         );
+        let older = r#"{"id":4,"agent":2,"name":"api","kind":"claude","session":"default","project":"dev/octo","since":9,"status":"needsYou","question":"Run npm test?","context":[],"tool":null,"suggestion":null,"tag":null,"problem":null}"#;
+        assert!(!serde_json::from_str::<Decision>(older).unwrap().ended, "a decision written before turn ends reads");
         let entry = ActivityEntry {
             seq: 1,
             at: 2,
@@ -370,10 +395,22 @@ mod tests {
 
     #[test]
     fn an_agent_is_seen_paused_only_in_the_paused_state() {
-        assert_eq!(Sight::of(AgentState::Paused, 7), Sight::Paused(7));
+        assert_eq!(Sight::of(AgentState::Paused, 7, false), Sight::Paused(7));
+        assert_eq!(Sight::of(AgentState::Paused, 7, true), Sight::Paused(7));
         for state in [AgentState::Idle, AgentState::Working, AgentState::Done, AgentState::Exited, AgentState::Lost] {
-            assert_eq!(Sight::of(state, 7), Sight::Other, "{state:?}");
+            assert_eq!(Sight::of(state, 7, false), Sight::Other, "{state:?}");
         }
+    }
+
+    #[test]
+    fn an_agent_is_seen_at_the_end_of_a_turn_whether_or_not_the_user_looked_at_it() {
+        assert_eq!(Sight::of(AgentState::Done, 7, true), Sight::Ended(7));
+        assert_eq!(Sight::of(AgentState::Idle, 7, true), Sight::Ended(7), "looking at it only clears the mark");
+        for state in [AgentState::Working, AgentState::Exited, AgentState::Lost] {
+            assert_eq!(Sight::of(state, 7, true), Sight::Other, "{state:?}");
+        }
+        assert_eq!((Sight::Ended(7).since(), Sight::Paused(8).since()), (Some(7), Some(8)));
+        assert_eq!((Sight::Other.since(), Sight::Unknown.since()), (None, None));
     }
 
     #[test]

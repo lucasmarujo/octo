@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use crate::chat::{self, LastTurn};
 use crate::cli::{DEFAULT_SIZE, SUBMIT_DELAY};
 use crate::client;
 use crate::config::Config;
@@ -18,15 +19,19 @@ use crate::model::{AgentId, AgentKind, AgentRecord, AgentState};
 use crate::models;
 use crate::orchestrator::engine::{Call, Engine};
 use crate::orchestrator::logs::{self, Activity, Handled, Journal, Talk};
-use crate::orchestrator::prompt::{self, Case, MAX_CHAT_HISTORY, MAX_TASK_CHARS, Rules};
+use crate::orchestrator::prompt::{
+    self, Case, MAX_CHAT_HISTORY, MAX_LAST_MESSAGE_CHARS, MAX_TASK_CHARS, Rules, TurnEnd,
+};
 use crate::orchestrator::question::{allowed_by_rule, context_rows, fresh_ask, question, tool_of};
 use crate::orchestrator::relay::{self, Presence};
 use crate::orchestrator::settings::{Settings, SettingsChange};
-use crate::orchestrator::verdict::{self, ChatAction, ChatAnswer, Ruling, Verdict, encode_keys, usable_input};
+use crate::orchestrator::verdict::{
+    self, ChatAction, ChatAnswer, Judged, Opinion, Review, Ruling, Verdict, encode_keys, usable_input,
+};
 use crate::orchestrator::{
     By, ChatEntry, ChatRole, Decision, DecisionStatus, ENGINES, EngineView, How, Input, MAX_DECISIONS,
-    MAX_ENGINE_PROCESSES, Mode, OrchestratorView, Outcome, Sight, Sighting, Suggestion, UserAnswer, cut, instructions,
-    one_line,
+    MAX_ENGINE_PROCESSES, MAX_QUESTION_CHARS, Mode, OrchestratorView, Outcome, Sight, Sighting, Suggestion, UserAnswer,
+    cut, instructions, one_line,
 };
 use crate::paths::Home;
 use crate::protocol::ClientMsg;
@@ -36,14 +41,18 @@ use crate::pwa::protocol::{AgentView, BridgeMsg, PhoneMsg, StartRequest, Tone};
 use crate::pwa::server::SUBMIT;
 use crate::store::Store;
 use crate::termfmt;
+use crate::tui::keys;
 use crate::util::{local_offset_ms, lock, now_ms};
 
 pub const MAX_CHAT_CHARS: usize = 4_000;
 pub const MAX_ANSWERS_IN_A_ROW: u8 = 5;
+pub const MAX_REPLIES_IN_A_ROW: u8 = 20;
 pub const MAX_CLIENT_JOBS: usize = 4;
 pub const SETTLE: Duration = Duration::from_millis(DONE_GRACE_MS);
 const CHAT_TICKET: u64 = 0;
 const MAX_LINE_CHARS: usize = 80;
+pub const MAX_SENT_CHARS: usize = 280;
+const CUT_MARK: &str = "…";
 const KEY_GAP: Duration = Duration::from_millis(80);
 const ENTER: &str = "Enter";
 const NO_ENGINE: &str = "choose an engine for Octo in its settings";
@@ -51,6 +60,8 @@ const ANSWERED_IN_AGENT: &str = "Answered in the agent";
 const LEFT_FOR_YOU: &str = "Left for you";
 const ANSWERED: &str = "Answered";
 const ALLOWED: &str = "Allowed it";
+const FINISHED: &str = "Finished its turn";
+const REPLIED: &str = "Replied to it";
 const WRONG_ACTION: &str = "Skipped an action Octo wrote wrongly";
 const DID_NOT_TAKE: &str = "Octo's answer did not take; answer it yourself";
 const BUSY: &str = "Octo is busy; try again";
@@ -83,6 +94,14 @@ struct Open {
     bracketed: bool,
     asked_from: u64,
     follow_ups: u8,
+    sight: Sight,
+    last_turn: LastTurn,
+}
+
+#[derive(Clone, Copy)]
+struct Reviewed {
+    since: u64,
+    replies: u8,
 }
 
 impl Open {
@@ -153,6 +172,8 @@ struct State {
     view_unsent: bool,
     stops: Vec<u64>,
     tidying: bool,
+    watching_since: u64,
+    reviewed: BTreeMap<AgentId, Reviewed>,
 }
 
 impl State {
@@ -168,10 +189,38 @@ impl State {
         self.dirty = true;
     }
 
-    fn open(&mut self, decision: Decision, task: String, follow_ups: u8, asked_from: u64) {
-        let open =
-            Open { decision, stage: Stage::Reading, task, app_cursor: false, bracketed: false, asked_from, follow_ups };
+    fn open(&mut self, decision: Decision, task: String, follow_ups: u8, asked_from: u64, sight: Sight) {
+        let open = Open {
+            decision,
+            stage: Stage::Reading,
+            task,
+            app_cursor: false,
+            bracketed: false,
+            asked_from,
+            follow_ups,
+            sight,
+            last_turn: LastTurn::default(),
+        };
         self.decisions.insert(open.decision.agent, open);
+        self.dirty = true;
+    }
+
+    fn is_unreviewed(&self, agent: AgentId, since: u64) -> bool {
+        since >= self.watching_since && self.reviewed.get(&agent).is_none_or(|reviewed| reviewed.since != since)
+    }
+
+    fn replies_in_a_row(&self, agent: AgentId) -> u8 {
+        self.reviewed.get(&agent).map_or(0, |reviewed| reviewed.replies)
+    }
+
+    fn count_reply(&mut self, agent: AgentId, replies: impl Fn(u8) -> u8) {
+        if let Some(reviewed) = self.reviewed.get_mut(&agent) {
+            reviewed.replies = replies(reviewed.replies);
+        }
+    }
+
+    fn tell(&mut self, text: String, action: String) {
+        self.talk.say(ChatEntry { at: now_ms(), role: ChatRole::Octo, text, actions: vec![action], failed: false });
         self.dirty = true;
     }
 
@@ -217,6 +266,20 @@ impl State {
 
 pub fn too_many_questions() -> String {
     format!("Octo already answered {MAX_ANSWERS_IN_A_ROW} questions in a row here; this one is yours")
+}
+
+pub fn too_many_replies() -> String {
+    format!("Octo already replied {MAX_REPLIES_IN_A_ROW} times in a row here without you; this one is yours")
+}
+
+pub fn turn_note(agent: AgentId, name: &str, report: &str, fallback: &str) -> String {
+    let said = report.trim();
+    format!("{name} (#{agent}): {}", if said.is_empty() { fallback } else { said })
+}
+
+pub fn waiting_for(said: &str, rows: &[String]) -> String {
+    let last = said.lines().rev().map(str::trim).find(|line| !line.is_empty());
+    last.map_or_else(|| question(None, rows), |line| cut(line, MAX_QUESTION_CHARS))
 }
 
 type Typed = Option<(Input, String)>;
@@ -361,6 +424,23 @@ fn read_screen(store: &Store, agent: AgentId) -> Option<Screen> {
     })
 }
 
+fn last_turn_of(hub: &Hub, agent: AgentId) -> LastTurn {
+    hub.record(agent)
+        .and_then(|record| actions::claude_transcript_of(hub, &record))
+        .map(|(_, path)| chat::last_turn(&path, MAX_LAST_MESSAGE_CHARS))
+        .unwrap_or_default()
+}
+
+pub fn sent_line(name: &str, text: &str) -> String {
+    let shown = one_line(text, MAX_SENT_CHARS);
+    let cut_short = one_line(text, MAX_SENT_CHARS + 1).chars().count() > MAX_SENT_CHARS;
+    format!("Sent to {name}: {shown}{}", if cut_short { CUT_MARK } else { "" })
+}
+
+fn is_still(hub: &Hub, agent: AgentId, sight: Sight) -> bool {
+    hub.sight(agent) == Some(sight)
+}
+
 fn type_input(hub: &Hub, agent: AgentId, input: &Input, app_cursor: bool, bracketed: bool) -> io::Result<()> {
     match input {
         Input::Keys(names) => {
@@ -375,7 +455,7 @@ fn type_input(hub: &Hub, agent: AgentId, input: &Input, app_cursor: bool, bracke
             Ok(())
         }
         Input::Text(text) => {
-            let bytes = encode_typed_text(text, bracketed);
+            let bytes = if bracketed { keys::encode_paste(text.trim(), true) } else { encode_typed_text(text, false) };
             if !bytes.is_empty() {
                 hub.send(agent, &ClientMsg::Input(bytes))?;
                 thread::sleep(SUBMIT_DELAY);
@@ -385,11 +465,16 @@ fn type_input(hub: &Hub, agent: AgentId, input: &Input, app_cursor: bool, bracke
     }
 }
 
-fn deliver(hub: &Hub, agent: AgentId, since: u64, input: &Input, app_cursor: bool, bracketed: bool) -> Answered {
-    let waiting = hub
-        .live_status(agent)
-        .is_some_and(|status| status.state == AgentState::Paused && status.state_since_ms == since);
-    if !waiting {
+struct Target {
+    agent: AgentId,
+    sight: Sight,
+    app_cursor: bool,
+    bracketed: bool,
+}
+
+fn deliver(hub: &Hub, target: &Target, input: &Input) -> Answered {
+    let Target { agent, sight, app_cursor, bracketed } = *target;
+    if !is_still(hub, agent, sight) {
         return Answered::Stale;
     }
     match type_input(hub, agent, input, app_cursor, bracketed) {
@@ -437,6 +522,8 @@ impl Orchestrator {
         let settings = Settings::load(home);
         let enabled = settings.enabled;
         let mut state = State {
+            watching_since: now_ms(),
+            reviewed: BTreeMap::new(),
             settings,
             loaded: false,
             decisions: BTreeMap::new(),
@@ -651,8 +738,8 @@ impl Orchestrator {
             .values()
             .filter(|open| match sight_of(seen, open.decision.agent) {
                 Some(Sight::Unknown) => false,
-                Some(Sight::Paused(since)) => since != open.decision.since,
-                Some(Sight::Other) | None => true,
+                Some(sight) => sight != open.sight,
+                None => true,
             })
             .map(|open| open.decision.agent)
             .collect();
@@ -666,12 +753,21 @@ impl Orchestrator {
             }
             state.dirty = true;
         }
+        state.reviewed.retain(|agent, _| sight_of(seen, *agent).is_some());
         for (agent, sight) in seen {
-            let Sight::Paused(since) = *sight else { continue };
+            let (since, ended) = match *sight {
+                Sight::Paused(since) => (since, false),
+                Sight::Ended(since) if state.is_unreviewed(*agent, since) => (since, true),
+                Sight::Ended(_) | Sight::Unknown | Sight::Other => continue,
+            };
             if state.decisions.len() >= MAX_DECISIONS || state.decisions.contains_key(agent) {
                 continue;
             }
             let Some(view) = hub.agent_view(*agent) else { continue };
+            let replies = state.replies_in_a_row(*agent);
+            if ended {
+                state.reviewed.insert(*agent, Reviewed { since, replies });
+            }
             let id = state.next_decision;
             state.next_decision += 1;
             let decision = Decision {
@@ -689,8 +785,10 @@ impl Orchestrator {
                 suggestion: None,
                 tag: None,
                 problem: None,
+                ended,
             };
-            state.open(decision, cut(view.task.trim(), MAX_TASK_CHARS), 0, since);
+            let follow_ups = if ended { replies } else { 0 };
+            state.open(decision, cut(view.task.trim(), MAX_TASK_CHARS), follow_ups, since, *sight);
         }
         self.start_reading(hub, state);
         self.publish(hub, state);
@@ -700,18 +798,22 @@ impl Orchestrator {
         loop {
             let next = {
                 let mut state = lock(&self.state);
-                let next = state
-                    .decisions
-                    .values()
-                    .find(|open| open.stage == Stage::Reading)
-                    .map(|open| (open.decision.id, open.decision.agent, open.decision.kind, open.asked_from));
+                let next = state.decisions.values().find(|open| open.stage == Stage::Reading).map(|open| {
+                    (open.decision.id, open.decision.agent, open.decision.kind, open.asked_from, open.decision.ended)
+                });
                 if next.is_none() {
                     state.reading = false;
                 }
                 next
             };
-            let Some((id, agent, kind, asked_from)) = next else { return };
+            let Some((id, agent, kind, asked_from, ended)) = next else { return };
             let screen = read_screen(hub.store(), agent);
+            if ended {
+                let turn = last_turn_of(hub, agent);
+                self.read_turn_end(hub, id, agent, screen, turn);
+                self.pump(hub);
+                continue;
+            }
             let ask = fresh_ask(hooks::read_ask(hub.store().home(), agent), kind, asked_from);
             let by_rule = {
                 let mut guard = lock(&self.state);
@@ -752,6 +854,27 @@ impl Orchestrator {
                 None => self.pump(hub),
             }
         }
+    }
+
+    fn read_turn_end(self: &Arc<Self>, hub: &Hub, id: u64, agent: AgentId, screen: Option<Screen>, turn: LastTurn) {
+        let mut guard = lock(&self.state);
+        let state = &mut *guard;
+        let Some(open) = state.decisions.get_mut(&agent).filter(|open| open.decision.id == id) else { return };
+        if let Some(screen) = screen {
+            open.decision.context = screen.rows;
+            open.app_cursor = screen.app_cursor;
+            open.bracketed = screen.bracketed;
+        }
+        open.decision.question = waiting_for(&turn.said, &open.decision.context);
+        open.last_turn = turn;
+        if open.follow_ups >= MAX_REPLIES_IN_A_ROW {
+            open.wait_for_user(Some(too_many_replies()));
+        } else {
+            open.stage = Stage::Judging;
+            state.queue.push_back(Job::Judge(id));
+        }
+        state.dirty = true;
+        self.publish(hub, state);
     }
 
     fn pump(self: &Arc<Self>, hub: &Arc<Hub>) {
@@ -834,16 +957,33 @@ impl Orchestrator {
             let state = &mut *guard;
             find(&mut state.decisions, id)
                 .filter(|open| open.stage == Stage::Judging)
-                .map(|open| (open.decision.clone(), open.task.clone(), state.settings.clone()))
+                .map(|open| (open.decision.clone(), open.task.clone(), open.last_turn.clone(), state.settings.clone()))
         };
-        let Some((decision, task, settings)) = case else { return };
+        let Some((decision, task, last_turn, settings)) = case else { return };
+        let (agent, name) = (decision.agent, decision.name.as_str());
         let asked_in = settings.mode_for(&decision.project);
         let global = instructions::read(&self.home, None).unwrap_or_default();
         let project = instructions::read(&self.home, Some(&decision.project)).unwrap_or_default();
         let rules = Rules { global: &global, project: &project };
-        let prompt = prompt::judgement(&Case { mode: asked_in, rules, decision: &decision, task: &task });
         let launcher = hub.launcher();
-        let verdict = self.consult(launcher.config(), &settings, id, &prompt, verdict::first_object::<Verdict>);
+        let config = launcher.config();
+        let opinion = if decision.ended {
+            let ended = TurnEnd {
+                mode: asked_in,
+                rules,
+                decision: &decision,
+                task: &task,
+                asked: &last_turn.asked,
+                last_message: &last_turn.said,
+            };
+            let read = |said: &str| verdict::first_object::<Review>(said).map(Opinion::Ended);
+            self.consult(config, &settings, id, &prompt::review(&ended), read)
+        } else {
+            let case = Case { mode: asked_in, rules, decision: &decision, task: &task };
+            let read = |said: &str| verdict::first_object::<Verdict>(said).map(Opinion::Asked);
+            self.consult(config, &settings, id, &prompt::judgement(&case), read)
+        };
+        let mut report = String::new();
         let apply = {
             let mut guard = lock(&self.state);
             let state = &mut *guard;
@@ -852,12 +992,28 @@ impl Orchestrator {
             let Some(open) = find(&mut state.decisions, id).filter(|open| open.stage == Stage::Judging) else {
                 return;
             };
-            let problem = verdict.as_ref().err().cloned();
+            let problem = opinion.as_ref().err().cloned();
             if state.problem != problem {
                 state.problem = problem;
                 state.dirty = true;
             }
-            let (apply, logged) = match verdict.map(|verdict| verdict::rule(mode, verdict)) {
+            let ruling = opinion.map(|opinion| verdict::judge(mode, opinion)).map(
+                |Judged { ruling, question, report: said }| {
+                    if !question.is_empty() {
+                        open.decision.question = question;
+                    }
+                    report = said;
+                    ruling
+                },
+            );
+            let mut finished = false;
+            let (apply, logged) = match ruling {
+                Ok(Ruling::Finished { summary }) => {
+                    finished = true;
+                    open.decision.question = FINISHED.to_string();
+                    let summary = if summary.is_empty() { FINISHED.to_string() } else { summary };
+                    (None, Some(Credit { by: By::Octo, outcome: Outcome::Finished, summary }))
+                }
                 Err(problem) => {
                     open.wait_for_user(Some(problem.clone()));
                     (None, Some(Credit { by: By::Octo, outcome: Outcome::Failed, summary: problem }))
@@ -878,8 +1034,20 @@ impl Orchestrator {
                 }
             };
             if let Some(credit) = logged {
+                let told = match credit.outcome {
+                    Outcome::Finished => Some(credit.summary.clone()),
+                    Outcome::Escalated => Some(format!("Left for you: {}", open.decision.question)),
+                    Outcome::Answered | Outcome::Denied | Outcome::Failed => None,
+                };
                 let handled = open.handled(credit, mode);
                 state.record(handled);
+                if let Some(told) = told.filter(|_| decision.ended) {
+                    state.tell(turn_note(agent, name, &report, &told), told);
+                }
+            }
+            if finished {
+                state.decisions.remove(&agent);
+                state.count_reply(agent, |_| 0);
             }
             self.publish(hub, state);
             apply
@@ -887,8 +1055,21 @@ impl Orchestrator {
         let Some((suggestion, deny)) = apply else { return };
         let Some(input) = suggestion.input() else { return };
         let outcome = if deny { Outcome::Denied } else { Outcome::Answered };
-        let summary = if suggestion.summary.is_empty() { ANSWERED.to_string() } else { suggestion.summary };
-        self.answer(hub, id, &input, Credit { by: By::Octo, outcome, summary }, true);
+        let fallback = if decision.ended { REPLIED } else { ANSWERED };
+        let summary = if suggestion.summary.is_empty() { fallback.to_string() } else { suggestion.summary };
+        let credit = Credit { by: By::Octo, outcome, summary: summary.clone() };
+        if self.answer(hub, id, &input, credit, true) != Answered::Sent || !decision.ended {
+            return;
+        }
+        let sent = match &input {
+            Input::Text(text) => sent_line(name, text),
+            Input::Keys(_) => describe(&input),
+        };
+        let mut guard = lock(&self.state);
+        let state = &mut *guard;
+        state.count_reply(agent, |replies| replies.saturating_add(1));
+        state.tell(turn_note(agent, name, &report, &summary), sent);
+        self.publish(hub, state);
     }
 
     fn answer(self: &Arc<Self>, hub: &Arc<Hub>, id: u64, input: &Input, credit: Credit, claimed: bool) -> Answered {
@@ -903,14 +1084,21 @@ impl Orchestrator {
                 }
                 open.stage = Stage::Settled;
                 let handled = open.handled(credit, settings.mode_for(&open.decision.project));
-                (open.decision.agent, open.decision.since, open.app_cursor, open.bracketed, handled)
+                let target = Target {
+                    agent: open.decision.agent,
+                    sight: open.sight,
+                    app_cursor: open.app_cursor,
+                    bracketed: open.bracketed,
+                };
+                (target, handled)
             });
             state.dirty |= target.is_some();
             self.publish(hub, state);
             target
         };
-        let Some((agent, since, app_cursor, bracketed, handled)) = target else { return Answered::Gone };
-        let answered = deliver(hub, agent, since, input, app_cursor, bracketed);
+        let Some((target, handled)) = target else { return Answered::Gone };
+        let (agent, sight) = (target.agent, target.sight);
+        let answered = deliver(hub, &target, input);
         let mut guard = lock(&self.state);
         let state = &mut *guard;
         let still = state.decisions.get(&agent).is_some_and(|open| open.decision.id == id);
@@ -918,7 +1106,7 @@ impl Orchestrator {
             Answered::Sent => {
                 state.record(handled);
                 let (octo, hub, answered_at) = (Arc::clone(self), Arc::clone(hub), now_ms());
-                spawn(FOLLOW_THREAD, move || octo.follow_up(&hub, id, agent, since, answered_at));
+                spawn(FOLLOW_THREAD, move || octo.follow_up(&hub, id, agent, sight, answered_at));
             }
             Answered::Failed(problem) if still => {
                 if let Some(open) = state.decisions.get_mut(&agent) {
@@ -935,7 +1123,7 @@ impl Orchestrator {
         answered
     }
 
-    fn follow_up(self: &Arc<Self>, hub: &Arc<Hub>, id: u64, agent: AgentId, since: u64, answered_at: u64) {
+    fn follow_up(self: &Arc<Self>, hub: &Arc<Hub>, id: u64, agent: AgentId, sight: Sight, answered_at: u64) {
         thread::sleep(SETTLE);
         let settled = |open: &&mut Open| open.decision.id == id && open.stage == Stage::Settled;
         let known = {
@@ -947,14 +1135,13 @@ impl Orchestrator {
                 .map(|open| (open.decision.kind, open.decision.context.clone()))
         };
         let Some((kind, context)) = known else { return };
-        let waiting = hub
-            .live_status(agent)
-            .is_some_and(|status| status.state == AgentState::Paused && status.state_since_ms == since);
-        if !waiting {
+        if !is_still(hub, agent, sight) {
             return;
         }
-        let asked_again = fresh_ask(hooks::read_ask(hub.store().home(), agent), kind, answered_at).is_some();
-        let moved = asked_again || read_screen(hub.store(), agent).is_some_and(|screen| screen.rows != context);
+        let paused = matches!(sight, Sight::Paused(_));
+        let asked_again = paused && fresh_ask(hooks::read_ask(hub.store().home(), agent), kind, answered_at).is_some();
+        let redrawn = || read_screen(hub.store(), agent).is_some_and(|screen| screen.rows != context);
+        let moved = asked_again || (paused && redrawn());
         let mut guard = lock(&self.state);
         let state = &mut *guard;
         let Some(answered) = state.decisions.get_mut(&agent).filter(settled) else { return };
@@ -976,7 +1163,7 @@ impl Orchestrator {
             ..answered.decision.clone()
         };
         state.next_decision += 1;
-        state.open(decision, task, follow_ups, answered_at);
+        state.open(decision, task, follow_ups, answered_at, sight);
         self.start_reading(hub, state);
         self.publish(hub, state);
     }
@@ -994,6 +1181,9 @@ impl Orchestrator {
         let sessions = session_names(hub.store());
         let models = start_models(&hub.kinds());
         let talk = prompt::Talk {
+            mode: settings.mode,
+            project_modes: &settings.projects,
+            watching: settings.enabled,
             global: &global,
             sessions: &sessions,
             models: &models,
@@ -1010,9 +1200,13 @@ impl Orchestrator {
             if reads.is_empty() {
                 return Ok(answer);
             }
-            let screens: Vec<(AgentId, Vec<String>)> = reads
+            let screens: Vec<prompt::Screen> = reads
                 .into_iter()
-                .map(|agent| (agent, read_screen(hub.store(), agent).map(|screen| screen.rows).unwrap_or_default()))
+                .map(|agent| prompt::Screen {
+                    agent,
+                    rows: read_screen(hub.store(), agent).map(|screen| screen.rows).unwrap_or_default(),
+                    last_message: last_turn_of(hub, agent).said,
+                })
                 .collect();
             self.consult(config, &settings, CHAT_TICKET, &prompt::chat_with_screens(&first, &screens), chat_answer)
         });
@@ -1051,8 +1245,10 @@ impl Orchestrator {
                     return format!("Could not send to {name}: it is not running");
                 }
                 let text = cut(text.trim(), MAX_CHAT_CHARS);
-                match type_input(hub, agent, &Input::Text(text.clone()), false, false) {
-                    Ok(()) => format!("Sent to {name}: {}", one_line(&text, MAX_LINE_CHARS)),
+                let (app_cursor, bracketed) = read_screen(hub.store(), agent)
+                    .map_or((false, false), |screen| (screen.app_cursor, screen.bracketed));
+                match type_input(hub, agent, &Input::Text(text.clone()), app_cursor, bracketed) {
+                    Ok(()) => sent_line(&name, &text),
                     Err(err) => format!("Could not send to {name}: {err}"),
                 }
             }
@@ -1172,7 +1368,11 @@ impl Orchestrator {
         let enabled = state.settings.enabled;
         self.enabled.store(enabled, Ordering::Relaxed);
         self.wake();
+        if enabled && !was_enabled {
+            state.watching_since = now_ms();
+        }
         if !enabled {
+            state.reviewed.clear();
             let judging = state.decisions.values().filter(|open| open.stage == Stage::Judging);
             state.stops.extend(judging.map(|open| open.decision.id));
             state.decisions.clear();
@@ -1254,6 +1454,7 @@ impl Orchestrator {
             let said =
                 ChatEntry { at: now_ms(), role: ChatRole::You, text: text.clone(), actions: Vec::new(), failed: false };
             state.talk.say(said);
+            state.reviewed.values_mut().for_each(|reviewed| reviewed.replies = 0);
             state.thinking = true;
             state.queue.push_back(Job::Chat { text, reply: reply.clone() });
             state.dirty = true;
@@ -1428,6 +1629,25 @@ mod tests {
     #[test]
     fn the_limit_of_answers_in_a_row_is_the_one_its_message_names() {
         assert!(too_many_questions().contains(&format!("answered {MAX_ANSWERS_IN_A_ROW} questions")));
+        assert!(too_many_replies().contains(&format!("replied {MAX_REPLIES_IN_A_ROW} times in a row")));
+    }
+
+    #[test]
+    fn a_turn_end_is_told_in_the_chat_with_the_name_of_the_agent_and_what_octo_reported() {
+        assert_eq!(
+            turn_note(41, "api", "  Ele terminou o deploy.  ", "Deployed it"),
+            "api (#41): Ele terminou o deploy."
+        );
+        assert_eq!(turn_note(41, "api", "  ", "Fixed the login"), "api (#41): Fixed the login");
+    }
+
+    #[test]
+    fn what_an_agent_waits_for_is_the_last_line_it_said_or_what_its_screen_asks() {
+        let rows = vec!["Do you want to proceed?".to_string(), "\u{276f} 1. Yes".to_string()];
+        assert_eq!(waiting_for("Done with the API.\n\nShould I deploy it?\n  \n", &rows), "Should I deploy it?");
+        assert_eq!(waiting_for("  \n", &rows), "Do you want to proceed?", "nothing said: the screen is all there is");
+        assert_eq!(waiting_for("", &[]), "");
+        assert_eq!(waiting_for(&"x".repeat(MAX_QUESTION_CHARS * 2), &[]).chars().count(), MAX_QUESTION_CHARS);
     }
 
     #[test]
@@ -1460,6 +1680,16 @@ mod tests {
         assert!(jobs.run("orkai-test-job", &reply, job()), "room was made by the one that ended");
         assert!(replies.try_recv().is_err());
         drop(release);
+    }
+
+    #[test]
+    fn a_message_sent_to_an_agent_is_shown_whole_or_visibly_shortened() {
+        assert_eq!(sent_line("api", "run the\ntests"), "Sent to api: run the tests");
+        let exact = "x".repeat(MAX_SENT_CHARS);
+        assert_eq!(sent_line("api", &exact), format!("Sent to api: {exact}"), "nothing was left out");
+        let long = sent_line("api", &"y".repeat(MAX_SENT_CHARS + 1));
+        assert!(long.ends_with("y…"), "what is shown shortened says so, so it is not taken for what was sent");
+        assert_eq!(long.chars().count(), "Sent to api: ".len() + MAX_SENT_CHARS + 1);
     }
 
     #[test]

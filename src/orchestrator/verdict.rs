@@ -1,13 +1,14 @@
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer};
 
 use crate::model::AgentId;
-use crate::orchestrator::{Input, MAX_ANSWER_CHARS, MAX_KEYS, Mode, Suggestion, cut, one_line};
+use crate::orchestrator::{Input, MAX_ANSWER_CHARS, MAX_KEYS, MAX_QUESTION_CHARS, Mode, Suggestion, cut, one_line};
 use crate::tui::keys;
 
 pub const MAX_SUMMARY_CHARS: usize = 160;
 pub const MAX_REASON_CHARS: usize = 300;
 pub const MAX_TAG_CHARS: usize = 40;
+pub const MAX_REPORT_CHARS: usize = 600;
 pub const MAX_REPLY_CHARS: usize = 8_000;
 pub const MAX_READ_AGENTS: usize = 4;
 pub const MAX_ACTIONS: usize = 8;
@@ -68,6 +69,41 @@ pub struct Verdict {
     pub deny: bool,
 }
 
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Standing {
+    Done,
+    Reply,
+    Escalate,
+}
+
+fn null_as_empty<'de, D: Deserializer<'de>>(value: D) -> Result<String, D::Error> {
+    Ok(Option::<String>::deserialize(value)?.unwrap_or_default())
+}
+
+#[derive(Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Review {
+    pub action: Standing,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub question: String,
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub summary: String,
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub reason: String,
+    #[serde(default)]
+    pub tag: Option<String>,
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub report: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Opinion {
+    Asked(Verdict),
+    Ended(Review),
+}
+
 pub fn encode_keys(names: &[String], app_cursor: bool) -> Option<Vec<Vec<u8>>> {
     if names.is_empty() || names.len() > MAX_KEYS {
         return None;
@@ -92,6 +128,14 @@ pub fn usable_input(keys: Option<Vec<String>>, text: Option<String>) -> Option<I
 pub enum Ruling {
     Apply { suggestion: Suggestion, deny: bool },
     NeedsYou { suggestion: Option<Suggestion>, tag: Option<String>, problem: Option<String> },
+    Finished { summary: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Judged {
+    pub ruling: Ruling,
+    pub question: String,
+    pub report: String,
 }
 
 pub fn rule(mode: Mode, verdict: Verdict) -> Ruling {
@@ -103,13 +147,45 @@ pub fn rule(mode: Mode, verdict: Verdict) -> Ruling {
     match (mode, verdict.action, suggestion) {
         (Mode::Observe, _, suggestion) => Ruling::NeedsYou { suggestion, tag, problem: None },
         (Mode::Moderate, Action::Escalate, suggestion) => Ruling::NeedsYou { suggestion, tag, problem: None },
-        (Mode::Bypass, Action::Escalate, suggestion) => Ruling::NeedsYou { suggestion, tag, problem: Some(undecided) },
-        (Mode::Moderate | Mode::Bypass, Action::Answer, Some(suggestion)) => {
+        (Mode::Bypass, Action::Escalate, None) => Ruling::NeedsYou { suggestion: None, tag, problem: Some(undecided) },
+        (Mode::Moderate, Action::Answer, Some(suggestion)) | (Mode::Bypass, _, Some(suggestion)) => {
             Ruling::Apply { suggestion, deny: verdict.deny }
         }
         (Mode::Moderate | Mode::Bypass, Action::Answer, None) => {
             Ruling::NeedsYou { suggestion: None, tag, problem: Some(UNUSABLE.to_string()) }
         }
+    }
+}
+
+pub fn review(mode: Mode, review: Review) -> Judged {
+    let question = one_line(&review.question, MAX_QUESTION_CHARS);
+    let report = cut(review.report.trim(), MAX_REPORT_CHARS);
+    let action = match review.action {
+        Standing::Done => {
+            let ruling = Ruling::Finished { summary: one_line(&review.summary, MAX_SUMMARY_CHARS) };
+            return Judged { ruling, question, report };
+        }
+        Standing::Reply => Action::Answer,
+        Standing::Escalate => Action::Escalate,
+    };
+    let verdict = Verdict {
+        action,
+        keys: None,
+        text: review.text,
+        summary: review.summary,
+        reason: review.reason,
+        tag: review.tag,
+        deny: false,
+    };
+    Judged { ruling: rule(mode, verdict), question, report }
+}
+
+pub fn judge(mode: Mode, opinion: Opinion) -> Judged {
+    match opinion {
+        Opinion::Asked(verdict) => {
+            Judged { ruling: rule(mode, verdict), question: String::new(), report: String::new() }
+        }
+        Opinion::Ended(ended) => review(mode, ended),
     }
 }
 
@@ -325,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn bypass_applies_an_answer_and_an_escalation_waits_with_the_problem() {
+    fn bypass_applies_whatever_octo_would_answer_and_waits_only_when_there_is_nothing_to_type() {
         let one = Input::Keys(keys(&["1"]));
         assert_eq!(
             rule(Mode::Bypass, judged(Action::Answer, Some(keys(&["1"])), None)),
@@ -333,8 +409,13 @@ mod tests {
         );
         assert_eq!(
             rule(Mode::Bypass, judged(Action::Escalate, Some(keys(&["1"])), None)),
+            Ruling::Apply { suggestion: suggested(one), deny: false },
+            "an escalation that names an answer is that answer: bypass never hands a decision back"
+        );
+        assert_eq!(
+            rule(Mode::Bypass, judged(Action::Escalate, None, None)),
             Ruling::NeedsYou {
-                suggestion: Some(suggested(one)),
+                suggestion: None,
                 tag: Some("no rule yet".into()),
                 problem: Some("Octo could not decide: the task asks for it".into()),
             }
@@ -376,6 +457,95 @@ mod tests {
         assert_eq!(tag.chars().count(), MAX_TAG_CHARS);
         let blank = Verdict { tag: Some("  ".into()), ..judged(Action::Escalate, None, None) };
         assert_eq!(rule(Mode::Moderate, blank), Ruling::NeedsYou { suggestion: None, tag: None, problem: None });
+    }
+
+    fn ended(action: Standing, text: Option<&str>) -> Review {
+        Review {
+            action,
+            text: text.map(str::to_string),
+            question: " Which  database\nshould it use? ".into(),
+            summary: "Allowed  npm test".into(),
+            reason: "the task\nasks for it".into(),
+            tag: Some(" no rule yet ".into()),
+            report: "  It stopped to ask about the database.  ".into(),
+        }
+    }
+
+    #[test]
+    fn a_review_of_a_turn_that_ended_is_read_from_what_the_engine_said() {
+        let read: Review = first_object(
+            r#"```json
+{"action":"reply","text":"use postgres","question":"Which database?","summary":"Chose postgres","reason":"the task says so","tag":null,"report":"It asked which database."}
+```"#,
+        )
+        .unwrap();
+        assert_eq!((read.action, read.text.as_deref()), (Standing::Reply, Some("use postgres")));
+        assert_eq!((read.question.as_str(), read.report.as_str()), ("Which database?", "It asked which database."));
+        let bare: Review = first_object(r#"{"action":"done"}"#).unwrap();
+        assert_eq!((bare.action, bare.text.clone(), bare.summary.as_str()), (Standing::Done, None, ""));
+        let nulls: Review = first_object(
+            r#"{"action":"done","text":null,"question":null,"summary":null,"reason":null,"tag":null,"report":null}"#,
+        )
+        .unwrap();
+        assert_eq!(nulls, bare, "the format lets the engine write null where it has nothing to say");
+        assert_eq!(first_object::<Review>(r#"{"action":"answer","text":"yes"}"#), None, "not a review");
+        assert_eq!(first_object::<Verdict>(r#"{"action":"done"}"#), None, "nor is a review a verdict");
+    }
+
+    #[test]
+    fn a_turn_that_really_ended_is_finished_in_every_mode() {
+        for mode in [Mode::Observe, Mode::Moderate, Mode::Bypass] {
+            let judged = review(mode, ended(Standing::Done, Some("ignored")));
+            assert_eq!(judged.ruling, Ruling::Finished { summary: "Allowed npm test".into() }, "{mode:?}");
+            assert_eq!(judged.question, "Which database should it use?");
+            assert_eq!(judged.report, "It stopped to ask about the database.");
+        }
+    }
+
+    #[test]
+    fn an_agent_left_waiting_is_answered_or_left_for_the_user_as_the_mode_says() {
+        let typed = || suggested(Input::Text("use postgres".into()));
+        let waits = |problem: Option<&str>, suggestion: Option<Suggestion>| Ruling::NeedsYou {
+            suggestion,
+            tag: Some("no rule yet".into()),
+            problem: problem.map(str::to_string),
+        };
+        for action in [Standing::Reply, Standing::Escalate] {
+            assert_eq!(
+                review(Mode::Observe, ended(action, Some("use postgres"))).ruling,
+                waits(None, Some(typed())),
+                "observe never types: {action:?}"
+            );
+            assert_eq!(
+                review(Mode::Bypass, ended(action, Some("use postgres"))).ruling,
+                Ruling::Apply { suggestion: typed(), deny: false },
+                "bypass always types: {action:?}"
+            );
+        }
+        assert_eq!(
+            review(Mode::Moderate, ended(Standing::Reply, Some("use postgres"))).ruling,
+            Ruling::Apply { suggestion: typed(), deny: false }
+        );
+        assert_eq!(
+            review(Mode::Moderate, ended(Standing::Escalate, Some("use postgres"))).ruling,
+            waits(None, Some(typed()))
+        );
+        assert_eq!(review(Mode::Moderate, ended(Standing::Reply, None)).ruling, waits(Some(UNUSABLE), None));
+        assert_eq!(
+            review(Mode::Bypass, ended(Standing::Escalate, Some("  "))).ruling,
+            waits(Some("Octo could not decide: the task asks for it"), None)
+        );
+        let long = Review { report: "r".repeat(MAX_REPORT_CHARS * 2), ..ended(Standing::Done, None) };
+        assert_eq!(review(Mode::Bypass, long).report.chars().count(), MAX_REPORT_CHARS);
+    }
+
+    #[test]
+    fn a_pause_and_a_turn_end_are_judged_by_the_same_rule() {
+        let asked = judge(Mode::Moderate, Opinion::Asked(judged(Action::Answer, Some(keys(&["1"])), None)));
+        assert_eq!(asked.ruling, Ruling::Apply { suggestion: suggested(Input::Keys(keys(&["1"]))), deny: false });
+        assert_eq!((asked.question.as_str(), asked.report.as_str()), ("", ""));
+        let over = judge(Mode::Moderate, Opinion::Ended(ended(Standing::Done, None)));
+        assert_eq!(over.ruling, Ruling::Finished { summary: "Allowed npm test".into() });
     }
 
     #[test]

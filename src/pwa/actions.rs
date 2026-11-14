@@ -795,7 +795,7 @@ fn details(hub: &Arc<Hub>, agent: AgentId, reply: &Sender<Event>) {
     });
 }
 
-fn chat_page(hub: &Hub, record: &AgentRecord, known: Option<&str>, from: u64) -> Option<(String, ChatPage)> {
+pub(crate) fn claude_transcript_of(hub: &Hub, record: &AgentRecord) -> Option<(String, PathBuf)> {
     let status = hub.live_status(record.id);
     let kind = status.as_ref().map_or(record.kind, |status| status.running_kind(record.kind));
     if kind != AgentKind::Claude {
@@ -809,6 +809,11 @@ fn chat_page(hub: &Hub, record: &AgentRecord, known: Option<&str>, from: u64) ->
         .or_else(|| nested.map_or(record.conversation_id.clone(), |nested| nested.conversation_id.clone()))?;
     let cwd = nested.and_then(|nested| nested.cwd.clone()).unwrap_or_else(|| record.cwd.clone());
     let path = chat::claude_transcript(&home, &cwd, &session)?;
+    Some((session, path))
+}
+
+fn chat_page(hub: &Hub, record: &AgentRecord, known: Option<&str>, from: u64) -> Option<(String, ChatPage)> {
+    let (session, path) = claude_transcript_of(hub, record)?;
     let from = if known == Some(session.as_str()) { from } else { 0 };
     Some((session, chat::read_claude(&path, from)))
 }
