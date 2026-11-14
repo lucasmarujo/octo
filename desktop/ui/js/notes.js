@@ -7,6 +7,24 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.41',
+    date: '2026-11-14',
+    en: [
+      'Octo follows every agent to the end of its work. An agent that ended its turn on a question, a pending item or a blocker used to sit in the done column until you asked Octo to look; now Octo reads what it said by itself, answers it and tells you in the chat. An agent that really finished is logged in Activity.',
+      'Bypass decides everything, in the chat too. Octo no longer stops to ask you to confirm, approve or choose in that mode: it acts and says what it assumed.',
+      "Pick the model of Octo's engine from a list instead of typing its name.",
+      "Octo's default instructions say how it works, how it decides and what needs care. A file you never changed is brought up to date; one you wrote in is left alone.",
+      'A message Octo sends to an agent arrives as one paste, with its lines, and the chat shows when the line it displays was shortened.',
+    ],
+    'pt-BR': [
+      'O Octo acompanha cada agente até o fim do trabalho. Um agente que encerrava o turno com uma pergunta, uma pendência ou um bloqueio ficava na coluna de terminados até você pedir para o Octo olhar; agora o Octo lê sozinho o que ele disse, responde e te conta no chat. O agente que terminou de verdade fica registrado na Atividade.',
+      'O Bypass decide tudo, no chat também. Nesse modo o Octo não para mais para pedir que você confirme, aprove ou escolha: ele age e diz o que assumiu.',
+      'Escolha o modelo do motor do Octo numa lista, em vez de digitar o nome.',
+      'As instruções padrão do Octo dizem como ele trabalha, como decide e o que pede cuidado. O arquivo que você nunca alterou é atualizado; o que você editou fica como está.',
+      'A mensagem que o Octo manda a um agente chega como uma colagem só, com as linhas, e o chat mostra quando a linha exibida foi encurtada.',
+    ],
+  },
+  {
     version: '0.2.40',
     date: '2026-11-14',
     en: [
