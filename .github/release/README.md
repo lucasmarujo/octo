@@ -20,6 +20,9 @@ The app CI (`tsc` and `jest` in `mobile/`) runs before any build. If it fails, n
 - **versionCode (Android)**: `1000 + run number` of this workflow, applied at build time by
   `android-version-code.gradle`. No manual edits. Do not rename the workflow: the run number restarts.
 - **buildNumber (iOS)**: EAS increments it on its servers (`appVersionSource: remote` + `autoIncrement` in `eas.json`).
+- **App Store Connect check**: before the iOS build, the job fails if the version is not above the
+  latest one approved on the App Store (TestFlight would reject it). After the upload, it waits up to
+  45 min for the build to become `VALID` on App Store Connect and fails if it does not.
 - **Notes**: the message of an annotated tag (`git tag -a mobile-v1.0.2 -m "..."`); without one, the
   commits since the previous tag (up to 500 characters). Listing language: `en-US`.
 
