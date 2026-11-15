@@ -1,0 +1,15 @@
+true mobile/src/App.tsx
+true mobile/app.json
+true mobile/app.config.js
+true mobile/eas.json
+true mobile/metro.config.js
+true mobile/modules/octo-link/ios/Channel.swift
+true mobile/package-lock.json
+false mobile/modules/octo-link/android/src/main/java/dev/marujo/octo/link/Channel.kt
+false mobile/__tests__/pairing.test.ts
+false mobile/scripts/kai.js
+false src/main.rs
+false desktop/src/lib.rs
+false Cargo.toml
+false README.md
+false .github/workflows/mobile-release.yml

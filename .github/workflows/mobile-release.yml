@@ -18,6 +18,10 @@ on:
         description: Publish to Google Play internal testing and TestFlight
         type: boolean
         default: false
+      force_ios:
+        description: Build and submit iOS even without a change that affects the iOS app
+        type: boolean
+        default: false
 
 concurrency:
   group: mobile-release-${{ github.ref }}
@@ -73,8 +77,12 @@ jobs:
       track: ${{ steps.plan.outputs.track }}
       publish: ${{ steps.plan.outputs.publish }}
       ios: ${{ steps.plan.outputs.ios }}
+      ios_affected: ${{ steps.ios_affected.outputs.ios_affected }}
+      ios_reason: ${{ steps.ios_affected.outputs.ios_reason }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Lint the workflow and test the release scripts
         if: github.event_name == 'pull_request'
@@ -97,6 +105,16 @@ jobs:
           VERSION=$(jq -r .expo.version "$APP_DIR/app.json") bash .github/release/plan.sh | tee -a "$GITHUB_OUTPUT"
           echo "ios=$IOS_CONFIGURED" | tee -a "$GITHUB_OUTPUT"
 
+      - name: Does the push affect the iOS app?
+        id: ios_affected
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          FORCE_IOS: ${{ inputs.force_ios }}
+        run: bash .github/release/decide-ios.sh | tee -a "$GITHUB_OUTPUT"
+
       - name: Summary
         env:
           VERSION: ${{ steps.plan.outputs.version }}
@@ -104,15 +122,25 @@ jobs:
           TRACK: ${{ steps.plan.outputs.track }}
           PUBLISH: ${{ steps.plan.outputs.publish }}
           IOS: ${{ steps.plan.outputs.ios }}
+          IOS_AFFECTED: ${{ steps.ios_affected.outputs.ios_affected }}
+          IOS_REASON: ${{ steps.ios_affected.outputs.ios_reason }}
         run: |
           {
             echo "### $APP_NAME $VERSION (build $VERSION_CODE)"
             echo "- Destination: $TRACK"
             echo "- Publish: $PUBLISH"
             echo "- iOS configured: $IOS"
+            if [ "$IOS_AFFECTED" = true ]; then
+              echo "- iOS: built in this run ($IOS_REASON)"
+            else
+              echo "- iOS skipped: $IOS_REASON"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$PUBLISH" = true ] && [ "$IOS" != true ]; then
+          if [ "$PUBLISH" = true ] && [ "$IOS_AFFECTED" = true ] && [ "$IOS" != true ]; then
             echo "::warning::EXPO_TOKEN, APP_STORE_CONNECT_API_KEY_BASE64 or IOS_CREDENTIALS_BASE64 is missing: iOS is skipped in this run."
+          fi
+          if [ "$PUBLISH" = true ] && [ "$IOS_AFFECTED" != true ]; then
+            echo "::notice::iOS skipped: $IOS_REASON"
           fi
 
   android:
@@ -232,7 +260,7 @@ jobs:
   ios:
     name: ios
     needs: [ci, plan]
-    if: needs.plan.outputs.publish == 'true' && needs.plan.outputs.ios == 'true'
+    if: needs.plan.outputs.publish == 'true' && needs.plan.outputs.ios == 'true' && needs.plan.outputs.ios_affected == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
