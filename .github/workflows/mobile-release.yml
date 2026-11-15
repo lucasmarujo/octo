@@ -266,8 +266,10 @@ jobs:
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
           bash .github/release/app-store-connect-key.sh "$APP_DIR/eas.json" "$RUNNER_TEMP"
-          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc-api-key.p8" >> "$GITHUB_ENV"
-          echo "ASC_APP_ID=$(jq -r '.submit.production.ios.ascAppId' "$APP_DIR/eas.json")" >> "$GITHUB_ENV"
+          {
+            echo "ASC_KEY_PATH=$RUNNER_TEMP/asc-api-key.p8"
+            echo "ASC_APP_ID=$(jq -r '.submit.production.ios.ascAppId' "$APP_DIR/eas.json")"
+          } >> "$GITHUB_ENV"
 
       - name: Version above the latest approved on the App Store
         run: node .github/release/app-store-connect.mjs check-version "$ASC_APP_ID" "$VERSION"
