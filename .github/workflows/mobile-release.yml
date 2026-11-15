@@ -1,0 +1,318 @@
+name: mobile release
+
+on:
+  push:
+    branches: [main]
+    tags: ['mobile-v*.*.*']
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-release.yml'
+      - '.github/release/**'
+  pull_request:
+    paths:
+      - '.github/workflows/mobile-release.yml'
+      - '.github/release/**'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to Google Play internal testing and TestFlight
+        type: boolean
+        default: false
+
+concurrency:
+  group: mobile-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  APP_NAME: Octo
+  APP_DIR: mobile
+  ANDROID_PACKAGE: dev.marujo.octo
+  IOS_BUNDLE_ID: dev.marujo.octo
+  NODE_VERSION: '22'
+  JAVA_VERSION: '17'
+  EAS_CLI_VERSION: '27.10.0'
+  FASTLANE_VERSION: '2.241.2'
+  VERSION_CODE_OFFSET: '1000'
+  TAG_PREFIX: mobile-v
+  PLAY_RELEASE_STATUS: completed
+  NOTES_LOCALE: en-US
+  NOTES_FALLBACK: Bug fixes and improvements.
+  NOTES_MAX_LENGTH: '500'
+
+jobs:
+  ci:
+    name: mobile ci
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - run: npm ci
+
+      - run: npx tsc --noEmit
+
+      - run: npx jest --ci
+
+  plan:
+    name: version and destination
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      version_code: ${{ steps.plan.outputs.version_code }}
+      track: ${{ steps.plan.outputs.track }}
+      publish: ${{ steps.plan.outputs.publish }}
+      ios: ${{ steps.plan.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Lint the workflow and test the release scripts
+        if: github.event_name == 'pull_request'
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 "$RUNNER_TEMP"
+          "$RUNNER_TEMP/actionlint" .github/workflows/mobile-release.yml
+          shellcheck .github/release/*.sh
+          bash .github/release/release.test.sh
+
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+          MANUAL_PUBLISH: ${{ inputs.publish }}
+          IOS_CONFIGURED: ${{ secrets.EXPO_TOKEN != '' && secrets.APP_STORE_CONNECT_API_KEY_BASE64 != '' && secrets.IOS_CREDENTIALS_BASE64 != '' }}
+        run: |
+          VERSION=$(jq -r .expo.version "$APP_DIR/app.json") bash .github/release/plan.sh | tee -a "$GITHUB_OUTPUT"
+          echo "ios=$IOS_CONFIGURED" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          VERSION_CODE: ${{ steps.plan.outputs.version_code }}
+          TRACK: ${{ steps.plan.outputs.track }}
+          PUBLISH: ${{ steps.plan.outputs.publish }}
+          IOS: ${{ steps.plan.outputs.ios }}
+        run: |
+          {
+            echo "### $APP_NAME $VERSION (build $VERSION_CODE)"
+            echo "- Destination: $TRACK"
+            echo "- Publish: $PUBLISH"
+            echo "- iOS configured: $IOS"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$PUBLISH" = true ] && [ "$IOS" != true ]; then
+            echo "::warning::EXPO_TOKEN, APP_STORE_CONNECT_API_KEY_BASE64 or IOS_CREDENTIALS_BASE64 is missing: iOS is skipped in this run."
+          fi
+
+  android:
+    name: android
+    needs: [ci, plan]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EAS_BUILD_PROFILE: production
+      ANDROID_VERSION_CODE: ${{ needs.plan.outputs.version_code }}
+      PLAY_ACCOUNT_CONFIGURED: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ env.APP_DIR }}/package-lock.json
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Install
+        working-directory: ${{ env.APP_DIR }}
+        run: npm ci
+
+      - name: Environment of the production profile in eas.json
+        run: jq -r '.build.production.env // {} | to_entries[] | "\(.key)=\(.value)"' "$APP_DIR/eas.json" >> "$GITHUB_ENV"
+
+      - name: Firebase config for push notifications
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "::error::Add the GOOGLE_SERVICES_JSON_BASE64 secret (see .github/release/README.md)."
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > "$RUNNER_TEMP/google-services.json"
+          echo "GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
+
+      - name: Prebuild
+        working-directory: ${{ env.APP_DIR }}
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Upload key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::Add the ANDROID_KEYSTORE_* secrets (see .github/release/README.md)."
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+
+      - name: Signed AAB
+        working-directory: ${{ env.APP_DIR }}/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: >-
+          ./gradlew :app:bundleRelease --no-daemon --console=plain
+          --init-script "$GITHUB_WORKSPACE/.github/release/android-version-code.gradle"
+          "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g"
+          "-Pandroid.injected.signing.store.file=$RUNNER_TEMP/upload.jks"
+          "-Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD"
+          "-Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS"
+          "-Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD"
+
+      - name: Check the signature and the versionCode
+        id: aab
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: bash .github/release/check-aab.sh "$APP_DIR/android/app" "$RUNNER_TEMP/upload.jks" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-aab-${{ needs.plan.outputs.version_code }}
+          path: ${{ steps.aab.outputs.aab }}
+          if-no-files-found: error
+
+      - name: Release notes
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          [ -z "$TAG" ] || git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          mkdir -p "$RUNNER_TEMP/whatsnew"
+          bash .github/release/release-notes.sh "$NOTES_MAX_LENGTH" "$NOTES_FALLBACK" "$TAG" | tee "$RUNNER_TEMP/whatsnew/whatsnew-$NOTES_LOCALE"
+
+      - name: Publish to Google Play
+        if: needs.plan.outputs.publish == 'true' && env.PLAY_ACCOUNT_CONFIGURED == 'true'
+        uses: r0adkll/upload-google-play@v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ env.ANDROID_PACKAGE }}
+          releaseFiles: ${{ steps.aab.outputs.aab }}
+          releaseName: ${{ needs.plan.outputs.version }} (${{ needs.plan.outputs.version_code }})
+          track: ${{ needs.plan.outputs.track }}
+          status: ${{ env.PLAY_RELEASE_STATUS }}
+          whatsNewDirectory: ${{ runner.temp }}/whatsnew
+
+      - name: Google Play without a service account
+        if: needs.plan.outputs.publish == 'true' && env.PLAY_ACCOUNT_CONFIGURED != 'true'
+        run: echo "::warning::PLAY_SERVICE_ACCOUNT_JSON is missing. The signed AAB is only an artifact of this run."
+
+  ios:
+    name: ios
+    needs: [ci, plan]
+    if: needs.plan.outputs.publish == 'true' && needs.plan.outputs.ios == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      IS_TAG: ${{ github.ref_type == 'tag' }}
+      WAIT_FLAG: ${{ github.ref_type == 'tag' && '--wait' || '--no-wait' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ env.APP_DIR }}/package-lock.json
+
+      - name: Install
+        working-directory: ${{ env.APP_DIR }}
+        run: npm ci
+
+      - uses: expo/expo-github-action@v9
+        with:
+          eas-version: ${{ env.EAS_CLI_VERSION }}
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: App Store Connect API key
+        env:
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+        run: bash .github/release/app-store-connect-key.sh "$APP_DIR/eas.json" "$RUNNER_TEMP"
+
+      - name: Distribution certificate and provisioning profile
+        env:
+          IOS_CREDENTIALS_BASE64: ${{ secrets.IOS_CREDENTIALS_BASE64 }}
+        run: bash .github/release/ios-credentials.sh "$APP_DIR" "$RUNNER_TEMP"
+
+      - name: Build and submit to TestFlight
+        working-directory: ${{ env.APP_DIR }}
+        run: eas build --platform ios --profile production --non-interactive --auto-submit "$WAIT_FLAG"
+
+      - name: Release notes
+        if: env.IS_TAG == 'true'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          mkdir -p "$RUNNER_TEMP/metadata/$NOTES_LOCALE"
+          bash .github/release/release-notes.sh "$NOTES_MAX_LENGTH" "$NOTES_FALLBACK" "$TAG" | tee "$RUNNER_TEMP/metadata/$NOTES_LOCALE/release_notes.txt"
+
+      - name: Submit for App Store review
+        if: env.IS_TAG == 'true'
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          sudo gem install fastlane -v "$FASTLANE_VERSION" --no-document
+          fastlane run deliver \
+            api_key_path:"$RUNNER_TEMP/asc-api-key.json" \
+            app_identifier:"$IOS_BUNDLE_ID" \
+            app_version:"$VERSION" \
+            metadata_path:"$RUNNER_TEMP/metadata" \
+            skip_binary_upload:true \
+            skip_screenshots:true \
+            submit_for_review:true \
+            automatic_release:true \
+            run_precheck_before_submit:false \
+            force:true
+
+  github-release:
+    name: github release
+    needs: [plan, android]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: android-aab-${{ needs.plan.outputs.version_code }}
+          path: aab
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" aab/*.aab --repo "$GITHUB_REPOSITORY" --title "$APP_NAME mobile $GITHUB_REF_NAME" --generate-notes --verify-tag --latest=false
