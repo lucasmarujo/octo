@@ -37,7 +37,7 @@ env:
   FASTLANE_VERSION: '2.241.2'
   VERSION_CODE_OFFSET: '1000'
   TAG_PREFIX: mobile-v
-  PLAY_RELEASE_STATUS: draft
+  PLAY_RELEASE_STATUS: completed
   NOTES_LOCALE: en-US
   NOTES_FALLBACK: Bug fixes and improvements.
   NOTES_MAX_LENGTH: '500'

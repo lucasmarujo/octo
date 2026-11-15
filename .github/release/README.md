@@ -53,8 +53,9 @@ git push origin mobile-v1.0.2
 Mobile tags use the `mobile-v` prefix because `vX.Y.Z` tags belong to the desktop releases, and the mobile
 GitHub release is created with `--latest=false`, so `releases/latest` keeps pointing at the desktop.
 
-`PLAY_RELEASE_STATUS` is `draft`, as `releaseStatus` in `eas.json`, because Google Play only accepts draft
-releases while the app itself is a draft. Switch it to `completed` once the app is published.
+`PLAY_RELEASE_STATUS` is `completed`: the app already has a completed release on the closed testing track
+(`alpha`, versionCode 10), so it is no longer a draft app and uploads reach testers right away. The
+`releaseStatus: draft` in `eas.json` only applies to manual `eas submit`.
 
 The Android build does not use EAS: it runs `expo prebuild` and Gradle on the runner. Stop sending manual EAS
 builds to the store: their versionCode is lower than the CI one and Google Play would reject them.
