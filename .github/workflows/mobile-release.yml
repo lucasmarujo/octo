@@ -120,7 +120,7 @@ jobs:
     needs: [ci, plan]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       EAS_BUILD_PROFILE: production
       ANDROID_VERSION_CODE: ${{ needs.plan.outputs.version_code }}
@@ -181,10 +181,12 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          NODE_OPTIONS: --max-old-space-size=3072
         run: >-
-          ./gradlew :app:bundleRelease --no-daemon --console=plain
+          ./gradlew :app:bundleRelease --no-daemon --console=plain --max-workers=2
           --init-script "$GITHUB_WORKSPACE/.github/release/android-version-code.gradle"
-          "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g"
+          "-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g"
+          "-Pkotlin.daemon.jvmargs=-Xmx2g"
           "-Pandroid.injected.signing.store.file=$RUNNER_TEMP/upload.jks"
           "-Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD"
           "-Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS"
