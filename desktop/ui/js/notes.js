@@ -7,6 +7,16 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.42',
+    date: '2026-11-17',
+    en: [
+      "Any code agent you have installed can be Octo's engine, primary or secondary: Claude, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen, Kimi, Pi or Cursor. Each one thinks in a turn of its own, out of sight, on the plan you already have.",
+    ],
+    'pt-BR': [
+      'Qualquer code agent instalado pode ser o motor do Octo, principal ou secundário: Claude, Codex, Kilo, OpenCode, Antigravity, Grok, Qwen, Kimi, Pi ou Cursor. Cada um pensa num turno à parte, fora da tela, no plano que você já tem.',
+    ],
+  },
+  {
     version: '0.2.41',
     date: '2026-11-14',
     en: [
