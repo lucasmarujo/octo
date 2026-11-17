@@ -16,7 +16,18 @@ pub use engine::{CliEngine, Engine};
 pub use runner::Orchestrator;
 pub use settings::{ProjectChange, Settings, SettingsChange};
 
-pub const ENGINES: [AgentKind; 2] = [AgentKind::Claude, AgentKind::Codex];
+pub const ENGINES: [AgentKind; 10] = [
+    AgentKind::Claude,
+    AgentKind::Codex,
+    AgentKind::Kilo,
+    AgentKind::Opencode,
+    AgentKind::Antigravity,
+    AgentKind::Grok,
+    AgentKind::Qwen,
+    AgentKind::Kimi,
+    AgentKind::Pi,
+    AgentKind::Cursor,
+];
 pub const MAX_ENGINE_PROCESSES: usize = 2;
 pub const MAX_DECISIONS: usize = 256;
 pub const MAX_ACTIVITY: usize = 50;

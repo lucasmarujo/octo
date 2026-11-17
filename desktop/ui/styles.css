@@ -1266,7 +1266,7 @@ button.octo-line:hover, button.octo-line.selected { background: var(--color-surf
 .octo-intro-text { color: var(--color-text-muted); font-size: var(--text-md); line-height: 22px; }
 .octo-intro-step { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .octo-intro .segmented { background: var(--color-bg); }
-.octo-choices { display: flex; gap: 8px; }
+.octo-choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .octo-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 150px; padding: 10px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); text-align: left; }
 .octo-choice[aria-pressed="true"] { border-color: var(--color-accent); }
 .octo-choice:disabled { opacity: 0.5; cursor: default; }

@@ -2631,7 +2631,7 @@ test('every control of Octo sends the message of the contract, and nothing more'
 });
 
 test('the engine of Octo is one the user has installed, and the secondary is never the primary again', async () => {
-  const { ENGINE_KINDS, engineInstalled, engineKinds, installedEngines, orchestratorView, secondaryChoices, startChoice } = await import('../js/orchestrator.js');
+  const { ENGINE_KINDS, engineInstalled, engineKinds, installedEngines, introEngines, orchestratorView, secondaryChoices, startChoice } = await import('../js/orchestrator.js');
   const both = orchestratorView(octoMessage());
   const codexOnly = orchestratorView(octoMessage({ primary: null, engines: [{ kind: 'claude', installed: false }, { kind: 'codex', installed: true }] }));
   const none = orchestratorView(octoMessage({ engines: [{ kind: 'claude', installed: false }, { kind: 'codex', installed: false }] }));
@@ -2645,6 +2645,13 @@ test('the engine of Octo is one the user has installed, and the secondary is nev
   assert.deepEqual(engineKinds(orchestratorView(null)), ENGINE_KINDS, 'the intro names the engines before the hub lists them');
   assert.deepEqual(secondaryChoices(both), ['codex']);
   assert.deepEqual(secondaryChoices(codexOnly), ['codex']);
+  assert.deepEqual(ENGINE_KINDS, ['claude', 'codex', 'kilo', 'opencode', 'antigravity', 'grok', 'qwen', 'kimi', 'pi', 'cursor'], 'every code agent can think for Octo, never a terminal');
+  const every = orchestratorView(octoMessage({ primary: 'pi', secondary: 'antigravity', engines: ENGINE_KINDS.map((kind) => ({ kind, installed: ['antigravity', 'pi', 'cursor'].includes(kind) })) }));
+  assert.deepEqual(installedEngines(every), ['antigravity', 'pi', 'cursor']);
+  assert.equal(startChoice(every, 'cursor'), 'cursor', 'any installed code agent can be picked');
+  assert.deepEqual(secondaryChoices(every), ['antigravity', 'cursor']);
+  assert.deepEqual(introEngines(every), ['antigravity', 'pi', 'cursor'], 'the intro offers the engines that are installed');
+  assert.deepEqual(introEngines(none), ['claude', 'codex'], 'and names them all when none is');
 });
 
 test('the model of an engine is picked from the models that agent offers, never typed', async () => {

@@ -1561,14 +1561,15 @@ mod tests {
     }
 
     #[test]
-    fn the_engines_are_claude_and_codex_whether_installed_or_not() {
+    fn every_code_agent_can_be_the_engine_whether_installed_or_not_and_a_terminal_never() {
+        let views = engine_views(&[AgentKind::Codex, AgentKind::Kimi, AgentKind::Terminal]);
+        assert_eq!(views.iter().map(|engine| engine.kind).collect::<Vec<_>>(), ENGINES);
         assert_eq!(
-            engine_views(&[AgentKind::Codex, AgentKind::Kimi, AgentKind::Terminal]),
-            [
-                EngineView { kind: AgentKind::Claude, installed: false },
-                EngineView { kind: AgentKind::Codex, installed: true }
-            ]
+            views.iter().filter(|engine| engine.installed).map(|engine| engine.kind).collect::<Vec<_>>(),
+            [AgentKind::Codex, AgentKind::Kimi]
         );
+        assert!(AgentKind::ALL.iter().filter(|kind| kind.is_ai()).all(|kind| ENGINES.contains(kind)));
+        assert!(!ENGINES.contains(&AgentKind::Terminal));
         assert!(engine_views(&[]).iter().all(|engine| !engine.installed));
     }
 

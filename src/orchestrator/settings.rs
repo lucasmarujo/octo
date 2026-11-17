@@ -223,8 +223,8 @@ mod tests {
     #[test]
     fn only_an_engine_with_a_valid_model_name_is_accepted_and_a_refused_change_changes_nothing() {
         let mut settings = Settings { mode: Mode::Moderate, ..Settings::default() };
-        let refused = settings.apply(change(r#"{"mode":"bypass","primary":"kimi"}"#)).unwrap_err();
-        assert!(refused.contains("kimi"), "{refused}");
+        let refused = settings.apply(change(r#"{"mode":"bypass","primary":"terminal"}"#)).unwrap_err();
+        assert!(refused.contains("terminal"), "{refused}");
         assert_eq!(settings.mode, Mode::Moderate, "no part of a refused change is kept");
         assert!(settings.apply(change(r#"{"secondary":"terminal"}"#)).is_err());
         assert!(settings.apply(change(r#"{"primaryModel":"--dangerous"}"#)).is_err());

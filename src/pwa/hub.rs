@@ -2143,7 +2143,7 @@ mod tests {
             );
             assert_eq!(
                 enabled[0].engines.iter().map(|engine| engine.kind).collect::<Vec<_>>(),
-                [AgentKind::Claude, AgentKind::Codex]
+                crate::orchestrator::ENGINES
             );
             fx.enable(Mode::Moderate);
             assert!(fx.broadcasts().is_empty(), "settings that did not change say nothing");
@@ -2197,10 +2197,10 @@ mod tests {
             assert_eq!((reopened.view().mode, reopened.view().primary), (Mode::Moderate, Some(AgentKind::Claude)));
             assert_eq!(reopened.view().handled.len(), 0, "a disabled Octo reads no log when it opens");
 
-            fx.set(SettingsChange { primary: Some(Some(AgentKind::Kimi)), ..SettingsChange::default() });
+            fx.set(SettingsChange { primary: Some(Some(AgentKind::Terminal)), ..SettingsChange::default() });
             let (tone, text) = fx.notice();
             assert_eq!(tone, Tone::Error);
-            assert!(text.contains("kimi"), "{text}");
+            assert!(text.contains("terminal"), "{text}");
             assert_eq!(fx.view().primary, Some(AgentKind::Claude));
         }
 

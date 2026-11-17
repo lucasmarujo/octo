@@ -4,7 +4,7 @@ import { t } from './i18n.js';
 export const MODES = ['observe', 'moderate', 'bypass'];
 export const DEFAULT_MODE = 'moderate';
 export const OCTO_VIEWS = ['chat', 'decisions', 'activity', 'projects', 'settings'];
-export const ENGINE_KINDS = ['claude', 'codex'];
+export const ENGINE_KINDS = ['claude', 'codex', 'kilo', 'opencode', 'antigravity', 'grok', 'qwen', 'kimi', 'pi', 'cursor'];
 export const RECENT_MS = 600_000;
 export const CHAT_CARDS = 3;
 export const RAIL_NEEDS = 5;
@@ -149,6 +149,11 @@ export function engineKinds(view) {
 
 export function installedEngines(view) {
   return view.engines.filter((engine) => engine.installed).map((engine) => engine.kind);
+}
+
+export function introEngines(view) {
+  const installed = installedEngines(view);
+  return installed.length ? installed : engineKinds(view);
 }
 
 export function engineInstalled(view, kind) {

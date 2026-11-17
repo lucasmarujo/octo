@@ -43,6 +43,7 @@ import {
   instructionsFile,
   instructionsRequest,
   instructionsTooLong,
+  introEngines,
   mergeActivity,
   modeMessage,
   modelMessage,
@@ -308,6 +309,7 @@ function engineChoice(kind, current, primary) {
 
 function intro(current) {
   const kinds = engineKinds(current);
+  const shown = introEngines(current);
   const primary = startChoice(current, choice.primary);
   const mode = choice.mode || current.mode;
   const pickIntroMode = (picked) => {
@@ -324,7 +326,7 @@ function intro(current) {
         h('span', { class: 'octo-ring large' }, svg(ICON_OCTO)),
         h('h2', { class: 'octo-intro-title' }, t('Let Octo answer your agents')),
         h('p', { class: 'octo-intro-text' }, t('Octo watches every agent. When one stops to ask something, Octo reads the question, thinks with an agent you already have and answers it, or leaves it for you with what it would say. You can also ask it about everything that is running.')),
-        h('div', { class: 'octo-intro-step' }, caps(t('Engine')), h('div', { class: 'octo-choices' }, kinds.map((kind) => engineChoice(kind, current, primary)))),
+        h('div', { class: 'octo-intro-step' }, caps(t('Engine')), h('div', { class: 'octo-choices' }, shown.map((kind) => engineChoice(kind, current, primary)))),
         installedEngines(current).length ? null : h('p', { class: 'octo-intro-note' }, t('Octo thinks with {engines}. Install one of them and it can be turned on.', { engines: kinds.map(label).join(' / ') })),
         h('div', { class: 'octo-intro-step' }, caps(t('Mode')), segmented(MODE_OPTIONS, mode, pickIntroMode, t('Mode')), h('p', { class: 'octo-intro-mode' }, MODE_TEXTS[mode])),
         h('button', { class: 'button primary octo-intro-start', type: 'button', disabled: !primary, onclick: turnOn }, t('Turn on Octo')),
