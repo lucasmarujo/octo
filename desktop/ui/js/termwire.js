@@ -9,6 +9,7 @@ const WINDOWS_PATH = /^(?:[A-Za-z]:[\\/]|\\\\)/;
 const WINDOWS_QUOTED = /[\s&()[\]{}^=;!'+,`~%]/;
 const SHELL_ESCAPED = /[\s"'`$&|;<>()*?!#[\]{}\\]/g;
 const IMAGE_TYPE = 'image/';
+const ZOOM_KEYS = { '=': 'zoom-in', '+': 'zoom-in', Add: 'zoom-in', '-': 'zoom-out', _: 'zoom-out', Subtract: 'zoom-out', 0: 'zoom-reset' };
 const utf8 = new TextDecoder();
 
 function bytesOf(payload) {
@@ -76,6 +77,8 @@ export function keyRoute(event, hasSelection, mac = false) {
   const key = event.key.toLowerCase();
   if (ctrl && !event.shiftKey && key === 'c' && hasSelection) return 'copy';
   if ((ctrl && key === 'v' && !mac) || (event.shiftKey && event.key === 'Insert')) return 'paste';
+  const zoom = mac ? event.metaKey && !event.ctrlKey && !event.altKey : ctrl;
+  if (zoom && Object.hasOwn(ZOOM_KEYS, event.key)) return ZOOM_KEYS[event.key];
   return 'terminal';
 }
 

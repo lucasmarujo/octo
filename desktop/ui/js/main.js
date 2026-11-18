@@ -504,7 +504,7 @@ function gridShortcut(event) {
 }
 
 function initTerminal() {
-  terminal = new Terminal($('terminal'), terminalHandlers(appShortcut));
+  terminal = new Terminal($('terminal'), terminalHandlers(appShortcut), { zoomable: true });
 }
 
 function reopenTerminal() {

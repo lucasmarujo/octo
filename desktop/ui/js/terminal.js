@@ -1,4 +1,4 @@
-import { elementAt, h } from './dom.js';
+import { elementAt, h, storage } from './dom.js';
 import { t } from './i18n.js';
 import { palette } from './palette.js';
 import { LINK_RECORD_OSC, decodeFrame, findLinks, keyRoute, parseLinkRecord, pastedImage, pathsAsInput, terminalTheme } from './termwire.js';
@@ -14,6 +14,10 @@ const INK = 'var(--term-bg)';
 const TEXT = 'var(--term-fg)';
 const FONT = '"JetBrains Mono", ui-monospace, monospace';
 const FONT_SIZE = 13;
+const ZOOM_KEY = 'octo.terminalFontSize';
+const ZOOM_MIN = 9;
+const ZOOM_MAX = 24;
+const ZOOM_STEP = 1;
 const LINE_HEIGHT = 1.05;
 const SCROLLBACK = 5000;
 const MIN_ROWS = 8;
@@ -24,6 +28,11 @@ const REOPEN_MS = 2000;
 const CONNECT_RETRY_MS = 3000;
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const encoder = new TextEncoder();
+
+function zoomChoice() {
+  const stored = Number(storage.get(ZOOM_KEY));
+  return Number.isInteger(stored) && stored >= ZOOM_MIN && stored <= ZOOM_MAX ? stored : FONT_SIZE;
+}
 
 function color(value) {
   if (value >= TRUECOLOR) {
@@ -69,9 +78,11 @@ export class Terminal {
     this.records = [];
     this.resizeTimer = 0;
     this.watchdog = 0;
+    this.zoomable = Boolean(options.zoomable);
+    const fontSize = this.zoomable ? zoomChoice() : options.fontSize || FONT_SIZE;
     this.xterm = new window.Terminal({
       fontFamily: FONT,
-      fontSize: options.fontSize || FONT_SIZE,
+      fontSize,
       lineHeight: LINE_HEIGHT,
       cursorBlink: true,
       scrollback: SCROLLBACK,
@@ -85,7 +96,7 @@ export class Terminal {
     this.xterm.unicode.activeVersion = '11';
     this.xterm.loadAddon(new window.WebLinksAddon.WebLinksAddon((event, uri) => this.follow(event, uri)));
     this.ready = document.fonts
-      .load(`${options.fontSize || FONT_SIZE}px ${FONT}`)
+      .load(`${fontSize}px ${FONT}`)
       .catch(() => [])
       .then(() => this.mount());
   }
@@ -149,7 +160,21 @@ export class Terminal {
       event.preventDefault();
       return false;
     }
+    if (this.zoomable && route.startsWith('zoom-')) {
+      this.zoom(route);
+      event.preventDefault();
+      return false;
+    }
     return route !== 'paste';
+  }
+
+  zoom(route) {
+    const current = this.xterm.options.fontSize;
+    const next = route === 'zoom-reset' ? FONT_SIZE : Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, current + (route === 'zoom-in' ? ZOOM_STEP : -ZOOM_STEP)));
+    if (next === current) return;
+    this.xterm.options.fontSize = next;
+    storage.set(ZOOM_KEY, String(next));
+    this.refit();
   }
 
   takesInput() {

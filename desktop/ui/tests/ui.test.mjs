@@ -820,6 +820,28 @@ test('keys in the agent terminal copy a selection, paste through the browser and
   assert.equal(keyRoute(key('Insert', { shiftKey: true }), false, true), 'paste');
 });
 
+test('ctrl plus and ctrl minus zoom the agent screen, ctrl zero goes back to the default, and a Mac uses cmd', async () => {
+  const { keyRoute } = await import('../js/termwire.js');
+  const key = (key, mods = {}) => ({ key, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
+  assert.equal(keyRoute(key('=', { ctrlKey: true }), false), 'zoom-in');
+  assert.equal(keyRoute(key('+', { ctrlKey: true, shiftKey: true }), false), 'zoom-in', 'the plus of a keyboard needs shift');
+  assert.equal(keyRoute(key('Add', { ctrlKey: true }), false), 'zoom-in', 'the keypad plus');
+  assert.equal(keyRoute(key('-', { ctrlKey: true }), false), 'zoom-out');
+  assert.equal(keyRoute(key('_', { ctrlKey: true, shiftKey: true }), false), 'zoom-out');
+  assert.equal(keyRoute(key('Subtract', { ctrlKey: true }), false), 'zoom-out', 'the keypad minus');
+  assert.equal(keyRoute(key('0', { ctrlKey: true }), false), 'zoom-reset');
+  assert.equal(keyRoute(key('-'), false), 'terminal', 'a plain minus is typed to the agent');
+  assert.equal(keyRoute(key('-', { ctrlKey: true, altKey: true }), false), 'terminal');
+  assert.equal(keyRoute(key('=', { metaKey: true }), false, true), 'zoom-in', 'on a Mac it is cmd');
+  assert.equal(keyRoute(key('=', { ctrlKey: true }), false, true), 'terminal', 'on a Mac ctrl stays a key of the agent');
+  assert.equal(keyRoute(key('toString', { ctrlKey: true }), false), 'terminal', 'only the keys of the map zoom');
+  const terminal = readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8');
+  assert.match(terminal, /if \(this\.zoomable && route\.startsWith\('zoom-'\)\) \{/, 'only the agent screen zooms, the grid keeps its own size');
+  assert.match(terminal, /const ZOOM_MIN = 9;\nconst ZOOM_MAX = 24;/);
+  assert.match(terminal, /storage\.set\(ZOOM_KEY, String\(next\)\);/, 'the size is kept for the next agent');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /new Terminal\(\$\('terminal'\), terminalHandlers\(appShortcut\), \{ zoomable: true \}\);/);
+});
+
 test('files dropped on an agent terminal are typed as paths the way a native terminal types them', async () => {
   const { pathsAsInput } = await import('../js/termwire.js');
   assert.equal(pathsAsInput(['C:\\work\\shot.png']), 'C:\\work\\shot.png ');
