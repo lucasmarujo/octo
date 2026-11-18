@@ -481,7 +481,10 @@ export function initPanelToggles(onToggle) {
     expandText: t('Expand the sidebar'),
     collapseIcon: ICON_SIDEBAR_COLLAPSE,
     expandIcon: ICON_SIDEBAR_EXPAND,
-    onToggle,
+    onToggle: () => {
+      $('sidebar-scroll').scrollTop = 0;
+      onToggle();
+    },
   });
   initPanelToggle({
     button: $('details-toggle'),

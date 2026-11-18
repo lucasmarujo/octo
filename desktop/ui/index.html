@@ -32,26 +32,27 @@
       </header>
       <div class="body">
         <aside class="sidebar">
-          <div class="brand">
-            <span id="brand-mascot" class="brand-mascot"></span>
-            <div class="brand-text">
-              <span class="wordmark">Octo</span>
-              <span id="host" class="host"></span>
+          <div id="sidebar-scroll" class="sidebar-scroll">
+            <div class="brand">
+              <span id="brand-mascot" class="brand-mascot"></span>
+              <div class="brand-text">
+                <span class="wordmark">Octo</span>
+                <span id="host" class="host"></span>
+              </div>
             </div>
+            <section class="orchestrator">
+              <button id="open-octo" class="orchestrator-head" type="button" title="Orchestrator settings" data-i18n-title="Orchestrator settings">
+                <span class="caps" data-i18n="Orchestrator">Orchestrator</span>
+                <span id="octo-mode" class="orchestrator-mode"></span>
+              </button>
+              <nav id="octo-nav" class="orchestrator-nav" aria-label="Orchestrator" data-i18n-label="Orchestrator"></nav>
+            </section>
+            <section class="sessions">
+              <span class="caps" data-i18n="Sessions">Sessions</span>
+              <div id="sessions" class="session-list"></div>
+            </section>
+            <nav id="session-rail" class="session-rail" aria-label="Sessions" data-i18n-label="Sessions"></nav>
           </div>
-          <section class="orchestrator">
-            <button id="open-octo" class="orchestrator-head" type="button" title="Orchestrator settings" data-i18n-title="Orchestrator settings">
-              <span class="caps" data-i18n="Orchestrator">Orchestrator</span>
-              <span id="octo-mode" class="orchestrator-mode"></span>
-            </button>
-            <nav id="octo-nav" class="orchestrator-nav" aria-label="Orchestrator" data-i18n-label="Orchestrator"></nav>
-          </section>
-          <section class="sessions">
-            <span class="caps" data-i18n="Sessions">Sessions</span>
-            <div id="sessions" class="session-list"></div>
-          </section>
-          <nav id="session-rail" class="session-rail" aria-label="Sessions" data-i18n-label="Sessions"></nav>
-          <div class="spacer"></div>
           <section id="usage" class="usage" hidden></section>
           <section id="usage-rings" class="usage-rings" hidden></section>
           <footer class="sidebar-footer">

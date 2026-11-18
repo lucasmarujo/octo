@@ -2086,8 +2086,13 @@ test('a collapsed sidebar keeps every session as a chip, and hovering one lists 
   assert.equal(sessionMark('🚀launch'), '🚀L', 'an emoji is one letter, never half of one');
   assert.equal(sessionMark(''), '');
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
-  assert.match(html, /<\/section>\s*<nav id="session-rail" class="session-rail" aria-label="Sessions" data-i18n-label="Sessions"><\/nav>\s*<div class="spacer"><\/div>/, 'where the list of sessions was');
+  assert.match(html, /<\/section>\s*<nav id="session-rail" class="session-rail" aria-label="Sessions" data-i18n-label="Sessions"><\/nav>\s*<\/div>\s*<section id="usage" class="usage" hidden><\/section>/, 'the list of sessions scrolls in its own area, and the plan usage stays out of it');
+  assert.match(html, /<aside class="sidebar">\s*<div id="sidebar-scroll" class="sidebar-scroll">\s*<div class="brand">/, 'everything above the usage is the scrolling area');
+  const sidebarJs = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebarJs, /onToggle: \(\) => \{\n\s+\$\('sidebar-scroll'\)\.scrollTop = 0;\n\s+onToggle\(\);\n\s+\},/, 'collapsing or expanding shows the top of the sidebar, where the orchestrator is');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.sidebar \{[^}]*overflow: hidden; \}/, 'the sidebar itself never scrolls');
+  assert.match(css, /\.sidebar-scroll \{ display: flex; flex: 1 1 0; flex-direction: column; gap: 24px; min-height: 0; overflow-y: auto; \}/, 'the sessions scroll with the plan usage and the footer fixed below');
   assert.match(css, /\.session-rail \{ display: none; \}\n:root\[data-sidebar="collapsed"\] \.session-rail \{ display: flex; flex-direction: column;/, 'only while the sidebar is collapsed');
   assert.match(css, /\.rail-chip \{[^}]*width: 32px; height: 32px;/, 'as wide as the icons of the footer');
   assert.match(css, /\.rail-chip\.selected \{ background: var\(--color-surface-raised\); color: var\(--color-text\); \}/);
@@ -2907,7 +2912,11 @@ test('Octo is a pinned tab with its own block in the sidebar, a view of its own 
   for (const icon of [ICON_ACTIVITY, ICON_CHAT, ICON_DECISIONS, ICON_OCTO, ICON_PROJECTS]) assert.match(icon, /^<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">.*currentColor.*<\/svg>$/);
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.match(css, /\.octo:not\(\[hidden\]\) \{ animation: view-in var\(--motion-slow\) var\(--ease-out\); \}/);
-  assert.match(css, /:root\[data-sidebar="collapsed"\] \.orchestrator \{ display: none; \}/);
+  assert.doesNotMatch(css, /:root\[data-sidebar="collapsed"\] \.orchestrator \{ display: none; \}/, 'the orchestrator stays in the collapsed sidebar');
+  assert.match(css, /:root\[data-sidebar="collapsed"\] \.orchestrator-row \{ justify-content: center; gap: 0; width: 32px; height: 32px; padding: 0; \}/, 'the icons of Chat, Decisions, Activity and Projects are shown alone');
+  assert.match(css, /:root\[data-sidebar="collapsed"\] \.orchestrator-row \.session-name, :root\[data-sidebar="collapsed"\] \.orchestrator-row \.session-count \{ display: none; \}/);
+  const octo = readFileSync(join(REPO, 'desktop/ui/js/octo.js'), 'utf8');
+  assert.match(octo, /'aria-label': text, title: text, onclick: \(\) => openOcto\(name\)/, 'a collapsed row still has a name');
   assert.match(css, /\.tab\[data-tab="octo"\] > svg \{ color: var\(--color-accent\); \}/);
   assert.match(css, /\.octo-badge, \.tab-badge \{[^}]*background: var\(--color-waiting\); color: var\(--color-waiting-ink\);/);
   const rules = css.split('\n').filter((line) => /^(\.octo-(?!mark|spin)|\.orchestrator|\.segmented\.octo-mode|\.field\.octo)/.test(line));

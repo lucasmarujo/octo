@@ -210,7 +210,7 @@ function navRow([name, text, icon], active, counts) {
     activity: counts.mode ? h('span', { class: 'session-count' }, String(counts.handled)) : null,
     projects: counts.projects ? h('span', { class: 'session-count' }, String(counts.projects)) : null,
   }[name];
-  return h('button', { class: 'session-row orchestrator-row', type: 'button', 'aria-current': String(active && shownView === name), onclick: () => openOcto(name) }, svg(icon), h('span', { class: 'session-name' }, text), tail);
+  return h('button', { class: 'session-row orchestrator-row', type: 'button', 'aria-current': String(active && shownView === name), 'aria-label': text, title: text, onclick: () => openOcto(name) }, svg(icon), h('span', { class: 'session-name' }, text), tail);
 }
 
 export function renderOctoNav() {
