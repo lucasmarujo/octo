@@ -3,7 +3,7 @@ import { h } from './dom.js';
 const OLD_THEME = 'old';
 
 export function usesKai() {
-  return document.documentElement.dataset.theme === OLD_THEME;
+  return document.documentElement.dataset.theme === OLD_THEME || document.documentElement.hasAttribute('data-kai');
 }
 
 export function mark(extra) {

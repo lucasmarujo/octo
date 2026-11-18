@@ -118,7 +118,7 @@ test('the theme picker offers octo, gray, light, old and system, and only those 
     localStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: (key) => stored.delete(key) },
     matchMedia: () => ({ matches: systemIsLight }),
   };
-  globalThis.document = { documentElement: { dataset: {}, style: { setProperty: (name, value) => inline.set(name, value), removeProperty: (name) => inline.delete(name) } } };
+  globalThis.document = { documentElement: { dataset: {}, toggleAttribute: () => false, style: { setProperty: (name, value) => inline.set(name, value), removeProperty: (name) => inline.delete(name) } } };
   context.after(() => {
     delete globalThis.window;
     delete globalThis.document;
@@ -336,7 +336,7 @@ test('every state of the pixel Kai plays its own strip at the pace of the design
     const rule = css.match(new RegExp(`\\.kai\\[data-mood="${mood}"\\] \\.kai-strip \\{([^}]*)\\}`));
     assert.ok(rule, `no strip rule for ${mood}`);
     assert.ok(rule[1].includes(`width: ${count * 100}%`), `${mood} strip width`);
-    assert.ok(rule[1].includes(`url("kai/${mood}.svg")`), `${mood} strip image`);
+    assert.ok(rule[1].includes(`var(--kai-${mood}, url("kai/${mood}.svg"))`), `${mood} strip image, recolored by the accent when set`);
     assert.ok(rule[1].includes(`kai-strip-${count} ${pace[mood]} steps(${count}, jump-none)`), `${mood} pace`);
     assert.equal(rule[1].includes('infinite'), mood !== 'done', `${mood} loops unless it is the celebration`);
     const shift = ((count - 1) / count) * 100;
@@ -2313,17 +2313,17 @@ test('the terminal of an agent runs edge to edge under a strip with the agent, i
   assert.match(html, /<div class="term-column">\s*<div id="term-info" class="term-info"><\/div>\s*<div id="terminal" class="term-frame"><\/div>\s*<\/div>/);
 });
 
-test('the O replaces Kai outside the Old theme, and turns only while an agent works', () => {
+test('the O replaces Kai unless Kai is on, and turns only while an agent works', () => {
   const brand = readFileSync(join(REPO, 'desktop/ui/js/brand.js'), 'utf8');
-  assert.match(brand, /return document\.documentElement\.dataset\.theme === OLD_THEME;/);
+  assert.match(brand, /return document\.documentElement\.dataset\.theme === OLD_THEME \|\| document\.documentElement\.hasAttribute\('data-kai'\);/);
   const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
   assert.match(main, /host\.replaceChildren\(usesKai\(\) \? kai\('idle'\) : mark\(\)\);/);
   assert.match(main, /document\.documentElement\.toggleAttribute\('data-working', working\);/);
-  assert.match(main, /new MutationObserver\(render\)\.observe\(document\.documentElement, \{ attributes: true, attributeFilter: \['data-theme'\] \}\);/, 'changing the theme swaps the mascot at once');
+  assert.match(main, /new MutationObserver\(render\)\.observe\(document\.documentElement, \{ attributes: true, attributeFilter: \['data-theme', 'data-kai'\] \}\);/, 'changing the theme or the Kai flag swaps the mascot at once');
   const board = readFileSync(join(REPO, 'desktop/ui/js/board.js'), 'utf8');
   assert.match(board, /usesKai\(\) \? sleeping\(\) : mark\('octo-mark-empty'\)/, 'the empty session shows the same mark');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
-  assert.match(css, /:root:not\(\[data-theme="old"\]\) \.brand-mascot \{ width: 44px; height: 44px; \}/);
+  assert.match(css, /:root:not\(\[data-theme="old"\]\):not\(\[data-kai\]\) \.brand-mascot \{ width: 44px; height: 44px; \}/, 'the mark is small, the Kai is as big as in the Old theme');
   assert.match(css, /:root\[data-working\] \.brand-mascot \.octo-mark, :root\[data-working\] \.octo-mark-empty \{ animation: octo-spin [\d.]+s linear infinite; \}/);
   assert.match(css, /@keyframes octo-spin \{ to \{ transform: rotate\(360deg\); \} \}/, 'only a transform, so the compositor turns it');
   assert.match(css, /\.brand-mascot \.octo-mark, \.octo-mark-empty \{ animation: none !important; \}/, 'reduced motion keeps it still');
@@ -2334,6 +2334,103 @@ test('the O replaces Kai outside the Old theme, and turns only while an agent wo
   assert.match(brand, /return h\('span', \{ class: `octo-mark\$\{extra \? ` \$\{extra\}` : ''\}`, 'aria-hidden': 'true' \}\);/, 'no image with colors of its own');
   assert.doesNotMatch(css.split('\n.octo-mark {')[1].split('}')[0], /animation|transform/, 'at rest the mark stands in its own orientation');
   assert.doesNotMatch(css.split('\n.octo-mark-empty {')[1].split('}')[0], /animation|transform/);
+});
+
+test('the Kai flag shows Kai in the sidebar of any theme, and the Old theme always has it', async (context) => {
+  const stored = new Map();
+  const attributes = new Set();
+  globalThis.window = {
+    localStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value), removeItem: (key) => stored.delete(key) },
+    matchMedia: () => ({ matches: false }),
+  };
+  globalThis.document = {
+    documentElement: {
+      dataset: {},
+      toggleAttribute: (name, on) => (on ? attributes.add(name) : attributes.delete(name)),
+      hasAttribute: (name) => attributes.has(name),
+      style: { setProperty: () => {}, removeProperty: () => {} },
+    },
+  };
+  context.after(() => {
+    delete globalThis.window;
+    delete globalThis.document;
+  });
+  const { applyTheme, kaiChoice } = await import('../js/settings.js');
+  const { usesKai } = await import('../js/brand.js');
+  applyTheme();
+  assert.equal(kaiChoice(), false, 'the flag is off until it is turned on');
+  assert.equal(usesKai(), false, 'the Octo mark in the other themes');
+  stored.set('octo.kai', 'on');
+  applyTheme();
+  assert.equal(kaiChoice(), true);
+  assert.equal(usesKai(), true, 'with the flag on, Kai is the icon in any theme');
+  stored.set('orkai.theme', 'old');
+  applyTheme();
+  stored.delete('octo.kai');
+  applyTheme();
+  assert.equal(usesKai(), true, 'the Old theme keeps Kai even with the flag off');
+  stored.delete('orkai.theme');
+  applyTheme();
+  assert.equal(usesKai(), false, 'back to the Octo mark when both are off');
+});
+
+test('Kai is painted in the accent through custom properties, and the art as drawn stays the fallback', async (context) => {
+  const inline = new Map();
+  const fetched = [];
+  const realFetch = globalThis.fetch;
+  globalThis.document = { documentElement: { dataset: {}, style: { setProperty: (name, value) => inline.set(name, value), removeProperty: (name) => inline.delete(name) } } };
+  globalThis.fetch = async (url) => {
+    fetched.push(url);
+    return { text: async () => readFileSync(join(REPO, 'desktop/ui', url), 'utf8') };
+  };
+  context.after(() => {
+    delete globalThis.document;
+    globalThis.fetch = realFetch;
+  });
+  const { paintKai } = await import('../js/kai.js');
+  await paintKai('#35fddc');
+  assert.deepEqual(fetched, ['kai/idle.svg', 'kai/working.svg', 'kai/needs.svg', 'kai/done.svg', 'kai/lost.svg', 'kai/sleep.svg'], 'each strip is read once');
+  for (const mood of [...MOODS, 'sleep']) {
+    const value = inline.get(`--kai-${mood}`);
+    assert.match(value, /^url\("data:image\/svg\+xml,/, mood);
+    const markup = decodeURIComponent(value.slice('url("data:image/svg+xml,'.length, -2));
+    assert.match(markup, /fill="#35fddc"/, `${mood} body in the accent`);
+    assert.doesNotMatch(markup, /#e85eb6/i, `${mood} has no pink left`);
+  }
+  await paintKai('#12b8a0');
+  assert.equal(fetched.length, 6, 'the strips are kept, so a new color does not read them again');
+  await paintKai('#e85eb6');
+  assert.equal(inline.size, 0, 'the pink of Kai is the art as drawn');
+  await paintKai(null);
+  assert.equal(inline.size, 0, 'the Old theme has no accent to paint');
+});
+
+test('the Kai flag is in Appearance, locked on in the Old theme, and its texts are in Portuguese', async () => {
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /const KAI_KEY = 'octo\.kai';/);
+  assert.match(settings, /accentRow\(\),\n\s+kaiRow\(\),/, 'the flag sits right under the accent color');
+  assert.match(settings, /const control = toggle\(locked \|\| kaiChoice\(\), setKai, t\('Kai in the sidebar'\)\);\n\s+control\.disabled = locked;/, 'the Old theme shows it on and cannot change it');
+  assert.match(settings, /document\.documentElement\.toggleAttribute\('data-kai', kaiChoice\(\)\);/);
+  const { PT } = await import('../js/i18n.js');
+  assert.equal(PT['Kai in the sidebar'], 'Kai na barra lateral');
+  assert.equal(PT['Always on in the Old theme.'], 'Sempre ligado no tema Antigo.');
+  assert.equal(PT['The animated Kai replaces the Octo mark in the sidebar, in any theme.'], 'O Kai animado substitui a marca do Octo na barra lateral, em qualquer tema.');
+  assert.equal(PT['Buttons, focus, the cursor, every highlight of the app and the Kai.'], 'Botões, foco, cursor, todos os destaques do app e o Kai.');
+});
+
+test('Kai takes the accent picked by the user, and keeps the rest of its art', async () => {
+  const { kaiTones, recolorStrip } = await import('../js/kai.js');
+  for (const mood of [...MOODS, 'sleep']) {
+    const art = readFileSync(join(REPO, `desktop/ui/kai/${mood}.svg`), 'utf8');
+    const teal = recolorStrip(art, kaiTones('#35fddc'));
+    assert.equal(teal.length, art.length, `${mood} keeps its size`);
+    assert.equal(teal.match(/<path/g).length, art.match(/<path/g).length, `${mood} keeps its shapes`);
+    for (const pink of ['#e85eb6', '#f08acb', '#f9d3e8', '#f4e4f0', '#f2899a', '#c84898', '#8f3170', '#2e0b29', '#20061f']) {
+      assert.doesNotMatch(teal, new RegExp(pink, 'i'), `${mood} ${pink}`);
+    }
+    if (art.includes('#4250A4')) assert.match(teal, /#4250A4/, `${mood} keeps the blue of the cap`);
+  }
+  assert.match(recolorStrip(readFileSync(join(REPO, 'desktop/ui/kai/idle.svg'), 'utf8'), kaiTones('#35fddc')), /fill="#35fddc"/);
 });
 
 test('pairing a phone asks for little room until there is a code to show', () => {

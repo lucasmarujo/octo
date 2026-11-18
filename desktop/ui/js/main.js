@@ -524,7 +524,7 @@ function initWindow() {
   $('win-max').addEventListener('click', () => win.toggleMaximize());
   $('win-close').addEventListener('click', () => win.close());
   renderBrand();
-  new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-kai'] });
   $('open-help').replaceChildren(svg(ICON_HELP));
   $('open-settings').replaceChildren(svg(ICON_SETTINGS));
   $('pair').replaceChildren(svg(ICON_PAIR));

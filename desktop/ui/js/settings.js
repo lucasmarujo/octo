@@ -4,6 +4,7 @@ import { confirm } from './dialogs.js';
 import { alive, installKind, joinArgs, kindColor, label, soundFlip, soundOn, splitArgs, volumeChanges } from './format.js';
 import { LANGUAGES, language, setLanguage, t } from './i18n.js';
 import { ICON_BELL, ICON_BELL_OFF } from './icons.js';
+import { paintKai } from './kai.js';
 import { choose, hideTip, motion, reducedMotion, rise, settle, slideThumb } from './motion.js';
 import { NOTES, noteBlock } from './notes.js';
 import { agents, state } from './state.js';
@@ -12,6 +13,8 @@ import { invoke } from './transport.js';
 
 const THEME_KEY = 'orkai.theme';
 const ACCENT_KEY = 'octo.accent';
+const KAI_KEY = 'octo.kai';
+const KAI_ON = 'on';
 const DEFAULT_THEME = 'octo';
 const OLD_THEME = 'old';
 const LIGHT_THEME = 'light';
@@ -62,6 +65,10 @@ export function accentChoice() {
   return normalizeHex(storage.get(ACCENT_KEY));
 }
 
+export function kaiChoice() {
+  return storage.get(KAI_KEY) === KAI_ON;
+}
+
 function shownTheme() {
   return document.documentElement.dataset.theme;
 }
@@ -79,17 +86,25 @@ function applyAccent() {
     if (accent) root.style.setProperty(name, value);
     else root.style.removeProperty(name);
   }
+  paintKai(shownTheme() === OLD_THEME ? null : shownAccent());
 }
 
 export function applyTheme() {
   const choice = themeChoice();
   const system = window.matchMedia('(prefers-color-scheme: light)').matches ? LIGHT_THEME : DEFAULT_THEME;
   document.documentElement.dataset.theme = choice === 'system' ? system : choice;
+  document.documentElement.toggleAttribute('data-kai', kaiChoice());
   applyAccent();
 }
 
 function setTheme(choice) {
   storage.set(THEME_KEY, choice === DEFAULT_THEME ? null : choice);
+  applyTheme();
+  render();
+}
+
+function setKai(on) {
+  storage.set(KAI_KEY, on ? KAI_ON : null);
   applyTheme();
   render();
 }
@@ -210,13 +225,20 @@ function accentControls(locked) {
 
 function accentRow() {
   const locked = shownTheme() === OLD_THEME;
-  const description = locked ? t('Not available in the Old theme.') : t('Buttons, focus, the cursor and every highlight of the app.');
+  const description = locked ? t('Not available in the Old theme.') : t('Buttons, focus, the cursor, every highlight of the app and the Kai.');
   return h(
     'div',
     { class: `setting accent-setting${locked ? ' locked' : ''}` },
     h('div', { class: 'setting-text' }, h('span', { class: 'setting-title' }, t('Accent color')), h('span', { class: 'setting-description' }, description)),
     accentControls(locked),
   );
+}
+
+function kaiRow() {
+  const locked = shownTheme() === OLD_THEME;
+  const control = toggle(locked || kaiChoice(), setKai, t('Kai in the sidebar'));
+  control.disabled = locked;
+  return row(t('Kai in the sidebar'), locked ? t('Always on in the Old theme.') : t('The animated Kai replaces the Octo mark in the sidebar, in any theme.'), control);
 }
 
 export function segmented(options, value, onPick, label) {
@@ -556,6 +578,7 @@ function appearanceSection() {
     h('div', { class: 'settings-heading' }, h('h2', null, t('Appearance'))),
     row(t('Theme'), t('The agent terminals follow the theme too.'), segmented(THEMES, themeChoice(), setTheme, t('Theme'))),
     accentRow(),
+    kaiRow(),
     row(t('Language'), t('English by default. Applies to the whole app.'), segmented(LANGUAGES.map((entry) => [entry.code, entry.name]), language(), (code) => setLanguage(code, 'settings'), t('Language'))),
     row(
       t('Terminal shell'),

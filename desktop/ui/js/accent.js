@@ -72,7 +72,7 @@ export function accentInk(hex) {
   return contrast(hex, INK_DARK) >= contrast(hex, INK_LIGHT) ? INK_DARK : INK_LIGHT;
 }
 
-function blend(hex, toward, amount) {
+export function blend(hex, toward, amount) {
   const from = hexToRgb(hex);
   const to = hexToRgb(toward);
   return rgbToHex(from.map((channel, index) => channel + (to[index] - channel) * amount));
