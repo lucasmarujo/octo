@@ -1,24 +1,16 @@
-import { ACCENT_DEFAULT, ACCENT_PRESETS, HUE_MAX, accentTokens, hexToRgb, hueOf, normalizeHex, rgbToHex, withHue } from './accent.js';
+import { ACCENT_DEFAULT, ACCENT_PRESETS, HUE_MAX, hexToRgb, hueOf, normalizeHex, rgbToHex, withHue } from './accent.js';
 import { $, h, storage, svg } from './dom.js';
 import { confirm } from './dialogs.js';
 import { alive, installKind, joinArgs, kindColor, label, soundFlip, soundOn, splitArgs, volumeChanges } from './format.js';
 import { LANGUAGES, language, setLanguage, t } from './i18n.js';
 import { ICON_BELL, ICON_BELL_OFF } from './icons.js';
-import { paintKai } from './kai.js';
 import { choose, hideTip, motion, reducedMotion, rise, settle, slideThumb } from './motion.js';
 import { NOTES, noteBlock } from './notes.js';
 import { agents, state } from './state.js';
+import { ACCENT_KEY, DEFAULT_THEME, KAI_KEY, KAI_ON, OLD_THEME, THEME_KEY, accentChoice, applyAccent, applyTheme, kaiChoice, shownAccent, shownTheme, themeChoice } from './theme.js';
 import { toast } from './toast.js';
 import { invoke } from './transport.js';
 
-const THEME_KEY = 'orkai.theme';
-const ACCENT_KEY = 'octo.accent';
-const KAI_KEY = 'octo.kai';
-const KAI_ON = 'on';
-const DEFAULT_THEME = 'octo';
-const OLD_THEME = 'old';
-const LIGHT_THEME = 'light';
-const LIGHT_ACCENT = '#12b8a0';
 const CHANNELS = ['R', 'G', 'B'];
 const CHANNEL_MAX = 255;
 const THEMES = [
@@ -52,50 +44,11 @@ const pendingInstalls = new Map();
 let shownSection = 'Appearance';
 let update = null;
 
+export { accentChoice, applyTheme, kaiChoice, themeChoice };
+
 const commandKey = (kind) => `${kind === 'antigravity' ? 'agy' : kind}_command`;
 const argsKey = (kind) => `${kind === 'antigravity' ? 'agy' : kind}_args`;
 const mono = (text) => h('span', { class: 'mono-inline' }, text);
-
-export function themeChoice() {
-  const chosen = storage.get(THEME_KEY);
-  return THEMES.some(([value]) => value === chosen) ? chosen : DEFAULT_THEME;
-}
-
-export function accentChoice() {
-  return normalizeHex(storage.get(ACCENT_KEY));
-}
-
-export function kaiChoice() {
-  return storage.get(KAI_KEY) === KAI_ON;
-}
-
-function shownTheme() {
-  return document.documentElement.dataset.theme;
-}
-
-function shownAccent() {
-  return accentChoice() || (shownTheme() === LIGHT_THEME ? LIGHT_ACCENT : ACCENT_DEFAULT);
-}
-
-function applyAccent() {
-  const root = document.documentElement;
-  if (!root.style) return;
-  const accent = shownTheme() === OLD_THEME ? null : accentChoice();
-  const tokens = accentTokens(accent || ACCENT_DEFAULT, shownTheme() === LIGHT_THEME);
-  for (const [name, value] of Object.entries(tokens)) {
-    if (accent) root.style.setProperty(name, value);
-    else root.style.removeProperty(name);
-  }
-  paintKai(shownTheme() === OLD_THEME ? null : shownAccent());
-}
-
-export function applyTheme() {
-  const choice = themeChoice();
-  const system = window.matchMedia('(prefers-color-scheme: light)').matches ? LIGHT_THEME : DEFAULT_THEME;
-  document.documentElement.dataset.theme = choice === 'system' ? system : choice;
-  document.documentElement.toggleAttribute('data-kai', kaiChoice());
-  applyAccent();
-}
 
 function setTheme(choice) {
   storage.set(THEME_KEY, choice === DEFAULT_THEME ? null : choice);
@@ -239,6 +192,15 @@ function kaiRow() {
   const control = toggle(locked || kaiChoice(), setKai, t('Kai in the sidebar'));
   control.disabled = locked;
   return row(t('Kai in the sidebar'), locked ? t('Always on in the Old theme.') : t('The animated Kai replaces the Octo mark in the sidebar, in any theme.'), control);
+}
+
+function islandRow() {
+  if (!current.islandAvailable) return null;
+  return row(
+    t('Island on the screen'),
+    t('A small pill on the top edge of the screen, above every window, shows what is working, done or waiting for you. Rest the mouse on it to see the agents of each project.'),
+    toggle(current.config.island, (on) => save({ island: on }), t('Island on the screen')),
+  );
 }
 
 export function segmented(options, value, onPick, label) {
@@ -579,6 +541,7 @@ function appearanceSection() {
     row(t('Theme'), t('The agent terminals follow the theme too.'), segmented(THEMES, themeChoice(), setTheme, t('Theme'))),
     accentRow(),
     kaiRow(),
+    islandRow(),
     row(t('Language'), t('English by default. Applies to the whole app.'), segmented(LANGUAGES.map((entry) => [entry.code, entry.name]), language(), (code) => setLanguage(code, 'settings'), t('Language'))),
     row(
       t('Terminal shell'),

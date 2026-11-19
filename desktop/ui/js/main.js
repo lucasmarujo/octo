@@ -614,6 +614,7 @@ function start() {
   }).catch(() => {});
   invoke('update_ready').then((version) => version && announceUpdate(version)).catch(() => {});
   window.__TAURI__.event.listen('update-ready', (event) => announceUpdate(event.payload));
+  window.__TAURI__.event.listen('island-open', (event) => openAgent(findAgent(event.payload)));
   connect(onMessage).catch((err) => toast(t('could not reach Octo: {error}', { error: err }), 'error'));
   checkAgentUpdates(openAgent);
   $('task').focus();

@@ -141,7 +141,10 @@ test('the theme picker offers octo, gray, light, old and system, and only those 
   assert.equal(applied('system', true), 'light', 'the system resolves to light');
   assert.equal(applied('sepia'), 'octo', 'an unknown choice falls back to Octo');
   assert.equal(applied('dark'), 'octo', 'the dark theme of older versions was never stored by name, so the name means nothing');
-  assert.match(settings, /const THEME_KEY = 'orkai\.theme';/, 'the choice of older versions keeps working');
+  const theme = readFileSync(join(REPO, 'desktop/ui/js/theme.js'), 'utf8');
+  assert.match(theme, /const THEME_KEY = 'orkai\.theme';/, 'the choice of older versions keeps working');
+  const { THEME_CHOICES } = await import('../js/theme.js');
+  assert.deepEqual(THEME_CHOICES, offered.map(([value]) => value), 'the island paints the same themes the picker offers');
   const { accentChoice } = await import('../js/settings.js');
   assert.equal(accentChoice(), null, 'no accent chosen is the aqua of the theme');
   applied(null);
@@ -2434,10 +2437,11 @@ test('Kai is painted in the accent through custom properties, and the art as dra
 
 test('the Kai flag is in Appearance, locked on in the Old theme, and its texts are in Portuguese', async () => {
   const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
-  assert.match(settings, /const KAI_KEY = 'octo\.kai';/);
+  const theme = readFileSync(join(REPO, 'desktop/ui/js/theme.js'), 'utf8');
+  assert.match(theme, /const KAI_KEY = 'octo\.kai';/);
   assert.match(settings, /accentRow\(\),\n\s+kaiRow\(\),/, 'the flag sits right under the accent color');
   assert.match(settings, /const control = toggle\(locked \|\| kaiChoice\(\), setKai, t\('Kai in the sidebar'\)\);\n\s+control\.disabled = locked;/, 'the Old theme shows it on and cannot change it');
-  assert.match(settings, /document\.documentElement\.toggleAttribute\('data-kai', kaiChoice\(\)\);/);
+  assert.match(theme, /document\.documentElement\.toggleAttribute\('data-kai', kaiChoice\(\)\);/);
   const { PT } = await import('../js/i18n.js');
   assert.equal(PT['Kai in the sidebar'], 'Kai na barra lateral');
   assert.equal(PT['Always on in the Old theme.'], 'Sempre ligado no tema Antigo.');
@@ -2474,7 +2478,7 @@ test('pairing a phone asks for little room until there is a code to show', () =>
 
 test('the accent color comes from presets, a hue or a hex, and is locked in the Old theme', () => {
   const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
-  assert.match(settings, /const ACCENT_KEY = 'octo\.accent';/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/theme.js'), 'utf8'), /const ACCENT_KEY = 'octo\.accent';/);
   assert.match(settings, /const locked = shownTheme\(\) === OLD_THEME;/);
   assert.match(settings, /if \(!locked\) host\.append\(accentPanel\(accent, host\)\);/, 'the Old theme shows the row and nothing to change');
   assert.match(settings, /disabled: !accentChoice\(\), onclick: \(\) => setAccent\(ACCENT_DEFAULT\)/, 'one click goes back to the color of Octo');
@@ -2961,4 +2965,110 @@ test('the help explains the three modes of Octo, its engine and its instructions
     moderate: 'Octo answers what your rules and the task already settle. Anything truly open, irreversible or outside the task waits for you.',
     bypass: 'Octo decides everything and allows everything, with no limits. Nothing waits for you. You read what it did in Activity.',
   });
+});
+
+test('the island counts every agent that is still around and puts who needs you first', async () => {
+  const { ISLAND_MAX_ROWS, islandAgents, islandCounts, islandGroups } = await import('../js/islandview.js');
+  const fleet = [
+    agent({ id: 1, project: 'dev/octo', color: '#fab283', state: 'idle' }),
+    agent({ id: 2, project: 'dev/octo', color: '#fab283', state: 'done' }),
+    agent({ id: 3, project: 'work/api', color: '#78afff', state: 'working' }),
+    agent({ id: 4, project: 'site/landing', color: '#ba8cff', state: 'paused' }),
+    agent({ id: 5, project: 'work/api', color: '#78afff', state: 'idle', starting: true }),
+    agent({ id: 6, project: 'work/api', color: '#78afff', state: 'exited' }),
+    agent({ id: 7, project: 'dev/octo', color: '#fab283', state: 'lost' }),
+  ];
+  const around = islandAgents(fleet);
+  assert.deepEqual(around.map((item) => item.id), [1, 2, 3, 4, 5, 7], 'an agent that ended is not on the island');
+  assert.deepEqual(islandCounts(around), { total: 6, needs: 1, working: 2, done: 1, idle: 2 }, 'starting counts as working');
+  const layout = islandGroups(around);
+  assert.deepEqual(layout.groups.map((group) => group.project), ['site/landing', 'work/api', 'dev/octo'], 'the project with someone waiting comes first');
+  assert.deepEqual(layout.groups[2].agents.map((item) => item.id), [2, 1, 7], 'done before idle inside a project');
+  assert.equal(layout.groups[1].color, '#78afff');
+  assert.deepEqual([layout.more, layout.projects], [0, 3]);
+  const many = Array.from({ length: 44 }, (unused, index) => agent({ id: index + 1, project: `team/project-${index % 6}`, state: index === 43 ? 'paused' : 'idle' }));
+  const bounded = islandGroups(many);
+  assert.equal(bounded.groups.reduce((sum, group) => sum + group.agents.length, 0), ISLAND_MAX_ROWS, 'the panel never grows past its bound');
+  assert.equal(bounded.more, 44 - ISLAND_MAX_ROWS);
+  assert.equal(bounded.projects, 6, 'the summary still counts every project');
+  assert.equal(bounded.groups[0].agents[0].id, 44, 'who needs you is never among the hidden ones');
+  assert.deepEqual(islandCounts([]), { total: 0, needs: 0, working: 0, done: 0, idle: 0 });
+  assert.deepEqual(islandGroups([]), { groups: [], more: 0, projects: 0 });
+});
+
+test('the island grows from the pill to the panel, and under a notch it keeps the pill on top', async () => {
+  const { islandShape } = await import('../js/islandview.js');
+  const [pill, panel] = [{ width: 132, height: 30 }, { width: 360, height: 331 }];
+  assert.deepEqual(islandShape(pill, panel, null, false), { collapsed: pill, expanded: panel, shown: pill });
+  assert.deepEqual(islandShape(pill, panel, null, true).shown, panel);
+  const notch = { width: 184, height: 38 };
+  const wings = { width: 364, height: 38 };
+  const under = islandShape(wings, panel, notch, true);
+  assert.deepEqual(under.expanded, { width: 364, height: 369 }, 'the panel opens below the notch, as wide as the wings');
+  assert.deepEqual(under.shown, under.expanded);
+  assert.deepEqual(islandShape(wings, panel, notch, false).shown, wings);
+});
+
+test('the island is a page of its own that only asks the core for what the core offers', () => {
+  const html = readFileSync(join(REPO, 'desktop/ui/island.html'), 'utf8');
+  assert.match(html, /<html lang="en" data-island>/);
+  assert.match(html, /<link rel="stylesheet" href="styles\.css">/, 'the same tokens and themes as the app');
+  assert.deepEqual([...html.matchAll(/<script[^>]*>/g)].map(([tag]) => tag), ['<script type="module" src="js/island.js">'], 'no terminal and no inline script');
+  const page = readFileSync(join(REPO, 'desktop/ui/js/island.js'), 'utf8');
+  const core = rust('desktop/src/island.rs');
+  const handlers = rust('desktop/src/link.rs').match(/generate_handler!\[([\s\S]*?)\]/)[1];
+  const invoked = [...new Set([...page.matchAll(/invoke\('(\w+)'/g)].map(([, name]) => name))].sort();
+  assert.deepEqual(invoked, ['island_attach', 'island_notch', 'island_open', 'island_shape']);
+  for (const name of invoked) {
+    assert.match(core, new RegExp(`pub fn ${name}\\(`), name);
+    assert.ok(handlers.includes(`island::${name}`), `${name} is registered`);
+  }
+  assert.match(core, /const HOVER_EVENT: &str = "island-hover";/);
+  assert.match(page, /const HOVER_EVENT = 'island-hover';/);
+  assert.match(core, /const OPEN_EVENT: &str = "island-open";/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /listen\('island-open', \(event\) => openAgent\(findAgent\(event\.payload\)\)\);/, 'a click on the island opens that agent in the app');
+  assert.match(core, /const PAGE: &str = "island\.html";/);
+  assert.doesNotMatch(page, /from '\.\/(state|settings|main|sidebar|terminal)\.js'/, 'the island loads none of the app');
+  assert.match(page, /if \(message\.type !== 'state'\) return;/, 'it only reads the overview');
+  assert.match(page, /keepSpinning\(counts\.working > 0\);/, 'no timer spins while nothing works');
+  assert.match(page, /setInterval\(\(\) => view\.open && tickTimes\(\), TICK_MS\);/, 'the times only tick while it is open');
+  assert.match(page, /if \(languageStale\(\)\) window\.location\.reload\(\);/, 'it follows the language of the app');
+  const capability = JSON.parse(readFileSync(join(REPO, 'desktop/capabilities/island.json'), 'utf8'));
+  assert.deepEqual([capability.windows, capability.permissions], [['island'], ['core:default']], 'the island gets no window controls and no notifications');
+  assert.match(rust('desktop/src/link.rs'), /if webview\.label\(\) == MAIN_WINDOW && payload\.event\(\) == PageLoadEvent::Started/, 'loading the island never closes the terminals of the app');
+  assert.match(rust('desktop/src/link.rs'), /if window\.label\(\) == MAIN_WINDOW && matches!\(event, WindowEvent::Destroyed\) \{\n\s+island::close\(window\.app_handle\(\)\);/, 'closing Octo takes the island with it');
+});
+
+test('the island is turned on in Appearance, saved with the settings, and only offered where it exists', async () => {
+  const settings = readFileSync(join(REPO, 'desktop/ui/js/settings.js'), 'utf8');
+  assert.match(settings, /kaiRow\(\),\n\s+islandRow\(\),/);
+  assert.match(settings, /if \(!current\.islandAvailable\) return null;/);
+  assert.match(settings, /toggle\(current\.config\.island, \(on\) => save\(\{ island: on \}\), t\('Island on the screen'\)\)/);
+  assert.match(rust('src/config.rs'), /pub island: bool,/);
+  assert.match(rust('src/config.rs'), /island: false,/, 'off until someone turns it on');
+  assert.match(rust('desktop/src/settings.rs'), /island::apply\(&app, settings\.config\.island\);/, 'saving shows or hides it right away');
+  const { PT } = await import('../js/i18n.js');
+  assert.equal(PT['Island on the screen'], 'Ilha na tela');
+  assert.equal(PT['Open Octo'], 'Abrir o Octo');
+  assert.equal(PT['{count} idle'], '{count} ociosos');
+  assert.equal(PT['and {count} more'], 'e mais {count}');
+  const page = readFileSync(join(REPO, 'desktop/ui/js/island.js'), 'utf8');
+  for (const [, text] of [...page.matchAll(/\bt\('((?:[^'\\]|\\.)+)'/g), ...settings.match(/function islandRow\(\) \{[\s\S]*?\n\}/)[0].matchAll(/\bt\('((?:[^'\\]|\\.)+)'/g)]) {
+    assert.ok(Object.hasOwn(PT, text), `in Portuguese: ${text}`);
+  }
+});
+
+test('the island wears the theme, hangs from the top edge and moves like one piece', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /:root\[data-island\], :root\[data-island\] body \{ background: transparent; \}/, 'only the island is painted on the screen');
+  const island = css.split('\n').find((line) => line.startsWith('.island {'));
+  assert.match(island, /position: fixed; top: 0; left: 50%; translate: -50% 0;/);
+  assert.match(island, /border-radius: 0 0 16px 16px; background: var\(--color-bg\);/, 'flat against the edge, round below, in the color of the theme');
+  assert.match(css, /\.island\[data-ready\]\[data-open="true"\] \{[^}]*transition: width 460ms var\(--ease-island\), height 460ms var\(--ease-island\)/, 'it springs open');
+  assert.match(css, /\.island\[data-ready\] \{[^}]*transition: width 320ms var\(--ease-out\), height 320ms var\(--ease-out\)/, 'and settles back');
+  assert.match(css, /\.island\[data-mood="needs"\]::after \{ animation: island-needs 1\.8s ease-in-out infinite; \}/, 'the edge glows while someone waits for you');
+  assert.match(css, /\.island-panel \{[^}]*width: 360px; max-height: 400px;/, 'a small panel, never a second app');
+  const rules = css.split('\n').filter((line) => /^(\.island|:root\[data-(island|notch)\])/.test(line));
+  assert.ok(rules.length > 35, `only ${rules.length} rules found`);
+  for (const rule of rules) assert.doesNotMatch(rule.replace(/box-shadow: [^;]+;/g, ''), /#[0-9a-fA-F]{3,8}\b|rgba?\(/, `only theme tokens, so every theme works: ${rule.slice(0, 60)}`);
 });

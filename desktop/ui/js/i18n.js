@@ -311,6 +311,11 @@ export const PT = {
   'Kai in the sidebar': 'Kai na barra lateral',
   'Always on in the Old theme.': 'Sempre ligado no tema Antigo.',
   'The animated Kai replaces the Octo mark in the sidebar, in any theme.': 'O Kai animado substitui a marca do Octo na barra lateral, em qualquer tema.',
+  'Island on the screen': 'Ilha na tela',
+  'A small pill on the top edge of the screen, above every window, shows what is working, done or waiting for you. Rest the mouse on it to see the agents of each project.': 'Uma pílula pequena na borda de cima da tela, sobre qualquer janela, mostra o que está trabalhando, o que terminou e o que espera você. Deixe o mouse sobre ela para ver os agentes de cada projeto.',
+  'Open Octo': 'Abrir o Octo',
+  '{count} idle': '{count} ociosos',
+  'and {count} more': 'e mais {count}',
   'Turn it on to get a pairing code. End-to-end encrypted.': 'Ligue para obter um código de pareamento. Criptografia de ponta a ponta.',
   'phone off': 'celular desligado',
   'phone starting…': 'celular iniciando…',
@@ -651,6 +656,11 @@ const current = (() => {
 
 export function language() {
   return current;
+}
+
+export function languageStale() {
+  const chosen = storage.get(LANGUAGE_KEY);
+  return (LANGUAGES.some((entry) => entry.code === chosen) ? chosen : 'en') !== current;
 }
 
 function fill(template, values) {

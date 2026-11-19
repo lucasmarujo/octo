@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::link::Link;
-use crate::{install, login_path, updates};
+use crate::{install, island, login_path, updates};
 
 pub const MIN_PORT: u16 = 1024;
 
@@ -27,6 +27,7 @@ pub struct Settings {
     pub default_shell: String,
     pub shell_rule: &'static str,
     pub store_updates: bool,
+    pub island_available: bool,
 }
 
 pub const SHELL_RULE: &str = if cfg!(windows) { "pwsh, then powershell" } else { "your $SHELL, then bash" };
@@ -60,7 +61,15 @@ pub fn read(hub: &Hub) -> Settings {
     let default_shell = default_shell(&Config { shell: None, ..config.clone() }).0;
     let local = std::env::var_os("LOCALAPPDATA").filter(|_| cfg!(windows)).map(PathBuf::from);
     let path = shown(&hub.store().home().config_file(), local.as_deref(), user_home().as_deref());
-    Settings { config, path, agents, default_shell, shell_rule: SHELL_RULE, store_updates: updates::from_store() }
+    Settings {
+        config,
+        path,
+        agents,
+        default_shell,
+        shell_rule: SHELL_RULE,
+        store_updates: updates::from_store(),
+        island_available: island::SUPPORTED,
+    }
 }
 
 fn statuses(installed: &[AgentKind]) -> Vec<AgentStatus> {
@@ -133,8 +142,10 @@ pub fn settings(link: State<'_, Link>) -> Settings {
 }
 
 #[tauri::command]
-pub fn save_settings(link: State<'_, Link>, config: Config) -> Result<Settings, String> {
-    save(link.hub(), config)
+pub fn save_settings(app: tauri::AppHandle, link: State<'_, Link>, config: Config) -> Result<Settings, String> {
+    let settings = save(link.hub(), config)?;
+    island::apply(&app, settings.config.island);
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -228,6 +239,9 @@ mod tests {
         }
         assert!(settings.path.ends_with("config.json"), "{}", settings.path);
         assert!(!settings.default_shell.is_empty());
+        assert!(!settings.config.island, "the island stays off until someone turns it on");
+        assert_eq!(settings.island_available, island::SUPPORTED);
+        assert_eq!(serde_json::to_value(&settings).unwrap()["islandAvailable"], island::SUPPORTED);
     }
 
     #[test]
@@ -255,9 +269,11 @@ mod tests {
             claude_args: vec!["--model".into(), "opus".into()],
             shell: Some("   ".into()),
             notify_sound: false,
+            island: true,
             ..Config::default()
         };
         let settings = save(&fx.hub, config).unwrap();
+        assert!(settings.config.island, "the island is saved with the rest");
         assert_eq!(settings.config.claude_command, exe, "commands are trimmed");
         assert_eq!(settings.config.codex_command, "codex", "an empty command goes back to the default");
         assert_eq!(settings.config.shell, None, "a blank shell means the default one");

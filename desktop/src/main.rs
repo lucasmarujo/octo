@@ -3,6 +3,7 @@
 mod agent_updates;
 mod alerts;
 mod install;
+mod island;
 mod link;
 mod login_path;
 mod pair;

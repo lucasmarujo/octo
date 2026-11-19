@@ -43,6 +43,7 @@ pub struct Config {
     pub notify_args: Vec<String>,
     pub pwa_tunnel: TunnelKind,
     pub pwa_port: u16,
+    pub island: bool,
 }
 
 impl Default for Config {
@@ -77,6 +78,7 @@ impl Default for Config {
             notify_args: Vec::new(),
             pwa_tunnel: TunnelKind::default(),
             pwa_port: bridge::DEFAULT_PORT,
+            island: false,
         }
     }
 }
@@ -140,6 +142,15 @@ mod tests {
         assert!(config.notify_args.is_empty());
         assert_eq!(config.pwa_tunnel, TunnelKind::Cloudflare);
         assert_eq!(config.pwa_port, bridge::DEFAULT_PORT);
+        assert!(!config.island, "the island only shows up for whoever turns it on");
+    }
+
+    #[test]
+    fn the_island_is_remembered_once_it_is_turned_on() {
+        let config: Config = serde_json::from_str(r#"{"island":true}"#).unwrap();
+        assert!(config.island);
+        let saved = serde_json::to_string(&config).unwrap();
+        assert!(serde_json::from_str::<Config>(&saved).unwrap().island);
     }
 
     #[test]

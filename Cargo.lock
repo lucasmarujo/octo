@@ -2865,6 +2865,7 @@ version = "0.2.43"
 dependencies = [
  "clap",
  "gethostname",
+ "objc2",
  "orkai",
  "serde",
  "serde_json",

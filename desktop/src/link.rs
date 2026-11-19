@@ -14,13 +14,16 @@ use orkai::util::lock;
 use orkai::worktree;
 use serde::Serialize;
 use tauri::webview::PageLoadEvent;
-use tauri::{Manager, RunEvent, State};
+use tauri::{Manager, RunEvent, State, WindowEvent};
 
+use crate::island::Island;
 use crate::term::{self, Console};
 use crate::updates::{self, Updates};
-use crate::{agent_updates, alerts, pair, paste, recover, settings};
+use crate::{agent_updates, alerts, island, pair, paste, recover, settings};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri_plugin_dialog::DialogExt;
+
+pub const MAIN_WINDOW: &str = "main";
 
 pub struct Link {
     hub: Arc<Hub>,
@@ -48,6 +51,10 @@ impl Link {
         &self.hub
     }
 
+    pub fn shared_hub(&self) -> &Arc<Hub> {
+        &self.hub
+    }
+
     pub fn shut_down(&self) {
         if let Some(octo) = self.hub.orchestrator() {
             octo.shut_down();
@@ -55,24 +62,7 @@ impl Link {
     }
 
     fn attach(&self, channel: Channel) -> Result<(), String> {
-        let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        let (hub, current) = (Arc::clone(&self.hub), Arc::clone(&self.generation));
-        let (ready, inbox) = mpsc::channel();
-        thread::Builder::new()
-            .name("orkai-desktop-peer".into())
-            .spawn(move || {
-                let mut webview = Webview { channel };
-                if webview.send(&welcome(&hub)).is_err() {
-                    return;
-                }
-                let mut peer = Peer::join(&hub);
-                if ready.send(peer.inbox()).is_err() {
-                    return;
-                }
-                while current.load(Ordering::SeqCst) == generation && peer.wait(&mut webview).is_ok() {}
-            })
-            .map_err(|err| err.to_string())?;
-        let inbox = inbox.recv().map_err(|_| "the window could not join Octo".to_string())?;
+        let inbox = watch(&self.hub, &self.generation, channel)?;
         *lock(&self.inbox) = Some(inbox);
         Ok(())
     }
@@ -81,6 +71,27 @@ impl Link {
         let inbox = lock(&self.inbox).clone().ok_or_else(|| "the window is not attached yet".to_string())?;
         inbox.send(Event::Inbound(message)).map_err(|_| "Octo stopped listening to this window".to_string())
     }
+}
+
+pub fn watch(hub: &Arc<Hub>, current: &Arc<AtomicU64>, channel: Channel) -> Result<Sender<Event>, String> {
+    let generation = current.fetch_add(1, Ordering::SeqCst) + 1;
+    let (hub, current) = (Arc::clone(hub), Arc::clone(current));
+    let (ready, inbox) = mpsc::channel();
+    thread::Builder::new()
+        .name("orkai-desktop-peer".into())
+        .spawn(move || {
+            let mut webview = Webview { channel };
+            if webview.send(&welcome(&hub)).is_err() {
+                return;
+            }
+            let mut peer = Peer::join(&hub);
+            if ready.send(peer.inbox()).is_err() {
+                return;
+            }
+            while current.load(Ordering::SeqCst) == generation && peer.wait(&mut webview).is_ok() {}
+        })
+        .map_err(|err| err.to_string())?;
+    inbox.recv().map_err(|_| "the window could not join Octo".to_string())
 }
 
 #[tauri::command]
@@ -183,15 +194,22 @@ pub fn run() -> io::Result<()> {
         .manage(link)
         .manage(Updates::default())
         .manage(Console::default())
+        .manage(Island::default())
         .on_page_load(|webview, payload| {
-            if payload.event() == PageLoadEvent::Started {
+            if webview.label() == MAIN_WINDOW && payload.event() == PageLoadEvent::Started {
                 webview.state::<Console>().close_all();
+            }
+        })
+        .on_window_event(|window, event| {
+            if window.label() == MAIN_WINDOW && matches!(event, WindowEvent::Destroyed) {
+                island::close(window.app_handle());
             }
         })
         .setup(|app| {
             #[cfg(target_os = "macos")]
             crate::window::open(app)?;
             updates::on_launch(app.handle());
+            island::on_launch(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -220,7 +238,11 @@ pub fn run() -> io::Result<()> {
             term::term_open,
             term::term_input,
             term::term_resize,
-            term::term_close
+            term::term_close,
+            island::island_attach,
+            island::island_shape,
+            island::island_notch,
+            island::island_open
         ])
         .build(tauri::generate_context!())
         .map_err(io::Error::other)?
