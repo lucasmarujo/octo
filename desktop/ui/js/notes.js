@@ -7,6 +7,18 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.44',
+    date: '2026-11-18',
+    en: [
+      'Settings > Appearance has Island on the screen: a small pill on the top edge of the screen, above every window, on Windows and on the Mac. It shows how many agents are working, done or waiting for you, in the theme and the accent color of the app.',
+      'Rest the mouse on the island and it opens into a small panel with the agents of each project, what each one is doing and for how long. Move the mouse away and it closes. A click on an agent opens it in Octo.',
+    ],
+    'pt-BR': [
+      'Configurações > Aparência tem a Ilha na tela: uma pílula pequena na borda de cima da tela, sobre qualquer janela, no Windows e no Mac. Ela mostra quantos agentes estão trabalhando, terminaram ou esperam você, no tema e na cor de destaque do app.',
+      'Deixe o mouse sobre a ilha e ela se abre num painel pequeno com os agentes de cada projeto, o que cada um está fazendo e há quanto tempo. Tire o mouse e ela fecha. Um clique num agente abre ele no Octo.',
+    ],
+  },
+  {
     version: '0.2.43',
     date: '2026-11-18',
     en: [
