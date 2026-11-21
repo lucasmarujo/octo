@@ -7,6 +7,20 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.46',
+    date: '2026-11-21',
+    en: [
+      'Devices takes Linux servers over SSH: Add a device > SSH server, with the host, the port, the user and, if the server asks, the password. Agents run there with what is installed on the server, and it works like any other device.',
+      'On the first connection Octo downloads its server (one file, about 8 MB) into ~/.octo/bin on that machine, checks its SHA-256 and runs it as your user. No sudo, nothing outside your home folder. Linux x86_64 and arm64.',
+      'The password is never saved: it stays in memory and Octo asks again after it restarts. With an SSH key or agent it never asks. A connection that drops comes back by itself, and the agents keep running meanwhile.',
+    ],
+    'pt-BR': [
+      'Dispositivos aceita servidores Linux por SSH: Adicionar dispositivo > Servidor SSH, com o host, a porta, o usuário e, se o servidor pedir, a senha. Os agentes rodam lá com o que está instalado no servidor, e ele funciona como qualquer outro dispositivo.',
+      'Na primeira conexão o Octo baixa o servidor dele (um arquivo, cerca de 8 MB) em ~/.octo/bin naquela máquina, confere o SHA-256 e executa como o seu usuário. Sem sudo, nada fora da sua pasta pessoal. Linux x86_64 e arm64.',
+      'A senha nunca é salva: fica na memória e o Octo pede de novo depois de reiniciar. Com chave SSH ou agente ele nem pergunta. Uma conexão que cai volta sozinha, e os agentes continuam rodando enquanto isso.',
+    ],
+  },
+  {
     version: '0.2.45',
     date: '2026-11-21',
     en: [
