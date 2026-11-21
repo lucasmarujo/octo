@@ -3080,10 +3080,11 @@ test('the sidebar lists the devices below the sessions, with a way to add one', 
   assert.equal(PT.Devices, 'Dispositivos');
   assert.equal(PT['Add a device'], 'Adicionar dispositivo');
   const devices = readFileSync(join(REPO, 'desktop/ui/js/devices.js'), 'utf8');
-  assert.match(devices, /onclick: openAddDevice \},\s*h\('span', \{ class: 'chevron' \}, svg\(ICON_PLUS\)\)/, 'a plus opens the dialog that takes the link');
-  assert.match(devices, /invoke\('add_device', \{ pairing \}\);\n\s*closeDialog\(\);\n\s*switchDevice\(device\.id\);/, 'a pasted link always takes the window to that device, on its new connection');
+  assert.match(devices, /onclick: \(\) => openAddDevice\(\) \},\s*h\('span', \{ class: 'chevron' \}, svg\(ICON_PLUS\)\)/, 'a plus opens the dialog that takes the link');
+  assert.match(devices, /invoke\('add_device', \{ pairing \}\)/);
+  assert.match(devices, /const device = await adding;\n\s*closeDialog\(\);\n\s*switchDevice\(device\.id\);/, 'an added device always takes the window to it, on its new connection');
   const handlers = rust('desktop/src/link.rs').match(/generate_handler!\[([\s\S]*?)\]/)[1];
-  for (const name of ['devices', 'add_device', 'rename_device', 'forget_device', 'retry_device']) {
+  for (const name of ['devices', 'add_device', 'add_server', 'unlock_device', 'rename_device', 'forget_device', 'retry_device']) {
     assert.ok(handlers.includes(`devices::${name}`), `${name} is registered`);
     assert.ok(devices.includes(`invoke('${name}'`), `${name} is used by the window`);
   }
@@ -3119,7 +3120,7 @@ test('a device says how it is doing in a few words', async () => {
   assert.equal(linkProblem('outdated').action, 'retry');
   assert.equal(linkProblem('connecting').action, null);
   const phases = rust('desktop/src/remote.rs').match(/pub enum Phase \{([\s\S]*?)\}/)[1].match(/[A-Z]\w+/g).map((name) => name.toLowerCase());
-  assert.deepEqual(phases, ['connecting', 'live', 'offline', 'unpaired', 'outdated', 'replaced']);
+  assert.deepEqual(phases, ['connecting', 'live', 'offline', 'unpaired', 'outdated', 'replaced', 'installing', 'password', 'unsupported', 'changed']);
   for (const phase of phases) assert.ok(deviceNote({ phase, agents: 0, waiting: 0 }) && linkProblem(phase).title, phase);
   assert.match(deviceError('that is not a pairing link of Octo; copy it'), /not an Octo pairing link/);
   assert.match(deviceError('Octo keeps up to 16 devices; forget one first'), /full/);
@@ -3127,6 +3128,47 @@ test('a device says how it is doing in a few words', async () => {
   const core = rust('desktop/src/devices.rs');
   assert.ok(core.includes('that is not a pairing link of Octo'), 'the text the window looks for is the one the core says');
   assert.ok(core.includes('forget one first'));
+});
+
+test('a server is added by ssh with its host, port and user, and the password is never kept by the window', async () => {
+  const { deviceError, deviceNote, deviceTone, linkProblem, linkStopped, serverFields } = await import('../js/devices.js');
+  assert.deepEqual(serverFields(' 10.0.0.7 ', '', ' root '), { host: '10.0.0.7', port: 22, user: 'root' }, 'an empty port is the port of ssh');
+  assert.deepEqual(serverFields('build.example', '2222', 'deploy'), { host: 'build.example', port: 2222, user: 'deploy' });
+  for (const [host, port, user] of [['', '22', 'root'], ['host', '22', ''], ['host', '0', 'root'], ['host', '70000', 'root'], ['host', 'ssh', 'root'], ['host', '2.5', 'root']]) {
+    assert.equal(serverFields(host, port, user), null, `${host}:${port} ${user}`);
+  }
+  assert.equal(deviceTone('installing'), 'pending');
+  for (const phase of ['password', 'unsupported', 'changed']) {
+    assert.equal(deviceTone(phase), 'down', phase);
+    assert.ok(linkStopped(phase), `${phase} waits for the person`);
+  }
+  assert.ok(!linkStopped('offline') && !linkStopped('installing') && !linkStopped('live'));
+  assert.equal(deviceNote({ phase: 'password' }), 'Needs the password');
+  assert.equal(linkProblem('password', 'ssh').action, 'password');
+  assert.match(linkProblem('password', 'ssh').text, /memory only and is never saved/);
+  assert.equal(linkProblem('offline', 'ssh').action, 'retry', 'a server has no link to paste');
+  assert.equal(linkProblem('offline', 'link').action, 'link');
+  assert.match(linkProblem('installing', 'ssh').text, /~\/\.octo\/bin.*SHA-256/);
+  assert.match(deviceError('that is not a host name or an address'), /host name/);
+  assert.match(deviceError('that is not a user name'), /user name/);
+  const stopped = rust('desktop/src/remote.rs').match(/pub fn stopped\(self\) -> bool \{[\s\S]*?\n    \}/)[0].match(/Phase::(\w+)/g).map((name) => name.slice(7).toLowerCase());
+  for (const phase of stopped) assert.ok(linkStopped(phase), `${phase} stops in the core and in the window`);
+  const devices = readFileSync(join(REPO, 'desktop/ui/js/devices.js'), 'utf8');
+  assert.match(devices, /const secret = password\.value;\n\s*password\.value = '';\n\s*return invoke\('add_server', \{ \.\.\.server, password: secret \|\| null \}\);/, 'the field is emptied as soon as the password is handed over');
+  assert.match(devices, /const password = field\.value;\n\s*if \(!password\) return;\n\s*field\.value = '';\n\s*invoke\('unlock_device', \{ id, password \}\)/);
+  assert.match(devices, /type: 'password', autocomplete: 'off'/);
+  assert.doesNotMatch(devices, /storage\.set\([^)]*password/i, 'no password in the storage of the window');
+  assert.match(devices, /into ~\/\.octo\/bin on that machine, checks its SHA-256 and runs it as your user\. No sudo, nothing outside your home folder\./, 'the dialog says what is installed and where');
+  const core = rust('desktop/src/ssh.rs');
+  assert.match(core, /pub const INSTALL_DIR: &str = "\.octo\/bin";/, 'and that is where the core installs it');
+  assert.ok(core.includes('that is not a host name or an address') && core.includes('that is not a user name') && core.includes('that is not a port'));
+  const saved = rust('desktop/src/devices.rs').match(/struct Saved \{[\s\S]*?\n\}/)[0];
+  assert.doesNotMatch(saved, /password/, 'what is written to disk has no password');
+  assert.doesNotMatch(rust('desktop/src/ssh.rs').match(/pub struct Server \{[\s\S]*?\n\}/)[0], /password/);
+  const workflow = readFileSync(join(REPO, '.github/workflows/ci.yml'), 'utf8');
+  for (const [key, name] of [...core.matchAll(/pub const ASSET_\w+: &str = "([^"]+)";/g)].map((match) => [match[1], match[1].includes('aarch64') ? 'octo-server-linux-aarch64' : 'octo-server-linux-x86_64'])) {
+    assert.ok(workflow.includes(`"${key}": "${name}"`), `the release publishes ${key}`);
+  }
 });
 
 test('each device keeps its own session, tabs and folders in the window', async () => {

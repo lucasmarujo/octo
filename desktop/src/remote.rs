@@ -124,11 +124,18 @@ pub enum Phase {
     Unpaired,
     Outdated,
     Replaced,
+    Installing,
+    Password,
+    Unsupported,
+    Changed,
 }
 
 impl Phase {
-    fn stopped(self) -> bool {
-        matches!(self, Phase::Unpaired | Phase::Outdated | Phase::Replaced)
+    pub fn stopped(self) -> bool {
+        matches!(
+            self,
+            Phase::Unpaired | Phase::Outdated | Phase::Replaced | Phase::Password | Phase::Unsupported | Phase::Changed
+        )
     }
 
     fn of_close(frame: Option<&CloseFrame>) -> Self {
@@ -145,6 +152,7 @@ impl Phase {
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub phase: Phase,
+    pub note: Option<String>,
     pub host: Option<String>,
     pub version: Option<String>,
     pub agents: usize,
@@ -154,8 +162,8 @@ pub struct Status {
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
-enum Notice {
-    Link { phase: Phase },
+enum Notice<'a> {
+    Link { phase: Phase, note: Option<&'a str> },
 }
 
 #[derive(Deserialize)]
@@ -199,15 +207,21 @@ impl Shared {
     }
 
     fn enter(&mut self, phase: Phase) {
-        if self.status.phase == phase {
+        self.explain(phase, None);
+    }
+
+    fn explain(&mut self, phase: Phase, note: Option<String>) {
+        if self.status.phase == phase && self.status.note == note {
             return;
         }
         self.status.phase = phase;
+        self.status.note = note;
         self.announce();
     }
 
     fn announce(&mut self) {
-        if let Ok(notice) = serde_json::to_vec(&Notice::Link { phase: self.status.phase }) {
+        let notice = Notice::Link { phase: self.status.phase, note: self.status.note.as_deref() };
+        if let Ok(notice) = serde_json::to_vec(&notice) {
             self.show(&notice);
         }
     }
@@ -240,16 +254,23 @@ impl Shared {
     }
 }
 
+pub type Target = (Address, Secret);
+
 enum Command {
     Send(Vec<u8>),
     Retry,
+    Aim(Target),
+    Park(Phase, Option<String>),
 }
 
 enum Ended {
     Dropped,
     Closed(Phase),
+    Aimed(Target),
+    Parked(Phase, Option<String>),
 }
 
+#[derive(Clone)]
 pub struct Remote {
     shared: Arc<Mutex<Shared>>,
     commands: Sender<Command>,
@@ -257,13 +278,29 @@ pub struct Remote {
 
 impl Remote {
     pub fn start(address: Address, secret: Secret, client: String) -> io::Result<Self> {
+        Self::spawn(Some((address, secret)), client)
+    }
+
+    pub fn parked(client: String) -> io::Result<Self> {
+        Self::spawn(None, client)
+    }
+
+    fn spawn(target: Option<Target>, client: String) -> io::Result<Self> {
         let shared = Arc::new(Mutex::new(Shared::default()));
         let (commands, inbox) = mpsc::channel();
         let seen = Arc::clone(&shared);
         thread::Builder::new()
             .name("orkai-desktop-remote".into())
-            .spawn(move || keep_linked(&address, &secret, &client, &seen, &inbox))?;
+            .spawn(move || keep_linked(target, &client, &seen, &inbox))?;
         Ok(Self { shared, commands })
+    }
+
+    pub fn aim(&self, address: Address, secret: Secret) {
+        let _ = self.commands.send(Command::Aim((address, secret)));
+    }
+
+    pub fn park(&self, phase: Phase, note: Option<String>) {
+        let _ = self.commands.send(Command::Park(phase, note));
     }
 
     pub fn status(&self) -> Status {
@@ -296,35 +333,59 @@ impl Remote {
     }
 }
 
-fn keep_linked(
-    address: &Address,
-    secret: &Secret,
-    client: &str,
-    shared: &Arc<Mutex<Shared>>,
-    commands: &Receiver<Command>,
-) {
+fn keep_linked(mut target: Option<Target>, client: &str, shared: &Arc<Mutex<Shared>>, commands: &Receiver<Command>) {
     let mut attempt = 0;
     loop {
-        lock(shared).enter(Phase::Connecting);
-        let ended = match Session::open(address, secret, client) {
-            Ok(mut session) => {
-                let ended = session.run(shared, commands);
-                if session.welcomed {
-                    attempt = 0;
+        let ended = match &target {
+            Some((address, secret)) => {
+                lock(shared).enter(Phase::Connecting);
+                match Session::open(address, secret, client) {
+                    Ok(mut session) => {
+                        let ended = session.run(shared, commands);
+                        if session.welcomed {
+                            attempt = 0;
+                        }
+                        ended
+                    }
+                    Err(phase) => Ended::Closed(phase),
                 }
-                ended
             }
-            Err(phase) => Ended::Closed(phase),
+            None => idle(commands),
         };
-        let Ended::Closed(phase) = ended else { return };
-        lock(shared).enter(phase);
-        if !rest(commands, phase, &mut attempt) {
-            return;
+        let ended = match ended {
+            Ended::Closed(phase) => {
+                lock(shared).enter(phase);
+                rest(commands, phase, &mut attempt)
+            }
+            other => other,
+        };
+        match ended {
+            Ended::Dropped => return,
+            Ended::Closed(_) => {}
+            Ended::Aimed(next) => {
+                target = Some(next);
+                attempt = 0;
+            }
+            Ended::Parked(phase, note) => {
+                target = None;
+                lock(shared).explain(phase, note);
+            }
         }
     }
 }
 
-fn rest(commands: &Receiver<Command>, phase: Phase, attempt: &mut usize) -> bool {
+fn idle(commands: &Receiver<Command>) -> Ended {
+    loop {
+        match commands.recv() {
+            Ok(Command::Aim(target)) => return Ended::Aimed(target),
+            Ok(Command::Park(phase, note)) => return Ended::Parked(phase, note),
+            Ok(Command::Send(_) | Command::Retry) => {}
+            Err(_) => return Ended::Dropped,
+        }
+    }
+}
+
+fn rest(commands: &Receiver<Command>, phase: Phase, attempt: &mut usize) -> Ended {
     let delay = RETRY.get(*attempt).copied().unwrap_or(RETRY_MAX);
     let until = Instant::now() + delay;
     loop {
@@ -336,14 +397,16 @@ fn rest(commands: &Receiver<Command>, phase: Phase, attempt: &mut usize) -> bool
         match heard {
             Ok(Command::Retry) => {
                 *attempt = 0;
-                return true;
+                return Ended::Closed(phase);
             }
+            Ok(Command::Aim(target)) => return Ended::Aimed(target),
+            Ok(Command::Park(phase, note)) => return Ended::Parked(phase, note),
             Ok(Command::Send(_)) => {}
             Err(RecvTimeoutError::Timeout) => {
                 *attempt += 1;
-                return true;
+                return Ended::Closed(phase);
             }
-            Err(RecvTimeoutError::Disconnected) => return false,
+            Err(RecvTimeoutError::Disconnected) => return Ended::Dropped,
         }
     }
 }
@@ -469,6 +532,11 @@ impl Session {
         self.ws.send(Message::binary(frame)).map_err(io::Error::other)
     }
 
+    fn hang_up(&mut self) {
+        let _ = self.ws.close(None);
+        let _ = self.ws.flush();
+    }
+
     fn run(&mut self, shared: &Arc<Mutex<Shared>>, commands: &Receiver<Command>) -> Ended {
         loop {
             loop {
@@ -479,10 +547,17 @@ impl Session {
                         }
                     }
                     Ok(Command::Retry) => {}
+                    Ok(Command::Aim(target)) => {
+                        self.hang_up();
+                        return Ended::Aimed(target);
+                    }
+                    Ok(Command::Park(phase, note)) => {
+                        self.hang_up();
+                        return Ended::Parked(phase, note);
+                    }
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
-                        let _ = self.ws.close(None);
-                        let _ = self.ws.flush();
+                        self.hang_up();
                         return Ended::Dropped;
                     }
                 }
@@ -733,6 +808,7 @@ pub(crate) mod tests {
             shared.status,
             Status {
                 phase: Phase::Live,
+                note: None,
                 host: Some("mac".into()),
                 version: Some("9.9.9".into()),
                 agents: 5,
@@ -762,13 +838,38 @@ pub(crate) mod tests {
         let mut attempt = RETRY.len();
         tx.send(Command::Send(Vec::new())).unwrap();
         tx.send(Command::Retry).unwrap();
-        assert!(rest(&rx, Phase::Unpaired, &mut attempt));
+        assert!(matches!(rest(&rx, Phase::Unpaired, &mut attempt), Ended::Closed(Phase::Unpaired)));
         assert_eq!(attempt, 0, "asking again starts from the short wait");
         let started = Instant::now();
-        assert!(rest(&rx, Phase::Offline, &mut attempt));
+        assert!(matches!(rest(&rx, Phase::Offline, &mut attempt), Ended::Closed(Phase::Offline)));
         assert!(started.elapsed() >= RETRY[0]);
         assert_eq!(attempt, 1);
         drop(tx);
-        assert!(!rest(&rx, Phase::Offline, &mut attempt), "a forgotten device stops its link");
+        assert!(matches!(rest(&rx, Phase::Offline, &mut attempt), Ended::Dropped), "a forgotten device stops its link");
+    }
+
+    #[test]
+    fn a_link_that_waits_for_its_tunnel_says_why_and_connects_once_it_is_given_where() {
+        let octo = other_octo("parked", "server");
+        let remote = Remote::parked("desk-1".into()).unwrap();
+        let (seen, rx) = window();
+        remote.watch(seen);
+        remote.park(Phase::Password, Some("deploy@build".into()));
+        let asked = until(&rx, |message| message["type"] == "link" && message["phase"] == "password");
+        assert_eq!(asked["note"], "deploy@build");
+        assert_eq!(remote.status().note.as_deref(), Some("deploy@build"));
+        remote.aim(octo.address(), octo.secret);
+        assert_eq!(until(&rx, |message| message["type"] == "welcome")["host"], "server");
+        let status = settled(&remote, |status| status.phase == Phase::Live);
+        assert_eq!(status.note, None, "a link that is up no longer carries the old reason");
+        remote.park(Phase::Offline, Some("the tunnel closed".into()));
+        until(&rx, |message| message["type"] == "link" && message["phase"] == "offline");
+        let deadline = Instant::now() + TIMEOUT;
+        while octo.hub.phones() != 0 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(octo.hub.phones(), 0, "a parked link hangs up");
+        thread::sleep(Duration::from_millis(600));
+        assert_eq!(remote.status().phase, Phase::Offline, "and does not dial again by itself");
     }
 }

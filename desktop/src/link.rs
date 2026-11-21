@@ -260,6 +260,8 @@ pub fn run() -> io::Result<()> {
             pair::renew_phone,
             devices::devices,
             devices::add_device,
+            devices::add_server,
+            devices::unlock_device,
             devices::rename_device,
             devices::forget_device,
             devices::retry_device,

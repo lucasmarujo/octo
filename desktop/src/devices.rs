@@ -15,6 +15,7 @@ use tauri::State;
 
 use crate::link::Link;
 use crate::remote::{self, Address, Remote, Status};
+use crate::ssh::{Server, Tunnel};
 
 pub const MAX_DEVICES: usize = 16;
 const FILE: &str = "devices.json";
@@ -25,8 +26,12 @@ const ID_BYTES: usize = 16;
 #[serde(rename_all = "camelCase")]
 struct Saved {
     id: String,
+    #[serde(default)]
     url: String,
+    #[serde(default)]
     key: String,
+    #[serde(default)]
+    ssh: Option<Server>,
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
@@ -47,8 +52,16 @@ pub struct DeviceInfo {
     pub id: String,
     pub name: String,
     pub address: String,
+    pub kind: Kind,
     #[serde(flatten)]
     pub status: Status,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Link,
+    Ssh,
 }
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -78,6 +91,7 @@ pub fn here(agents: &[AgentView]) -> Here {
 struct Inner {
     saved: Vec<Saved>,
     links: BTreeMap<String, Remote>,
+    tunnels: BTreeMap<String, Tunnel>,
 }
 
 pub struct Devices {
@@ -100,18 +114,29 @@ fn clean_name(name: &str) -> Option<String> {
 }
 
 fn describe(saved: &Saved, status: Status) -> DeviceInfo {
-    let address = Address::parse(&saved.url).map(|address| address.authority().to_string()).unwrap_or_default();
-    let name = saved
-        .name
-        .clone()
-        .or_else(|| status.host.clone())
-        .or_else(|| saved.host.clone())
-        .unwrap_or_else(|| address.clone());
-    DeviceInfo { id: saved.id.clone(), name, address, status }
+    let address = match &saved.ssh {
+        Some(server) => server.label(),
+        None => Address::parse(&saved.url).map(|address| address.authority().to_string()).unwrap_or_default(),
+    };
+    let kind = if saved.ssh.is_some() { Kind::Ssh } else { Kind::Link };
+    let host = status.host.clone().or_else(|| saved.host.clone());
+    let named = match (&saved.ssh, host) {
+        (Some(server), Some(host)) => Some(format!("{}@{host}", server.user)),
+        (_, host) => host,
+    };
+    let name = saved.name.clone().or(named).unwrap_or_else(|| address.clone());
+    DeviceInfo { id: saved.id.clone(), name, address, kind, status }
 }
 
 impl Inner {
-    fn link(&mut self, saved: &Saved) -> Result<(), String> {
+    fn link(&mut self, saved: &Saved, password: Option<String>) -> Result<(), String> {
+        if let Some(server) = &saved.ssh {
+            let remote = Remote::parked(new_id()?).map_err(|err| err.to_string())?;
+            let tunnel = Tunnel::open(server.clone(), remote.clone(), password).map_err(|err| err.to_string())?;
+            self.tunnels.insert(saved.id.clone(), tunnel);
+            self.links.insert(saved.id.clone(), remote);
+            return Ok(());
+        }
         let (address, secret) = saved.target().ok_or_else(|| "the saved link of this device is broken".to_string())?;
         let remote = Remote::start(address, secret, new_id()?).map_err(|err| err.to_string())?;
         self.links.insert(saved.id.clone(), remote);
@@ -131,9 +156,9 @@ impl Devices {
     pub fn open(home: &Home) -> Self {
         let path = home.root().join(FILE);
         let saved: Vec<Saved> = fsutil::read_json_opt(&path).ok().flatten().unwrap_or_default();
-        let mut inner = Inner { saved, links: BTreeMap::new() };
+        let mut inner = Inner { saved, ..Inner::default() };
         for saved in inner.saved.clone() {
-            let _ = inner.link(&saved);
+            let _ = inner.link(&saved, None);
         }
         Self { path, inner: Mutex::new(inner) }
     }
@@ -164,11 +189,12 @@ impl Devices {
         })?;
         let (url, key) = (address.url(), crypto::encode(&secret));
         let mut inner = lock(&self.inner);
+        let link = |saved: &Saved, same: bool| saved.ssh.is_none() && same;
         let known = inner
             .saved
             .iter()
-            .position(|saved| saved.key == key)
-            .or_else(|| inner.saved.iter().position(|saved| saved.url == url));
+            .position(|saved| link(saved, saved.key == key))
+            .or_else(|| inner.saved.iter().position(|saved| link(saved, saved.url == url)));
         let saved = match known {
             Some(at) => {
                 inner.saved[at].url = url;
@@ -179,14 +205,48 @@ impl Devices {
                 if inner.saved.len() >= MAX_DEVICES {
                     return Err(format!("Octo keeps up to {MAX_DEVICES} devices; forget one first"));
                 }
-                let saved = Saved { id: new_id()?, url, key, name: None, host: None, added_at_ms: now_ms() };
+                let saved = Saved { id: new_id()?, url, key, ssh: None, name: None, host: None, added_at_ms: now_ms() };
                 inner.saved.push(saved.clone());
                 saved
             }
         };
         self.keep(&inner)?;
-        inner.link(&saved)?;
+        inner.link(&saved, None)?;
         Ok(inner.info(&saved))
+    }
+
+    pub fn add_server(&self, server: Server, password: Option<String>) -> Result<DeviceInfo, String> {
+        let mut inner = lock(&self.inner);
+        let saved = match inner.saved.iter().find(|saved| saved.ssh.as_ref() == Some(&server)) {
+            Some(known) => known.clone(),
+            None => {
+                if inner.saved.len() >= MAX_DEVICES {
+                    return Err(format!("Octo keeps up to {MAX_DEVICES} devices; forget one first"));
+                }
+                let saved = Saved {
+                    id: new_id()?,
+                    url: String::new(),
+                    key: String::new(),
+                    ssh: Some(server),
+                    name: None,
+                    host: None,
+                    added_at_ms: now_ms(),
+                };
+                inner.saved.push(saved.clone());
+                saved
+            }
+        };
+        self.keep(&inner)?;
+        inner.tunnels.remove(&saved.id);
+        inner.link(&saved, password.filter(|password| !password.is_empty()))?;
+        Ok(inner.info(&saved))
+    }
+
+    pub fn unlock(&self, id: &str, password: String) -> Result<(), String> {
+        let inner = lock(&self.inner);
+        let tunnel = inner.tunnels.get(id).ok_or_else(|| "this device is not a server reached by ssh".to_string())?;
+        tunnel.unlock(password);
+        Ok(())
     }
 
     pub fn rename(&self, id: &str, name: &str) -> Result<(), String> {
@@ -203,12 +263,20 @@ impl Devices {
     pub fn forget(&self, id: &str) -> Result<(), String> {
         let mut inner = lock(&self.inner);
         inner.saved.retain(|saved| saved.id != id);
+        inner.tunnels.remove(id);
         inner.links.remove(id);
         self.keep(&inner)
     }
 
     pub fn retry(&self, id: &str) -> Result<(), String> {
-        lock(&self.inner).remote(id).map(Remote::retry)
+        let inner = lock(&self.inner);
+        match inner.tunnels.get(id) {
+            Some(tunnel) => {
+                tunnel.retry();
+                Ok(())
+            }
+            None => inner.remote(id).map(Remote::retry),
+        }
     }
 
     pub fn watch(&self, id: &str, window: Box<dyn Outbox + Send>) -> Result<(), String> {
@@ -240,6 +308,22 @@ pub fn devices(link: State<'_, Link>) -> Listing {
 #[tauri::command]
 pub fn add_device(link: State<'_, Link>, pairing: String) -> Result<DeviceInfo, String> {
     link.devices().add(&pairing)
+}
+
+#[tauri::command]
+pub fn add_server(
+    link: State<'_, Link>,
+    host: String,
+    port: u16,
+    user: String,
+    password: Option<String>,
+) -> Result<DeviceInfo, String> {
+    link.devices().add_server(Server::parse(&host, port, &user)?, password)
+}
+
+#[tauri::command]
+pub fn unlock_device(link: State<'_, Link>, id: String, password: String) -> Result<(), String> {
+    link.devices().unlock(&id, password)
 }
 
 #[tauri::command]
@@ -359,6 +443,50 @@ mod tests {
         let renewed = devices.add(&fake_link("new-tunnel.example")).unwrap();
         assert_eq!(renewed.id, first.id, "a new code at the same address is the same device");
         assert_eq!(devices.list().len(), 1);
+    }
+
+    #[test]
+    fn a_server_reached_by_ssh_is_kept_without_its_password_and_is_one_device_however_often_it_is_added() {
+        let desk = desk("ssh");
+        let devices = Devices::open(&desk.home);
+        let server = Server::parse("127.0.0.1", 1, "deploy").unwrap();
+        let added = devices.add_server(server.clone(), Some("s3cret-never-saved".into())).unwrap();
+        assert_eq!(
+            (added.kind, added.address.as_str(), added.name.as_str()),
+            (Kind::Ssh, "deploy@127.0.0.1:1", "deploy@127.0.0.1:1")
+        );
+        let answered = Status { host: Some("build-01".into()), ..Status::default() };
+        let saved = Saved {
+            id: added.id.clone(),
+            url: String::new(),
+            key: String::new(),
+            ssh: Some(server.clone()),
+            name: None,
+            host: None,
+            added_at_ms: 0,
+        };
+        assert_eq!(
+            describe(&saved, answered).name,
+            "deploy@build-01",
+            "two users of one server stay apart in the list"
+        );
+        let again = devices.add_server(server, None).unwrap();
+        assert_eq!(again.id, added.id);
+        assert_eq!(devices.list().len(), 1);
+        let kept = std::fs::read_to_string(desk.home.root().join(FILE)).unwrap();
+        assert!(kept.contains(r#""host": "127.0.0.1""#) && kept.contains(r#""user": "deploy""#), "{kept}");
+        assert!(!kept.contains("s3cret"), "the password never reaches the disk");
+        assert!(!serde_json::to_string(&devices.list()).unwrap().contains("s3cret"));
+        devices.unlock(&added.id, "another".into()).unwrap();
+        devices.retry(&added.id).unwrap();
+        let link = devices.add(&fake_link("octo.example")).unwrap();
+        assert_eq!(link.kind, Kind::Link);
+        assert!(devices.unlock(&link.id, "x".into()).unwrap_err().contains("not a server"));
+        drop(devices);
+        let reopened = Devices::open(&desk.home);
+        assert_eq!(reopened.list().iter().map(|info| info.kind).collect::<Vec<_>>(), [Kind::Ssh, Kind::Link]);
+        reopened.forget(&added.id).unwrap();
+        assert_eq!(reopened.list().len(), 1);
     }
 
     #[test]

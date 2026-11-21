@@ -532,6 +532,11 @@ pub enum Internal {
         #[arg(long)]
         port: u16,
     },
+    #[command(name = "__serve", hide = true)]
+    Serve {
+        #[arg(long)]
+        port: u16,
+    },
 }
 
 impl Internal {
@@ -545,6 +550,7 @@ impl Internal {
                 Ok(())
             }
             Internal::PwaBridge { tunnel, port } => pwa::bridge::run(&home, tunnel, port),
+            Internal::Serve { port } => pwa::serve::run(&home, port),
         }
     }
 }

@@ -365,9 +365,62 @@ jobs:
           path: target/installer/Octo.msix
           if-no-files-found: error
 
+  server-build:
+    name: build the Octo server for ${{ matrix.target }}
+    if: ${{ !cancelled() && needs.desktop.result == 'success' && (needs.version.outputs.publish == 'true' || github.event_name == 'workflow_dispatch') }}
+    needs: [desktop, version]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            download: octo-server-linux-x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            download: octo-server-linux-aarch64
+    runs-on: ${{ matrix.os }}
+    env:
+      ORKAI_BUILD_COMMIT: ${{ github.sha }}
+      TARGET: ${{ matrix.target }}
+      DOWNLOAD: ${{ matrix.download }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: server-${{ matrix.target }}
+      - name: Install the musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+      - name: Build
+        run: cargo build --release --locked -p orkai --target ${{ matrix.target }}
+      - name: Check that the server needs no library of the system and answers
+        run: |
+          mkdir -p dist
+          cp "target/$TARGET/release/orkai" "dist/$DOWNLOAD"
+          if ldd "dist/$DOWNLOAD" 2>&1 | grep -q '=>'; then
+            echo "::error::$DOWNLOAD links to libraries of the system"
+            ldd "dist/$DOWNLOAD"
+            exit 1
+          fi
+          line=$(ORKAI_HOME="$RUNNER_TEMP/octo-home" ORKAI_NO_UPDATE=1 timeout 60 "dist/$DOWNLOAD" __serve --port 0 < <(sleep 5) | head -n 1)
+          case "$line" in
+            "octo-ready "*) echo "the server answered" ;;
+            *) echo "::error::the server did not say it was ready: $line"; exit 1 ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: octo-server-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
   publish:
     name: publish ${{ needs.version.outputs.tag }}
-    needs: [test, version, desktop-build]
+    needs: [test, version, desktop-build, server-build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -409,6 +462,8 @@ jobs:
               "desktop-x86_64-apple-darwin": "Octo-macos-intel-update",
               "desktop-app-aarch64-apple-darwin": "Octo-macos-apple-silicon.zip",
               "desktop-app-x86_64-apple-darwin": "Octo-macos-intel.zip",
+              "server-x86_64-unknown-linux-musl": "octo-server-linux-x86_64",
+              "server-aarch64-unknown-linux-musl": "octo-server-linux-aarch64",
           }
           assets = {}
           for key, name in updates.items():

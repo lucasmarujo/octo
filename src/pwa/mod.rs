@@ -9,6 +9,7 @@ pub mod protocol;
 pub mod push;
 pub mod qr;
 pub mod screen;
+pub mod serve;
 pub mod server;
 pub mod tunnel;
 pub mod uploads;

@@ -6,7 +6,7 @@ import { mark, usesKai } from './brand.js';
 import { initComposer, renderComposer, renderPalette, setCommandRunner, toggleWorktree } from './composer.js';
 import { renameSession, runCommand } from './commands.js';
 import { activeDevice, agentToReopen, switchDevice } from './device.js';
-import { currentDevice, renderLinkProblem, watchDevices } from './devices.js';
+import { currentDevice, linkStopped, renderLinkProblem, watchDevices } from './devices.js';
 import { closeMenu, confirm, menuShown, showCompare, showDiff, showTests } from './dialogs.js';
 import { showFolderMade, showFolderSearch, showFolders } from './folders.js';
 import { $, svg } from './dom.js';
@@ -160,7 +160,7 @@ function render() {
   if (!state.overview) {
     if (REMOTE && state.link) {
       document.documentElement.dataset.away = 'empty';
-      renderLinkProblem(state.link);
+      renderLinkProblem(state.link, state.linkNote);
     }
     return;
   }
@@ -335,7 +335,7 @@ function onMessage(message) {
       send(viewRequest());
       break;
     case 'link':
-      onLink(message.phase);
+      onLink(message.phase, message.note);
       break;
     case 'screen':
       if (remoteView) remoteView.onScreen(message);
@@ -427,10 +427,17 @@ function onMessage(message) {
   }
 }
 
-function onLink(phase) {
+function onLink(phase, note) {
   const before = state.link;
   state.link = phase;
+  state.linkNote = note || null;
   document.documentElement.dataset.link = phase;
+  if (linkStopped(phase) && state.overview) {
+    state.overview = null;
+    leaveAgent();
+    state.active = null;
+    show('overview');
+  }
   const device = currentDevice();
   const name = device ? device.name : t('the other device');
   if (before === 'live' && phase !== 'live') toast(t('Lost the connection to {name} · trying again', { name }), 'warn');

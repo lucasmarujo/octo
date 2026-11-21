@@ -14,6 +14,7 @@ mod remote;
 mod settings;
 #[cfg(any(windows, target_os = "macos"))]
 mod shell_icon;
+mod ssh;
 mod term;
 #[cfg(windows)]
 mod toast_app;
@@ -35,6 +36,9 @@ struct Args {
 }
 
 fn main() -> ExitCode {
+    if let Some(answered) = ssh::askpass() {
+        return answered;
+    }
     let internal = match Args::try_parse() {
         Ok(args) => args.internal,
         Err(err) if matches!(err.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) => err.exit(),

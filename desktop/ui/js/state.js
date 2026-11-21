@@ -67,6 +67,7 @@ export const state = {
   skills: null,
   updateReady: null,
   link: null,
+  linkNote: null,
 };
 
 if (!octoTabOffered) {
