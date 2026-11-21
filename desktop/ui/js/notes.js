@@ -7,6 +7,20 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.45',
+    date: '2026-11-21',
+    en: [
+      'The sidebar has Devices, below the sessions: add another computer running Octo and work on it from this window. Add a device takes the pairing link the other Octo shows in Pair phone, the same one the phone uses, end-to-end encrypted.',
+      'Click a device and the whole window goes there: its sessions, board, task box, folders and the terminal of each agent. This computer brings you back. Each device shows whether it is live and how many agents are waiting for you.',
+      'Right click a device to rename it, paste a new link or forget it. If the other Octo restarted its tunnel, pasting the new link updates the same device.',
+    ],
+    'pt-BR': [
+      'A barra lateral tem Dispositivos, abaixo das sessões: adicione outro computador com o Octo e trabalhe nele a partir desta janela. Adicionar dispositivo recebe o link de pareamento que o outro Octo mostra em Parear celular, o mesmo do celular, criptografado de ponta a ponta.',
+      'Clique num dispositivo e a janela inteira vai para lá: as sessões, o quadro, a caixa de tarefa, as pastas e o terminal de cada agente. Este computador traz você de volta. Cada dispositivo mostra se está no ar e quantos agentes esperam você.',
+      'Clique com o botão direito num dispositivo para renomear, colar um link novo ou esquecer. Se o outro Octo reiniciou o túnel, colar o link novo atualiza o mesmo dispositivo.',
+    ],
+  },
+  {
     version: '0.2.44',
     date: '2026-11-18',
     en: [
