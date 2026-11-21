@@ -16,6 +16,7 @@ use serde::Serialize;
 use tauri::webview::PageLoadEvent;
 use tauri::{Manager, RunEvent, State, WindowEvent};
 
+use crate::devices::{self, Devices};
 use crate::island::Island;
 use crate::term::{self, Console};
 use crate::updates::{self, Updates};
@@ -29,6 +30,8 @@ pub struct Link {
     hub: Arc<Hub>,
     generation: Arc<AtomicU64>,
     inbox: Mutex<Option<Sender<Event>>>,
+    devices: Devices,
+    remote: Mutex<Option<String>>,
 }
 
 struct Webview {
@@ -44,7 +47,18 @@ impl Outbox for Webview {
 
 impl Link {
     pub(crate) fn new(hub: Arc<Hub>) -> Self {
-        Self { hub, generation: Arc::new(AtomicU64::new(0)), inbox: Mutex::new(None) }
+        let devices = Devices::open(hub.store().home());
+        Self {
+            hub,
+            generation: Arc::new(AtomicU64::new(0)),
+            inbox: Mutex::new(None),
+            devices,
+            remote: Mutex::new(None),
+        }
+    }
+
+    pub fn devices(&self) -> &Devices {
+        &self.devices
     }
 
     pub fn hub(&self) -> &Hub {
@@ -61,13 +75,25 @@ impl Link {
         }
     }
 
-    fn attach(&self, channel: Channel) -> Result<(), String> {
-        let inbox = watch(&self.hub, &self.generation, channel)?;
-        *lock(&self.inbox) = Some(inbox);
+    fn attach(&self, channel: Channel, device: Option<String>) -> Result<(), String> {
+        self.devices.unwatch();
+        let Some(id) = device else {
+            let inbox = watch(&self.hub, &self.generation, channel)?;
+            *lock(&self.inbox) = Some(inbox);
+            *lock(&self.remote) = None;
+            return Ok(());
+        };
+        self.devices.watch(&id, Box::new(Webview { channel }))?;
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        *lock(&self.inbox) = None;
+        *lock(&self.remote) = Some(id);
         Ok(())
     }
 
     fn send(&self, message: PhoneMsg) -> Result<(), String> {
+        if let Some(id) = lock(&self.remote).clone() {
+            return self.devices.send(&id, &message);
+        }
         let inbox = lock(&self.inbox).clone().ok_or_else(|| "the window is not attached yet".to_string())?;
         inbox.send(Event::Inbound(message)).map_err(|_| "Octo stopped listening to this window".to_string())
     }
@@ -95,8 +121,8 @@ pub fn watch(hub: &Arc<Hub>, current: &Arc<AtomicU64>, channel: Channel) -> Resu
 }
 
 #[tauri::command]
-fn attach(link: State<'_, Link>, channel: Channel) -> Result<(), String> {
-    link.attach(channel)
+fn attach(link: State<'_, Link>, channel: Channel, device: Option<String>) -> Result<(), String> {
+    link.attach(channel, device)
 }
 
 #[tauri::command]
@@ -232,6 +258,11 @@ pub fn run() -> io::Result<()> {
             pair::pairing,
             pair::set_phone,
             pair::renew_phone,
+            devices::devices,
+            devices::add_device,
+            devices::rename_device,
+            devices::forget_device,
+            devices::retry_device,
             paste::paste_image,
             updates::update_ready,
             updates::restart_app,
@@ -355,7 +386,7 @@ mod tests {
     fn a_window_is_welcomed_and_then_sees_the_overview() {
         let fx = fixture("welcome");
         let (channel, rx) = window();
-        fx.link.attach(channel).unwrap();
+        fx.link.attach(channel, None).unwrap();
         let first = rx.recv_timeout(TIMEOUT).unwrap();
         assert_eq!(first["type"], "welcome");
         assert_eq!(first["host"], "testhost");
@@ -369,7 +400,7 @@ mod tests {
         let fx = fixture("send");
         std::fs::create_dir_all(fx.dir.join("alpha")).unwrap();
         let (channel, rx) = window();
-        fx.link.attach(channel).unwrap();
+        fx.link.attach(channel, None).unwrap();
         fx.link
             .send(PhoneMsg::Folders {
                 path: fx.dir.to_string_lossy().into_owned(),
@@ -389,16 +420,50 @@ mod tests {
     fn a_reloaded_window_replaces_the_previous_one_in_the_hub() {
         let fx = fixture("reload");
         let (first, _first_rx) = window();
-        fx.link.attach(first).unwrap();
+        fx.link.attach(first, None).unwrap();
         assert_eq!(fx.link.hub.phones(), 1);
         let (second, second_rx) = window();
-        fx.link.attach(second).unwrap();
+        fx.link.attach(second, None).unwrap();
         until(&second_rx, of_type("state"));
         let deadline = Instant::now() + TIMEOUT;
         while fx.link.hub.phones() != 1 && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(fx.link.hub.phones(), 1, "the old window leaves the hub");
+    }
+
+    #[test]
+    fn a_window_that_moves_to_another_device_leaves_this_hub_and_talks_to_that_one() {
+        let fx = fixture("remote");
+        let octo = crate::remote::tests::other_octo("window", "otherhost");
+        let device = fx.link.devices().add(&octo.link()).unwrap();
+        let (local, local_rx) = window();
+        fx.link.attach(local, None).unwrap();
+        assert_eq!(until(&local_rx, of_type("welcome"))["host"], "testhost");
+
+        let (remote, remote_rx) = window();
+        fx.link.attach(remote, Some(device.id.clone())).unwrap();
+        assert_eq!(until(&remote_rx, of_type("welcome"))["host"], "otherhost");
+        let deadline = Instant::now() + TIMEOUT;
+        while fx.link.hub.phones() != 0 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(fx.link.hub.phones(), 0, "the window stops watching this computer");
+        fx.link.send(PhoneMsg::Session { name: "from-afar".into() }).unwrap();
+        let named = |message: &Value| {
+            message["type"] == "state"
+                && message["sessions"]
+                    .as_array()
+                    .is_some_and(|all| all.iter().any(|session| session["name"] == "from-afar"))
+        };
+        until(&remote_rx, named);
+        assert!(fx.link.hub.store().load_sessions().unwrap().iter().all(|session| session.name != "from-afar"));
+
+        let (back, back_rx) = window();
+        fx.link.attach(back, None).unwrap();
+        assert_eq!(until(&back_rx, of_type("welcome"))["host"], "testhost");
+        let unknown = fx.link.attach(window().0, Some("nope".into())).unwrap_err();
+        assert!(unknown.contains("not on the list"), "{unknown}");
     }
 
     #[test]

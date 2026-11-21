@@ -1,4 +1,4 @@
-import { storage } from './dom.js';
+import { deviceStorage as storage } from './device.js';
 import { DEFAULT_GRID_SIZE, GRID_SIZES, OCTO_TAB, OVERVIEW_TAB, arrangeTabs, chosenModel } from './format.js';
 
 const SESSION_KEY = 'orkai.session';
@@ -66,6 +66,7 @@ export const state = {
   selected: null,
   skills: null,
   updateReady: null,
+  link: null,
 };
 
 if (!octoTabOffered) {

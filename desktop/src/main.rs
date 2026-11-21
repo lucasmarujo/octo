@@ -2,6 +2,7 @@
 
 mod agent_updates;
 mod alerts;
+mod devices;
 mod install;
 mod island;
 mod link;
@@ -9,6 +10,7 @@ mod login_path;
 mod pair;
 mod paste;
 mod recover;
+mod remote;
 mod settings;
 #[cfg(any(windows, target_os = "macos"))]
 mod shell_icon;

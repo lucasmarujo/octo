@@ -1,3 +1,4 @@
+import { activeDevice } from './device.js';
 import { $, elementAt, h, svg } from './dom.js';
 import { acceptedSuggestion, matchingCommands, nextSuggestion, parseCommand } from './commands.js';
 import { closeMenu, menuShown, openMenu } from './dialogs.js';
@@ -281,6 +282,10 @@ function detach(path) {
 }
 
 function chooseFiles() {
+  if (activeDevice()) {
+    toast(t('Attaching files only works on this computer for now.'), 'info');
+    return;
+  }
   invoke('pick_files')
     .then((paths) => {
       attach(paths);
@@ -290,7 +295,7 @@ function chooseFiles() {
 }
 
 function takesFiles() {
-  return currentWho() !== 'terminal' && $('composer').offsetParent !== null;
+  return !activeDevice() && currentWho() !== 'terminal' && $('composer').offsetParent !== null;
 }
 
 function onTerminal(drop) {

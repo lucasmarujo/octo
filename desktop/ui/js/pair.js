@@ -18,6 +18,7 @@ const STEPS = [
   t('Octo opens in the browser, already paired'),
   t('Share › Add to Home Screen keeps it one tap away'),
 ];
+const OCTO_AGENT = 'Octo/';
 const PRIVACY = t('The tunnel only carries encrypted bytes; the key lives in this code, never on a server.');
 const BROWSERS = [
   [/(?:EdgiOS|EdgA|Edg)\/(\d+)/, 'Edge'],
@@ -142,7 +143,7 @@ function statePanel(pairing) {
 
 function deviceCard(device) {
   const about = device.agent ? describeDevice(device) : { name: t('Phone'), os: null, browser: null };
-  const meta = device.agent ? [about.os, about.browser, device.standalone ? t('Home Screen app') : t('in the browser')].filter(Boolean).join(' · ') : t('Live · end-to-end encrypted');
+  const meta = device.agent ? [about.os, about.browser, device.agent.startsWith(OCTO_AGENT) ? t('Octo on the desktop') : device.standalone ? t('Home Screen app') : t('in the browser')].filter(Boolean).join(' · ') : t('Live · end-to-end encrypted');
   return h('li', { class: 'pair-device' },
     h('span', { class: 'pair-device-name' }, about.name),
     h('span', { class: 'pair-device-meta', title: device.agent || '' }, meta),

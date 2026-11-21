@@ -1,3 +1,4 @@
+import { activeDevice } from './device.js';
 import { $, h, svg } from './dom.js';
 import { ask, confirm } from './dialogs.js';
 import { SPINNER, alive, duration, glyph, kindColor, label, plural, shortModel } from './format.js';
@@ -208,8 +209,10 @@ const commitKey = (agent, commit) => `${agent.id}:${commit.hash}`;
 function loadCommit(agent, commit) {
   const key = commitKey(agent, commit);
   if (!commitInfo.has(key)) {
-    const loading = invoke('commit_info', { agent: agent.id, hash: commit.hash }).then(
+    const reading = activeDevice() ? Promise.resolve(null) : invoke('commit_info', { agent: agent.id, hash: commit.hash });
+    const loading = reading.then(
       (info) => {
+        if (!info) return { away: true };
         if (info.url) linkedCommits.add(key);
         return { info };
       },
@@ -233,6 +236,7 @@ function commitTip(commit, loaded) {
   const subject = h('div', { class: 'tip-subject' }, commit.subject);
   if (!loaded) return [head, subject, h('div', { class: 'tip-note' }, t('Reading the files…'))];
   if (loaded.error) return [head, subject, h('div', { class: 'tip-note' }, t('Could not read this commit.'))];
+  if (loaded.away) return [head, subject];
   const { files, more, url } = loaded.info;
   const rows = files.map((file) =>
     h(

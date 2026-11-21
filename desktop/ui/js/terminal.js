@@ -130,6 +130,7 @@ export class Terminal {
     this.xterm.textarea.addEventListener('focus', () => this.host.classList.add('focused'));
     this.xterm.textarea.addEventListener('blur', () => this.host.classList.remove('focused'));
     this.screen.addEventListener('paste', (event) => this.onPaste(event), true);
+    if (this.handlers.wheel) this.screen.addEventListener('wheel', (event) => this.onWheel(event), { capture: true, passive: false });
     this.handlers.drops((drop) => this.onDrop(drop));
     new ResizeObserver(() => {
       clearTimeout(this.resizeTimer);
@@ -194,11 +195,22 @@ export class Terminal {
     if (over && drop.type === 'drop') this.typePaths(drop.paths);
   }
 
-  onPaste(event) {
-    const image = pastedImage(event.clipboardData);
-    if (!image) return;
+  onWheel(event) {
     event.preventDefault();
     event.stopPropagation();
+    if (this.session !== null) this.handlers.wheel(this.session, event.deltaY);
+  }
+
+  onPaste(event) {
+    const image = pastedImage(event.clipboardData);
+    const text = image || !this.handlers.paste ? '' : event.clipboardData.getData('text/plain');
+    if (!image && !text) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!image) {
+      if (this.takesInput()) this.handlers.paste(this.session, text);
+      return;
+    }
     const generation = this.generation;
     image
       .arrayBuffer()

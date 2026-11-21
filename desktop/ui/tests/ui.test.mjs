@@ -1664,7 +1664,7 @@ test('a code agent behind its release shows a card that updates it, and a dismis
   const toast = readFileSync(join(REPO, 'desktop/ui/js/toast.js'), 'utf8');
   assert.match(toast, /const passing = \(\) => host\.querySelectorAll\('\.toast:not\(\.agent-update\)'\);\n\s*while \(passing\(\)\.length > LIMIT\) passing\(\)\[0\]\.remove\(\);/, 'a burst of toasts never pushes an update card away');
   const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
-  assert.match(main, /connect\(onMessage\)[^\n]*\n\s*checkAgentUpdates\(openAgent\);/, 'checked every time Octo opens, without holding up the first paint');
+  assert.match(main, /connect\(onMessage, REMOTE\)[\s\S]*?\}\);\n\s*if \(!REMOTE\) checkAgentUpdates\(openAgent\);/, 'checked every time Octo opens, without holding up the first paint');
   assert.match(main, /watchInstalls\(message\.agents\);\n\s*watchAgentUpdates\(message\.agents\);/);
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.match(css, /\.agent-update \{ position: relative; display: flex;[^}]*pointer-events: auto; \}/, 'the card takes clicks inside the toast column');
@@ -2111,7 +2111,7 @@ test('a collapsed sidebar keeps every session as a chip, and hovering one lists 
   assert.equal(sessionMark('🚀launch'), '🚀L', 'an emoji is one letter, never half of one');
   assert.equal(sessionMark(''), '');
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
-  assert.match(html, /<\/section>\s*<nav id="session-rail" class="session-rail" aria-label="Sessions" data-i18n-label="Sessions"><\/nav>\s*<\/div>\s*<section id="usage" class="usage" hidden><\/section>/, 'the list of sessions scrolls in its own area, and the plan usage stays out of it');
+  assert.match(html, /<\/section>\s*<nav id="session-rail" class="session-rail" aria-label="Sessions" data-i18n-label="Sessions"><\/nav>\s*<section class="sessions">[\s\S]*?<\/section>\s*<nav id="device-rail"[^>]*><\/nav>\s*<\/div>\s*<section id="usage" class="usage" hidden><\/section>/, 'the list of sessions scrolls in its own area, and the plan usage stays out of it');
   assert.match(html, /<aside class="sidebar">\s*<div id="sidebar-scroll" class="sidebar-scroll">\s*<div class="brand">/, 'everything above the usage is the scrolling area');
   const sidebarJs = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebarJs, /onToggle: \(\) => \{\n\s+\$\('sidebar-scroll'\)\.scrollTop = 0;\n\s+onToggle\(\);\n\s+\},/, 'collapsing or expanding shows the top of the sidebar, where the orchestrator is');
@@ -3026,7 +3026,7 @@ test('the island is a page of its own that only asks the core for what the core 
   assert.match(core, /const HOVER_EVENT: &str = "island-hover";/);
   assert.match(page, /const HOVER_EVENT = 'island-hover';/);
   assert.match(core, /const OPEN_EVENT: &str = "island-open";/);
-  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /listen\('island-open', \(event\) => openAgent\(findAgent\(event\.payload\)\)\);/, 'a click on the island opens that agent in the app');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /listen\('island-open', \(event\) => \{\n\s*if \(REMOTE\) switchDevice\(null, event\.payload\);\n\s*else openAgent\(findAgent\(event\.payload\)\);\n\s*\}\);/, 'a click on the island opens that agent in the app, back on this computer when the window is on another one');
   assert.match(core, /const PAGE: &str = "island\.html";/);
   assert.doesNotMatch(page, /from '\.\/(state|settings|main|sidebar|terminal)\.js'/, 'the island loads none of the app');
   assert.match(page, /if \(message\.type !== 'state'\) return;/, 'it only reads the overview');
@@ -3071,4 +3071,139 @@ test('the island wears the theme, hangs from the top edge and moves like one pie
   const rules = css.split('\n').filter((line) => /^(\.island|:root\[data-(island|notch)\])/.test(line));
   assert.ok(rules.length > 35, `only ${rules.length} rules found`);
   for (const rule of rules) assert.doesNotMatch(rule.replace(/box-shadow: [^;]+;/g, ''), /#[0-9a-fA-F]{3,8}\b|rgba?\(/, `only theme tokens, so every theme works: ${rule.slice(0, 60)}`);
+});
+
+test('the sidebar lists the devices below the sessions, with a way to add one', async () => {
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<nav id="session-rail"[^>]*><\/nav>\s*<section class="sessions">\s*<span class="caps" data-i18n="Devices">Devices<\/span>\s*<div id="devices" class="session-list"><\/div>\s*<\/section>/, 'right below the sessions');
+  const { PT } = await import('../js/i18n.js');
+  assert.equal(PT.Devices, 'Dispositivos');
+  assert.equal(PT['Add a device'], 'Adicionar dispositivo');
+  const devices = readFileSync(join(REPO, 'desktop/ui/js/devices.js'), 'utf8');
+  assert.match(devices, /onclick: openAddDevice \},\s*h\('span', \{ class: 'chevron' \}, svg\(ICON_PLUS\)\)/, 'a plus opens the dialog that takes the link');
+  assert.match(devices, /invoke\('add_device', \{ pairing \}\);\n\s*closeDialog\(\);\n\s*switchDevice\(device\.id\);/, 'a pasted link always takes the window to that device, on its new connection');
+  const handlers = rust('desktop/src/link.rs').match(/generate_handler!\[([\s\S]*?)\]/)[1];
+  for (const name of ['devices', 'add_device', 'rename_device', 'forget_device', 'retry_device']) {
+    assert.ok(handlers.includes(`devices::${name}`), `${name} is registered`);
+    assert.ok(devices.includes(`invoke('${name}'`), `${name} is used by the window`);
+  }
+  const core = rust('desktop/src/devices.rs');
+  assert.doesNotMatch(core.match(/pub struct DeviceInfo \{[\s\S]*?\n\}/)[0], /key|secret/, 'what the window lists never carries the key of a device');
+});
+
+test('another Octo connected to this one is listed as a computer, not as a phone in a browser', async () => {
+  const { describeDevice } = await import('../js/pair.js');
+  const agent = rust('desktop/src/remote.rs').match(/format!\("(Octo\/)\{\} \(\{PLATFORM\}\)"/)[1];
+  assert.equal(agent, 'Octo/');
+  for (const [platform, name] of [['Windows', 'Windows computer'], ['Macintosh', 'macOS computer'], ['Linux', 'Linux computer']]) {
+    assert.ok(rust('desktop/src/remote.rs').includes(`const PLATFORM: &str = "${platform}";`), platform);
+    assert.equal(describeDevice({ agent: `${agent}0.2.45 (${platform})`, model: 'Octo desktop' }).name, name);
+  }
+  const pair = readFileSync(join(REPO, 'desktop/ui/js/pair.js'), 'utf8');
+  assert.match(pair, /const OCTO_AGENT = 'Octo\/';/);
+  assert.match(pair, /device\.agent\.startsWith\(OCTO_AGENT\) \? t\('Octo on the desktop'\)/);
+});
+
+test('a device says how it is doing in a few words', async () => {
+  const { deviceError, deviceNote, deviceTone, linkProblem } = await import('../js/devices.js');
+  assert.equal(deviceTone('live'), 'live');
+  assert.equal(deviceTone('connecting'), 'pending');
+  for (const phase of ['offline', 'unpaired', 'outdated', 'replaced']) assert.equal(deviceTone(phase), 'down', phase);
+  assert.equal(deviceNote({ phase: 'live', agents: 3, waiting: 0 }), '3 agents');
+  assert.equal(deviceNote({ phase: 'live', agents: 1, waiting: 1 }), '1 agent · 1 waiting for you');
+  assert.equal(deviceNote({ phase: 'connecting' }), 'Connecting…');
+  assert.equal(deviceNote({ phase: 'offline' }), 'Offline · trying again');
+  assert.match(deviceNote({ phase: 'unpaired' }), /paste a new one/);
+  assert.equal(linkProblem('unpaired').action, 'link', 'a link that stopped working asks for a new one');
+  assert.equal(linkProblem('offline').action, 'link', 'a quick tunnel that restarted has a new address');
+  assert.equal(linkProblem('outdated').action, 'retry');
+  assert.equal(linkProblem('connecting').action, null);
+  const phases = rust('desktop/src/remote.rs').match(/pub enum Phase \{([\s\S]*?)\}/)[1].match(/[A-Z]\w+/g).map((name) => name.toLowerCase());
+  assert.deepEqual(phases, ['connecting', 'live', 'offline', 'unpaired', 'outdated', 'replaced']);
+  for (const phase of phases) assert.ok(deviceNote({ phase, agents: 0, waiting: 0 }) && linkProblem(phase).title, phase);
+  assert.match(deviceError('that is not a pairing link of Octo; copy it'), /not an Octo pairing link/);
+  assert.match(deviceError('Octo keeps up to 16 devices; forget one first'), /full/);
+  assert.equal(deviceError('boom'), 'boom');
+  const core = rust('desktop/src/devices.rs');
+  assert.ok(core.includes('that is not a pairing link of Octo'), 'the text the window looks for is the one the core says');
+  assert.ok(core.includes('forget one first'));
+});
+
+test('each device keeps its own session, tabs and folders in the window', async () => {
+  const { scopedKey, scopedKeysOf } = await import('../js/device.js');
+  assert.equal(scopedKey('orkai.tabs', null), 'orkai.tabs', 'this computer keeps the keys it always had');
+  assert.equal(scopedKey('orkai.tabs', 'abc'), 'orkai.tabs@abc');
+  assert.deepEqual(scopedKeysOf(['orkai.tabs', 'orkai.tabs@abc', 'orkai.session@abc', 'orkai.session@abcd', 'octo.device'], 'abc'), ['orkai.tabs@abc', 'orkai.session@abc']);
+  assert.deepEqual(scopedKeysOf(['orkai.tabs'], null), [], 'forgetting nothing never touches this computer');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/state.js'), 'utf8'), /^import \{ deviceStorage as storage \} from '\.\/device\.js';/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /const REMOTE = activeDevice\(\);/);
+  assert.match(main, /connect\(onMessage, REMOTE\)\.catch\(\(err\) => \{\n\s*if \(REMOTE\) switchDevice\(null\);/, 'a device that is gone sends the window back to this computer');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/transport.js'), 'utf8'), /invoke\('attach', \{ channel: channel\(onMessage\), device \}\)/);
+  assert.match(rust('desktop/src/link.rs'), /fn attach\(link: State<'_, Link>, channel: Channel, device: Option<String>\)/);
+});
+
+test('the screen another Octo sends is drawn by the same terminal, row by row', async () => {
+  const { screenAnsi, screenFrame, wheelLines } = await import('../js/remoteterm.js');
+  const { decodeFrame } = await import('../js/termwire.js');
+  const screen = { agent: 7, rows: 30, cols: 300, full: true, cursor: [1, 4], scroll: 0, lines: [[0, [['ab', -1, -1, 0], ['cd', 1, -1, 1]]], [1, [['x', 256 + 0xff5f87, 4, 16 | 8]]]] };
+  const ansi = screenAnsi(screen);
+  assert.ok(ansi.startsWith('\x1b[?25l\x1b[?7l\x1b[0m\x1b[2J'), 'a full screen starts from a clean one, with no wrap to scroll it');
+  assert.ok(ansi.includes('\x1b[1;1H\x1b[0m\x1b[2K\x1b[0mab\x1b[0;1;38;5;1mcd'));
+  assert.ok(ansi.includes('\x1b[2;1H\x1b[0m\x1b[2K\x1b[0;4;7;38;2;255;95;135;48;5;4mx'));
+  assert.ok(ansi.endsWith('\x1b[0m\x1b[2;5H\x1b[?25h'), 'the cursor ends where the agent has it');
+  const full = decodeFrame(screenFrame(screen));
+  assert.deepEqual([full.kind, full.rows, full.cols], ['snapshot', 30, 300]);
+  assert.equal(new TextDecoder().decode(full.data), ansi);
+  const partial = { ...screen, full: false, cursor: null, lines: [[2, [['ç', -1, -1, 0]]]] };
+  const frame = decodeFrame(screenFrame(partial));
+  assert.equal(frame.kind, 'output', 'a change repaints only its rows');
+  assert.equal(new TextDecoder().decode(frame.data), '\x1b[?25l\x1b[?7l\x1b[3;1H\x1b[0m\x1b[2K\x1b[0mç\x1b[0m');
+  assert.deepEqual([wheelLines(-120), wheelLines(53), wheelLines(0)], [3, -3, 0], 'the wheel up shows older lines');
+  const flags = rust('src/pwa/screen.rs');
+  for (const [name, value] of [['BOLD', 1], ['DIM', 2], ['ITALIC', 4], ['UNDERLINE', 8], ['INVERSE', 16]]) assert.match(flags, new RegExp(`pub const ${name}: u8 = ${value};`));
+});
+
+test('a terminal on another Octo opens, types, pastes, scrolls and closes through the link', async () => {
+  const { RemoteView } = await import('../js/remoteterm.js');
+  const sent = [];
+  let running = true;
+  const view = new RemoteView((message) => sent.push(message), () => running);
+  const frames = [];
+  const handlers = view.handlers({ copy: 'kept', image: 'kept' });
+  assert.equal(handlers.copy, 'kept', 'what does not travel stays as the window had it');
+  const first = await handlers.open(7, { rows: 30, cols: 100 }, (frame) => frames.push(frame));
+  handlers.input(first, new TextEncoder().encode('ls ção\r'));
+  handlers.paste(first, 'two\nlines');
+  handlers.resize(first, { rows: 40, cols: 120 });
+  handlers.wheel(first, -100);
+  handlers.wheel(first, 0);
+  assert.deepEqual(sent, [
+    { type: 'open', agent: 7, rows: 30, cols: 100 },
+    { type: 'keys', data: 'ls ção\r' },
+    { type: 'paste', text: 'two\nlines' },
+    { type: 'size', rows: 40, cols: 120 },
+    { type: 'scroll', lines: 3 },
+  ]);
+  const screen = { agent: 7, rows: 30, cols: 100, full: true, cursor: null, scroll: 0, lines: [] };
+  view.onScreen({ ...screen, agent: 8 });
+  assert.equal(frames.length, 0, 'the screen of another agent is not drawn here');
+  view.onScreen(screen);
+  assert.equal(frames.length, 1);
+  running = false;
+  view.settle();
+  view.settle();
+  assert.deepEqual(frames.slice(1).map((frame) => Array.from(frame)), [[2]], 'an agent that stopped ends the terminal once, so it reopens when the agent is back');
+  sent.length = 0;
+  const second = await handlers.open(9, { rows: 30, cols: 100 }, () => {});
+  handlers.input(first, new TextEncoder().encode('late'));
+  handlers.close(first);
+  assert.deepEqual(sent, [{ type: 'open', agent: 9, rows: 30, cols: 100 }], 'a terminal that was replaced no longer types or closes the new one');
+  handlers.close(second);
+  assert.deepEqual(sent.at(-1), { type: 'close' });
+  const names = [...rust('src/pwa/protocol.rs').matchAll(/^    (Open|Keys|Paste|Size|Scroll|Close)\b/gm)].map((match) => match[1].toLowerCase());
+  assert.deepEqual([...new Set(names)].sort(), ['close', 'keys', 'open', 'paste', 'scroll', 'size'], 'every message is one the other Octo knows');
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /case 'screen':\n\s*if \(remoteView\) remoteView\.onScreen\(message\);/);
+  assert.match(main, /return remoteView \? remoteView\.handlers\(\{ \.\.\.local, image: onlyHere, drops: \(\) => \{\} \}\) : local;/);
 });

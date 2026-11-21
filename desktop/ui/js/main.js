@@ -5,6 +5,8 @@ import { openProjectMenu, renderBoard, renderHead, spinBoard, stopOrRemove, tick
 import { mark, usesKai } from './brand.js';
 import { initComposer, renderComposer, renderPalette, setCommandRunner, toggleWorktree } from './composer.js';
 import { renameSession, runCommand } from './commands.js';
+import { activeDevice, agentToReopen, switchDevice } from './device.js';
+import { currentDevice, renderLinkProblem, watchDevices } from './devices.js';
 import { closeMenu, confirm, menuShown, showCompare, showDiff, showTests } from './dialogs.js';
 import { showFolderMade, showFolderSearch, showFolders } from './folders.js';
 import { $, svg } from './dom.js';
@@ -25,6 +27,7 @@ import { applyTheme, initSound, pickSection, renderSettings, setAgentOpener, wat
 import { initDetailsWidth, initFlyout, initPanelToggles, initSidebarWidth, promptNewSession, renderSidebar, spinSidebar } from './sidebar.js';
 import { findAgent, inSession, saveTabs, selectSession, setGridSize, setView, state, visible } from './state.js';
 import { initStatusBar, renderStatusBar } from './statusbar.js';
+import { RemoteView } from './remoteterm.js';
 import { initTabs, renderTabs, tabShown } from './tabs.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
@@ -44,10 +47,13 @@ const PAGES = {
 };
 const VIEWS = ['overview', 'agent-view', 'help-view', 'settings-view', 'octo-view'];
 
+const REMOTE = activeDevice();
+const remoteView = REMOTE ? new RemoteView(send, (id) => alive(findAgent(id))) : null;
 const handlers = { open: (agent) => openAgent(agent), term: terminalHandlers(gridShortcut) };
 let terminal = null;
 let watchedState = null;
 let pageAfterReload = null;
+let agentAfterReload = null;
 const alerting = { previous: new Map(), last: new Map(), title: null };
 
 function sessionNames() {
@@ -151,7 +157,14 @@ function onFilter() {
 }
 
 function render() {
-  if (!state.overview) return;
+  if (!state.overview) {
+    if (REMOTE && state.link) {
+      document.documentElement.dataset.away = 'empty';
+      renderLinkProblem(state.link);
+    }
+    return;
+  }
+  delete document.documentElement.dataset.away;
   renderTabs();
   renderMascot();
   renderSidebar(onSelect, openAgent);
@@ -316,9 +329,16 @@ const commands = {
 function onMessage(message) {
   switch (message.type) {
     case 'welcome':
+      resumeRemote();
       state.host = message.host;
       state.version = message.version;
       send(viewRequest());
+      break;
+    case 'link':
+      onLink(message.phase);
+      break;
+    case 'screen':
+      if (remoteView) remoteView.onScreen(message);
       break;
     case 'state':
       state.skew = Date.now() - message.now;
@@ -327,11 +347,18 @@ function onMessage(message) {
       settleTabs();
       markSeenWhileWatching();
       restartWhenStopped(message.agents);
-      watchInstalls(message.agents);
-      watchAgentUpdates(message.agents);
+      if (!REMOTE) {
+        watchInstalls(message.agents);
+        watchAgentUpdates(message.agents);
+      }
       raiseAlerts(message.agents);
       render();
+      if (remoteView) remoteView.settle();
       reopenTerminal();
+      if (agentAfterReload !== null) {
+        openAgent(findAgent(agentAfterReload));
+        agentAfterReload = null;
+      }
       if (pageAfterReload) {
         openPage(pageAfterReload);
         pageAfterReload = null;
@@ -398,6 +425,37 @@ function onMessage(message) {
     default:
       break;
   }
+}
+
+function onLink(phase) {
+  const before = state.link;
+  state.link = phase;
+  document.documentElement.dataset.link = phase;
+  const device = currentDevice();
+  const name = device ? device.name : t('the other device');
+  if (before === 'live' && phase !== 'live') toast(t('Lost the connection to {name} · trying again', { name }), 'warn');
+  else if (phase === 'live' && before && before !== 'live' && state.overview) toast(t('Connected to {name} again', { name }), 'success');
+  render();
+}
+
+function onDevices() {
+  if (!REMOTE || state.overview) return;
+  const device = currentDevice();
+  if (device) $('host').textContent = device.name;
+  render();
+}
+
+function resumeRemote() {
+  if (!remoteView) return;
+  deactivateGrid();
+  if (!watching()) return;
+  const agent = findAgent(state.active);
+  if (agent) terminal.open(agent.id).catch((err) => toast(t('could not open the terminal: {error}', { error: err }), 'error'));
+}
+
+function onlyHere() {
+  toast(t('Pasting an image only works on this computer for now.'), 'info');
+  return Promise.resolve(null);
 }
 
 function switchSession(step) {
@@ -481,6 +539,11 @@ function pasteImage(bytes) {
 }
 
 function terminalHandlers(shortcut) {
+  const local = localHandlers(shortcut);
+  return remoteView ? remoteView.handlers({ ...local, image: onlyHere, drops: () => {} }) : local;
+}
+
+function localHandlers(shortcut) {
   return {
     open: (agent, size, onFrame) => invoke('term_open', { agent, rows: size.rows, cols: size.cols, channel: channel(onFrame) }),
     input: (session, bytes) => invoke('term_input', { session, data: Array.from(bytes) }).catch(() => {}),
@@ -609,14 +672,24 @@ function start() {
   setInterval(tick, TICK_MS);
   setInterval(peek, PEEK_MS);
   setInterval(askDetails, DETAILS_MS);
-  invoke('home_dir').then((home) => {
-    state.home = home;
-  }).catch(() => {});
+  if (!REMOTE) {
+    invoke('home_dir').then((home) => {
+      state.home = home;
+    }).catch(() => {});
+  }
+  agentAfterReload = agentToReopen();
+  watchDevices(onDevices);
   invoke('update_ready').then((version) => version && announceUpdate(version)).catch(() => {});
   window.__TAURI__.event.listen('update-ready', (event) => announceUpdate(event.payload));
-  window.__TAURI__.event.listen('island-open', (event) => openAgent(findAgent(event.payload)));
-  connect(onMessage).catch((err) => toast(t('could not reach Octo: {error}', { error: err }), 'error'));
-  checkAgentUpdates(openAgent);
+  window.__TAURI__.event.listen('island-open', (event) => {
+    if (REMOTE) switchDevice(null, event.payload);
+    else openAgent(findAgent(event.payload));
+  });
+  connect(onMessage, REMOTE).catch((err) => {
+    if (REMOTE) switchDevice(null);
+    else toast(t('could not reach Octo: {error}', { error: err }), 'error');
+  });
+  if (!REMOTE) checkAgentUpdates(openAgent);
   $('task').focus();
 }
 

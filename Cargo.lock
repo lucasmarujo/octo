@@ -2867,13 +2867,16 @@ dependencies = [
  "gethostname",
  "objc2",
  "orkai",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-notification",
+ "tungstenite",
  "ureq",
+ "webpki-roots",
 ]
 
 [[package]]

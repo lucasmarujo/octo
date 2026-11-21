@@ -6,8 +6,8 @@ export function channel(onMessage) {
   return created;
 }
 
-export async function connect(onMessage) {
-  await core().invoke('attach', { channel: channel(onMessage) });
+export async function connect(onMessage, device = null) {
+  await core().invoke('attach', { channel: channel(onMessage), device });
 }
 
 export function send(message) {
