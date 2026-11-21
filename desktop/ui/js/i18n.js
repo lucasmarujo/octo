@@ -312,7 +312,7 @@ export const PT = {
   'Always on in the Old theme.': 'Sempre ligado no tema Antigo.',
   'The animated Kai replaces the Octo mark in the sidebar, in any theme.': 'O Kai animado substitui a marca do Octo na barra lateral, em qualquer tema.',
   'Island on the screen': 'Ilha na tela',
-  'A small pill on the top edge of the screen, above every window, shows what is working, done or waiting for you. Rest the mouse on it to see the agents of each project.': 'Uma pílula pequena na borda de cima da tela, sobre qualquer janela, mostra o que está trabalhando, o que terminou e o que espera você. Deixe o mouse sobre ela para ver os agentes de cada projeto.',
+  'Hover over the island to see your agents. Drag the pill or the panel header to any edge of your screen.': 'Passe o mouse sobre a ilha para ver seus agentes. Arraste a pílula ou o cabeçalho do painel para qualquer borda da tela.',
   'Open Octo': 'Abrir o Octo',
   '{count} idle': '{count} ociosos',
   'and {count} more': 'e mais {count}',

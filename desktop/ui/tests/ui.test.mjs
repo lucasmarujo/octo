@@ -2999,14 +2999,36 @@ test('the island counts every agent that is still around and puts who needs you 
 test('the island grows from the pill to the panel, and under a notch it keeps the pill on top', async () => {
   const { islandShape } = await import('../js/islandview.js');
   const [pill, panel] = [{ width: 132, height: 30 }, { width: 360, height: 331 }];
-  assert.deepEqual(islandShape(pill, panel, null, false), { collapsed: pill, expanded: panel, shown: pill });
-  assert.deepEqual(islandShape(pill, panel, null, true).shown, panel);
+  const layout = { edge: 'top', offset: 220 };
+  const viewport = { width: 440, height: 480 };
+  const collapsed = { ...pill, x: 154, y: 0 };
+  const expanded = { ...panel, x: 40, y: 0 };
+  assert.deepEqual(islandShape(pill, panel, null, false, layout, viewport), { collapsed, expanded, shown: collapsed });
+  assert.deepEqual(islandShape(pill, panel, null, true, layout, viewport).shown, expanded);
   const notch = { width: 184, height: 38 };
   const wings = { width: 364, height: 38 };
-  const under = islandShape(wings, panel, notch, true);
-  assert.deepEqual(under.expanded, { width: 364, height: 369 }, 'the panel opens below the notch, as wide as the wings');
+  const under = islandShape(wings, panel, notch, true, layout, viewport);
+  assert.deepEqual(under.expanded, { x: 38, y: 0, width: 364, height: 369 }, 'the panel opens below the notch, as wide as the wings');
   assert.deepEqual(under.shown, under.expanded);
-  assert.deepEqual(islandShape(wings, panel, notch, false).shown, wings);
+  assert.deepEqual(islandShape(wings, panel, notch, false, layout, viewport).shown, { ...wings, x: 38, y: 0 });
+});
+
+test('the island opens inward at all four edges and keeps the panel on screen near a corner', async () => {
+  const { islandShape } = await import('../js/islandview.js');
+  const pill = { width: 132, height: 30 };
+  const panel = { width: 360, height: 331 };
+  const viewport = { width: 440, height: 480 };
+  const docks = [
+    ['top', 414, [308, 0], [80, 0]],
+    ['bottom', 100, [34, 450], [0, 149]],
+    ['left', 100, [0, 85], [0, 0]],
+    ['right', 410, [308, 395], [80, 149]],
+  ];
+  for (const [edge, offset, [pillX, pillY], [panelX, panelY]] of docks) {
+    const shape = islandShape(pill, panel, null, true, { edge, offset }, viewport);
+    assert.deepEqual(shape.collapsed, { ...pill, x: pillX, y: pillY }, edge);
+    assert.deepEqual(shape.shown, { ...panel, x: panelX, y: panelY }, edge);
+  }
 });
 
 test('the island is a page of its own that only asks the core for what the core offers', () => {
@@ -3018,7 +3040,7 @@ test('the island is a page of its own that only asks the core for what the core 
   const core = rust('desktop/src/island.rs');
   const handlers = rust('desktop/src/link.rs').match(/generate_handler!\[([\s\S]*?)\]/)[1];
   const invoked = [...new Set([...page.matchAll(/invoke\('(\w+)'/g)].map(([, name]) => name))].sort();
-  assert.deepEqual(invoked, ['island_attach', 'island_notch', 'island_open', 'island_shape']);
+  assert.deepEqual(invoked, ['island_attach', 'island_drag', 'island_layout', 'island_notch', 'island_open', 'island_shape']);
   for (const name of invoked) {
     assert.match(core, new RegExp(`pub fn ${name}\\(`), name);
     assert.ok(handlers.includes(`island::${name}`), `${name} is registered`);
@@ -3058,16 +3080,16 @@ test('the island is turned on in Appearance, saved with the settings, and only o
   }
 });
 
-test('the island wears the theme, hangs from the top edge and moves like one piece', () => {
+test('the island wears the theme, stays flat against its edge and moves like one piece', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.match(css, /:root\[data-island\], :root\[data-island\] body \{ background: transparent; \}/, 'only the island is painted on the screen');
   const island = css.split('\n').find((line) => line.startsWith('.island {'));
-  assert.match(island, /position: fixed; top: 0; left: 50%; translate: -50% 0;/);
-  assert.match(island, /border-radius: 0 0 16px 16px; background: var\(--color-bg\);/, 'flat against the edge, round below, in the color of the theme');
+  assert.match(island, /position: fixed;/);
+  assert.match(island, /border-radius: 0 0 var\(--island-radius\) var\(--island-radius\); background: var\(--color-bg\);/, 'flat against the edge, round below, in the color of the theme');
   assert.match(css, /\.island\[data-ready\]\[data-open="true"\] \{[^}]*transition: width 460ms var\(--ease-island\), height 460ms var\(--ease-island\)/, 'it springs open');
   assert.match(css, /\.island\[data-ready\] \{[^}]*transition: width 320ms var\(--ease-out\), height 320ms var\(--ease-out\)/, 'and settles back');
   assert.match(css, /\.island\[data-mood="needs"\]::after \{ animation: island-needs 1\.8s ease-in-out infinite; \}/, 'the edge glows while someone waits for you');
-  assert.match(css, /\.island-panel \{[^}]*width: 360px; max-height: 400px;/, 'a small panel, never a second app');
+  assert.match(css, /\.island-panel \{[^}]*width: min\(360px, 100vw\); max-height: min\(400px, 100vh\);/, 'a small panel, never a second app');
   const rules = css.split('\n').filter((line) => /^(\.island|:root\[data-(island|notch)\])/.test(line));
   assert.ok(rules.length > 35, `only ${rules.length} rules found`);
   for (const rule of rules) assert.doesNotMatch(rule.replace(/box-shadow: [^;]+;/g, ''), /#[0-9a-fA-F]{3,8}\b|rgba?\(/, `only theme tokens, so every theme works: ${rule.slice(0, 60)}`);

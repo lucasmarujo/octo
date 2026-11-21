@@ -11,12 +11,15 @@ import { channel, invoke } from './transport.js';
 const SPIN_MS = 100;
 const TICK_MS = 1000;
 const HOVER_EVENT = 'island-hover';
+const LAYOUT_EVENT = 'island-layout';
 const PAUSED_MARK = '‖';
 const DONE_MARK = '✓';
 const IDLE_MARK = '●';
 const MAX_STAGGER = 12;
+const START_AFTER_PX = 6;
 
-const view = { overview: null, skew: 0, frame: 0, open: false, notch: null, shape: '', spinning: 0 };
+const view = { overview: null, skew: 0, frame: 0, open: false, notch: null, layout: null, shape: '', spinning: 0 };
+let primaryNotch;
 
 const now = () => Date.now() - view.skew;
 const shown = () => (view.overview ? islandAgents(view.overview.agents) : []);
@@ -118,10 +121,15 @@ function tickTimes() {
 }
 
 function fit() {
+  if (!view.layout) return;
   const [island, pill, panel] = [$('island'), $('island-pill'), $('island-panel')];
-  const shape = islandShape({ width: pill.offsetWidth, height: pill.offsetHeight }, { width: panel.offsetWidth, height: panel.offsetHeight }, view.notch, view.open);
-  island.style.width = `${shape.shown.width}px`;
-  island.style.height = `${shape.shown.height}px`;
+  const shape = islandShape(
+    { width: pill.offsetWidth, height: pill.offsetHeight },
+    { width: panel.offsetWidth, height: panel.offsetHeight },
+    view.notch, view.open, view.layout, { width: window.innerWidth, height: window.innerHeight },
+  );
+  const { x, y, width, height } = shape.shown;
+  Object.assign(island.style, { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` });
   const reported = JSON.stringify([shape.collapsed, shape.expanded]);
   if (reported !== view.shape) {
     view.shape = reported;
@@ -174,6 +182,59 @@ function setOpen(on) {
   render();
 }
 
+function setLayout(layout) {
+  view.layout = layout;
+  view.notch = layout.notch ? primaryNotch : null;
+  const island = $('island');
+  if (island.hasAttribute('data-ready')) {
+    island.setAttribute('data-docking', '');
+    requestAnimationFrame(() => requestAnimationFrame(() => island.removeAttribute('data-docking')));
+  }
+  island.dataset.edge = layout.edge;
+  document.documentElement.toggleAttribute('data-notch', Boolean(view.notch));
+  render();
+}
+
+function initDrag(island) {
+  let press;
+  let dragged = false;
+  island.addEventListener('pointerdown', (event) => {
+    if (press || event.button !== 0) return;
+    dragged = false;
+    const handle = event.target.closest('#island-pill, #island-head');
+    if (!handle) return;
+    handle.setPointerCapture(event.pointerId);
+    press = { handle, id: event.pointerId, x: event.clientX, y: event.clientY };
+  });
+  window.addEventListener('pointermove', (event) => {
+    if (!press || event.pointerId !== press.id || press.started) return;
+    if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < START_AFTER_PX) return;
+    island.setPointerCapture(event.pointerId);
+    island.setAttribute('data-dragging', '');
+    press.started = invoke('island_drag', { action: 'start' }).catch(() => {});
+  });
+  const finish = (event) => {
+    if (!press || event.pointerId !== press.id) return;
+    const { started } = press;
+    press = null;
+    if (!started) return;
+    island.removeAttribute('data-dragging');
+    dragged = event.type === 'pointerup';
+    const action = dragged ? 'drop' : 'cancel';
+    started.then(() => invoke('island_drag', { action })).catch(() => {});
+  };
+  island.addEventListener('click', (event) => {
+    if (!dragged || event.detail === 0) return;
+    dragged = false;
+    event.stopImmediatePropagation();
+  }, true);
+  window.addEventListener('pointerup', finish);
+  window.addEventListener('pointercancel', finish);
+  island.addEventListener('lostpointercapture', (event) => {
+    if (event.target === (press?.started ? island : press?.handle)) finish(event);
+  });
+}
+
 function onMessage(message) {
   if (message.type !== 'state') return;
   view.skew = Date.now() - message.now;
@@ -197,15 +258,17 @@ async function start() {
   new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-kai'] });
   document.addEventListener('contextmenu', (event) => event.preventDefault());
   $('island-head').addEventListener('click', () => open(null));
-  view.notch = await invoke('island_notch').catch(() => null);
-  if (view.notch) {
-    document.documentElement.toggleAttribute('data-notch', true);
-    document.documentElement.style.setProperty('--notch-width', `${view.notch.width}px`);
-    document.documentElement.style.setProperty('--notch-height', `${view.notch.height}px`);
+  initDrag($('island'));
+  primaryNotch = await invoke('island_notch').catch(() => null);
+  if (primaryNotch) {
+    document.documentElement.style.setProperty('--notch-width', `${primaryNotch.width}px`);
+    document.documentElement.style.setProperty('--notch-height', `${primaryNotch.height}px`);
   }
-  render();
-  setInterval(() => view.open && tickTimes(), TICK_MS);
+  await window.__TAURI__.event.listen(LAYOUT_EVENT, (event) => setLayout(event.payload));
   await window.__TAURI__.event.listen(HOVER_EVENT, (event) => setOpen(Boolean(event.payload)));
+  setLayout(await invoke('island_layout'));
+  window.addEventListener('resize', fit);
+  setInterval(() => view.open && tickTimes(), TICK_MS);
   await invoke('island_attach', { channel: channel(onMessage) });
   if (document.fonts) document.fonts.ready.then(fit);
 }
