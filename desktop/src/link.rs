@@ -240,6 +240,8 @@ pub fn run() -> io::Result<()> {
             term::term_resize,
             term::term_close,
             island::island_attach,
+            island::island_drag,
+            island::island_layout,
             island::island_shape,
             island::island_notch,
             island::island_open
