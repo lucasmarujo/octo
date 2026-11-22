@@ -527,7 +527,7 @@ the same time.
 3. Optional: *share › add to home screen* puts orkai one tap away, like an app.
 
 The sidebar shows `off`, `on` or how many phones are connected (`● 2`). On the PWA screen, `d` turns it off
-and `n` generates a new code and a new address, which disconnects and forgets the phones already paired.
+and `n` generates a new code, which disconnects and forgets the phones already paired.
 Turning it off in one orkai window turns it off in all of them, and it stays off until you turn it on.
 The bridge writes what happens to the tunnel and the phones in `pwa.log`, in the data folder.
 
@@ -549,19 +549,24 @@ the overview when a state changes and, in the terminal, only the screen rows tha
 
 To work away from home without opening ports on your router, orkai uses a tunnel that only carries bytes:
 
-- **cloudflare** (default, no account): a Cloudflare *quick tunnel*. The first time, orkai downloads the
-  official `cloudflared` from `github.com/cloudflare/cloudflared` into the `bin/` folder and checks the
-  published SHA-256 before using it. If `cloudflared` is already on the `PATH`, it uses that one. The
-  tunnel is saved in `pwa-tunnel.json`, so the address stays the same when the internet drops and comes
-  back, when `cloudflared` or the bridge restarts and when the PWA is turned off and on again within a few
-  minutes: the phone reconnects by itself, even away from home. Cloudflare deletes a quick tunnel that has
-  been offline for longer (somewhere between 5 and 20 minutes), for example while the computer is off or
-  asleep; orkai then opens a new one and the new QR code shows up on its own, as it does after
-  `n`/`--new-code`. For an address that never changes, use tailscale.
+- **cloudflare** (default, no account): a Cloudflare *quick tunnel* behind a **fixed address**. The first
+  time, orkai downloads the official `cloudflared` from `github.com/cloudflare/cloudflared` into the `bin/`
+  folder and checks the published SHA-256 before using it. If `cloudflared` is already on the `PATH`, it
+  uses that one. The tunnel is saved in `pwa-tunnel.json` and reused, but Cloudflare deletes a quick tunnel
+  that has been offline for a while (somewhere between 5 and 20 minutes), for example while the computer is
+  off or asleep, and orkai then opens a new one. The phone never notices: the QR code carries the fixed
+  address of this computer, `https://<id>.octo.marujo.dev`, which only answers with a redirect to the tunnel
+  of the moment. Restart the computer or turn the PWA off and on, and the phone reconnects by itself, with
+  no new scan. The id is 128 random bits made on this computer and kept in `pwa-relay.json` next to a
+  secret; only that secret can change where the address points, so nobody else can take it or be given the
+  same one. The service behind it (`relay/` in this repository) carries no traffic: it sees the id, the
+  address of the tunnel and the IP of whoever asks, and keeps no log of them. A phone paired before fixed
+  addresses existed is told the address once, by notification.
 - **tailscale**: the phone talks to the computer **peer to peer** over your tailnet (`tailscale serve`),
   with a fixed address. The phone needs to be on the same tailnet.
 
-No server of yours or of orkai sits in the middle.
+No server of yours or of orkai carries what the phone and the computer say to each other: the fixed address
+only points the phone to the tunnel.
 
 ### Security
 
@@ -774,8 +779,9 @@ at [octo.marujo.dev/privacy](https://octo.marujo.dev/privacy/). They only use th
   Antigravity update server) to offer an update;
 - plan usage: each agent's login token goes only to the service that issued it (see Security, above);
 - the orkai PWA, only after you turn it on: the Cloudflare quick tunnel, with `cloudflared` downloaded from
-  Cloudflare's GitHub release, and a query to `cloudflare-dns.com` that waits for the tunnel's address to
-  exist before showing the QR code; or `tailscale serve`;
+  Cloudflare's GitHub release, a query to `cloudflare-dns.com` that waits for the tunnel's address to
+  exist before showing the QR code, and `octo-relay.marujo.dev`, which is told the tunnel's address so the
+  fixed address of this computer points to it; or `tailscale serve`;
 - the Windows Terminal profile, whose icon Windows Terminal loads from `https://octo.marujo.dev/orkai.ico`.
 
 ## Development

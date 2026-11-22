@@ -27,16 +27,16 @@
 <main class="wrap legal">
   <p class="kicker">octo · privacy policy</p>
   <h1>Privacy policy</h1>
-  <p class="legal-date">Last updated on November 10, 2026</p>
+  <p class="legal-date">Last updated on November 22, 2026</p>
 
   <p>Octo is a desktop app, made by OctoAI (Lucas Marujo), that runs AI coding agents such as Claude Code, Codex and OpenCode across your projects. This policy covers the Octo app for Windows, macOS and Linux, including the version in the Microsoft Store, the Octo phone app for Android and iPhone, and the legacy orkai command line tool.</p>
 
   <h2>In short</h2>
   <ul>
     <li>Octo has no account, no telemetry, no analytics, no ads and no crash reporting.</li>
-    <li>OctoAI runs no server that receives data from the app. Nothing about you, your projects or your agents is sent to OctoAI.</li>
+    <li>Nothing about you, your projects or your agents is sent to OctoAI. The only server OctoAI runs for the app is the one behind the fixed address of phone access, described below, and it never carries or sees what you do.</li>
     <li>Your sessions, settings and agent output stay on your computer, in the Octo data folder.</li>
-    <li>The few requests Octo makes go straight to GitHub, to the companies behind the agents you installed, and, only if you turn on phone access, to Cloudflare or Tailscale and, if you allow notifications in the phone app, to Expo. They are listed below.</li>
+    <li>The few requests Octo makes go straight to GitHub, to the companies behind the agents you installed, and, only if you turn on phone access, to Cloudflare or Tailscale, to the fixed address service of OctoAI and, if you allow notifications in the phone app, to Expo. They are listed below.</li>
   </ul>
 
   <h2>What stays on your computer</h2>
@@ -55,7 +55,7 @@
   <p>To show how much of each plan you have used, Octo reads the login token an agent already saved on your computer (for example in <code>~/.claude/.credentials.json</code> or <code>~/.codex/auth.json</code>) and sends it only to the company that issued it: Anthropic (<code>api.anthropic.com</code>), OpenAI (<code>chatgpt.com</code>), Kilo (<code>api.kilo.ai</code>), OpenCode (<code>opencode.ai</code>), xAI (<code>cli-chat-proxy.grok.com</code>) and Moonshot AI (<code>api.kimi.com</code>), along with the account or user ID that service already gave you when it asks for one. This happens while Octo is open, at most every two minutes. Octo never stores, logs or forwards these tokens. An agent you signed in with an API key, or not at all, is never contacted. For Antigravity, Octo asks the <code>agy</code> program itself for the usage, and <code>agy</code> contacts Google on its own.</p>
 
   <h3>Phone access, only after you turn it on</h3>
-  <p>Phone access is off by default. When you turn it on, Octo reaches your computer from your phone through a Cloudflare quick tunnel (<code>api.trycloudflare.com</code>, with <code>cloudflared</code> downloaded from Cloudflare's GitHub release if it is missing, and a lookup on <code>cloudflare-dns.com</code>) or, if you choose it, through your own Tailscale network. Everything between Octo and your phone after the first handshake is end-to-end encrypted with a key that never leaves your devices: Cloudflare carries the traffic and can see IP addresses, timing and your phone's browser details, but not your terminals, folders, agent names or usage. Octo keeps the model and system of each paired phone in its data folder so you can tell them apart.</p>
+  <p>Phone access is off by default. When you turn it on, Octo reaches your computer from your phone through a Cloudflare quick tunnel (<code>api.trycloudflare.com</code>, with <code>cloudflared</code> downloaded from Cloudflare's GitHub release if it is missing, and a lookup on <code>cloudflare-dns.com</code>) or, if you choose it, through your own Tailscale network. With the Cloudflare tunnel, the code your phone scans holds a fixed address of your computer under <code>octo.marujo.dev</code>, so the phone finds the computer again after it restarts. To keep that address pointing to the tunnel, Octo tells a small service run by OctoAI (<code>octo-relay.marujo.dev</code>) a random 128-bit id made on your computer and the address of the tunnel, and your phone asks that address where the tunnel is before it connects. That service only answers with a redirect: it carries no traffic, sees the IP address of whoever asks, as any server does, and keeps no log of it; it stores the id, the tunnel address and a hash of a secret that stops anyone else from moving your address. Everything between Octo and your phone after the first handshake is end-to-end encrypted with a key that never leaves your devices: Cloudflare carries the traffic and can see IP addresses, timing and your phone's browser details, but not your terminals, folders, agent names or usage. Octo keeps the model and system of each paired phone in its data folder so you can tell them apart.</p>
 
   <h3>Notifications on your phone, only if you allow them</h3>
   <p>If you allow notifications in the Octo phone app, the phone gives your computer, over the encrypted channel, a push token that Expo issues for the app. When an agent finishes or waits for you, Octo sends that token, the agent's name, whether it finished or is waiting, the agent's number and a random code your phone made up for that computer to Expo (<code>exp.host</code>), which passes the notification to Apple (APNs) or Google (Firebase Cloud Messaging) to show it on your phone. Your computer's name, your folders and what the agents print are never sent. Octo keeps the token in its data folder until you turn notifications off, pair your phones again or remove the app from the phone.</p>

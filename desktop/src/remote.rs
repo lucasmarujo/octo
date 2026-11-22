@@ -12,9 +12,10 @@ use orkai::util::lock;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 use serde::{Deserialize, Serialize};
-use tungstenite::http::Uri;
+use tungstenite::http::header::LOCATION;
+use tungstenite::http::{Response, Uri};
 use tungstenite::protocol::{CloseFrame, WebSocket};
-use tungstenite::{ClientRequestBuilder, Message};
+use tungstenite::{ClientRequestBuilder, HandshakeError, Message};
 
 pub const RETRY: [Duration; 5] = [
     Duration::from_millis(400),
@@ -29,6 +30,7 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(15);
 const TICK: Duration = Duration::from_millis(25);
 const SILENCE_LIMIT: Duration = Duration::from_secs(70);
+const MAX_MOVES: usize = 3;
 const SECURE_SCHEME: &str = "https";
 const LOCAL_SCHEME: &str = "http";
 const SECURE_PORT: u16 = 443;
@@ -489,6 +491,31 @@ fn user_agent() -> String {
     format!("Octo/{} ({PLATFORM})", env!("CARGO_PKG_VERSION"))
 }
 
+fn moved(from: &Address, response: &Response<Option<Vec<u8>>>) -> Option<Address> {
+    if !response.status().is_redirection() {
+        return None;
+    }
+    let next = Address::parse(response.headers().get(LOCATION)?.to_str().ok()?)?;
+    (next.secure || !from.secure).then_some(next)
+}
+
+fn shake(address: &Address) -> Result<WebSocket<Wire>, Phase> {
+    let mut target = address.clone();
+    for _ in 0..=MAX_MOVES {
+        let wire = dial(&target).map_err(|_| Phase::Offline)?;
+        let uri = target.socket_url().parse::<Uri>().map_err(|_| Phase::Offline)?;
+        let request = ClientRequestBuilder::new(uri).with_header("User-Agent", user_agent());
+        match tungstenite::client(request, wire) {
+            Ok((ws, _)) => return Ok(ws),
+            Err(HandshakeError::Failure(tungstenite::Error::Http(response))) => {
+                target = moved(&target, &response).ok_or(Phase::Offline)?;
+            }
+            Err(_) => return Err(Phase::Offline),
+        }
+    }
+    Err(Phase::Offline)
+}
+
 struct Session {
     ws: WebSocket<Wire>,
     channel: Channel,
@@ -498,10 +525,7 @@ struct Session {
 
 impl Session {
     fn open(address: &Address, secret: &Secret, client: &str) -> Result<Self, Phase> {
-        let wire = dial(address).map_err(|_| Phase::Offline)?;
-        let uri = address.socket_url().parse::<Uri>().map_err(|_| Phase::Offline)?;
-        let request = ClientRequestBuilder::new(uri).with_header("User-Agent", user_agent());
-        let (mut ws, _) = tungstenite::client(request, wire).map_err(|_| Phase::Offline)?;
+        let mut ws = shake(address)?;
         let own = Ephemeral::generate().map_err(|_| Phase::Offline)?;
         let hello = Greeting::Hello { version: VERSION, key: crypto::encode(own.public_key()) };
         let hello = serde_json::to_string(&hello).map_err(|_| Phase::Offline)?;
@@ -770,6 +794,79 @@ pub(crate) mod tests {
         octo.hub.nudge();
         assert!(rx.recv_timeout(Duration::from_millis(300)).is_err(), "a window that left hears nothing more");
         assert_eq!(remote.status().phase, Phase::Live, "the link stays up for the sidebar");
+    }
+
+    fn signpost(location: String, times: usize) -> Address {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = Address::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        thread::spawn(move || {
+            for _ in 0..times {
+                let Ok((mut stream, _)) = listener.accept() else { return };
+                let mut asked = [0u8; 2048];
+                let _ = stream.read(&mut asked);
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 307 Temporary Redirect
+Location: {location}
+Content-Length: 0
+Connection: close
+
+"
+                );
+            }
+        });
+        address
+    }
+
+    #[test]
+    fn a_fixed_address_that_points_to_where_the_other_octo_is_now_is_followed() {
+        let octo = other_octo("moved", "movedhost");
+        let fixed = signpost(format!("http://127.0.0.1:{}/ws", octo.port), 1);
+        let remote = Remote::start(fixed, octo.secret, "desk-1".into()).unwrap();
+        let status = settled(&remote, |status| status.phase == Phase::Live);
+        assert_eq!(status.host.as_deref(), Some("movedhost"));
+    }
+
+    #[test]
+    fn a_fixed_address_never_sends_a_secure_link_to_plain_http_or_around_in_circles() {
+        let secure = Address::parse("https://0123456789abcdef0123456789abcdef.octo.marujo.dev").unwrap();
+        let answer = |status: u16, location: &str| {
+            Response::builder().status(status).header(LOCATION, location).body(None::<Vec<u8>>).unwrap()
+        };
+        assert_eq!(
+            moved(&secure, &answer(307, "https://quiet-river.trycloudflare.com/ws")).map(|next| next.url()).as_deref(),
+            Some("https://quiet-river.trycloudflare.com")
+        );
+        assert_eq!(moved(&secure, &answer(307, "http://127.0.0.1:7470/ws")), None, "a secure link stays secure");
+        assert_eq!(moved(&secure, &answer(307, "http://evil.example.com/ws")), None);
+        assert_eq!(moved(&secure, &answer(307, "ftp://evil.example.com/ws")), None);
+        assert_eq!(moved(&secure, &answer(404, "https://quiet-river.trycloudflare.com/ws")), None);
+
+        let circle = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = circle.local_addr().unwrap().port();
+        let around = format!("http://127.0.0.1:{port}/ws");
+        let asked = Arc::new(Mutex::new(0usize));
+        let counted = Arc::clone(&asked);
+        thread::spawn(move || {
+            for stream in circle.incoming() {
+                let Ok(mut stream) = stream else { return };
+                *lock(&counted) += 1;
+                let mut request = [0u8; 2048];
+                let _ = stream.read(&mut request);
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 307 Temporary Redirect
+Location: {around}
+Content-Length: 0
+Connection: close
+
+"
+                );
+            }
+        });
+        let address = Address::parse(&format!("http://127.0.0.1:{port}")).unwrap();
+        assert!(matches!(shake(&address), Err(Phase::Offline)));
+        assert_eq!(*lock(&asked), MAX_MOVES + 1, "a circle is given up after a few moves");
     }
 
     #[test]

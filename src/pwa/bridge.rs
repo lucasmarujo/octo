@@ -16,6 +16,7 @@ use crate::pwa::cloudflared;
 use crate::pwa::crypto::{self, Secret};
 use crate::pwa::hub::{Device, Hub};
 use crate::pwa::push;
+use crate::pwa::relay;
 use crate::pwa::server::Server;
 use crate::pwa::tunnel::{self, QuickTunnel, Tunnel, TunnelKind};
 use crate::pwa::uploads;
@@ -23,7 +24,7 @@ use crate::store::Store;
 use crate::util::{lock, now_ms};
 
 pub const COMMAND: &str = "__pwa";
-pub const VERSION: u32 = 19;
+pub const VERSION: u32 = 20;
 pub const DEFAULT_PORT: u16 = 7470;
 pub const STALE_AFTER_MS: u64 = 15_000;
 pub const LINK_KEY: &str = "k";
@@ -125,6 +126,30 @@ fn saved_tunnel(home: &Home) -> io::Result<(QuickTunnel, bool)> {
     fsutil::write_json_atomic(&tunnel_path(home), &created)?;
     diag(home, &format!("created and saved the quick tunnel {}", created.url()));
     Ok((created, true))
+}
+
+fn adopt_fixed_address(home: &Home) -> io::Result<()> {
+    if relay::known(home) {
+        return Ok(());
+    }
+    if load_tunnel(home).is_some() {
+        fsutil::remove_file_if_exists(&tunnel_path(home))?;
+        diag(home, "this computer gets a fixed address; a tunnel only that address knows replaces the saved one");
+    }
+    relay::identity(home).map(|_| ())
+}
+
+fn fixed_address(home: &Home, tunnel: &str) -> io::Result<String> {
+    let address = match relay::publish(home, tunnel) {
+        Ok(address) => address,
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
+            relay::forget(home)?;
+            return Err(io::Error::other(err.to_string()));
+        }
+        Err(err) => return Err(err),
+    };
+    relay::answers(&address)?;
+    Ok(address)
 }
 
 pub fn read_info(home: &Home) -> Option<Info> {
@@ -314,6 +339,12 @@ impl State {
     }
 }
 
+struct Opened {
+    tunnel: Tunnel,
+    address: String,
+    created: bool,
+}
+
 struct Supervisor {
     state: Arc<State>,
     tunnel: Option<Tunnel>,
@@ -341,16 +372,22 @@ impl Supervisor {
             }
         }
         match self.connect() {
-            Ok((tunnel, moved)) => {
-                let url = tunnel.url().to_string();
-                diag(self.state.home(), &format!("the {} tunnel is up at {url}", tunnel.kind().label()));
-                if moved {
-                    push::announce_move(self.state.home(), &url);
+            Ok(Opened { tunnel, address, created }) => {
+                diag(
+                    self.state.home(),
+                    &format!(
+                        "the {} tunnel is up at {} and phones reach it at {address}",
+                        tunnel.kind().label(),
+                        tunnel.url()
+                    ),
+                );
+                if created {
+                    push::announce_move(self.state.home(), &address);
                 }
                 self.backoff = RETRY_FIRST;
                 self.tunnel = Some(tunnel);
                 self.state.update(|info| {
-                    info.url = Some(url);
+                    info.url = Some(address);
                     info.error = None;
                     info.phase = Phase::Ready;
                 });
@@ -386,12 +423,12 @@ impl Supervisor {
         diag(
             home,
             &format!(
-                "cloudflare no longer knows the tunnel {url}; a new one replaces it and the paired phones are told its address"
+                "cloudflare no longer knows the tunnel {url}; a new one replaces it behind the same fixed address"
             ),
         );
     }
 
-    fn connect(&self) -> io::Result<(Tunnel, bool)> {
+    fn connect(&self) -> io::Result<Opened> {
         let (home, port, kind) = {
             let info = lock(&self.state.info);
             (self.state.home().clone(), info.port, info.tunnel)
@@ -406,13 +443,17 @@ impl Supervisor {
                     }
                 };
                 self.enter(Phase::Connecting);
+                adopt_fixed_address(&home)?;
                 let (saved, created) = saved_tunnel(&home)?;
-                let opened = tunnel::cloudflare(&home, &program, port, &saved, &|| self.state.stop_requested())?;
-                Ok((opened, created))
+                let tunnel = tunnel::cloudflare(&home, &program, port, &saved, &|| self.state.stop_requested())?;
+                let address = fixed_address(&home, &saved.url())?;
+                Ok(Opened { tunnel, address, created })
             }
             TunnelKind::Tailscale => {
                 self.enter(Phase::Connecting);
-                tunnel::tailscale(port).map(|opened| (opened, false))
+                let tunnel = tunnel::tailscale(port)?;
+                let address = tunnel.url().to_string();
+                Ok(Opened { tunnel, address, created: false })
             }
         }
     }
@@ -580,6 +621,31 @@ mod tests {
         assert!(load_tunnel(&home).is_none());
         assert!(push::phones(&home).is_empty(), "a forgotten phone gets no more notifications");
         assert_ne!(load_secret(&home).unwrap(), secret);
+        std::fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn a_computer_that_gets_its_fixed_address_starts_on_a_tunnel_nobody_knows() {
+        let home = home();
+        let saved = QuickTunnel {
+            id: "9d03eb81-8e8c-4b1d-80b0-ca686c0ef16b".into(),
+            account_tag: "5ab4e9dfbd435d24068829fda0077963".into(),
+            secret: "c2VjcmV0".into(),
+            hostname: "boost-rid-constant-tmp.trycloudflare.com".into(),
+        };
+        fsutil::write_json_atomic(&tunnel_path(&home), &saved).unwrap();
+        adopt_fixed_address(&home).unwrap();
+        assert!(load_tunnel(&home).is_none(), "a phone on the old tunnel would look like one on the fixed address");
+        let identity = relay::identity(&home).unwrap();
+        assert!(log_path(&home).exists());
+
+        fsutil::write_json_atomic(&tunnel_path(&home), &saved).unwrap();
+        adopt_fixed_address(&home).unwrap();
+        assert_eq!(load_tunnel(&home), Some(saved), "afterwards the saved tunnel is reused as before");
+        assert_eq!(relay::identity(&home).unwrap(), identity, "and the address never changes");
+
+        forget_phones(&home).unwrap();
+        assert_eq!(relay::identity(&home).unwrap(), identity, "a new code keeps the address of the computer");
         std::fs::remove_dir_all(home.root()).unwrap();
     }
 

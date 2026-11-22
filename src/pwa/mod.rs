@@ -8,6 +8,7 @@ pub mod hub;
 pub mod protocol;
 pub mod push;
 pub mod qr;
+pub mod relay;
 pub mod screen;
 pub mod serve;
 pub mod server;
