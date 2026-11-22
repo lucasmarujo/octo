@@ -7,6 +7,20 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.47',
+    date: '2026-11-22',
+    en: [
+      'A paired phone stays paired when the computer restarts. The code in Pair phone now carries a fixed address of this computer, so restarting it, or turning phone access off and on, no longer asks for a new scan: the phone reconnects by itself.',
+      'The address is random, made on this computer and locked to a secret only it has, so nobody else can take it or be given the same one. It only points the phone to the tunnel: everything still travels straight through Cloudflare, end-to-end encrypted, never through an Octo server.',
+      'A phone you already paired is told the fixed address by a notification the first time this version runs. If that notification is gone, scan the code once more and it is the last time. A device added by link in Devices needs its new link pasted once, for the same reason.',
+    ],
+    'pt-BR': [
+      'O celular pareado continua pareado quando o computador reinicia. O código em Parear celular agora leva um endereço fixo deste computador, então reiniciar, ou desligar e ligar o acesso pelo celular, não pede mais um novo escaneamento: o celular reconecta sozinho.',
+      'O endereço é aleatório, criado neste computador e preso a um segredo que só ele tem, então ninguém consegue tomá-lo nem receber um igual. Ele só aponta o celular para o túnel: tudo continua indo direto pela Cloudflare, criptografado de ponta a ponta, nunca por um servidor do Octo.',
+      'Um celular que você já pareou recebe o endereço fixo por uma notificação na primeira vez que esta versão roda. Se essa notificação se perdeu, escaneie o código mais uma vez e será a última. Um dispositivo adicionado por link em Dispositivos precisa do link novo colado uma vez, pelo mesmo motivo.',
+    ],
+  },
+  {
     version: '0.2.46',
     date: '2026-11-21',
     en: [
