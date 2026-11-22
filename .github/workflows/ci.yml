@@ -62,7 +62,7 @@ jobs:
       - name: Test the interface
         run: node --test desktop/ui/tests/ui.test.mjs
       - name: Test the fixed address service
-        run: node --test relay/tests/
+        run: node --test relay/tests/relay.test.mjs
       - name: Test the Windows installer
         if: matrix.os == 'windows-latest'
         run: cargo test -p orkai-desktop --test installer_e2e -- --ignored

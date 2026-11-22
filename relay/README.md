@@ -28,7 +28,7 @@ Node puro, sem dependências: `relay.mjs` tem as regras e `server.mjs` a rede e 
 ## Testes
 
 ```sh
-node --test relay/tests/
+node --test relay/tests/relay.test.mjs
 ```
 
 ## Deploy
