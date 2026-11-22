@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://octo.marujo.dev/sitemap.xml

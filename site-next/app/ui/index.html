@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Octo</title>
+    <link rel="stylesheet" href="vendor/xterm/xterm.css">
+    <link rel="stylesheet" href="styles.css">
+    <script src="vendor/xterm/xterm.js"></script>
+    <script src="vendor/xterm/addon-fit.js"></script>
+    <script src="vendor/xterm/addon-webgl.js"></script>
+    <script src="vendor/xterm/addon-web-links.js"></script>
+    <script src="vendor/xterm/addon-unicode11.js"></script>
+    <script type="module" src="js/main.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="titlebar" data-tauri-drag-region>
+        <nav id="tabs" class="tabs" data-tauri-drag-region></nav>
+        <button id="tabs-menu" class="footer-icon tabs-menu" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Tabs" title="Tabs" data-i18n-label="Tabs" data-i18n-title="Tabs"></button>
+        <div class="window-controls">
+          <button id="win-min" class="win-button" type="button" aria-label="Minimize" data-i18n-label="Minimize">
+            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg>
+          </button>
+          <button id="win-max" class="win-button" type="button" aria-label="Maximize" data-i18n-label="Maximize">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor" stroke-width="1"/></svg>
+          </button>
+          <button id="win-close" class="win-button close" type="button" aria-label="Close" data-i18n-label="Close">
+            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"/></svg>
+          </button>
+        </div>
+      </header>
+      <div class="body">
+        <aside class="sidebar">
+          <div id="sidebar-scroll" class="sidebar-scroll">
+            <div class="brand">
+              <span id="brand-mascot" class="brand-mascot"></span>
+              <div class="brand-text">
+                <span class="wordmark">Octo</span>
+                <span id="host" class="host"></span>
+              </div>
+            </div>
+            <section class="orchestrator">
+              <button id="open-octo" class="orchestrator-head" type="button" title="Orchestrator settings" data-i18n-title="Orchestrator settings">
+                <span class="caps" data-i18n="Orchestrator">Orchestrator</span>
+                <span id="octo-mode" class="orchestrator-mode"></span>
+              </button>
+              <nav id="octo-nav" class="orchestrator-nav" aria-label="Orchestrator" data-i18n-label="Orchestrator"></nav>
+            </section>
+            <section class="sessions">
+              <span class="caps" data-i18n="Sessions">Sessions</span>
+              <div id="sessions" class="session-list"></div>
+            </section>
+            <nav id="session-rail" class="session-rail" aria-label="Sessions" data-i18n-label="Sessions"></nav>
+            <section class="sessions">
+              <span class="caps" data-i18n="Devices">Devices</span>
+              <div id="devices" class="session-list"></div>
+            </section>
+            <nav id="device-rail" class="session-rail device-rail" aria-label="Devices" data-i18n-label="Devices" hidden></nav>
+          </div>
+          <section id="usage" class="usage" hidden></section>
+          <section id="usage-rings" class="usage-rings" hidden></section>
+          <footer class="sidebar-footer">
+            <button id="open-help" class="footer-icon" type="button" aria-label="How to use" title="How to use (F1)" data-i18n-label="How to use" data-i18n-title="How to use (F1)"></button>
+            <button id="open-settings" class="footer-icon" type="button" aria-label="Settings" title="Settings" data-i18n-label="Settings" data-i18n-title="Settings"></button>
+            <button id="pair" class="footer-icon phone-status" type="button" aria-label="Pair phone" title="Pair your phone (ctrl P)" data-i18n-label="Pair phone" data-i18n-title="Pair your phone (ctrl P)"></button>
+            <button id="sound" class="footer-icon" type="button" aria-pressed="true" aria-label="Sound on" title="Sound on"></button>
+            <div id="sound-popover" class="sound-popover" role="group" aria-label="Alert volume" data-i18n-label="Alert volume" hidden>
+              <input id="sound-volume" class="volume-slider" type="range" min="0" max="100" step="1" value="100" aria-label="Volume" data-i18n-label="Volume">
+              <span class="volume-value">100%</span>
+            </div>
+            <button id="whats-new" class="footer-icon whats-new" type="button" aria-label="What's new" title="What's new" data-i18n-label="What's new" data-i18n-title="What's new"></button>
+            <button id="sidebar-toggle" class="footer-icon sidebar-toggle" type="button"></button>
+          </footer>
+        </aside>
+        <div id="sidebar-resize" class="sidebar-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize the sidebar" title="Drag to resize, double click to reset" data-i18n-label="Resize the sidebar" data-i18n-title="Drag to resize, double click to reset"></div>
+        <main class="main">
+          <section id="overview" class="overview">
+            <header class="overview-head">
+              <div class="headline">
+                <h1 id="session-title" class="session-title" title="Double click to rename" data-i18n-title="Double click to rename"></h1>
+                <p id="session-summary" class="session-summary"></p>
+              </div>
+              <div class="head-actions">
+                <button id="recover" class="button warn" type="button" hidden></button>
+                <button id="project" class="filter" type="button" aria-haspopup="menu"></button>
+                <div id="grid-size" class="segmented" role="group" aria-label="Agents on screen" data-i18n-label="Agents on screen" hidden>
+                  <button type="button" data-size="4">4</button>
+                  <button type="button" data-size="6">6</button>
+                  <button type="button" data-size="8">8</button>
+                  <button type="button" data-size="10">10</button>
+                  <button type="button" data-size="12">12</button>
+                  <button type="button" data-size="all" data-i18n="All">All</button>
+                </div>
+                <div id="views" class="segmented" role="group" aria-label="View" data-i18n-label="View">
+                  <button type="button" data-view="board" data-i18n="Board">Board</button>
+                  <button type="button" data-view="list" data-i18n="List">List</button>
+                  <button type="button" data-view="grid" data-i18n="Grid">Grid</button>
+                </div>
+              </div>
+            </header>
+            <div id="board" class="board"></div>
+            <div id="list" class="list" hidden>
+              <div class="list-head">
+                <span class="cell-index caps">#</span>
+                <span class="cell-glyph"></span>
+                <span class="cell-name caps" data-i18n="Agent">Agent</span>
+                <span class="cell-kind caps" data-i18n="Type">Type</span>
+                <span class="cell-state caps" data-i18n="State">State</span>
+                <span class="cell-alive caps" data-i18n="Alive">Alive</span>
+                <span class="cell-doing caps" data-i18n="Doing">Doing</span>
+                <span class="cell-worktree caps" data-i18n="Worktree">Worktree</span>
+              </div>
+              <div id="list-body" class="list-body"></div>
+            </div>
+            <div id="grid" class="grid" hidden></div>
+            <form id="composer" class="composer" autocomplete="off">
+              <div id="palette" class="palette" role="listbox" hidden></div>
+              <div class="composer-line">
+                <span class="caret"></span>
+                <textarea id="task" class="task" rows="1" placeholder="Write a task…" data-i18n-placeholder="Write a task…" spellcheck="false"></textarea>
+                <div class="composer-hints">
+                  <span><b>/</b> <span data-i18n="commands &amp; skills">commands &amp; skills</span></span>
+                  <span><b>!</b> <span data-i18n="run in a terminal">run in a terminal</span></span>
+                  <span><b>ctrl ↑</b> <span data-i18n="history">history</span></span>
+                </div>
+              </div>
+              <div id="attachments" class="attachments" hidden></div>
+              <div class="composer-options">
+                <button id="who" class="chip" type="button" aria-haspopup="menu"></button>
+                <button id="model" class="chip" type="button" aria-haspopup="menu" hidden></button>
+                <button id="where" class="chip" type="button"></button>
+                <button id="options" class="toggle options-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-pressed="false"></button>
+                <button id="attach" class="toggle options-button" type="button" aria-pressed="false"></button>
+                <div class="grow"></div>
+                <span class="hint">⇧↵ <span data-i18n="new line">new line</span></span>
+                <button id="launch" class="button primary" type="submit"><span data-i18n="Launch">Launch</span> <span class="mono">↵</span></button>
+              </div>
+            </form>
+          </section>
+          <section id="agent-view" class="agent-view" hidden>
+            <header class="agent-head">
+              <div class="agent-heading">
+                <div id="agent-title" class="agent-title" title="Double click to rename" data-i18n-title="Double click to rename"></div>
+                <div id="agent-meta" class="agent-meta"></div>
+              </div>
+              <div id="agent-actions" class="agent-actions"></div>
+            </header>
+            <div class="workspace">
+              <div class="term-column">
+                <div id="term-info" class="term-info"></div>
+                <div id="terminal" class="term-frame"></div>
+              </div>
+              <div id="details-resize" class="sidebar-resize details-resize" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize the agent panel" title="Drag to resize, double click to reset" data-i18n-label="Resize the agent panel" data-i18n-title="Drag to resize, double click to reset"></div>
+              <aside id="details" class="details"></aside>
+            </div>
+            <footer id="tab-status" class="tab-status"></footer>
+            <button id="details-toggle" class="footer-icon details-toggle" type="button"></button>
+          </section>
+          <section id="help-view" class="help" hidden></section>
+          <section id="settings-view" class="settings-view" hidden></section>
+          <section id="octo-view" class="octo" hidden></section>
+        </main>
+      </div>
+      <footer id="statusbar" class="statusbar"></footer>
+      <div id="toasts" class="toasts" aria-live="polite"></div>
+      <div id="flyout" class="flyout" hidden></div>
+      <div id="menu" class="menu" role="menu" hidden></div>
+      <div id="commit-tip" class="commit-tip" role="tooltip" hidden></div>
+      <div id="tip" class="tip" role="tooltip"></div>
+      <dialog id="dialog" class="dialog"></dialog>
+    </div>
+  </body>
+</html>

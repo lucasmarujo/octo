@@ -1,0 +1,212 @@
+import { deviceStorage as storage } from './device.js';
+import { DEFAULT_GRID_SIZE, GRID_SIZES, OCTO_TAB, OVERVIEW_TAB, arrangeTabs, chosenModel } from './format.js';
+
+const SESSION_KEY = 'orkai.session';
+const EXPANDED_KEY = 'orkai.expanded';
+const WHO_KEY = 'orkai.who';
+const WHERE_KEY = 'orkai.where';
+const WORKTREE_KEY = 'orkai.worktree';
+const BYPASS_KEY = 'orkai.bypass';
+const REMOTE_KEY = 'orkai.remote';
+const MODEL_KEY = 'octo.model';
+const TABS_KEY = 'orkai.tabs';
+const PINNED_TABS_KEY = 'octo.pinnedTabs';
+const OCTO_TAB_KEY = 'octo.octoTab';
+const VIEW_KEY = 'orkai.view';
+const GRID_KEY = 'orkai.grid';
+const PROJECT_KEY = 'orkai.project';
+const USAGE_KEY = 'orkai.usage';
+
+export const VIEWS = ['board', 'list', 'grid'];
+
+const savedPins = storage.json(PINNED_TABS_KEY, null);
+const savedModels = storage.json(MODEL_KEY, {});
+const savedTabs = storage.json(TABS_KEY, []);
+const pinnedTabs = new Set(Array.isArray(savedPins) ? savedPins : [OVERVIEW_TAB]);
+const openTabs = Array.isArray(savedPins) ? savedTabs : [OVERVIEW_TAB, ...savedTabs];
+const octoTabOffered = storage.get(OCTO_TAB_KEY) !== null;
+if (!octoTabOffered) pinnedTabs.add(OCTO_TAB);
+
+export const state = {
+  host: '',
+  version: '',
+  overview: null,
+  usage: null,
+  orchestrator: null,
+  usageAt: 0,
+  usageOpen: storage.get(USAGE_KEY) === 'open',
+  skew: 0,
+  frame: 0,
+  session: storage.get(SESSION_KEY),
+  pendingSession: null,
+  expanded: new Set(storage.json(EXPANDED_KEY, [])),
+  who: storage.get(WHO_KEY),
+  where: storage.json(WHERE_KEY, {}),
+  worktree: storage.json(WORKTREE_KEY, null),
+  bypass: storage.get(BYPASS_KEY) === 'on',
+  remote: storage.get(REMOTE_KEY) === 'on',
+  model: savedModels && typeof savedModels === 'object' && !Array.isArray(savedModels) ? savedModels : {},
+  models: {},
+  attachments: [],
+  history: [],
+  recall: -1,
+  folders: null,
+  tabs: arrangeTabs(octoTabOffered ? openTabs : [OCTO_TAB, ...openTabs.filter((id) => id !== OCTO_TAB)], pinnedTabs),
+  pinned: pinnedTabs,
+  movingTab: null,
+  active: null,
+  view: VIEWS.includes(storage.get(VIEW_KEY)) ? storage.get(VIEW_KEY) : 'board',
+  gridSize: GRID_SIZES.includes(storage.get(GRID_KEY)) ? storage.get(GRID_KEY) : DEFAULT_GRID_SIZE,
+  projects: storage.json(PROJECT_KEY, {}),
+  previews: new Map(),
+  peekAt: 0,
+  details: null,
+  detailsAt: 0,
+  home: null,
+  selected: null,
+  skills: null,
+  updateReady: null,
+  link: null,
+  linkNote: null,
+};
+
+if (!octoTabOffered) {
+  storage.set(OCTO_TAB_KEY, 'on');
+  saveTabs();
+}
+
+export function findAgent(id) {
+  return agents().find((agent) => agent.id === id) || null;
+}
+
+export function saveTabs() {
+  storage.set(TABS_KEY, JSON.stringify(state.tabs));
+  storage.set(PINNED_TABS_KEY, JSON.stringify([...state.pinned]));
+}
+
+export function pinTab(id, on) {
+  if (on) state.pinned.add(id);
+  else state.pinned.delete(id);
+  state.tabs = arrangeTabs(state.tabs, state.pinned);
+  saveTabs();
+}
+
+export const now = () => Date.now() - state.skew;
+
+export function agents() {
+  return state.overview ? state.overview.agents : [];
+}
+
+export function inSession(name = state.session) {
+  return agents().filter((agent) => agent.session === name);
+}
+
+export function projectsInSession() {
+  return [...new Set(inSession().map((agent) => agent.project))];
+}
+
+export function currentProject() {
+  const chosen = state.projects[state.session];
+  return chosen && projectsInSession().includes(chosen) ? chosen : null;
+}
+
+export function setProject(project) {
+  if (project) state.projects[state.session] = project;
+  else delete state.projects[state.session];
+  storage.set(PROJECT_KEY, JSON.stringify(state.projects));
+}
+
+export function visible() {
+  const project = currentProject();
+  return project ? inSession().filter((agent) => agent.project === project) : inSession();
+}
+
+export function setView(view) {
+  state.view = view;
+  storage.set(VIEW_KEY, view);
+}
+
+export function setGridSize(size) {
+  state.gridSize = size;
+  storage.set(GRID_KEY, size);
+}
+
+export function selectSession(name) {
+  state.session = name;
+  storage.set(SESSION_KEY, name);
+}
+
+export function toggleExpanded(name) {
+  if (state.expanded.has(name)) state.expanded.delete(name);
+  else state.expanded.add(name);
+  storage.set(EXPANDED_KEY, JSON.stringify([...state.expanded]));
+}
+
+export function toggleUsage() {
+  state.usageOpen = !state.usageOpen;
+  storage.set(USAGE_KEY, state.usageOpen ? 'open' : null);
+}
+
+export function installedKinds() {
+  return state.overview ? state.overview.kinds : [];
+}
+
+export function currentWho() {
+  const kinds = installedKinds();
+  if (state.who && kinds.includes(state.who)) return state.who;
+  return kinds.includes('claude') ? 'claude' : kinds[0] || 'terminal';
+}
+
+export function setWho(kind) {
+  state.who = kind;
+  storage.set(WHO_KEY, kind);
+}
+
+export function currentWhere() {
+  const chosen = state.where[state.session];
+  if (chosen) return chosen;
+  const overview = state.overview;
+  if (!overview) return '~';
+  return overview.dirs[state.session] || overview.whereDir || '~';
+}
+
+export function setWhere(path) {
+  state.where[state.session] = path;
+  storage.set(WHERE_KEY, JSON.stringify(state.where));
+}
+
+export function worktreeOn() {
+  if (state.worktree !== null) return state.worktree;
+  return Boolean(state.overview && state.overview.worktree);
+}
+
+export function setWorktree(on) {
+  state.worktree = on;
+  storage.set(WORKTREE_KEY, JSON.stringify(on));
+}
+
+export function setBypass(on) {
+  state.bypass = on;
+  storage.set(BYPASS_KEY, on ? 'on' : null);
+}
+
+export function modelsOf(kind) {
+  const known = state.models[kind];
+  return known ? known.list : [];
+}
+
+export function currentModel() {
+  const kind = currentWho();
+  return chosenModel(modelsOf(kind), state.model[kind]);
+}
+
+export function setModel(kind, id) {
+  if (id) state.model[kind] = id;
+  else delete state.model[kind];
+  storage.set(MODEL_KEY, JSON.stringify(state.model));
+}
+
+export function setRemote(on) {
+  state.remote = on;
+  storage.set(REMOTE_KEY, on ? 'on' : null);
+}
