@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
-use crate::launch::{self, Reply};
+use crate::launch::{self, NoReply, Reply};
 use crate::model::AgentKind;
 use crate::orchestrator::logs::push_bounded;
 use crate::orchestrator::{ENGINES, one_line};
@@ -34,6 +34,8 @@ const CLAUDE_ARGS: [&str; 9] = [
     "",
 ];
 const CLAUDE_MODEL_OPTION: &str = "--model";
+const CLAUDE_KEY_ENVS: [&str; 2] = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+const UNAUTHORIZED: u16 = 401;
 const CODEX_ARGS: [&str; 7] = ["exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "--color", "never"];
 const CODEX_MODEL_OPTION: &str = "-m";
 const CODEX_PROMPT_FROM_STDIN: &str = "-";
@@ -176,6 +178,8 @@ struct ResultOutput {
     result: Option<String>,
     #[serde(default)]
     is_error: bool,
+    #[serde(default)]
+    api_error_status: Option<u16>,
 }
 
 #[derive(Deserialize)]
@@ -214,6 +218,29 @@ pub fn result_answer(kind: AgentKind, reply: &Reply) -> Result<String, String> {
         Some(result) if !parsed.is_error => Ok(result),
         Some(refusal) => Err(problem(kind, &refusal)),
         None => Err(problem(kind, complaint)),
+    }
+}
+
+pub fn key_refused(reply: &Reply) -> bool {
+    serde_json::from_str::<ResultOutput>(last_line(&reply.output))
+        .is_ok_and(|parsed| parsed.is_error && parsed.api_error_status == Some(UNAUTHORIZED))
+}
+
+pub fn without_inherited(command: &mut Command, keyless: bool) -> &mut Command {
+    command.env_remove(launch::AGENT_ID_ENV);
+    if keyless {
+        for key in CLAUDE_KEY_ENVS {
+            command.env_remove(key);
+        }
+    }
+    command
+}
+
+fn not_answered(kind: AgentKind, failure: NoReply, timeout: Duration) -> String {
+    match failure {
+        NoReply::NotStarted(reason) => format!("{} could not start: {reason}", kind.label()),
+        NoReply::TimedOut => format!("{} did not answer within {} s", kind.label(), timeout.as_secs()),
+        NoReply::Unreadable => format!("{} did not answer: its output could not be read", kind.label()),
     }
 }
 
@@ -374,6 +401,7 @@ pub struct CliEngine {
     stopped: Mutex<VecDeque<u64>>,
     closing: AtomicBool,
     written: AtomicU64,
+    keyless: AtomicBool,
 }
 
 impl CliEngine {
@@ -390,6 +418,7 @@ impl CliEngine {
             stopped: Mutex::new(VecDeque::new()),
             closing: AtomicBool::new(false),
             written: AtomicU64::new(0),
+            keyless: AtomicBool::new(false),
         }
     }
 
@@ -404,14 +433,25 @@ impl CliEngine {
         Ok(Some(file))
     }
 
-    fn run(&self, config: &Config, call: &Call, file: Option<&Path>) -> Result<String, String> {
+    fn answer(&self, config: &Config, call: &Call, file: Option<&Path>) -> Result<String, String> {
+        let claude = call.kind == AgentKind::Claude;
+        let keyless = claude && self.keyless.load(Ordering::SeqCst);
+        let reply = self.run(config, call, file, keyless)?;
+        if claude && !keyless && key_refused(&reply) {
+            self.keyless.store(true, Ordering::SeqCst);
+            return answer_of(call.kind, &self.run(config, call, file, true)?);
+        }
+        answer_of(call.kind, &reply)
+    }
+
+    fn run(&self, config: &Config, call: &Call, file: Option<&Path>, keyless: bool) -> Result<Reply, String> {
         let (command, mut args) = command_line(config, call.kind, call.model)?;
         args.extend(prompt_args(call.kind, call.prompt, file));
         let program = launch::resolve_program(&command).map_err(|err| err.to_string())?;
         let (program, args) = launch::wrap_for_platform(program, args).map_err(|err| err.to_string())?;
         create_private_dir(&self.work).map_err(|err| err.to_string())?;
         let mut command = Command::new(program);
-        command.args(args).current_dir(&self.work).env_remove(launch::AGENT_ID_ENV);
+        without_inherited(command.args(args).current_dir(&self.work), keyless);
         let mut child = None;
         let input = engine_input(call.kind, call.prompt);
         let reply = launch::command_reply(&mut command, input, MAX_ENGINE_OUTPUT_BYTES, self.timeout, |pid| {
@@ -422,8 +462,7 @@ impl CliEngine {
             }
         });
         lock(&self.running).retain(|(_, pid)| Some(*pid) != child);
-        let reply = reply.ok_or_else(|| format!("{} did not answer", call.kind.label()))?;
-        answer_of(call.kind, &reply)
+        reply.map_err(|failure| not_answered(call.kind, failure, self.timeout))
     }
 
     pub fn running(&self) -> usize {
@@ -455,7 +494,7 @@ impl Engine for CliEngine {
             return Err(STOPPED.to_string());
         }
         let file = self.prompt_file(call)?;
-        let answer = self.run(config, call, file.as_deref());
+        let answer = self.answer(config, call, file.as_deref());
         if let Some(file) = file {
             let _ = fs::remove_file(file);
         }
@@ -900,7 +939,11 @@ $id = if ($env:ORKAI_AGENT_ID) { $env:ORKAI_AGENT_ID } else { 'unset' }
 
         let hung = fake_claude(&dir, "hang", "sleep 60\n", "Start-Sleep -Seconds 60\n");
         let started = std::time::Instant::now();
-        assert_eq!(engine.ask(&hung, &call(AgentKind::Claude, "hi")), Err("claude did not answer".to_string()));
+        assert_eq!(
+            engine.ask(&hung, &call(AgentKind::Claude, "hi")),
+            Err("claude did not answer within 1 s".to_string()),
+            "a timeout says so"
+        );
         assert!(started.elapsed() < Duration::from_secs(30), "a hung engine is killed");
 
         let signed_out = fake_claude(
@@ -924,6 +967,79 @@ $id = if ($env:ORKAI_AGENT_ID) { $env:ORKAI_AGENT_ID } else { 'unset' }
             Err("claude: error: not logged in".to_string()),
             "what it wrote to its error output explains the silence"
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn only_a_claude_error_for_an_unauthorized_key_is_a_refused_key() {
+        let refused = r#"{"type":"result","is_error":true,"api_error_status":401,"api_error_type":"authentication_error","result":"Invalid API key · Fix external API key"}"#;
+        assert!(key_refused(&said(&format!("warning: connectors are disabled\n{refused}\n"), "")));
+        let limited = r#"{"is_error":true,"api_error_status":429,"result":"Rate limited"}"#;
+        assert!(!key_refused(&said(limited, "")));
+        assert!(!key_refused(&said(r#"{"is_error":false,"api_error_status":401,"result":"ok"}"#, "")));
+        assert!(!key_refused(&said(r#"{"is_error":true,"result":"Please run /login"}"#, "")));
+        assert!(!key_refused(&said("", "401 Unauthorized")));
+    }
+
+    #[test]
+    fn a_keyless_engine_command_drops_the_inherited_anthropic_keys_and_otherwise_keeps_them() {
+        let removed = |keyless: bool| {
+            let mut command = Command::new("claude");
+            without_inherited(&mut command, keyless);
+            let mut removed: Vec<String> = command
+                .get_envs()
+                .filter(|(_, value)| value.is_none())
+                .map(|(key, _)| key.to_string_lossy().into_owned())
+                .collect();
+            removed.sort();
+            removed
+        };
+        assert_eq!(removed(false), ["ORKAI_AGENT_ID"]);
+        assert_eq!(removed(true), ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ORKAI_AGENT_ID"]);
+    }
+
+    #[test]
+    fn claude_refusing_an_inherited_key_is_asked_once_more_without_it_and_then_never_with_it() {
+        let dir = std::env::temp_dir().join(format!("orkai-octo-engine-key-{}-{}", std::process::id(), now_ms()));
+        let home = Home::at(dir.join("home"));
+        let count = |name: &str| dir.join(format!("{name}.count"));
+        let refuses_first = |name: &str| {
+            let counter = count(name);
+            let counter = counter.to_string_lossy();
+            let sh = r#"cat > /dev/null
+n=$(cat 'COUNTER' 2>/dev/null || echo 0); n=$((n+1)); echo $n > 'COUNTER'
+if [ "$n" = 1 ]; then printf '{"is_error":true,"api_error_status":401,"result":"Invalid API key"}'; else printf '{"is_error":false,"result":"ok %s"}' "$n"; fi
+"#;
+            let ps1 = r#"[void][Console]::In.ReadToEnd()
+$n = 1 + [int](Get-Content -Path 'COUNTER' -ErrorAction SilentlyContinue)
+Set-Content -Path 'COUNTER' -Value $n
+if ($n -eq 1) { [Console]::Out.Write('{"is_error":true,"api_error_status":401,"result":"Invalid API key"}') } else { [Console]::Out.Write('{"is_error":false,"result":"ok ' + $n + '"}') }
+"#;
+            fake_claude(&dir, name, &sh.replace("COUNTER", &counter), &ps1.replace("COUNTER", &counter))
+        };
+        let claude = refuses_first("claude");
+        let engine = CliEngine::with_timeout(&home, Duration::from_secs(60));
+        assert_eq!(engine.ask(&claude, &call(AgentKind::Claude, "hi")), Ok("ok 2".to_string()));
+        assert_eq!(
+            engine.ask(&claude, &call(AgentKind::Claude, "hi")),
+            Ok("ok 3".to_string()),
+            "the next question goes without the key at once"
+        );
+        assert_eq!(
+            std::fs::read_to_string(count("claude")).unwrap().trim(),
+            "3",
+            "one extra run, not one per question"
+        );
+
+        let fake = refuses_first("cursor");
+        let cursor = Config {
+            cursor_command: fake.claude_command.clone(),
+            cursor_args: fake.claude_args.clone(),
+            ..Config::default()
+        };
+        let other = CliEngine::with_timeout(&home, Duration::from_secs(60));
+        assert!(other.ask(&cursor, &call(AgentKind::Cursor, "hi")).unwrap_err().starts_with("cursor: Invalid API key"));
+        assert_eq!(std::fs::read_to_string(count("cursor")).unwrap().trim(), "1", "only claude reads an Anthropic key");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

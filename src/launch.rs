@@ -302,12 +302,19 @@ pub fn without_console(command: &mut Command) -> &mut Command {
 }
 
 pub fn command_output(command: &mut Command, timeout: Duration) -> Option<String> {
-    capped_output(command, None, MAX_OUTPUT_BYTES, timeout, |_| {}).map(|reply| reply.output)
+    capped_output(command, None, MAX_OUTPUT_BYTES, timeout, |_| {}).ok().map(|reply| reply.output)
 }
 
 pub struct Reply {
     pub output: String,
     pub errors: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum NoReply {
+    NotStarted(String),
+    TimedOut,
+    Unreadable,
 }
 
 pub fn command_reply(
@@ -316,7 +323,7 @@ pub fn command_reply(
     limit: u64,
     timeout: Duration,
     spawned: impl FnOnce(u32),
-) -> Option<Reply> {
+) -> Result<Reply, NoReply> {
     capped_output(command, Some(input), limit, timeout, spawned)
 }
 
@@ -340,16 +347,16 @@ fn capped_output(
     limit: u64,
     timeout: Duration,
     spawned: impl FnOnce(u32),
-) -> Option<Reply> {
+) -> Result<Reply, NoReply> {
     let piped = |wanted: bool| if wanted { Stdio::piped() } else { Stdio::null() };
     let fed = input.is_some();
     let command = without_console(command).stdin(piped(fed)).stdout(Stdio::piped()).stderr(piped(fed));
     if fed {
         lead_own_group(command);
     }
-    let mut child = command.spawn().ok()?;
+    let mut child = command.spawn().map_err(|err| NoReply::NotStarted(err.to_string()))?;
     spawned(child.id());
-    let stdout = child.stdout.take()?;
+    let stdout = child.stdout.take().ok_or(NoReply::Unreadable)?;
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         thread::spawn(move || {
             let _ = io::Write::write_all(&mut stdin, &input);
@@ -370,23 +377,26 @@ fn capped_output(
     });
     let deadline = Instant::now() + timeout;
     loop {
-        match child.try_wait() {
+        let failure = match child.try_wait() {
             Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => thread::sleep(OUTPUT_POLL),
-            _ => {
-                if fed {
-                    kill_process_group(child.id())
-                } else {
-                    kill_process_tree(child.id())
-                }
-                let _ = child.wait();
-                return None;
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(OUTPUT_POLL);
+                continue;
             }
+            Ok(None) => NoReply::TimedOut,
+            Err(_) => NoReply::Unreadable,
+        };
+        if fed {
+            kill_process_group(child.id())
+        } else {
+            kill_process_tree(child.id())
         }
+        let _ = child.wait();
+        return Err(failure);
     }
-    let output = received.recv_timeout(OUTPUT_DRAIN).ok()??;
+    let output = received.recv_timeout(OUTPUT_DRAIN).ok().flatten().ok_or(NoReply::Unreadable)?;
     let errors = errors.and_then(|received| received.recv_timeout(OUTPUT_DRAIN).ok()).unwrap_or_default();
-    Some(Reply { output, errors })
+    Ok(Reply { output, errors })
 }
 
 fn sorted_dir_names(path: &Path) -> Vec<String> {
@@ -2613,10 +2623,11 @@ mod tests {
             Duration::from_millis(300),
             |_| {},
         );
-        assert!(hung.is_none());
+        assert_eq!(hung.err(), Some(NoReply::TimedOut), "a program that hangs is told apart");
         assert!(started.elapsed() < Duration::from_secs(20));
         let missing = &mut Command::new("orkai-definitely-missing-program");
-        assert!(command_reply(missing, Vec::new(), 1024, Duration::from_secs(1), |_| {}).is_none());
+        let not_started = command_reply(missing, Vec::new(), 1024, Duration::from_secs(1), |_| {}).err();
+        assert!(matches!(not_started, Some(NoReply::NotStarted(reason)) if !reason.is_empty()), "with its reason");
     }
 
     #[test]
@@ -2633,6 +2644,7 @@ mod tests {
             command_reply(&mut command, Vec::new(), 1024, Duration::from_secs(50), |spawned| {
                 let _ = started.send(spawned);
             })
+            .ok()
             .map(|reply| reply.output)
         });
         let pid = pid.recv_timeout(Duration::from_secs(20)).unwrap();
