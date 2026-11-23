@@ -7,6 +7,16 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.48',
+    date: '2026-11-23',
+    en: [
+      'Pair phone no longer keeps loading for minutes when Octo needs a new tunnel. The code used to wait until this computer itself could look up the new tunnel, and a "not found" it had cached a moment too early held it back; now it shows as soon as Cloudflare publishes the tunnel.',
+    ],
+    'pt-BR': [
+      'Parear celular não fica mais carregando por minutos quando o Octo precisa de um túnel novo. O código esperava até este computador conseguir encontrar o túnel novo, e um "não encontrado" guardado cedo demais o segurava; agora ele aparece assim que a Cloudflare publica o túnel.',
+    ],
+  },
+  {
     version: '0.2.47',
     date: '2026-11-22',
     en: [
