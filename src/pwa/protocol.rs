@@ -890,11 +890,13 @@ mod tests {
             by: By::Octo,
             outcome: Outcome::Answered,
             mode: Mode::Moderate,
+            report: String::new(),
+            reason: String::new(),
         };
         let page = BridgeMsg::OrchestratorActivity { items: vec![entry], next: Some(51) };
         assert_eq!(
             serde_json::to_string(&page).unwrap(),
-            r#"{"type":"orchestratorActivity","items":[{"seq":51,"at":9,"agent":3,"name":"api","kind":"claude","project":"dev/octo","question":"npm test","summary":"Allowed npm test","by":"octo","outcome":"answered","mode":"moderate"}],"next":51}"#
+            r#"{"type":"orchestratorActivity","items":[{"seq":51,"at":9,"agent":3,"name":"api","kind":"claude","project":"dev/octo","question":"npm test","summary":"Allowed npm test","by":"octo","outcome":"answered","mode":"moderate","report":"","reason":""}],"next":51}"#
         );
         let last = BridgeMsg::OrchestratorActivity { items: Vec::new(), next: None };
         assert_eq!(serde_json::to_string(&last).unwrap(), r#"{"type":"orchestratorActivity","items":[],"next":null}"#);

@@ -8,13 +8,14 @@ use serde::de::DeserializeOwned;
 
 use crate::model::{AgentId, AgentKind};
 use crate::orchestrator::{
-    ACTIVITY_PAGE, ActivityEntry, By, ChatEntry, MAX_ACTIVITY, MAX_CHAT, Mode, Outcome, ProjectCount,
+    ACTIVITY_PAGE, ActivityEntry, By, ChatEntry, MAX_ACTIVITY, MAX_CHAT, Mode, Outcome, ProjectCount, cut,
 };
 use crate::paths::{Home, create_private_dir};
 use crate::util::day_of;
 
 pub const MAX_LOG_BYTES: u64 = 1024 * 1024;
 pub const MAX_PROJECT_COUNTS: usize = 64;
+pub const MAX_ENTRY_REPORT_CHARS: usize = 280;
 const ACTIVITY_FILE: &str = "activity.jsonl";
 const CHAT_FILE: &str = "chat.jsonl";
 pub const MAX_UNSAVED: usize = 256;
@@ -121,6 +122,8 @@ pub struct Handled {
     pub by: By,
     pub outcome: Outcome,
     pub mode: Mode,
+    pub report: String,
+    pub reason: String,
 }
 
 fn settled_by_octo(entry: &ActivityEntry) -> bool {
@@ -201,6 +204,8 @@ impl Activity {
             by: handled.by,
             outcome: handled.outcome,
             mode: handled.mode,
+            report: cut(handled.report.trim(), MAX_ENTRY_REPORT_CHARS),
+            reason: handled.reason,
         };
         self.next_seq += 1;
         self.count(&entry);
@@ -339,6 +344,8 @@ mod tests {
             by,
             outcome,
             mode: Mode::Moderate,
+            report: "It asked to run the suite.".into(),
+            reason: "the task asks for it".into(),
         }
     }
 
@@ -355,6 +362,8 @@ mod tests {
             by: By::Octo,
             outcome: Outcome::Answered,
             mode: Mode::Bypass,
+            report: String::new(),
+            reason: String::new(),
         }
     }
 
@@ -424,6 +433,31 @@ mod tests {
         assert_eq!(page_of(&[], None, 3), (Vec::new(), None));
         let (exact, next) = page_of(&entries, Some(4), 3);
         assert_eq!((seqs(&exact), next), (vec![3, 2, 1], None));
+    }
+
+    #[test]
+    fn an_entry_keeps_a_short_report_of_the_agent_and_why_octo_did_what_it_did() {
+        let dir = temp_dir("report");
+        let mut activity = Activity::new(Journal::new(dir.join("activity.jsonl")));
+        activity.load(1_000, 0);
+        noted(&mut activity, handled("p", By::Octo, Outcome::Answered), 1_000);
+        let shown = &activity.handled()[0];
+        assert_eq!(
+            (shown.report.as_str(), shown.reason.as_str()),
+            ("It asked to run the suite.", "the task asks for it")
+        );
+        let long = Handled {
+            report: format!("  {}  ", "r".repeat(MAX_ENTRY_REPORT_CHARS * 3)),
+            ..handled("p", By::Octo, Outcome::Finished)
+        };
+        noted(&mut activity, long, 1_000);
+        let report = &activity.handled()[0].report;
+        assert!(
+            report.chars().count() <= MAX_ENTRY_REPORT_CHARS,
+            "every view sends the last entries, so each stays small"
+        );
+        assert!(report.starts_with('r'), "trimmed: {report:?}");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

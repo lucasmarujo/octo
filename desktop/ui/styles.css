@@ -1149,6 +1149,7 @@ button.statusbar-item:hover { color: var(--color-text); }
 .octo-card-wait { flex-shrink: 0; color: var(--color-waiting); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
 .octo-asks { display: flex; flex-direction: column; gap: 6px; }
 .octo-asks-text { font-size: var(--text-md); font-weight: 500; line-height: 22px; overflow-wrap: anywhere; }
+.octo-asks-report { color: var(--color-text-muted); line-height: 21px; overflow-wrap: anywhere; }
 .octo-would { display: flex; flex-direction: column; gap: 6px; padding-left: 12px; border-left: 2px solid var(--color-accent); }
 .octo-would.failed { border-left-color: var(--color-lost); }
 .octo-would-text { line-height: 21px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -1177,12 +1178,16 @@ button.statusbar-item:hover { color: var(--color-text); }
 .octo-need-head { display: flex; align-items: center; gap: 8px; }
 .octo-need-head .octo-agent { flex: 1; min-width: 0; line-height: 16px; }
 .octo-need-head .octo-age, .octo-done .octo-age { min-width: 0; font-size: 11px; line-height: 14px; }
-.octo-need-question { display: -webkit-box; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.octo-need-question { display: -webkit-box; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .octo-need-meta { color: var(--color-text-faint); font-family: var(--font-mono); font-size: 11px; line-height: 14px; }
 .octo-done-list { display: flex; flex-direction: column; gap: 9px; padding: 0 4px; }
 .octo-done { display: flex; align-items: baseline; gap: 8px; }
 .octo-done-mark { width: 10px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
-.octo-done-text { flex: 1; min-width: 0; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; overflow-wrap: anywhere; }
+.octo-done-body { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.octo-done-text { color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; overflow-wrap: anywhere; }
+.octo-done-report { display: -webkit-box; overflow: hidden; color: var(--color-text); font-size: var(--text-xs); line-height: 16px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.octo-why { display: -webkit-box; overflow: hidden; color: var(--color-text-faint); font-size: var(--text-xs); line-height: 16px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.octo-need-would { display: -webkit-box; overflow: hidden; color: var(--color-text); font-size: var(--text-xs); line-height: 16px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .octo-done-name { color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-xs); }
 .octo-rail .octo-more { margin: 2px 4px 0; }
 .octo-fleet { display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; margin-top: auto; padding: 16px 4px 0; border-top: 1px solid var(--color-border); }
@@ -1210,7 +1215,7 @@ button.statusbar-item:hover { color: var(--color-text); }
 .octo-decision-mark { width: 10px; font-size: var(--text-sm); line-height: 18px; }
 .octo-decision-body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
 .octo-decision-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.octo-decision-question { line-height: 20px; overflow-wrap: anywhere; }
+.octo-decision-question { display: -webkit-box; overflow: hidden; line-height: 20px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .octo-decision .octo-age { line-height: 20px; }
 .octo-tag { flex-shrink: 0; padding: 3px 7px; border: 1px solid var(--color-border-strong); border-radius: 6px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: 11px; line-height: 14px; white-space: nowrap; }
 .octo-section-label { display: flex; align-items: baseline; gap: 10px; padding: 4px 2px; }
@@ -1239,6 +1244,7 @@ button.octo-line:hover, button.octo-line.selected { background: var(--color-surf
 .octo-tool-name { margin-right: 8px; color: var(--color-text); font-weight: 700; }
 .octo-context { max-height: 168px; margin: 0; padding: 10px 12px; border-left: 1px solid var(--color-border-strong); border-radius: 0 6px 6px 0; background: var(--color-bg); color: var(--color-text-muted); font-family: var(--font-mono); font-size: 11px; line-height: 16px; white-space: pre; overflow: auto; }
 .octo-detail-question { font-size: 16px; font-weight: 600; line-height: 23px; overflow-wrap: anywhere; }
+.octo-detail-report { color: var(--color-text); line-height: 21px; overflow-wrap: anywhere; }
 .octo-answer { padding: 12px 14px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); font-size: var(--text-base); line-height: 21px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .octo-answer-edit { width: 100%; min-height: 96px; outline: none; resize: vertical; user-select: text; }
 .octo-answer-edit:focus { border-color: var(--color-accent); }

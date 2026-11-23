@@ -148,6 +148,8 @@ pub struct Decision {
     pub problem: Option<String>,
     #[serde(default)]
     pub ended: bool,
+    #[serde(default)]
+    pub report: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -164,6 +166,10 @@ pub struct ActivityEntry {
     pub by: By,
     pub outcome: Outcome,
     pub mode: Mode,
+    #[serde(default)]
+    pub report: String,
+    #[serde(default)]
+    pub reason: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -367,13 +373,16 @@ mod tests {
             tag: Some("no rule yet".into()),
             problem: None,
             ended: false,
+            report: "It wants to run the suite.".into(),
         };
         assert_eq!(
             serde_json::to_string(&decision).unwrap(),
-            r#"{"id":4,"agent":2,"name":"api","kind":"claude","session":"default","project":"dev/octo","since":9,"status":"needsYou","question":"Run npm test?","context":["Run npm test?"],"tool":{"name":"Bash","detail":"npm test"},"suggestion":null,"tag":"no rule yet","problem":null,"ended":false}"#
+            r#"{"id":4,"agent":2,"name":"api","kind":"claude","session":"default","project":"dev/octo","since":9,"status":"needsYou","question":"Run npm test?","context":["Run npm test?"],"tool":{"name":"Bash","detail":"npm test"},"suggestion":null,"tag":"no rule yet","problem":null,"ended":false,"report":"It wants to run the suite."}"#
         );
         let older = r#"{"id":4,"agent":2,"name":"api","kind":"claude","session":"default","project":"dev/octo","since":9,"status":"needsYou","question":"Run npm test?","context":[],"tool":null,"suggestion":null,"tag":null,"problem":null}"#;
-        assert!(!serde_json::from_str::<Decision>(older).unwrap().ended, "a decision written before turn ends reads");
+        let read = serde_json::from_str::<Decision>(older).unwrap();
+        assert!(!read.ended, "a decision written before turn ends reads");
+        assert_eq!(read.report, "", "and one written before reports");
         let entry = ActivityEntry {
             seq: 1,
             at: 2,
@@ -386,11 +395,16 @@ mod tests {
             by: By::Rule,
             outcome: Outcome::Answered,
             mode: Mode::Bypass,
+            report: "It wants to run the suite.".into(),
+            reason: "the task asks for it".into(),
         };
         assert_eq!(
             serde_json::to_string(&entry).unwrap(),
-            r#"{"seq":1,"at":2,"agent":3,"name":"api","kind":"codex","project":"dev/octo","question":"Run it?","summary":"Allowed npm test","by":"rule","outcome":"answered","mode":"bypass"}"#
+            r#"{"seq":1,"at":2,"agent":3,"name":"api","kind":"codex","project":"dev/octo","question":"Run it?","summary":"Allowed npm test","by":"rule","outcome":"answered","mode":"bypass","report":"It wants to run the suite.","reason":"the task asks for it"}"#
         );
+        let journaled = r#"{"seq":1,"at":2,"agent":3,"name":"api","kind":"codex","project":"dev/octo","question":"Run it?","summary":"Allowed npm test","by":"rule","outcome":"answered","mode":"bypass"}"#;
+        let read = serde_json::from_str::<ActivityEntry>(journaled).unwrap();
+        assert_eq!((read.report.as_str(), read.reason.as_str()), ("", ""), "the journal written before still reads");
         let said = ChatEntry {
             at: 5,
             role: ChatRole::Octo,

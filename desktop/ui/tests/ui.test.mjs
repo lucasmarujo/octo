@@ -2653,6 +2653,39 @@ test('the rail lists what Octo settled, not what it left for you or what you ans
   assert.match(page, /const recent = handledByOcto\(current\)\.slice\(0, RAIL_HANDLED\);/);
 });
 
+test('the rail of Octo sums up in a few words what the agent said and why Octo decided, instead of its raw screen', async () => {
+  const { PT } = await import('../js/i18n.js');
+  const { activitySignature, decisionSignature, entryTip, orchestratorView, reportOf, whyText } = await import('../js/orchestrator.js');
+  const decision = { id: 7, agent: 2, status: 'needsYou', question: 'esperado. Entro em credentials.json', report: 'It needs the login of the account to go on.' };
+  const entry = handledEntry({ seq: 9, question: 'Run npm test?', report: 'It wanted to run the suite.', reason: 'the task asks for it' });
+  const view = orchestratorView(octoMessage({ decisions: [decision], handled: [entry] }));
+  assert.equal(view.decisions[0].report, decision.report, 'the window keeps the report the core sends');
+  assert.deepEqual([view.handled[0].report, view.handled[0].reason], [entry.report, entry.reason]);
+  const older = orchestratorView(octoMessage({ decisions: [{ ...decision, report: undefined }], handled: [{ ...entry, report: undefined, reason: undefined }] }));
+  assert.deepEqual([older.decisions[0].report, older.handled[0].report, older.handled[0].reason], ['', '', ''], 'a core from before reads too');
+  assert.equal(reportOf(view.decisions[0]), decision.report, 'the summary instead of the last line on the screen');
+  assert.equal(reportOf(older.decisions[0]), decision.question, 'until Octo has judged it');
+  assert.equal(whyText(''), '');
+  assert.equal(whyText('the task asks for it'), 'Why: the task asks for it');
+  assert.equal(entryTip(view.handled[0]), 'Run npm test?\nIt wanted to run the suite.\nWhy: the task asks for it');
+  assert.notEqual(activitySignature(view.handled[0]), activitySignature(older.handled[0]), 'a new report repaints the row');
+  assert.notEqual(decisionSignature(view.decisions[0]), decisionSignature(older.decisions[0]));
+  const page = readFileSync(join(REPO, 'desktop/ui/js/octo.js'), 'utf8');
+  assert.match(page, /h\('span', \{ class: 'octo-need-question' \}, reportOf\(decision\)\),/);
+  assert.match(page, /suggestion \? h\('span', \{ class: 'octo-need-would' \}, h\('span', \{ class: 't-working' \}, t\('Octo would answer'\)\), ' ', suggestionText\(suggestion\)\) : null,/, 'what Octo would answer, to approve it or not');
+  assert.match(page, /entry\.report \? h\('span', \{ class: 'octo-done-report' \}, entry\.report\) : null,\n\s*entry\.reason \? h\('span', \{ class: 'octo-why' \}, whyText\(entry\.reason\)\) : null,/);
+  assert.match(page, /decision\.report \? h\('div', \{ class: 'octo-detail-part' \}, caps\(t\('In short'\)\)/, 'the decision opens with the summary, before the screen');
+  assert.match(page, /decision\.report \? h\('div', \{ class: 'octo-asks' \}, caps\(t\('In short'\)\), h\('div', \{ class: 'octo-asks-report' \}, decision\.report\)\) : null,/, 'the card in the chat too');
+  assert.match(page, /h\('span', \{ class: 'octo-decision-question', title: decision\.question \}, reportOf\(decision\)\),/, 'and the queue of decisions');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.octo-done-report \{[^}]*-webkit-line-clamp: 3;/, 'a few words, never the whole output');
+  assert.match(css, /\.octo-why \{[^}]*-webkit-line-clamp: 2;/);
+  assert.equal(PT['Why: {reason}'], 'Por quê: {reason}');
+  assert.equal(PT['In short'], 'Em resumo');
+  assert.match(rust('src/orchestrator/prompt.rs'), /"deny":true\|false,"report":"\.\.\."\}/, 'the engine reports on a question too, not only when a turn ends');
+  assert.match(rust('src/orchestrator/mod.rs'), /pub mode: Mode,\n\s*#\[serde\(default\)\]\n\s*pub report: String,\n\s*#\[serde\(default\)\]\n\s*pub reason: String,/, 'the journal written before still reads');
+});
+
 test('the Octo tab, the sidebar and the bar under the window count the decisions that need you', async () => {
   const { MODE_WORDS, deciding, navCounts, needsCount, needsYou, octoStatus, orchestratorView } = await import('../js/orchestrator.js');
   const view = orchestratorView(octoMessage());

@@ -126,7 +126,14 @@ impl Open {
             by: credit.by,
             outcome: credit.outcome,
             mode,
+            report: self.decision.report.clone(),
+            reason: self.octo_reason(credit.by),
         }
+    }
+
+    fn octo_reason(&self, by: By) -> String {
+        let suggested = self.decision.suggestion.as_ref().map(|suggestion| suggestion.reason.clone());
+        if by == By::Octo { suggested.unwrap_or_default() } else { String::new() }
     }
 }
 
@@ -786,6 +793,7 @@ impl Orchestrator {
                 tag: None,
                 problem: None,
                 ended,
+                report: String::new(),
             };
             let follow_ups = if ended { replies } else { 0 };
             state.open(decision, cut(view.task.trim(), MAX_TASK_CHARS), follow_ups, since, *sight);
@@ -1002,6 +1010,7 @@ impl Orchestrator {
                     if !question.is_empty() {
                         open.decision.question = question;
                     }
+                    open.decision.report = said.clone();
                     report = said;
                     ruling
                 },
@@ -1160,6 +1169,7 @@ impl Orchestrator {
             suggestion: None,
             tag: None,
             problem: None,
+            report: String::new(),
             ..answered.decision.clone()
         };
         state.next_decision += 1;

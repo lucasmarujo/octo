@@ -31,6 +31,7 @@ import {
   detailSignature,
   enabledMessage,
   engineInstalled,
+  entryTip,
   engineKinds,
   engineMessage,
   engineModelChoices,
@@ -56,6 +57,7 @@ import {
   projectFilterCounts,
   projectModeMessage,
   projectRows,
+  reportOf,
   saveInstructionsMessage,
   secondaryChoices,
   shortAge,
@@ -64,6 +66,7 @@ import {
   suggestionAnswer,
   suggestionText,
   turnOnMessage,
+  whyText,
 } from './orchestrator.js';
 import { segmented, toggle } from './settings.js';
 import { agents, findAgent, modelsOf, now, state } from './state.js';
@@ -385,6 +388,7 @@ function decisionCard(decision) {
       h('span', { class: 'grow' }),
       h('span', { class: 'octo-card-wait' }, `${t('waiting')} `, waited(decision.since)),
     ),
+    decision.report ? h('div', { class: 'octo-asks' }, caps(t('In short')), h('div', { class: 'octo-asks-report' }, decision.report)) : null,
     h('div', { class: 'octo-asks' }, caps(t('It asks')), h('div', { class: 'octo-asks-text' }, decision.question)),
     wouldAnswer(decision),
     h(
@@ -482,11 +486,14 @@ function paintComposer(form, current) {
 }
 
 function railNeed(decision) {
+  const suggestion = decision.suggestion;
   return h(
     'button',
-    { class: 'octo-need', type: 'button', onclick: () => showDecision(decision.id) },
+    { class: 'octo-need', type: 'button', title: decision.question, onclick: () => showDecision(decision.id) },
     h('span', { class: 'octo-need-head' }, h('span', { class: 'octo-agent' }, decision.name), age(decision.since, 't-yellow')),
-    h('span', { class: 'octo-need-question' }, decision.question),
+    h('span', { class: 'octo-need-question' }, reportOf(decision)),
+    suggestion ? h('span', { class: 'octo-need-would' }, h('span', { class: 't-working' }, t('Octo would answer')), ' ', suggestionText(suggestion)) : null,
+    suggestion && suggestion.reason ? h('span', { class: 'octo-why' }, whyText(suggestion.reason)) : null,
     h('span', { class: 'octo-need-meta' }, [decision.project, decision.tag].filter(Boolean).join(' · ')),
   );
 }
@@ -505,9 +512,15 @@ function railHandledRow(entry) {
   const mark = outcomeMark(entry);
   return h(
     'div',
-    { class: 'octo-done', title: entry.question },
+    { class: 'octo-done', title: entryTip(entry) },
     h('span', { class: `octo-done-mark ${mark.tone}` }, mark.text),
-    h('span', { class: 'octo-done-text' }, entry.summary, ' ', h('span', { class: 'octo-done-name' }, entry.name)),
+    h(
+      'span',
+      { class: 'octo-done-body' },
+      h('span', { class: 'octo-done-text' }, entry.summary, ' ', h('span', { class: 'octo-done-name' }, entry.name)),
+      entry.report ? h('span', { class: 'octo-done-report' }, entry.report) : null,
+      entry.reason ? h('span', { class: 'octo-why' }, whyText(entry.reason)) : null,
+    ),
     age(entry.at),
   );
 }
@@ -609,7 +622,7 @@ function decisionRow(decision) {
       'span',
       { class: 'octo-decision-body' },
       h('span', { class: 'octo-decision-line' }, h('span', { class: 'octo-agent' }, decision.name), h('span', { class: 'octo-project' }, decision.project), kindTag(decision.kind)),
-      h('span', { class: 'octo-decision-question' }, decision.question),
+      h('span', { class: 'octo-decision-question', title: decision.question }, reportOf(decision)),
     ),
     decision.tag ? h('span', { class: 'octo-tag' }, decision.tag) : null,
     age(decision.since, 't-yellow'),
@@ -631,7 +644,7 @@ function handledLine(entry, wide) {
   const mark = outcomeMark(entry);
   return h(
     'div',
-    { class: 'octo-line handled', title: entry.question },
+    { class: 'octo-line handled', title: entryTip(entry) },
     h('span', { class: `octo-line-mark ${mark.tone}` }, mark.text),
     h('span', { class: 'octo-line-name' }, entry.name),
     wide ? h('span', { class: 'octo-line-project' }, entry.project) : null,
@@ -713,6 +726,7 @@ function detail(decision) {
       h('div', { class: 'octo-detail-title' }, judged ? h('span', { class: 'octo-detail-mark' }, PAUSED_MARK) : spinner(), h('span', { class: 'octo-detail-name' }, decision.name), h('button', { class: 'link-button', type: 'button', onclick: () => openDecisionAgent(decision) }, t('Open agent'))),
       h('div', { class: 'octo-detail-meta' }, `${meta.join(' · ')} · ${t('waiting')} `, waited(decision.since)),
     ),
+    decision.report ? h('div', { class: 'octo-detail-part' }, caps(t('In short')), h('div', { class: 'octo-detail-report selectable' }, decision.report)) : null,
     h(
       'div',
       { class: 'octo-detail-part' },

@@ -500,6 +500,8 @@ export const PT = {
   'Octo is thinking…': 'O Octo está pensando…',
   'Ask me what is going on, or tell me what to do across your projects.': 'Pergunte o que está acontecendo ou diga o que eu devo fazer nos seus projetos.',
   'Octo would answer': 'O Octo responderia',
+  'Why: {reason}': 'Por quê: {reason}',
+  'In short': 'Em resumo',
   'Octo could not judge this': 'O Octo não conseguiu avaliar',
   waiting: 'esperando',
   'It asks': 'Ele pergunta',

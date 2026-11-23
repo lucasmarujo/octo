@@ -51,6 +51,7 @@ function decisionOf(entry) {
     tag: textOf(entry.tag),
     problem: textOf(entry.problem),
     ended: entry.ended === true,
+    report: textOf(entry.report) || '',
   };
 }
 
@@ -76,6 +77,8 @@ function activityOf(entry) {
     by: textOf(entry.by) || '',
     outcome: textOf(entry.outcome) || '',
     mode: MODES.includes(entry.mode) ? entry.mode : DEFAULT_MODE,
+    report: textOf(entry.report) || '',
+    reason: textOf(entry.reason) || '',
   };
 }
 
@@ -256,6 +259,18 @@ export function suggestionText(suggestion) {
   return suggestion.text || suggestion.summary || suggestion.keys.join(' ');
 }
 
+export function reportOf(decision) {
+  return decision.report || decision.question;
+}
+
+export function whyText(reason) {
+  return reason ? t('Why: {reason}', { reason }) : '';
+}
+
+export function entryTip(entry) {
+  return [entry.question, entry.report, whyText(entry.reason)].filter(Boolean).join('\n');
+}
+
 export function shortAge(ms) {
   return duration(ms).match(/^\d+\D/)[0];
 }
@@ -375,7 +390,7 @@ export function activityRequest(before) {
 }
 
 export function decisionSignature(decision) {
-  return JSON.stringify([decision.id, decision.status, decision.name, decision.kind, decision.project, decision.since, decision.question, decision.tag, decision.problem, decision.suggestion, decision.ended]);
+  return JSON.stringify([decision.id, decision.status, decision.name, decision.kind, decision.project, decision.since, decision.question, decision.tag, decision.problem, decision.suggestion, decision.ended, decision.report]);
 }
 
 export function detailSignature(decision, agent) {
@@ -383,7 +398,7 @@ export function detailSignature(decision, agent) {
 }
 
 export function activitySignature(entry) {
-  return JSON.stringify([entry.seq, entry.at, entry.name, entry.project, entry.summary, entry.by, entry.outcome]);
+  return JSON.stringify([entry.seq, entry.at, entry.name, entry.project, entry.summary, entry.by, entry.outcome, entry.report, entry.reason]);
 }
 
 export function chatSignature(entry) {
