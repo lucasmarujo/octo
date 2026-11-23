@@ -7,6 +7,18 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.50',
+    date: '2026-11-23',
+    en: [
+      'Octo decides again on computers where an ANTHROPIC_API_KEY that no longer works is set: when Claude refuses that key, Octo asks it again with your claude.ai login and keeps the key out from then on.',
+      'When an engine gives no reply, Octo now says whether it did not answer in time, could not start, or printed something it could not read, instead of only "did not answer".',
+    ],
+    'pt-BR': [
+      'O Octo volta a decidir nos computadores com uma ANTHROPIC_API_KEY que não vale mais: quando o Claude recusa essa chave, o Octo pergunta de novo com o seu login do claude.ai e deixa a chave de fora dali em diante.',
+      'Quando um motor não responde, o Octo agora diz se ele não respondeu a tempo, não conseguiu iniciar ou mostrou algo que não deu para ler, em vez de só "did not answer".',
+    ],
+  },
+  {
     version: '0.2.49',
     date: '2026-11-23',
     en: [
