@@ -644,7 +644,7 @@ function start() {
     if (watching()) terminal.focus();
   });
   initTabs({ pages: PAGES, open: openTab, close: closeTab });
-  initAgentDrag();
+  initAgentDrag(render);
   initTerminal();
   initComposer();
   initTooltips();

@@ -1832,7 +1832,7 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.equal(canMove(null, 'work'), false);
   assert.equal(canMove(agent({}), null), false);
   const drag = readFileSync(join(REPO, 'desktop/ui/js/drag.js'), 'utf8');
-  assert.match(drag, /send\(\{ type: 'moveAgent', agent: moving\.agent\.id, session \}\)/);
+  assert.match(drag, /if \(session\) send\(\{ type: 'moveAgent', agent: agent\.id, session \}\);/);
   assert.match(drag, /#board \.card, #list-body \.row, #grid \.tile-head, #sessions \.summary/, 'a tile drags by its head: its screen is a terminal to select from');
   assert.match(drag, /closest\('\.session'\)\?\.querySelector\('\.session-row\[data-session\]'\)/, 'a drop counts anywhere on an expanded session, not only on its row');
   assert.doesNotMatch(drag, /addEventListener\('blur'/, 'the capture of the pointer says when a drag is lost');
@@ -1843,8 +1843,41 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.match(drag, /addEventListener\('click', swallow, \{ capture: true, once: true \}\)/);
   assert.match(drag, /event\.key === 'Escape'/, 'a drag can be called off');
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8'), /class: 'session-row', type: 'button', dataset: \{ session: session\.name \}/);
-  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initAgentDrag\(\);/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initAgentDrag\(render\);/);
   assert.match(rust('src/pwa/actions.rs'), /PhoneMsg::MoveAgent \{ agent, session \} => move_agent\(hub, agent, &session, reply\)/);
+});
+
+test('the agents of a session keep the order the user drags them to in the sidebar, and only the sidebar follows it', async () => {
+  const { inOrder, placeAgent } = await import('../js/format.js');
+  const list = [1, 2, 3, 4].map((id) => agent({ id }));
+  const ids = (agents) => agents.map((item) => item.id);
+  assert.deepEqual(ids(inOrder(list, undefined)), [1, 2, 3, 4], 'nothing saved keeps the order the core sends');
+  assert.deepEqual(ids(inOrder(list, 'junk')), [1, 2, 3, 4]);
+  assert.deepEqual(ids(inOrder(list, [3, 1])), [3, 1, 2, 4], 'an agent never placed follows the placed ones, in the order of the core');
+  assert.deepEqual(ids(inOrder(list, [9, 4, 2])), [4, 2, 1, 3], 'a removed agent leaves no gap');
+  assert.deepEqual(ids(list), [1, 2, 3, 4], 'the list of the core is left as it was');
+  assert.deepEqual(placeAgent([1, 2, 3, 4], 4, 0), [4, 1, 2, 3]);
+  assert.deepEqual(placeAgent([1, 2, 3, 4], 1, 3), [2, 3, 4, 1]);
+  assert.deepEqual(placeAgent([1, 2, 3, 4], 2, 99), [1, 3, 4, 2]);
+  assert.deepEqual(placeAgent([1, 2, 3, 4], 2, -1), [2, 1, 3, 4]);
+  const drag = readFileSync(join(REPO, 'desktop/ui/js/drag.js'), 'utf8');
+  assert.match(drag, /const SIDEBAR_LINE = '#sessions \.summary\[data-agent\]';/);
+  assert.match(drag, /sidebar: source\.matches\(SIDEBAR_LINE\)/, 'a card of the board, a row or a tile only moves between sessions');
+  assert.match(drag, /if \(!session \|\| under\.closest\('\.session-row'\) \|\| session\.querySelector\('\.session-row\[data-session\]'\)\?\.dataset\.session !== moving\.agent\.session\) return null;/, 'only inside its own session, below its title');
+  assert.match(drag, /line\.dataset\.agent !== String\(moving\.agent\.id\)/, 'a sidebar redrawn under the drag still leaves the agent out of its own count');
+  assert.match(drag, /else if \(slot\) reorder\(agent, slot\.at\);/, 'another session under the pointer still moves the agent there');
+  assert.match(drag, /orderSession\(agent\.session, next\);\n\s*reordered\(\);/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initAgentDrag\(render\);/, 'the new order shows as soon as the agent is dropped');
+  const state = readFileSync(join(REPO, 'desktop/ui/js/state.js'), 'utf8');
+  assert.match(state, /const ORDER_KEY = 'octo\.agentOrder';/);
+  assert.match(state, /storage\.set\(ORDER_KEY, JSON\.stringify\(state\.order\)\);/, 'kept per device, like the tabs');
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /function sessionItem\(session, onSelect, onOpen\) \{\n\s*const agents = sessionAgents\(session\.name\);/);
+  assert.match(sidebar, /session\.agents, sessionAgents\(session\.name\)\.map\(agentSignature\)/, 'a new order redraws the sidebar');
+  for (const file of ['board.js', 'list.js', 'grid.js']) assert.doesNotMatch(readFileSync(join(REPO, 'desktop/ui/js', file), 'utf8'), /sessionAgents/, file);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.summary\.drop-before \{ box-shadow: inset 0 2px 0 var\(--color-accent\); \}/, 'a line shows where the agent lands');
+  assert.match(css, /\.summary\.drop-after \{ box-shadow: inset 0 -2px 0 var\(--color-accent\); \}/);
 });
 
 test('an agent on screen only stays silent while the window has the focus', () => {

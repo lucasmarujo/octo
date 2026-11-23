@@ -5,7 +5,7 @@ import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX
 import { t } from './i18n.js';
 import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_DETAILS_COLLAPSE, ICON_DETAILS_EXPAND, ICON_PLUS, ICON_SIDEBAR_COLLAPSE, ICON_SIDEBAR_EXPAND, providerIcon } from './icons.js';
 import { hideTip, motionMs } from './motion.js';
-import { agents, inSession, now, selectSession, state, toggleExpanded, toggleUsage } from './state.js';
+import { agents, inSession, now, selectSession, sessionAgents, state, toggleExpanded, toggleUsage } from './state.js';
 import { send } from './transport.js';
 
 const WIDTH_KEY = 'octo.sidebar';
@@ -138,7 +138,7 @@ function sessionMenu(event, name) {
 }
 
 function sessionItem(session, onSelect, onOpen) {
-  const agents = inSession(session.name);
+  const agents = sessionAgents(session.name);
   const selected = session.name === state.session;
   const expanded = state.expanded.has(session.name);
   const working = agents.filter((agent) => agent.state === 'working').length;
@@ -173,7 +173,7 @@ function sessionItem(session, onSelect, onOpen) {
 function sessionFlyout(name, onOpen) {
   const session = state.overview ? state.overview.sessions.find((item) => item.name === name) : null;
   if (!session) return null;
-  const list = inSession(name);
+  const list = sessionAgents(name);
   const open = (agent) => {
     closeFlyout();
     onOpen(agent);
@@ -380,7 +380,7 @@ export function renderSidebar(onSelect, onOpen) {
     ? JSON.stringify([
         state.session,
         [...state.expanded],
-        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map(agentSignature)]),
+        overview.sessions.map((session) => [session.name, session.agents, sessionAgents(session.name).map(agentSignature)]),
       ])
     : '';
   if (overview && host.dataset.signature !== signature) {

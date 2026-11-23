@@ -101,6 +101,18 @@ export function canMove(agent, session) {
   return Boolean(agent && session) && !agent.starting && agent.session !== session;
 }
 
+export function inOrder(list, order) {
+  const at = new Map((Array.isArray(order) ? order : []).map((id, index) => [id, index]));
+  const rank = (agent) => (at.has(agent.id) ? at.get(agent.id) : at.size);
+  return [...list].sort((a, b) => rank(a) - rank(b));
+}
+
+export function placeAgent(ids, id, to) {
+  const rest = ids.filter((other) => other !== id);
+  rest.splice(Math.min(Math.max(to, 0), rest.length), 0, id);
+  return rest;
+}
+
 export const OVERVIEW_TAB = 'overview';
 export const OCTO_TAB = 'octo';
 
