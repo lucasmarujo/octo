@@ -24,7 +24,7 @@ use crate::store::Store;
 use crate::util::{lock, now_ms};
 
 pub const COMMAND: &str = "__pwa";
-pub const VERSION: u32 = 20;
+pub const VERSION: u32 = 21;
 pub const DEFAULT_PORT: u16 = 7470;
 pub const STALE_AFTER_MS: u64 = 15_000;
 pub const LINK_KEY: &str = "k";
@@ -148,7 +148,7 @@ fn fixed_address(home: &Home, tunnel: &str) -> io::Result<String> {
         }
         Err(err) => return Err(err),
     };
-    relay::answers(&address)?;
+    relay::answers(&address, tunnel, &tunnel::published)?;
     Ok(address)
 }
 

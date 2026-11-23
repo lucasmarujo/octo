@@ -1,4 +1,5 @@
 use std::io;
+use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -18,7 +19,11 @@ const MAX_ANSWER_BYTES: u64 = 4 * 1024;
 const ID_BYTES: usize = 16;
 const TOKEN_BYTES: usize = 32;
 const TAKEN: u16 = 403;
+const MOVED: u16 = 307;
 const SECURE: &str = "https://";
+const PLAIN: &str = "http://";
+const SECURE_PORT: u16 = 443;
+const PLAIN_PORT: u16 = 80;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Identity {
@@ -82,6 +87,7 @@ fn agent(url: &str, timeout: Duration) -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .https_only(url.starts_with(SECURE))
+        .max_redirects(0)
         .user_agent(format!("orkai/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .into()
@@ -135,11 +141,40 @@ pub fn publish(home: &Home, tunnel: &str) -> io::Result<String> {
     Ok(address)
 }
 
-pub fn answers(address: &str) -> io::Result<()> {
-    let url = format!("{address}{}", http::HEALTH_PATH);
+fn health_of(base: &str) -> String {
+    format!("{}{}", base.trim_end_matches('/'), http::HEALTH_PATH)
+}
+
+fn authority_of(url: &str) -> Option<(&str, u16)> {
+    let (rest, port) = match url.strip_prefix(SECURE) {
+        Some(rest) => (rest, SECURE_PORT),
+        None => (url.strip_prefix(PLAIN)?, PLAIN_PORT),
+    };
+    let authority = rest.split('/').next().filter(|authority| !authority.is_empty())?;
+    match authority.rsplit_once(':') {
+        Some((host, port)) => Some((host, port.parse().ok()?)),
+        None => Some((authority, port)),
+    }
+}
+
+fn resolves_here(host: &str, port: u16) -> bool {
+    (host, port).to_socket_addrs().is_ok_and(|mut found| found.next().is_some())
+}
+
+pub fn answers(address: &str, tunnel: &str, published: &dyn Fn(&str) -> bool) -> io::Result<()> {
     let silent =
         |error: String| io::Error::other(format!("the fixed address does not reach this computer yet: {error}"));
-    let mut response = agent(&url, ANSWER_TIMEOUT).get(&url).call().map_err(|error| silent(error.to_string()))?;
+    let (fixed, health) = (health_of(address), health_of(tunnel));
+    let moved = agent(&fixed, ANSWER_TIMEOUT).get(&fixed).call().map_err(|error| silent(error.to_string()))?;
+    let location = moved.headers().get("location").and_then(|value| value.to_str().ok());
+    if moved.status().as_u16() != MOVED || location != Some(health.as_str()) {
+        return Err(silent("the fixed address leads somewhere else".into()));
+    }
+    let (host, port) = authority_of(tunnel).ok_or_else(|| silent("the tunnel is not a web address".into()))?;
+    if !resolves_here(host, port) {
+        return if published(host) { Ok(()) } else { Err(silent(format!("{host} is not published yet"))) };
+    }
+    let mut response = agent(&health, ANSWER_TIMEOUT).get(&health).call().map_err(|error| silent(error.to_string()))?;
     let body = response
         .body_mut()
         .with_config()
@@ -297,18 +332,72 @@ mod tests {
         assert_eq!(publish_to(&gone, &me, TUNNEL).unwrap_err().kind(), io::ErrorKind::Other);
     }
 
+    fn health(body: &str) -> String {
+        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
+    }
+
+    fn moved_to(tunnel: &str) -> String {
+        format!(
+            "HTTP/1.1 307 Temporary Redirect\r\nLocation: {tunnel}/health\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+    }
+
+    fn never_published(_: &str) -> bool {
+        false
+    }
+
     #[test]
     fn the_address_is_ready_only_when_this_computer_answers_through_it() {
-        let health = |body: &str| {
-            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
-        };
-        let (bridge, _seen) = service(vec![health(http::HEALTH_BODY)]);
-        let moved = format!(
-            "HTTP/1.1 307 Temporary Redirect\r\nLocation: {bridge}/health\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-        );
-        let (fixed, asked) = service(vec![moved, health("someone else")]);
-        answers(&fixed).unwrap();
+        let (bridge, seen) = service(vec![health(http::HEALTH_BODY), health("someone else")]);
+        let (fixed, asked) = service(vec![moved_to(&bridge), moved_to(&bridge), health(http::HEALTH_BODY)]);
+        answers(&fixed, &bridge, &never_published).unwrap();
         assert!(asked.recv_timeout(Duration::from_secs(10)).unwrap().starts_with("GET /health HTTP/1.1\r\n"));
-        assert!(answers(&fixed).is_err(), "another server at the address is not this computer");
+        assert!(seen.recv_timeout(Duration::from_secs(10)).unwrap().starts_with("GET /health HTTP/1.1\r\n"));
+        assert!(
+            answers(&fixed, &bridge, &never_published).is_err(),
+            "another server at the tunnel is not this computer"
+        );
+        assert!(answers(&fixed, &bridge, &never_published).is_err(), "an address that answers itself is not the relay");
+    }
+
+    #[test]
+    fn an_address_that_leads_to_another_tunnel_is_not_ready() {
+        let (bridge, _seen) = service(vec![]);
+        let (fixed, _asked) = service(vec![moved_to(TUNNEL)]);
+        let err = answers(&fixed, &bridge, &|_| true).unwrap_err();
+        assert!(err.to_string().contains("leads somewhere else"), "{err}");
+    }
+
+    #[test]
+    fn a_tunnel_that_fails_behind_the_address_is_not_ready() {
+        let (bridge, _seen) = service(vec![refused("502 Bad Gateway")]);
+        let (fixed, _asked) = service(vec![moved_to(&bridge)]);
+        let err = answers(&fixed, &bridge, &|_| true).unwrap_err();
+        assert!(err.to_string().contains("502"), "{err}");
+    }
+
+    #[test]
+    fn a_tunnel_this_computer_cannot_resolve_yet_is_ready_once_cloudflare_publishes_it() {
+        let tunnel = "https://quiet-river-sound-lamp.invalid";
+        let (fixed, _asked) = service(vec![moved_to(tunnel), moved_to(tunnel)]);
+        let asked_for = std::sync::Mutex::new(Vec::new());
+        let published = |host: &str| {
+            asked_for.lock().unwrap().push(host.to_string());
+            true
+        };
+        answers(&fixed, tunnel, &published).unwrap();
+        assert_eq!(*asked_for.lock().unwrap(), ["quiet-river-sound-lamp.invalid"]);
+        let err = answers(&fixed, tunnel, &never_published).unwrap_err();
+        assert!(err.to_string().contains("not published yet"), "{err}");
+    }
+
+    #[test]
+    fn the_authority_of_a_tunnel_carries_its_port() {
+        assert_eq!(authority_of(TUNNEL), Some(("quiet-river-sound-lamp.trycloudflare.com", 443)));
+        assert_eq!(authority_of("http://127.0.0.1:7470/health"), Some(("127.0.0.1", 7470)));
+        assert_eq!(authority_of("http://a-b.trycloudflare.com"), Some(("a-b.trycloudflare.com", 80)));
+        assert_eq!(authority_of("ftp://a-b.trycloudflare.com"), None);
+        assert_eq!(authority_of("https://"), None);
+        assert_eq!(authority_of("https://host:port"), None);
     }
 }
