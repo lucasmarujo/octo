@@ -213,10 +213,11 @@ fn in_moderate_mode_octo_answers_a_paused_agent_through_the_engine_cli_and_logs_
 
     let answer = cwd.join(ANSWER_FILE);
     let deadline = Instant::now() + TIMEOUT;
-    while !answer.exists() && Instant::now() < deadline {
+    let written = || std::fs::read_to_string(&answer).unwrap_or_default();
+    while written().is_empty() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert_eq!(std::fs::read_to_string(&answer).unwrap(), "yes", "the answer of the engine reached the agent");
+    assert_eq!(written(), "yes", "the answer of the engine reached the agent");
 
     let prompt = std::fs::read_to_string(fx.dir.join(PROMPT_FILE)).unwrap();
     assert!(prompt.contains("You are Octo") && prompt.contains("Mode: moderate."), "{prompt}");
