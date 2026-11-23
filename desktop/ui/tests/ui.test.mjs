@@ -2686,6 +2686,33 @@ test('the rail of Octo sums up in a few words what the agent said and why Octo d
   assert.match(rust('src/orchestrator/mod.rs'), /pub mode: Mode,\n\s*#\[serde\(default\)\]\n\s*pub report: String,\n\s*#\[serde\(default\)\]\n\s*pub reason: String,/, 'the journal written before still reads');
 });
 
+test('the panel beside the chat of Octo folds away from the head and is as wide as the user left it', async () => {
+  const { OCTO_RAIL_DEFAULT, OCTO_RAIL_MAX, OCTO_RAIL_MIN, octoRailWidth } = await import('../js/format.js');
+  const { PT } = await import('../js/i18n.js');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const rule = (selector) => css.split(`\n${selector} {`)[1].split('}')[0];
+  assert.equal(OCTO_RAIL_DEFAULT, Number(css.match(/--octo-rail: (\d+)px;/)[1]), 'the first paint has the same width');
+  assert.equal(octoRailWidth(null), OCTO_RAIL_DEFAULT);
+  assert.equal(octoRailWidth('nope'), OCTO_RAIL_DEFAULT);
+  assert.equal(octoRailWidth('400'), 400);
+  assert.equal(octoRailWidth(0), OCTO_RAIL_MIN);
+  assert.equal(octoRailWidth(9999), OCTO_RAIL_MAX);
+  assert.match(rule('.octo-rail'), /width: var\(--octo-rail\); max-width: 50%;/, 'the chat keeps its room on a small window');
+  assert.match(rule('.octo-rail'), /overflow-x: hidden;/);
+  assert.match(css, /:root\[data-octo-rail="collapsed"\] \.octo-rail, :root\[data-octo-rail="collapsed"\] \.octo-rail-resize,/);
+  assert.match(css, /:root\[data-octo-rail="closing"\] \.octo-rail \{ width: 0;[^}]*transition: width var\(--motion-slow\)/, 'it slides like the panel of an agent');
+  assert.match(css, /:root\[data-octo-rail="opening"\] \.octo-rail \{ animation: details-in var\(--motion-slow\)/);
+  const page = readFileSync(join(REPO, 'desktop/ui/js/octo.js'), 'utf8');
+  assert.match(page, /chatComposer\(\)\), handle, h\('aside', \{ class: 'octo-rail' \}\)\);\n\s*initOctoRail\(handle, railToggle\);/, 'the handle sits between the chat and the panel');
+  assert.match(page, /class: 'sidebar-resize octo-rail-resize',\n\s*role: 'separator',\n\s*'aria-orientation': 'vertical',\n\s*tabindex: '0',/);
+  assert.match(page, /place\(host, \[headline, engine, mode, shownView === 'chat' \? railToggle : null\]\.filter\(Boolean\)\);/, 'the button is in the head of the chat, where the panel is');
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /export function initOctoRail\(handle, button\) \{\n\s*initPanelWidth\(\{[\s\S]*?property: '--octo-rail',[\s\S]*?growKey: 'ArrowLeft',\n\s*\}\);\n\s*initPanelToggle\(\{[\s\S]*?name: 'octoRail',/, 'the same resize and fold as the other panels');
+  assert.equal(PT['Collapse the Octo panel'], 'Recolher o painel do Octo');
+  assert.equal(PT['Expand the Octo panel'], 'Expandir o painel do Octo');
+  assert.equal(PT['Resize the Octo panel'], 'Redimensionar o painel do Octo');
+});
+
 test('the Octo tab, the sidebar and the bar under the window count the decisions that need you', async () => {
   const { MODE_WORDS, deciding, navCounts, needsCount, needsYou, octoStatus, orchestratorView } = await import('../js/orchestrator.js');
   const view = orchestratorView(octoMessage());

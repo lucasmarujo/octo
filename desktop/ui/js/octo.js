@@ -69,6 +69,7 @@ import {
   whyText,
 } from './orchestrator.js';
 import { segmented, toggle } from './settings.js';
+import { initOctoRail } from './sidebar.js';
 import { agents, findAgent, modelsOf, now, state } from './state.js';
 import { toast } from './toast.js';
 import { send } from './transport.js';
@@ -97,6 +98,7 @@ const files = { tab: null, saved: new Map(), drafts: new Map(), asked: new Set()
 const log = { older: [], next: null, loading: false };
 
 let actions = { openAgent: () => {}, openPage: () => {} };
+let railToggle = null;
 let shownView = octoView(storage.get(VIEW_KEY));
 let entered = null;
 let seen = null;
@@ -279,7 +281,7 @@ function head(current) {
   }
   const engine = block('engine', JSON.stringify([current.primary, current.secondary]), () => engineChip(current));
   const mode = block('mode', current.mode, () => modeSwitch(current));
-  place(host, [headline, engine, mode]);
+  place(host, [headline, engine, mode, shownView === 'chat' ? railToggle : null].filter(Boolean));
   return host;
 }
 
@@ -576,8 +578,27 @@ function paintRail(host, current) {
   ]);
 }
 
+function railResize() {
+  return h('div', {
+    class: 'sidebar-resize octo-rail-resize',
+    role: 'separator',
+    'aria-orientation': 'vertical',
+    tabindex: '0',
+    'aria-label': t('Resize the Octo panel'),
+    title: t('Drag to resize, double click to reset'),
+  });
+}
+
+function chatFrame() {
+  const handle = railResize();
+  railToggle = h('button', { class: 'footer-icon octo-rail-toggle', type: 'button' });
+  const body = h('div', { class: 'octo-body octo-chat' }, h('div', { class: 'octo-chat-main' }, h('div', { class: 'octo-thread selectable' }), chatComposer()), handle, h('aside', { class: 'octo-rail' }));
+  initOctoRail(handle, railToggle);
+  return body;
+}
+
 function chatBody(current) {
-  const body = block('body:chat', '', () => h('div', { class: 'octo-body octo-chat' }, h('div', { class: 'octo-chat-main' }, h('div', { class: 'octo-thread selectable' }), chatComposer()), h('aside', { class: 'octo-rail' })));
+  const body = block('body:chat', '', chatFrame);
   paintThread(body.querySelector('.octo-thread'), current);
   paintComposer(body.querySelector('.octo-composer'), current);
   paintRail(body.querySelector('.octo-rail'), current);
