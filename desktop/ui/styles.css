@@ -79,6 +79,7 @@
   --radius-lg: 14px;
   --sidebar: 248px;
   --details: 320px;
+  --titlebar-drag: 96px;
   color-scheme: dark;
 }
 
@@ -252,6 +253,8 @@ button.statusbar-item:hover { color: var(--color-text); }
 .tab:hover { background: var(--color-surface); }
 .tab.active { background: var(--color-surface-raised); color: var(--color-text); font-weight: 600; }
 .tab .label-mono { font-family: var(--font-mono); font-size: var(--text-sm); }
+.titlebar-drag { flex: 1 0 var(--titlebar-drag); align-self: stretch; }
+:root[data-window-controls="native"] .titlebar-drag { order: -1; flex-grow: 0; }
 .window-controls { display: none; height: 100%; margin-left: auto; }
 :root[data-window-controls="app"] .window-controls { display: flex; }
 :root[data-window-controls="native"] .titlebar { padding-left: 88px; }

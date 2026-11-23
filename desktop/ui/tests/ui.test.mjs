@@ -1093,6 +1093,17 @@ test('a Mac keeps its own traffic lights and Octo draws window controls only whe
   assert.ok(JSON.parse(rust('desktop/capabilities/default.json')).permissions.includes('core:default'), 'core:default lets the window ask whether the system decorates it');
 });
 
+test('the title bar always keeps a strip to drag the window by, before the window buttons or after the traffic lights', () => {
+  const MIN_DRAG_PX = 80;
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<button id="tabs-menu"[^>]*><\/button>\s*<div class="titlebar-drag" data-tauri-drag-region><\/div>\s*<div class="window-controls">/, 'an empty element, since a bare drag region only drags from itself');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.ok(Number(css.match(/--titlebar-drag: (\d+)px;/)[1]) >= MIN_DRAG_PX);
+  assert.match(css, /\.titlebar-drag \{ flex: 1 0 var\(--titlebar-drag\); align-self: stretch; \}/, 'it never shrinks, so the tabs give way to it however many are open');
+  assert.match(css, /\.tabs \{[^}]*flex: 0 1 auto;[^}]*min-width: 0;/);
+  assert.match(css, /:root\[data-window-controls="native"\] \.titlebar-drag \{ order: -1; flex-grow: 0; \}/, 'on a Mac it sits right after the traffic lights');
+});
+
 test('every text the app shows has a Portuguese version', async () => {
   const { PT } = await import('../js/i18n.js');
   const ui = join(REPO, 'desktop/ui');
