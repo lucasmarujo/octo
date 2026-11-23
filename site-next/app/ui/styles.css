@@ -79,6 +79,8 @@
   --radius-lg: 14px;
   --sidebar: 248px;
   --details: 320px;
+  --titlebar-drag: 96px;
+  --octo-rail: 320px;
   color-scheme: dark;
 }
 
@@ -252,6 +254,8 @@ button.statusbar-item:hover { color: var(--color-text); }
 .tab:hover { background: var(--color-surface); }
 .tab.active { background: var(--color-surface-raised); color: var(--color-text); font-weight: 600; }
 .tab .label-mono { font-family: var(--font-mono); font-size: var(--text-sm); }
+.titlebar-drag { flex: 1 0 var(--titlebar-drag); align-self: stretch; }
+:root[data-window-controls="native"] .titlebar-drag { order: -1; flex-grow: 0; }
 .window-controls { display: none; height: 100%; margin-left: auto; }
 :root[data-window-controls="app"] .window-controls { display: flex; }
 :root[data-window-controls="native"] .titlebar { padding-left: 88px; }
@@ -311,6 +315,8 @@ button.statusbar-item:hover { color: var(--color-text); }
 .session-row.drop-target, .session.selected .session-row.drop-target { background: color-mix(in srgb, var(--color-accent) 18%, transparent); box-shadow: inset 0 0 0 1px var(--color-accent); color: var(--color-text); }
 .moving-agent, .moving-agent * { cursor: grabbing !important; }
 .moving-source { opacity: 0.45; }
+.summary.drop-before { box-shadow: inset 0 2px 0 var(--color-accent); }
+.summary.drop-after { box-shadow: inset 0 -2px 0 var(--color-accent); }
 .drag-ghost { position: fixed; top: 0; left: 0; z-index: 30; display: flex; align-items: center; gap: 8px; max-width: 280px; height: 32px; padding: 0 12px; border: 1px solid var(--color-border-strong); border-radius: 8px; background: var(--color-surface-raised); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); font-family: var(--font-mono); font-size: var(--text-sm); white-space: nowrap; pointer-events: none; }
 .drag-ghost .swatch { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
 .drag-ghost-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -1144,6 +1150,7 @@ button.statusbar-item:hover { color: var(--color-text); }
 .octo-card-wait { flex-shrink: 0; color: var(--color-waiting); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
 .octo-asks { display: flex; flex-direction: column; gap: 6px; }
 .octo-asks-text { font-size: var(--text-md); font-weight: 500; line-height: 22px; overflow-wrap: anywhere; }
+.octo-asks-report { color: var(--color-text-muted); line-height: 21px; overflow-wrap: anywhere; }
 .octo-would { display: flex; flex-direction: column; gap: 6px; padding-left: 12px; border-left: 2px solid var(--color-accent); }
 .octo-would.failed { border-left-color: var(--color-lost); }
 .octo-would-text { line-height: 21px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -1160,7 +1167,12 @@ button.statusbar-item:hover { color: var(--color-text); }
 .octo-more { align-self: flex-start; font-weight: 500; }
 .octo-composer { gap: 14px; margin: 0 48px 24px; padding: 16px 16px 14px 18px; border-color: var(--color-border-strong); }
 .octo-composer .composer-options { gap: 8px; }
-.octo-rail { display: flex; flex-direction: column; gap: 24px; width: 320px; flex-shrink: 0; padding: 20px 16px; border-left: 1px solid var(--color-border); overflow-y: auto; }
+.octo-rail { display: flex; flex-direction: column; gap: 24px; width: var(--octo-rail); max-width: 50%; flex-shrink: 0; padding: 20px 16px; border-left: 1px solid var(--color-border); overflow-x: hidden; overflow-y: auto; }
+.octo-rail-toggle { margin-left: -8px; }
+:root[data-octo-rail="collapsed"] .octo-rail, :root[data-octo-rail="collapsed"] .octo-rail-resize, :root[data-octo-rail="closing"] .octo-rail-resize, :root[data-octo-rail="opening"] .octo-rail-resize { display: none; }
+:root[data-octo-rail="closing"] .octo-rail { width: 0; padding-left: 0; padding-right: 0; border-left-width: 0; opacity: 0; transition: width var(--motion-slow) var(--ease-out), padding var(--motion-slow) var(--ease-out), opacity var(--motion-fast) var(--ease-out); }
+:root[data-octo-rail="opening"] .octo-rail { animation: details-in var(--motion-slow) var(--ease-out); }
+:root[data-octo-rail="closing"] .octo-rail > *, :root[data-octo-rail="opening"] .octo-rail > * { width: calc(var(--octo-rail) - 32px); }
 .octo-rail-block { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
 .octo-rail-head { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
 .octo-rail-mark { font-size: var(--text-sm); line-height: 16px; }
@@ -1172,12 +1184,16 @@ button.statusbar-item:hover { color: var(--color-text); }
 .octo-need-head { display: flex; align-items: center; gap: 8px; }
 .octo-need-head .octo-agent { flex: 1; min-width: 0; line-height: 16px; }
 .octo-need-head .octo-age, .octo-done .octo-age { min-width: 0; font-size: 11px; line-height: 14px; }
-.octo-need-question { display: -webkit-box; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.octo-need-question { display: -webkit-box; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .octo-need-meta { color: var(--color-text-faint); font-family: var(--font-mono); font-size: 11px; line-height: 14px; }
 .octo-done-list { display: flex; flex-direction: column; gap: 9px; padding: 0 4px; }
 .octo-done { display: flex; align-items: baseline; gap: 8px; }
 .octo-done-mark { width: 10px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 16px; }
-.octo-done-text { flex: 1; min-width: 0; color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; overflow-wrap: anywhere; }
+.octo-done-body { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.octo-done-text { color: var(--color-text-muted); font-size: var(--text-sm); line-height: 18px; overflow-wrap: anywhere; }
+.octo-done-report { display: -webkit-box; overflow: hidden; color: var(--color-text); font-size: var(--text-xs); line-height: 16px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.octo-why { display: -webkit-box; overflow: hidden; color: var(--color-text-faint); font-size: var(--text-xs); line-height: 16px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.octo-need-would { display: -webkit-box; overflow: hidden; color: var(--color-text); font-size: var(--text-xs); line-height: 16px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .octo-done-name { color: var(--color-text); font-family: var(--font-mono); font-size: var(--text-xs); }
 .octo-rail .octo-more { margin: 2px 4px 0; }
 .octo-fleet { display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; margin-top: auto; padding: 16px 4px 0; border-top: 1px solid var(--color-border); }
@@ -1205,7 +1221,7 @@ button.statusbar-item:hover { color: var(--color-text); }
 .octo-decision-mark { width: 10px; font-size: var(--text-sm); line-height: 18px; }
 .octo-decision-body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
 .octo-decision-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.octo-decision-question { line-height: 20px; overflow-wrap: anywhere; }
+.octo-decision-question { display: -webkit-box; overflow: hidden; line-height: 20px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .octo-decision .octo-age { line-height: 20px; }
 .octo-tag { flex-shrink: 0; padding: 3px 7px; border: 1px solid var(--color-border-strong); border-radius: 6px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: 11px; line-height: 14px; white-space: nowrap; }
 .octo-section-label { display: flex; align-items: baseline; gap: 10px; padding: 4px 2px; }
@@ -1234,6 +1250,7 @@ button.octo-line:hover, button.octo-line.selected { background: var(--color-surf
 .octo-tool-name { margin-right: 8px; color: var(--color-text); font-weight: 700; }
 .octo-context { max-height: 168px; margin: 0; padding: 10px 12px; border-left: 1px solid var(--color-border-strong); border-radius: 0 6px 6px 0; background: var(--color-bg); color: var(--color-text-muted); font-family: var(--font-mono); font-size: 11px; line-height: 16px; white-space: pre; overflow: auto; }
 .octo-detail-question { font-size: 16px; font-weight: 600; line-height: 23px; overflow-wrap: anywhere; }
+.octo-detail-report { color: var(--color-text); line-height: 21px; overflow-wrap: anywhere; }
 .octo-answer { padding: 12px 14px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); font-size: var(--text-base); line-height: 21px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .octo-answer-edit { width: 100%; min-height: 96px; outline: none; resize: vertical; user-select: text; }
 .octo-answer-edit:focus { border-color: var(--color-accent); }

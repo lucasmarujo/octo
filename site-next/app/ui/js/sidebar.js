@@ -1,17 +1,19 @@
 import { deleteSession, renameSession } from './commands.js';
 import { $, h, keep, place, storage, svg } from './dom.js';
 import { ask, closeMenu, openMenu } from './dialogs.js';
-import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentTip, detailsWidth, duration, flyoutPlace, glyph, kindColor, kindMark, label, plural, sessionMark, shortModel, sidebarWidth, subagentLine, usageColor, usageOrder, usageShown } from './format.js';
+import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, OCTO_RAIL_DEFAULT, OCTO_RAIL_MAX, OCTO_RAIL_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentTip, detailsWidth, duration, flyoutPlace, glyph, kindColor, kindMark, label, octoRailWidth, plural, sessionMark, shortModel, sidebarWidth, subagentLine, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
 import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_DETAILS_COLLAPSE, ICON_DETAILS_EXPAND, ICON_PLUS, ICON_SIDEBAR_COLLAPSE, ICON_SIDEBAR_EXPAND, providerIcon } from './icons.js';
 import { hideTip, motionMs } from './motion.js';
-import { agents, inSession, now, selectSession, state, toggleExpanded, toggleUsage } from './state.js';
+import { agents, inSession, now, selectSession, sessionAgents, state, toggleExpanded, toggleUsage } from './state.js';
 import { send } from './transport.js';
 
 const WIDTH_KEY = 'octo.sidebar';
 const DETAILS_WIDTH_KEY = 'octo.details';
 const SIDEBAR_COLLAPSED_KEY = 'octo.sidebarCollapsed';
 const DETAILS_COLLAPSED_KEY = 'octo.detailsCollapsed';
+const OCTO_RAIL_WIDTH_KEY = 'octo.octoRail';
+const OCTO_RAIL_COLLAPSED_KEY = 'octo.octoRailCollapsed';
 const WIDTH_STEP = 16;
 const DETAILS_HANDLE_GAP = 8;
 const FLYOUT_CLOSE_MS = 160;
@@ -138,7 +140,7 @@ function sessionMenu(event, name) {
 }
 
 function sessionItem(session, onSelect, onOpen) {
-  const agents = inSession(session.name);
+  const agents = sessionAgents(session.name);
   const selected = session.name === state.session;
   const expanded = state.expanded.has(session.name);
   const working = agents.filter((agent) => agent.state === 'working').length;
@@ -173,7 +175,7 @@ function sessionItem(session, onSelect, onOpen) {
 function sessionFlyout(name, onOpen) {
   const session = state.overview ? state.overview.sessions.find((item) => item.name === name) : null;
   if (!session) return null;
-  const list = inSession(name);
+  const list = sessionAgents(name);
   const open = (agent) => {
     closeFlyout();
     onOpen(agent);
@@ -380,7 +382,7 @@ export function renderSidebar(onSelect, onOpen) {
     ? JSON.stringify([
         state.session,
         [...state.expanded],
-        overview.sessions.map((session) => [session.name, session.agents, inSession(session.name).map(agentSignature)]),
+        overview.sessions.map((session) => [session.name, session.agents, sessionAgents(session.name).map(agentSignature)]),
       ])
     : '';
   if (overview && host.dataset.signature !== signature) {
@@ -523,5 +525,29 @@ export function initDetailsWidth() {
     max: DETAILS_MAX,
     fromPointer: (event) => $('details').getBoundingClientRect().right - event.clientX - DETAILS_HANDLE_GAP,
     growKey: 'ArrowLeft',
+  });
+}
+
+export function initOctoRail(handle, button) {
+  initPanelWidth({
+    handle,
+    key: OCTO_RAIL_WIDTH_KEY,
+    property: '--octo-rail',
+    clamp: octoRailWidth,
+    fallback: OCTO_RAIL_DEFAULT,
+    min: OCTO_RAIL_MIN,
+    max: OCTO_RAIL_MAX,
+    fromPointer: (event) => handle.parentElement.getBoundingClientRect().right - event.clientX,
+    growKey: 'ArrowLeft',
+  });
+  initPanelToggle({
+    button,
+    key: OCTO_RAIL_COLLAPSED_KEY,
+    name: 'octoRail',
+    collapseText: t('Collapse the Octo panel'),
+    expandText: t('Expand the Octo panel'),
+    collapseIcon: ICON_DETAILS_COLLAPSE,
+    expandIcon: ICON_DETAILS_EXPAND,
+    onToggle: () => {},
   });
 }

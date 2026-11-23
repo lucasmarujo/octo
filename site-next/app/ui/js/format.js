@@ -10,6 +10,9 @@ export const SIDEBAR_MAX = 480;
 export const DETAILS_DEFAULT = 320;
 export const DETAILS_MIN = 220;
 export const DETAILS_MAX = 560;
+export const OCTO_RAIL_DEFAULT = 320;
+export const OCTO_RAIL_MIN = 240;
+export const OCTO_RAIL_MAX = 560;
 export const FLYOUT_GAP = 6;
 export const FLYOUT_MARGIN = 8;
 
@@ -49,6 +52,10 @@ export function sidebarWidth(value) {
 
 export function detailsWidth(value) {
   return panelWidth(value, DETAILS_DEFAULT, DETAILS_MIN, DETAILS_MAX);
+}
+
+export function octoRailWidth(value) {
+  return panelWidth(value, OCTO_RAIL_DEFAULT, OCTO_RAIL_MIN, OCTO_RAIL_MAX);
 }
 
 export function chosenModel(models, id) {
@@ -99,6 +106,18 @@ export function versionAtLeast(version, wanted) {
 
 export function canMove(agent, session) {
   return Boolean(agent && session) && !agent.starting && agent.session !== session;
+}
+
+export function inOrder(list, order) {
+  const at = new Map((Array.isArray(order) ? order : []).map((id, index) => [id, index]));
+  const rank = (agent) => (at.has(agent.id) ? at.get(agent.id) : at.size);
+  return [...list].sort((a, b) => rank(a) - rank(b));
+}
+
+export function placeAgent(ids, id, to) {
+  const rest = ids.filter((other) => other !== id);
+  rest.splice(Math.min(Math.max(to, 0), rest.length), 0, id);
+  return rest;
 }
 
 export const OVERVIEW_TAB = 'overview';

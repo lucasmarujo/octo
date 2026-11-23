@@ -7,6 +7,22 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.49',
+    date: '2026-11-23',
+    en: [
+      'The title bar always keeps a free strip to drag the window by, however many tabs are open: before the window buttons on Windows, and right after the traffic lights on a Mac.',
+      'Drag an agent up or down inside its session in the sidebar to put the agents in the order you want. Dropping it on another session still moves it there.',
+      'Octo now sums up in a few words what each agent said and why it decided what it did, in the panel beside the chat, in the decisions and in the activity, instead of showing the raw output of the agent.',
+      'The panel beside the chat of Octo can be folded from the button at the top right and resized by dragging its edge, like the panel of an agent.',
+    ],
+    'pt-BR': [
+      'A barra de título sempre deixa uma faixa livre para arrastar a janela, não importa quantas abas estejam abertas: antes dos botões da janela no Windows e logo depois dos semáforos no Mac.',
+      'Arraste um agente para cima ou para baixo dentro da sessão na barra lateral para deixar os agentes na ordem que quiser. Soltar em outra sessão continua movendo para lá.',
+      'O Octo agora resume em poucas palavras o que cada agente disse e por que decidiu o que decidiu, no painel ao lado do chat, nas decisões e na atividade, em vez de mostrar a saída crua do agente.',
+      'O painel ao lado do chat do Octo pode ser recolhido pelo botão no canto superior direito e redimensionado arrastando a borda, como o painel de um agente.',
+    ],
+  },
+  {
     version: '0.2.48',
     date: '2026-11-23',
     en: [

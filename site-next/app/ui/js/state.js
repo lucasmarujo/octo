@@ -1,8 +1,9 @@
 import { deviceStorage as storage } from './device.js';
-import { DEFAULT_GRID_SIZE, GRID_SIZES, OCTO_TAB, OVERVIEW_TAB, arrangeTabs, chosenModel } from './format.js';
+import { DEFAULT_GRID_SIZE, GRID_SIZES, OCTO_TAB, OVERVIEW_TAB, arrangeTabs, chosenModel, inOrder } from './format.js';
 
 const SESSION_KEY = 'orkai.session';
 const EXPANDED_KEY = 'orkai.expanded';
+const ORDER_KEY = 'octo.agentOrder';
 const WHO_KEY = 'orkai.who';
 const WHERE_KEY = 'orkai.where';
 const WORKTREE_KEY = 'orkai.worktree';
@@ -21,6 +22,7 @@ export const VIEWS = ['board', 'list', 'grid'];
 
 const savedPins = storage.json(PINNED_TABS_KEY, null);
 const savedModels = storage.json(MODEL_KEY, {});
+const savedOrder = storage.json(ORDER_KEY, {});
 const savedTabs = storage.json(TABS_KEY, []);
 const pinnedTabs = new Set(Array.isArray(savedPins) ? savedPins : [OVERVIEW_TAB]);
 const openTabs = Array.isArray(savedPins) ? savedTabs : [OVERVIEW_TAB, ...savedTabs];
@@ -40,6 +42,7 @@ export const state = {
   session: storage.get(SESSION_KEY),
   pendingSession: null,
   expanded: new Set(storage.json(EXPANDED_KEY, [])),
+  order: savedOrder && typeof savedOrder === 'object' && !Array.isArray(savedOrder) ? savedOrder : {},
   who: storage.get(WHO_KEY),
   where: storage.json(WHERE_KEY, {}),
   worktree: storage.json(WORKTREE_KEY, null),
@@ -99,6 +102,15 @@ export function agents() {
 
 export function inSession(name = state.session) {
   return agents().filter((agent) => agent.session === name);
+}
+
+export function sessionAgents(name) {
+  return inOrder(inSession(name), state.order[name]);
+}
+
+export function orderSession(name, ids) {
+  state.order[name] = ids;
+  storage.set(ORDER_KEY, JSON.stringify(state.order));
 }
 
 export function projectsInSession() {
