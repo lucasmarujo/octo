@@ -7,6 +7,18 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.51',
+    date: '2026-11-24',
+    en: [
+      'An agent you start inside a terminal now survives a restart of the computer: when Octo recovers the terminal, Claude, Codex or any other agent typed into it comes back on the same conversation, with the options you started it with.',
+      'This also covers an agent started from the task box of a terminal, which used to open a new, empty conversation after a restart.',
+    ],
+    'pt-BR': [
+      'Um agente iniciado dentro de um terminal agora sobrevive ao reinício do computador: quando o Octo recupera o terminal, o Claude, o Codex ou qualquer outro agente digitado nele volta na mesma conversa, com as opções com que você o iniciou.',
+      'Isso vale também para o agente iniciado pela caixa de tarefa de um terminal, que antes abria uma conversa nova e vazia depois de um reinício.',
+    ],
+  },
+  {
     version: '0.2.50',
     date: '2026-11-23',
     en: [

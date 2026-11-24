@@ -1,5 +1,5 @@
 export const HOST = 'lucas@studio';
-export const FALLBACK_VERSION = '0.2.50';
+export const FALLBACK_VERSION = '0.2.51';
 export const MAIN_SESSION = 'launch-week';
 export const SIDE_SESSION = 'api-v2';
 export const THEME = 'gray';
