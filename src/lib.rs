@@ -13,6 +13,7 @@ pub mod mcp;
 pub mod migrate;
 pub mod model;
 pub mod models;
+pub mod nested_resume;
 pub mod notify;
 pub mod orchestrator;
 pub mod paths;

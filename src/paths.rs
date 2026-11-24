@@ -86,6 +86,10 @@ impl Home {
         self.agent_dir(id).join("exit.json")
     }
 
+    pub fn nested_file(&self, id: AgentId) -> PathBuf {
+        self.agent_dir(id).join("nested.json")
+    }
+
     pub fn output_log(&self, id: AgentId) -> PathBuf {
         self.agent_dir(id).join("output.log")
     }

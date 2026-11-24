@@ -3,8 +3,8 @@ use std::io;
 
 use crate::fsutil;
 use crate::model::{
-    AgentId, AgentRecord, DEFAULT_SESSION, ExitInfo, LaunchSpec, NewAgent, RuntimeInfo, Session, SessionList, UiState,
-    validate_agent_name, validate_session_name,
+    AgentId, AgentRecord, DEFAULT_SESSION, ExitInfo, LaunchSpec, NewAgent, RuntimeInfo, SavedNested, Session,
+    SessionList, UiState, validate_agent_name, validate_session_name,
 };
 use crate::paths::{Home, create_private_dir};
 use crate::util::now_ms;
@@ -212,6 +212,14 @@ impl Store {
 
     pub fn read_launch(&self, id: AgentId) -> io::Result<Option<LaunchSpec>> {
         fsutil::read_json_opt(&self.home.launch_file(id))
+    }
+
+    pub fn read_nested(&self, id: AgentId) -> io::Result<Option<SavedNested>> {
+        fsutil::read_json_opt(&self.home.nested_file(id))
+    }
+
+    pub fn write_nested(&self, id: AgentId, nested: &SavedNested) -> io::Result<()> {
+        fsutil::write_json_atomic(&self.home.nested_file(id), nested)
     }
 
     pub fn read_runtime(&self, id: AgentId) -> io::Result<Option<RuntimeInfo>> {

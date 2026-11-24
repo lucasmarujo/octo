@@ -26,6 +26,7 @@ use crate::protocol::{ClientMsg, HolderMsg, PROTOCOL_VERSION, Snapshot, TermSize
 use crate::util::{constant_time_eq, lock, now_ms, random_token};
 
 use gate::Gate;
+use nested::{Keeper, Kept};
 use oplog::OutputLog;
 use term::TermState;
 
@@ -41,6 +42,7 @@ struct Watch {
     root: u32,
     claude_home: Option<PathBuf>,
     qwen_home: Option<PathBuf>,
+    keeper: Keeper,
 }
 
 struct ClientSlot {
@@ -372,11 +374,12 @@ pub fn run(home: &Home, id: AgentId) -> io::Result<()> {
         root,
         claude_home: launch::claude_home(),
         qwen_home: launch::qwen_home(),
+        keeper: Keeper::new(fsutil::read_json_opt(&home.nested_file(id)).ok().flatten()),
     });
     let inbox = spec.kind.is_ai().then(|| HookInbox::open(home.hooks_dir(id)));
     spawn_named("orkai-ticker", {
         let shared = Arc::clone(&shared);
-        move || tick(&shared, watch.as_ref(), inbox)
+        move || tick(&shared, watch, inbox)
     })?;
 
     let status = child.wait();
@@ -443,18 +446,33 @@ fn pump_output(shared: &Arc<Shared>, mut reader: Box<dyn Read + Send>) {
     }
 }
 
-fn tick(shared: &Arc<Shared>, watch: Option<&Watch>, mut inbox: Option<HookInbox>) {
+fn keep_nested(shared: &Shared, change: Kept) {
+    let file = shared.home.nested_file(shared.agent_id);
+    let kept = match change {
+        Kept::Save(saved) => fsutil::write_json_atomic(&file, &saved),
+        Kept::Forget => fsutil::remove_file_if_exists(&file),
+    };
+    if let Err(err) = kept {
+        shared.diag(&format!("could not keep the agent running in this terminal: {err}"));
+    }
+}
+
+fn tick(shared: &Arc<Shared>, mut watch: Option<Watch>, mut inbox: Option<HookInbox>) {
     let mut last: Option<StatusReport> = None;
     let mut ticks: u32 = 0;
     while !shared.finished.load(Ordering::SeqCst) {
         thread::sleep(TICK);
         ticks = ticks.wrapping_add(1);
         let now = now_ms();
-        if let Some(watch) = watch
+        if let Some(watch) = watch.as_mut()
             && ticks.is_multiple_of(nested::CHECK_EVERY_TICKS)
         {
             let processes = nested::descendants(watch.root);
             let found = nested::detect(&processes, watch.claude_home.as_deref(), watch.qwen_home.as_deref(), now);
+            let (found, change) = watch.keeper.observe(found, now, nested::command_line);
+            if let Some(change) = change {
+                keep_nested(shared, change);
+            }
             lock(&shared.term).set_nested(found, now);
         }
         let events = inbox.as_mut().map(HookInbox::take).unwrap_or_default();
