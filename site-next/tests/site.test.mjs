@@ -89,7 +89,7 @@ test('the page wears the black theme of the app, and Kai keeps his pink', () => 
 test('the downloads are the files of the README table', () => {
   const table = readme.slice(readme.indexOf('| System | Download |'), readme.indexOf('`Octo-setup.exe` installs Octo'));
   const files = [...table.matchAll(/\| `([^`]+)` \|/g)].map((match) => match[1]);
-  assert.equal(files.length, 5);
+  assert.equal(files.length, 4);
   const linked = [...html.matchAll(new RegExp(`href="${RELEASE.replace(/[.]/g, '\\.')}([^"]+)"`, 'g'))].map((match) => match[1]);
   assert.deepEqual([...new Set(linked)].sort(), [...files].sort());
 });

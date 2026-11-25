@@ -40,8 +40,7 @@ never stops an agent. Download it from the
 | --- | --- |
 | Windows 10 and 11 x64 (installer) | `Octo-setup.exe` |
 | Windows 10 and 11 x64 (no install) | `Octo.exe` |
-| macOS Apple Silicon | `Octo-macos-apple-silicon.zip` |
-| macOS Intel | `Octo-macos-intel.zip` |
+| macOS 11+ (Apple Silicon and Intel) | `Octo-macos.zip` |
 | Linux x64 (WebKitGTK 4.1) | `Octo-linux-x86_64` |
 
 `Octo-setup.exe` installs Octo for your user in `%LOCALAPPDATA%\Programs\Octo`, without admin rights, with a
@@ -762,7 +761,7 @@ by hand.
 - Committers and reviewers: [Lucas Marujo](https://github.com/lucasmarujo)
 - Approvers: [Lucas Marujo](https://github.com/lucasmarujo)
 
-`Octo.app`, in `Octo-macos-apple-silicon.zip` and `Octo-macos-intel.zip`, is signed with a Developer ID
+`Octo.app`, in `Octo-macos.zip` for Apple Silicon and Intel, is signed with a Developer ID
 Application certificate (team `8VRVBA2X7C`), with the hardened runtime, and notarized by Apple, with the ticket
 stapled to the app. Only CI signs it, from builds of this repository; `codesign -dv /Applications/Octo.app`
 shows the team.

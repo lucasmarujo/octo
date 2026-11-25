@@ -40,8 +40,7 @@ sozinho, e fechá-lo nunca para um agente. Baixe na
 | --- | --- |
 | Windows 10 e 11 x64 (instalador) | `Octo-setup.exe` |
 | Windows 10 e 11 x64 (sem instalar) | `Octo.exe` |
-| macOS Apple Silicon | `Octo-macos-apple-silicon.zip` |
-| macOS Intel | `Octo-macos-intel.zip` |
+| macOS 11+ (Apple Silicon e Intel) | `Octo-macos.zip` |
 | Linux x64 (WebKitGTK 4.1) | `Octo-linux-x86_64` |
 
 O `Octo-setup.exe` instala o Octo para o seu usuário em `%LOCALAPPDATA%\Programs\Octo`, sem pedir administrador,
@@ -766,7 +765,7 @@ cada pedido de assinatura será aprovado à mão.
 - Committers e revisores: [Lucas Marujo](https://github.com/lucasmarujo)
 - Aprovadores: [Lucas Marujo](https://github.com/lucasmarujo)
 
-O `Octo.app`, no `Octo-macos-apple-silicon.zip` e no `Octo-macos-intel.zip`, é assinado com um certificado
+O `Octo.app`, no `Octo-macos.zip` para Apple Silicon e Intel, é assinado com um certificado
 Developer ID Application (time `8VRVBA2X7C`), com o hardened runtime, e notarizado pela Apple, com o ticket
 grampeado no app. Só o CI assina, a partir de builds deste repositório; `codesign -dv /Applications/Octo.app`
 mostra o time.

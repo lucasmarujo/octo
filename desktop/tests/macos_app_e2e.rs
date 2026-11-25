@@ -11,11 +11,10 @@ use orkai::model::{AgentKind, LaunchSpec, NewAgent};
 use orkai::paths::Home;
 use orkai::protocol::ClientMsg;
 use orkai::store::Store;
-use orkai::update::{app_bundle, install};
+use orkai::update::app_bundle;
 use orkai::util::now_ms;
 
 const SIGNED_APP_ENV: &str = "OCTO_SIGNED_APP";
-const LEGACY_UPDATE_ENV: &str = "OCTO_LEGACY_UPDATE";
 const BUNDLE_EXECUTABLE: &str = "Contents/MacOS/octo";
 const CODESIGN: &str = "/usr/bin/codesign";
 const SHELL: &str = "/bin/sh";
@@ -66,38 +65,12 @@ fn signed_app(dir: &Path) -> PathBuf {
     app
 }
 
-fn legacy_update() -> PathBuf {
-    std::env::var_os(LEGACY_UPDATE_ENV).map_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_octo")), PathBuf::from)
-}
-
 fn wait_until(mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + TIMEOUT;
     while !condition() {
         assert!(Instant::now() < deadline, "timed out");
         std::thread::sleep(POLL);
     }
-}
-
-#[test]
-fn an_app_signed_ad_hoc_still_starts_after_it_swaps_in_the_binary_of_a_newer_release() {
-    let fx =
-        Fixture { dir: std::env::temp_dir().join(format!("octo-macos-legacy-{}-{}", std::process::id(), now_ms())) };
-    let app = unsigned_app(&fx.dir);
-    assert!(codesign(&["--force", "--sign", "-"], &app), "Octo up to 0.2.9 was signed ad hoc");
-    let exe = app.join(BUNDLE_EXECUTABLE);
-    install(&exe, &std::fs::read(legacy_update()).unwrap()).unwrap();
-    let started = Command::new(&exe).arg("--version").output().unwrap();
-    assert!(
-        started.status.success(),
-        "macOS refused the updated app as it started ({}): {}",
-        started.status,
-        String::from_utf8_lossy(&started.stderr)
-    );
-    assert!(
-        String::from_utf8_lossy(&started.stdout).starts_with("octo "),
-        "{}",
-        String::from_utf8_lossy(&started.stdout)
-    );
 }
 
 #[test]

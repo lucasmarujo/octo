@@ -164,15 +164,10 @@ jobs:
             download: Octo-linux-x86_64
             update: Octo-linux-x86_64
           - os: macos-latest
-            target: aarch64-apple-darwin
+            target: universal-apple-darwin
+            toolchains: aarch64-apple-darwin,x86_64-apple-darwin
             ext: ""
-            download: Octo-macos-apple-silicon.zip
-            update: Octo-macos-apple-silicon-update
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            ext: ""
-            download: Octo-macos-intel.zip
-            update: Octo-macos-intel-update
+            download: Octo-macos.zip
     runs-on: ${{ matrix.os }}
     env:
       ORKAI_BUILD_COMMIT: ${{ github.sha }}
@@ -183,7 +178,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.toolchains || matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: desktop-${{ matrix.target }}
@@ -193,7 +188,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
       - name: Build
+        if: runner.os != 'macOS'
         run: cargo build --release --locked -p orkai-desktop --target ${{ matrix.target }}
+      - name: Build for Apple Silicon and Intel in one binary
+        if: runner.os == 'macOS'
+        run: |
+          slices=()
+          for toolchain in ${TOOLCHAINS//,/ }; do
+            cargo build --release --locked -p orkai-desktop --target "$toolchain"
+            slices+=("target/$toolchain/release/octo")
+          done
+          mkdir -p "target/$TARGET/release"
+          lipo -create "${slices[@]}" -output "target/$TARGET/release/octo"
+          lipo "target/$TARGET/release/octo" -verify_arch arm64 x86_64
+        env:
+          TOOLCHAINS: ${{ matrix.toolchains }}
       - name: Load the Windows signing certificate
         id: windows-certificate
         if: runner.os == 'Windows'
@@ -244,7 +253,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp "target/$TARGET/release/octo${{ matrix.ext }}" "dist/$UPDATE"
+          if [ "$RUNNER_OS" != macOS ]; then cp "target/$TARGET/release/octo${{ matrix.ext }}" "dist/$UPDATE"; fi
           if [ "$RUNNER_OS" = Windows ]; then cp target/installer/Octo-setup.exe dist/; fi
       - name: Bundle the macOS app
         if: runner.os == 'macOS'
@@ -317,14 +326,13 @@ jobs:
             echo "::warning::Octo for macOS is published without a Developer ID signature or notarization"
           fi
           ditto -c -k --keepParent "$app" "dist/$DOWNLOAD"
-      - name: Start an agent from the signed app and an ad hoc app updated with this release
-        if: matrix.target == 'aarch64-apple-darwin'
+      - name: Start an agent from the signed app
+        if: runner.os == 'macOS'
         env:
           OCTO_SIGNED_APP: ${{ github.workspace }}/target/bundle/Octo.app
-          OCTO_LEGACY_UPDATE: ${{ github.workspace }}/dist/${{ matrix.update }}
-        run: cargo test --release --locked -p orkai-desktop --target ${{ matrix.target }} --test macos_app_e2e
+        run: cargo test --release --locked -p orkai-desktop --target aarch64-apple-darwin --test macos_app_e2e
       - name: Open the downloaded app from Downloads and find it running from Applications
-        if: matrix.target == 'aarch64-apple-darwin'
+        if: runner.os == 'macOS'
         run: |
           if ! spctl --assess --type execute target/bundle/Octo.app; then
             echo "::warning::macOS only opens a downloaded Octo that Apple notarized, so this check was skipped"
@@ -497,10 +505,8 @@ jobs:
           updates = {
               "desktop-x86_64-pc-windows-msvc": "Octo.exe",
               "desktop-x86_64-unknown-linux-gnu": "Octo-linux-x86_64",
-              "desktop-aarch64-apple-darwin": "Octo-macos-apple-silicon-update",
-              "desktop-x86_64-apple-darwin": "Octo-macos-intel-update",
-              "desktop-app-aarch64-apple-darwin": "Octo-macos-apple-silicon.zip",
-              "desktop-app-x86_64-apple-darwin": "Octo-macos-intel.zip",
+              "desktop-app-aarch64-apple-darwin": "Octo-macos.zip",
+              "desktop-app-x86_64-apple-darwin": "Octo-macos.zip",
               "server-x86_64-unknown-linux-musl": "octo-server-linux-x86_64",
               "server-aarch64-unknown-linux-musl": "octo-server-linux-aarch64",
           }
@@ -549,5 +555,5 @@ jobs:
             --title "Octo $TAG" \
             --notes "Octo $TAG, by OctoAI, built from $GITHUB_SHA. Its files never change, so the releases/latest/download links always get the same files, and older versions update themselves to it.
 
-          Download Octo: Octo-setup.exe on Windows (Octo.exe runs without installing), Octo-macos-apple-silicon.zip or Octo-macos-intel.zip on macOS (signed and notarized by Apple: unzip it and drag Octo to Applications) and Octo-linux-x86_64 on Linux, which needs WebKitGTK 4.1. Octo updates itself to every new version, and closing it never stops an agent; the Octo-macos-*-update files are what it downloads to do so on a Mac. SHA256SUMS lists the SHA-256 of every file. Code signing policy: https://github.com/lucasmarujo/octo#code-signing-policy" \
+          Download Octo: Octo-setup.exe on Windows (Octo.exe runs without installing), Octo-macos.zip on macOS, one app for Apple Silicon and Intel (signed and notarized by Apple: unzip it and open Octo, which installs itself in Applications) and Octo-linux-x86_64 on Linux, which needs WebKitGTK 4.1. Octo updates itself to every new version, and closing it never stops an agent. SHA256SUMS lists the SHA-256 of every file. Code signing policy: https://github.com/lucasmarujo/octo#code-signing-policy" \
             --latest
