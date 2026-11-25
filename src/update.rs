@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, Stdio};
 use std::sync::LazyLock;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -33,6 +33,9 @@ const BUNDLE_CONTENTS: &str = "Contents";
 const BUNDLE_EXECUTABLES: &str = "MacOS";
 const BUNDLE_ARCHIVE: &str = "download.zip";
 const DITTO: &str = "/usr/bin/ditto";
+const DITTO_WITHOUT_QUARANTINE: &str = "--noqtn";
+const XATTR: &str = "/usr/bin/xattr";
+const QUARANTINE: &str = "com.apple.quarantine";
 
 pub static VERSION: LazyLock<String> =
     LazyLock::new(|| format!("{} ({})", env!("CARGO_PKG_VERSION"), BUILD_COMMIT.map_or("dev", short_commit)));
@@ -277,6 +280,54 @@ pub fn install_app(exe: &Path, archive: &[u8]) -> io::Result<()> {
     });
     let _ = fs::remove_dir_all(&staging);
     result
+}
+
+fn xattr(arguments: &[&str], path: &Path) -> io::Result<bool> {
+    let status = Command::new(XATTR).args(arguments).arg(path).stdout(Stdio::null()).stderr(Stdio::null()).status()?;
+    Ok(status.success())
+}
+
+pub fn release_from_quarantine(bundle: &Path) -> bool {
+    let _ = xattr(&["-dr", QUARANTINE], bundle);
+    bundle.is_dir() && xattr(&["-p", QUARANTINE], bundle).is_ok_and(|quarantined| !quarantined)
+}
+
+fn swap_in(copy: &Path, installed: &Path, old: &Path) -> io::Result<()> {
+    if !installed.exists() {
+        return fs::rename(copy, installed);
+    }
+    fs::rename(installed, old)?;
+    if let Err(err) = fs::rename(copy, installed) {
+        let _ = fs::rename(old, installed);
+        return Err(err);
+    }
+    let _ = fs::remove_dir_all(old);
+    Ok(())
+}
+
+pub fn copy_app(bundle: &Path, dir: &Path) -> io::Result<PathBuf> {
+    let name = file_name(bundle)?;
+    let installed = dir.join(&name);
+    let pid = std::process::id();
+    let staging = dir.join(format!(".{name}{STAGING_MARKER}{pid}"));
+    let old = free_old_path(dir, &name, pid);
+    let copy = staging.join(&name);
+    let _ = fs::remove_dir_all(&staging);
+    let result = fs::create_dir(&staging).and_then(|()| {
+        let copied = Command::new(DITTO).arg(DITTO_WITHOUT_QUARANTINE).arg(bundle).arg(&copy).status()?;
+        if !copied.success() {
+            return Err(invalid("the app could not be copied"));
+        }
+        if !release_from_quarantine(&copy) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "macOS keeps the copy of the app in quarantine",
+            ));
+        }
+        swap_in(&copy, &installed, &old)
+    });
+    let _ = fs::remove_dir_all(&staging);
+    result.map(|()| installed)
 }
 
 fn remove_leftovers(dir: &Path, name: &str) {
@@ -656,6 +707,78 @@ mod tests {
         }
         fs::remove_dir_all(release).unwrap();
         fs::remove_dir_all(installed).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    fn quarantine(bundle: &Path) {
+        let downloaded = "0081;00000000;Safari;";
+        assert!(xattr(&["-rw", QUARANTINE, downloaded], bundle).unwrap());
+        assert!(xattr(&["-p", QUARANTINE], bundle).unwrap());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn release_from_quarantine_clears_the_whole_bundle_and_says_so() {
+        let dir = temp_dir("quarantine");
+        let exe = fake_app(&dir.join("Octo.app"), b"binary");
+        quarantine(&dir.join("Octo.app"));
+        assert!(release_from_quarantine(&dir.join("Octo.app")));
+        assert!(!xattr(&["-p", QUARANTINE], &dir.join("Octo.app")).unwrap());
+        assert!(!xattr(&["-p", QUARANTINE], &exe).unwrap());
+        assert!(release_from_quarantine(&dir.join("Octo.app")), "an app that was never in quarantine is free too");
+        assert!(!release_from_quarantine(&dir.join("Missing.app")), "nothing to open there");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn copy_app_leaves_a_copy_out_of_quarantine_and_the_original_as_it_was() {
+        let downloads = temp_dir("copy-from");
+        let exe = fake_app(&downloads.join("Octo.app"), b"binary");
+        quarantine(&downloads.join("Octo.app"));
+        let applications = temp_dir("copy-to");
+        let installed = copy_app(&downloads.join("Octo.app"), &applications).unwrap();
+        assert_eq!(installed, applications.join("Octo.app"));
+        assert_eq!(fs::read(installed.join("Contents/MacOS/octo")).unwrap(), b"binary");
+        assert!(!xattr(&["-p", QUARANTINE], &installed).unwrap());
+        assert!(!xattr(&["-p", QUARANTINE], &installed.join("Contents/MacOS/octo")).unwrap());
+        assert_eq!(names_in(&applications), vec!["Octo.app".to_string()]);
+        assert_eq!(fs::read(&exe).unwrap(), b"binary");
+        assert!(xattr(&["-p", QUARANTINE], &downloads.join("Octo.app")).unwrap());
+        fs::remove_dir_all(downloads).unwrap();
+        fs::remove_dir_all(applications).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn copy_app_replaces_the_app_already_there_and_leaves_nothing_else() {
+        let downloads = temp_dir("replace-from");
+        fake_app(&downloads.join("Octo.app"), b"new binary");
+        let applications = temp_dir("replace-to");
+        let exe = fake_app(&applications.join("Octo.app"), b"old binary");
+        fs::write(applications.join("Octo.app/Contents/stale"), b"gone").unwrap();
+        fake_app(&applications.join("Other.app"), b"keep");
+        copy_app(&downloads.join("Octo.app"), &applications).unwrap();
+        assert_eq!(fs::read(&exe).unwrap(), b"new binary");
+        assert!(!applications.join("Octo.app/Contents/stale").exists());
+        assert_eq!(names_in(&applications), vec!["Octo.app".to_string(), "Other.app".to_string()]);
+        fs::remove_dir_all(downloads).unwrap();
+        fs::remove_dir_all(applications).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn copy_app_keeps_the_app_already_there_when_the_copy_fails() {
+        let downloads = temp_dir("fail-from");
+        let applications = temp_dir("fail-to");
+        let exe = fake_app(&applications.join("Octo.app"), b"old binary");
+        assert!(copy_app(&downloads.join("Octo.app"), &applications).is_err());
+        assert_eq!(fs::read(&exe).unwrap(), b"old binary");
+        assert_eq!(names_in(&applications), vec!["Octo.app".to_string()]);
+        assert!(copy_app(&applications.join("Octo.app"), &downloads.join("missing")).is_err());
+        assert!(!downloads.join("missing").exists());
+        fs::remove_dir_all(downloads).unwrap();
+        fs::remove_dir_all(applications).unwrap();
     }
 
     #[test]

@@ -10,6 +10,8 @@ mod login_path;
 mod pair;
 mod paste;
 mod recover;
+#[cfg(target_os = "macos")]
+mod relocate;
 mod remote;
 mod settings;
 #[cfg(any(windows, target_os = "macos"))]
@@ -47,6 +49,10 @@ fn main() -> ExitCode {
     let result = match internal {
         Some(internal) => internal.run(),
         None => {
+            #[cfg(target_os = "macos")]
+            if relocate::leave_read_only_copy() {
+                return ExitCode::SUCCESS;
+            }
             login_path::adopt();
             link::run()
         }

@@ -323,6 +323,43 @@ jobs:
           OCTO_SIGNED_APP: ${{ github.workspace }}/target/bundle/Octo.app
           OCTO_LEGACY_UPDATE: ${{ github.workspace }}/dist/${{ matrix.update }}
         run: cargo test --release --locked -p orkai-desktop --target ${{ matrix.target }} --test macos_app_e2e
+      - name: Open the downloaded app from Downloads and find it running from Applications
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: |
+          if ! spctl --assess --type execute target/bundle/Octo.app; then
+            echo "::warning::macOS only opens a downloaded Octo that Apple notarized, so this check was skipped"
+            exit 0
+          fi
+          downloads="$HOME/Downloads/octo-release"
+          installed="/Applications/Octo.app"
+          rm -rf "$downloads" "$installed"
+          mkdir -p "$downloads"
+          ditto -x -k "dist/$DOWNLOAD" "$downloads"
+          xattr -rw com.apple.quarantine "00c1;$(printf %x "$(date +%s)");Safari;$(uuidgen)" "$downloads/Octo.app"
+          open --stderr "$RUNNER_TEMP/octo-from-downloads.log" "$downloads/Octo.app" &
+          for _ in $(seq 90); do
+            if pgrep -f "^$installed/Contents/MacOS/octo" > /dev/null; then break; fi
+            sleep 1
+          done
+          ps -axo pid,stat,command | grep "[M]acOS/octo" || true
+          cat "$RUNNER_TEMP/octo-from-downloads.log" || true
+          if ! pgrep -f "^$installed/Contents/MacOS/octo" > /dev/null; then
+            echo "::error::Octo opened from Downloads did not reopen from Applications, so it would never update itself"
+            exit 1
+          fi
+          if pgrep -f "AppTranslocation/.*/Octo.app/Contents/MacOS/octo" > /dev/null; then
+            echo "::error::the read-only copy of Octo kept running beside the installed one"
+            exit 1
+          fi
+          if xattr -p com.apple.quarantine "$installed" > /dev/null 2>&1; then
+            echo "::error::the installed Octo is still in quarantine, so macOS would open it read-only again"
+            exit 1
+          fi
+          codesign --verify --strict --verbose=2 "$installed"
+          spctl --assess --type execute --verbose=4 "$installed"
+          pkill -f "MacOS/octo" || true
+          pkill -x open || true
+          rm -rf "$downloads" "$installed"
       - name: Check the Windows signatures
         if: runner.os == 'Windows'
         env:

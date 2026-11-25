@@ -2780,7 +2780,7 @@ mod tests {
     #[test]
     fn no_program_the_core_runs_opens_a_console_window_on_windows() {
         const SAFE: [&str; 4] = ["without_console(", "command_output(", "command_reply(", "spawn_detached("];
-        const ALLOWED: [(&str, &str, &str); 7] = [
+        const ALLOWED: [(&str, &str, &str); 8] = [
             ("browser.rs", "Command::new(program).args(args).arg(url)", "the openers are windowed programs"),
             (
                 "clipboard.rs",
@@ -2791,6 +2791,7 @@ mod tests {
             ("usage.rs", "Command::new(\"/usr/bin/security\")", "macOS only"),
             ("update.rs", "Command::new(exe);", "the updated CLI takes over its own terminal on purpose"),
             ("update.rs", "Command::new(DITTO)", "macOS only"),
+            ("update.rs", "Command::new(XATTR)", "macOS only"),
             ("gate.rs", "Command::new(", "shell_command is wrapped by its only caller"),
         ];
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
