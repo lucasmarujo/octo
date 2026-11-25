@@ -7,6 +7,18 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.52',
+    date: '2026-11-25',
+    en: [
+      'On a Mac, Octo now installs itself in Applications: opened from Downloads, or from wherever the zip was unpacked, it copies itself there and reopens, so it updates on its own from then on. Before, macOS ran it from a read-only copy and every new version had to be downloaded by hand.',
+      'The Mac has a single download, Octo-macos.zip, with one app for Apple Silicon and Intel.',
+    ],
+    'pt-BR': [
+      'No Mac, o Octo agora se instala sozinho em Aplicativos: aberto de Downloads, ou de onde o zip foi descompactado, ele se copia para lá e reabre, e daí em diante se atualiza sozinho. Antes, o macOS o rodava de uma cópia somente leitura e cada versão nova tinha de ser baixada à mão.',
+      'O Mac tem um único download, Octo-macos.zip, com um app só para Apple Silicon e Intel.',
+    ],
+  },
+  {
     version: '0.2.51',
     date: '2026-11-24',
     en: [
