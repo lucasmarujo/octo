@@ -822,10 +822,17 @@ button.statusbar-item:hover { color: var(--color-text); }
 @keyframes kai-strip-5 { from { transform: translateX(0); } to { transform: translateX(-80%); } }
 
 :root[data-island], :root[data-island] body { background: transparent; }
-.island { position: fixed; top: 0; left: 50%; translate: -50% 0; width: 0; height: 0; overflow: hidden; border-radius: 0 0 16px 16px; background: var(--color-bg); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22); opacity: 0; }
-.island[data-ready] { opacity: 1; transition: width 320ms var(--ease-out), height 320ms var(--ease-out), border-radius 320ms var(--ease-out), box-shadow 320ms var(--ease-out), opacity var(--motion-base) var(--ease-out); }
-.island[data-ready][data-open="true"] { border-radius: 0 0 22px 22px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5); transition: width 460ms var(--ease-island), height 460ms var(--ease-island), border-radius 460ms var(--ease-out), box-shadow 460ms var(--ease-out); }
+.island { position: fixed; width: 0; height: 0; --island-radius: 16px; --panel-x: 0px; --panel-y: -10px; --panel-origin: top center; overflow: hidden; border-radius: 0 0 var(--island-radius) var(--island-radius); background: var(--color-bg); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22); opacity: 0; }
+.island[data-ready] { opacity: 1; transition: width 320ms var(--ease-out), height 320ms var(--ease-out), left 320ms var(--ease-out), top 320ms var(--ease-out), border-radius 320ms var(--ease-out), box-shadow 320ms var(--ease-out), opacity var(--motion-base) var(--ease-out); }
+.island[data-ready][data-open="true"] { --island-radius: 22px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5); transition: width 460ms var(--ease-island), height 460ms var(--ease-island), left 460ms var(--ease-island), top 460ms var(--ease-island), border-radius 460ms var(--ease-out), box-shadow 460ms var(--ease-out); }
+.island[data-ready][data-docking] { transition: none; }
+.island[data-edge="bottom"] { --panel-y: 10px; --panel-origin: bottom center; border-radius: var(--island-radius) var(--island-radius) 0 0; }
+.island[data-edge="left"] { --panel-x: -10px; --panel-y: 0px; --panel-origin: left center; border-radius: 0 var(--island-radius) var(--island-radius) 0; }
+.island[data-edge="right"] { --panel-x: 10px; --panel-y: 0px; --panel-origin: right center; border-radius: var(--island-radius) 0 0 var(--island-radius); }
 .island::after { content: ""; position: absolute; inset: -1px 0 0; border: 1px solid var(--color-border-strong); border-radius: inherit; pointer-events: none; }
+.island[data-edge="bottom"]::after { inset: 0 0 -1px; }
+.island[data-edge="left"]::after { inset: 0 0 0 -1px; }
+.island[data-edge="right"]::after { inset: 0 -1px 0 0; }
 .island[data-mood="needs"]::after { animation: island-needs 1.8s ease-in-out infinite; }
 @keyframes island-needs { 0%, 100% { border-color: var(--color-border-strong); } 50% { border-color: var(--color-waiting); } }
 .island-pill { position: absolute; top: 0; left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 10px; width: max-content; height: 30px; padding: 0 14px; white-space: nowrap; transition: opacity 200ms var(--ease-out) 120ms, transform 320ms var(--ease-out); }
@@ -836,11 +843,25 @@ button.statusbar-item:hover { color: var(--color-text); }
 .island-chips:empty { display: none; }
 .island-chip { display: inline-flex; align-items: center; gap: 5px; }
 .island-chip .glyph { font-size: 12px; }
-.island-panel { position: absolute; top: 0; left: 50%; translate: -50% 0; display: flex; flex-direction: column; width: 360px; max-height: 400px; opacity: 0; transform: translateY(-10px) scale(0.96); transform-origin: top center; filter: blur(6px); pointer-events: none; transition: opacity 120ms var(--ease-out), transform 200ms var(--ease-out), filter 200ms var(--ease-out); }
+.island-leading { display: flex; align-items: center; gap: 10px; }
+.island-usage-rings { display: flex; align-items: center; gap: 6px; padding-left: 8px; border-left: 1px solid var(--color-border-strong); }
+.island-usage-rings .usage-ring { width: 24px; height: 24px; }
+.island-usage-rings .ring { width: 100%; height: 100%; }
+.island-usage-rings .usage-ring-icon, .island-usage-rings .usage-ring-icon svg { width: 10px; height: 10px; }
+.island-title-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.island-head .island-usage-rings { padding-left: 0; border-left: 0; }
+.island-panel { position: absolute; top: 0; left: 50%; translate: -50% 0; display: flex; flex-direction: column; width: min(360px, 100vw); max-height: min(400px, 100vh); opacity: 0; transform: translate(var(--panel-x), var(--panel-y)) scale(0.96); transform-origin: var(--panel-origin); filter: blur(6px); pointer-events: none; transition: opacity 120ms var(--ease-out), transform 200ms var(--ease-out), filter 200ms var(--ease-out); }
+.island[data-edge="bottom"] :is(.island-pill, .island-panel) { top: auto; bottom: 0; }
+.island[data-edge="left"] :is(.island-pill, .island-panel) { top: 50%; left: 0; translate: 0 -50%; }
+.island[data-edge="right"] :is(.island-pill, .island-panel) { top: 50%; left: auto; right: 0; translate: 0 -50%; }
 .island[data-open="true"] .island-panel { opacity: 1; transform: none; filter: none; pointer-events: auto; transition: opacity 260ms var(--ease-out) 90ms, transform 460ms var(--ease-island) 40ms, filter 260ms var(--ease-out) 90ms; }
 .island-head { display: flex; align-items: center; gap: 12px; flex-shrink: 0; padding: 14px 18px 12px 16px; text-align: left; }
-.island-head .island-mark { width: 28px; height: 28px; }
-:root[data-kai] .island-head .island-mark, :root[data-theme="old"] .island-head .island-mark { width: 36px; height: 36px; }
+.island :is(.island-pill, .island-head) { cursor: grab; touch-action: none; user-select: none; }
+.island[data-dragging], .island[data-dragging] :is(.island-pill, .island-head) { cursor: grabbing; }
+.island-head .island-mark, .island-head .usage-ring { width: 28px; height: 28px; }
+:root[data-kai] .island-head .island-mark, :root[data-theme="old"] .island-head .island-mark, :root[data-kai] .island-head .usage-ring, :root[data-theme="old"] .island-head .usage-ring { width: 36px; height: 36px; }
+.island-head .usage-ring-icon { width: 50%; height: 50%; }
+.island-head .usage-ring-icon svg { width: 100%; height: 100%; }
 .island-heading { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
 .island-title { font-size: 16px; font-weight: 800; line-height: 18px; letter-spacing: -0.02em; }
 .island-sub { overflow: hidden; font-family: var(--font-mono); font-size: 11px; line-height: 14px; color: var(--color-text-faint); text-overflow: ellipsis; white-space: nowrap; }
@@ -861,7 +882,7 @@ button.statusbar-item:hover { color: var(--color-text); }
 .island-more { flex-shrink: 0; padding: 0 16px 2px; font-family: var(--font-mono); font-size: 11px; color: var(--color-text-faint); }
 :root[data-notch] .island-pill { display: grid; grid-template-columns: 1fr var(--notch-width) 1fr; justify-items: center; gap: 0; height: var(--notch-height); padding: 0 12px; }
 :root[data-notch] .island[data-open="true"] .island-pill { opacity: 1; transform: none; }
-:root[data-notch] .island-panel { top: var(--notch-height); }
+:root[data-notch] .island-panel { top: var(--notch-height); max-height: min(400px, calc(100vh - var(--notch-height))); }
 :root[data-notch] .island-head .island-chips { display: none; }
 
 @media (prefers-reduced-motion: reduce) {

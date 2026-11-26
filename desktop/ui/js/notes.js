@@ -7,6 +7,20 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.53',
+    date: '2026-11-26',
+    en: [
+      'Drag the Dynamic Island by its pill or header to dock it along any screen edge. It expands inward and remembers its position when Octo reopens.',
+      'The island now shows plan usage as rings around each provider icon, both in the pill and beside Octo in the expanded header.',
+      'Dragging recovers when the page reloads or the mouse is released, keeps the notch when returned to the top centre, and follows the scale of each monitor.',
+    ],
+    'pt-BR': [
+      'Arraste o Dynamic Island pela pílula ou pelo cabeçalho para encaixá-lo em qualquer borda da tela. Ele expande para dentro e lembra a posição quando o Octo reabre.',
+      'A ilha agora mostra o consumo do plano em anéis ao redor do ícone de cada provedor, tanto na pílula quanto ao lado do Octo no cabeçalho expandido.',
+      'O arrasto se recupera quando a página recarrega ou o mouse é solto, mantém o notch ao voltar ao topo central e acompanha a escala de cada monitor.',
+    ],
+  },
+  {
     version: '0.2.52',
     date: '2026-11-25',
     en: [

@@ -22,10 +22,19 @@ export function islandGroups(agents, limit = ISLAND_MAX_ROWS) {
   return { groups, more: sorted.length - shown.length, projects: new Set(agents.map((agent) => agent.project)).size };
 }
 
-export function islandShape(pill, panel, notch, open) {
-  const collapsed = { width: pill.width, height: pill.height };
-  const expanded = notch
+export function islandShape(pill, panel, notch, open, { edge, offset }, viewport) {
+  const rect = (size) => {
+    const width = Math.min(size.width, viewport.width);
+    const height = Math.min(size.height, viewport.height);
+    const left = viewport.width - width;
+    const top = viewport.height - height;
+    const x = edge === 'left' ? 0 : edge === 'right' ? left : Math.min(left, Math.max(0, offset - width / 2));
+    const y = edge === 'top' ? 0 : edge === 'bottom' ? top : Math.min(top, Math.max(0, offset - height / 2));
+    return { x, y, width, height };
+  };
+  const collapsed = rect(pill);
+  const expanded = rect(notch
     ? { width: Math.max(panel.width, pill.width), height: panel.height + notch.height }
-    : { width: panel.width, height: panel.height };
+    : panel);
   return { collapsed, expanded, shown: open ? expanded : collapsed };
 }

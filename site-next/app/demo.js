@@ -852,6 +852,8 @@ export function createHub({ now = Date.now, later = setTimeout, version = FALLBA
       return null;
     },
     island_attach: nothing,
+    island_drag: nothing,
+    island_layout: () => ({ edge: 'top', offset: 220, notch: false }),
     island_notch: nothing,
     island_open: nothing,
     island_shape: nothing,

@@ -1,22 +1,26 @@
 import { mark, spinner, usesKai } from './brand.js';
 import { $, h, svg } from './dom.js';
-import { SPINNER, activity, elapsed, glyph, kindColor, kindMark, nameTone, plural } from './format.js';
+import { SPINNER, activity, elapsed, glyph, kindColor, kindMark, nameTone, plural, usageOrder, usageShown } from './format.js';
 import { applyStatic, language, languageStale, t } from './i18n.js';
 import { providerIcon } from './icons.js';
 import { islandAgents, islandCounts, islandGroups, islandShape } from './islandview.js';
 import { glyph as kai, moodOf } from './kai.js';
 import { applyTheme } from './theme.js';
 import { channel, invoke } from './transport.js';
+import { ringTip, usageRing } from './usageview.js';
 
 const SPIN_MS = 100;
 const TICK_MS = 1000;
 const HOVER_EVENT = 'island-hover';
+const LAYOUT_EVENT = 'island-layout';
 const PAUSED_MARK = '‖';
 const DONE_MARK = '✓';
 const IDLE_MARK = '●';
 const MAX_STAGGER = 12;
+const START_AFTER_PX = 6;
 
-const view = { overview: null, skew: 0, frame: 0, open: false, notch: null, shape: '', spinning: 0 };
+const view = { overview: null, usage: [], skew: 0, frame: 0, open: false, notch: null, layout: null, shape: '', spinning: 0 };
+let primaryNotch;
 
 const now = () => Date.now() - view.skew;
 const shown = () => (view.overview ? islandAgents(view.overview.agents) : []);
@@ -47,9 +51,23 @@ function paint(host, signature, build) {
   host.replaceChildren(...build());
 }
 
-function renderPill(counts, mood, look) {
-  paint($('island-pill'), JSON.stringify([counts, mood, look]), () => [
-    h('span', { class: 'island-mark' }, brand(mood)),
+function usageRings(entries) {
+  const usage = usageShown(entries, false);
+  return usage.length ? h('span', { class: 'island-usage-rings' }, usage.map((entry) => {
+    const ring = usageRing(entry);
+    const tip = ringTip(entry, now());
+    ring.setAttribute('aria-label', tip);
+    ring.title = tip;
+    return ring;
+  })) : null;
+}
+
+function renderPill(counts, mood, look, entries) {
+  paint($('island-pill'), JSON.stringify([counts, mood, look, entries]), () => [
+    h('span', { class: 'island-leading' },
+      h('span', { class: 'island-mark' }, brand(mood)),
+      usageRings(entries),
+    ),
     view.notch ? h('span', { class: 'island-gap' }) : null,
     h('span', { class: 'island-chips' }, chips(counts)),
   ].filter(Boolean));
@@ -60,10 +78,10 @@ function summary(counts, projects) {
   return t('{agents} across {projects}', { agents: plural(counts.total, t('agent'), t('agents')), projects: plural(projects, t('project'), t('projects')) });
 }
 
-function renderHead(counts, mood, look, projects) {
-  paint($('island-head'), JSON.stringify([counts, mood, look, projects]), () => [
+function renderHead(counts, mood, look, projects, entries) {
+  paint($('island-head'), JSON.stringify([counts, mood, look, projects, entries]), () => [
     h('span', { class: 'island-mark' }, brand(mood)),
-    h('span', { class: 'island-heading' }, h('span', { class: 'island-title' }, 'Octo'), h('span', { class: 'island-sub' }, summary(counts, projects))),
+    h('span', { class: 'island-heading' }, h('span', { class: 'island-title-line' }, h('span', { class: 'island-title' }, 'Octo'), usageRings(entries)), h('span', { class: 'island-sub' }, summary(counts, projects))),
     h('span', { class: 'island-chips' }, chips(counts)),
   ]);
 }
@@ -118,10 +136,15 @@ function tickTimes() {
 }
 
 function fit() {
+  if (!view.layout) return;
   const [island, pill, panel] = [$('island'), $('island-pill'), $('island-panel')];
-  const shape = islandShape({ width: pill.offsetWidth, height: pill.offsetHeight }, { width: panel.offsetWidth, height: panel.offsetHeight }, view.notch, view.open);
-  island.style.width = `${shape.shown.width}px`;
-  island.style.height = `${shape.shown.height}px`;
+  const shape = islandShape(
+    { width: pill.offsetWidth, height: pill.offsetHeight },
+    { width: panel.offsetWidth, height: panel.offsetHeight },
+    view.notch, view.open, view.layout, { width: window.innerWidth, height: window.innerHeight },
+  );
+  const { x, y, width, height } = shape.shown;
+  Object.assign(island.style, { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` });
   const reported = JSON.stringify([shape.collapsed, shape.expanded]);
   if (reported !== view.shape) {
     view.shape = reported;
@@ -150,9 +173,10 @@ function render() {
   const mood = moodOf(agents);
   const layout = islandGroups(agents);
   const look = [usesKai(), document.documentElement.dataset.theme, language()];
+  const usage = usageOrder(view.usage, agents.map((agent) => agent.kind));
   $('island').dataset.mood = mood;
-  renderPill(counts, mood, look);
-  renderHead(counts, mood, look, layout.projects);
+  renderPill(counts, mood, look, usage);
+  renderHead(counts, mood, look, layout.projects, usage);
   renderList(layout);
   keepSpinning(counts.working > 0);
   fit();
@@ -174,7 +198,66 @@ function setOpen(on) {
   render();
 }
 
+function setLayout(layout) {
+  view.layout = layout;
+  view.shape = '';
+  view.notch = layout.notch ? primaryNotch : null;
+  const island = $('island');
+  if (island.hasAttribute('data-ready')) {
+    island.setAttribute('data-docking', '');
+    requestAnimationFrame(() => requestAnimationFrame(() => island.removeAttribute('data-docking')));
+  }
+  island.dataset.edge = layout.edge;
+  document.documentElement.toggleAttribute('data-notch', Boolean(view.notch));
+  render();
+}
+
+function initDrag(island) {
+  let press;
+  let dragged = false;
+  island.addEventListener('pointerdown', (event) => {
+    if (press || event.button !== 0) return;
+    dragged = false;
+    const handle = event.target.closest('#island-pill, #island-head');
+    if (!handle) return;
+    handle.setPointerCapture(event.pointerId);
+    press = { handle, id: event.pointerId, x: event.clientX, y: event.clientY };
+  });
+  window.addEventListener('pointermove', (event) => {
+    if (!press || event.pointerId !== press.id || press.started) return;
+    if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < START_AFTER_PX) return;
+    island.setPointerCapture(event.pointerId);
+    island.setAttribute('data-dragging', '');
+    press.started = invoke('island_drag', { action: 'start' }).catch(() => {});
+  });
+  const finish = (event) => {
+    if (!press || event.pointerId !== press.id) return;
+    const { started } = press;
+    press = null;
+    if (!started) return;
+    island.removeAttribute('data-dragging');
+    dragged = event.type === 'pointerup';
+    const action = dragged ? 'drop' : 'cancel';
+    started.then(() => invoke('island_drag', { action })).catch(() => {});
+  };
+  island.addEventListener('click', (event) => {
+    if (!dragged || event.detail === 0) return;
+    dragged = false;
+    event.stopImmediatePropagation();
+  }, true);
+  window.addEventListener('pointerup', finish);
+  window.addEventListener('pointercancel', finish);
+  island.addEventListener('lostpointercapture', (event) => {
+    if (event.target === (press?.started ? island : press?.handle)) finish(event);
+  });
+}
+
 function onMessage(message) {
+  if (message.type === 'usage') {
+    view.usage = message.entries;
+    render();
+    return;
+  }
   if (message.type !== 'state') return;
   view.skew = Date.now() - message.now;
   view.overview = message;
@@ -197,15 +280,17 @@ async function start() {
   new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-kai'] });
   document.addEventListener('contextmenu', (event) => event.preventDefault());
   $('island-head').addEventListener('click', () => open(null));
-  view.notch = await invoke('island_notch').catch(() => null);
-  if (view.notch) {
-    document.documentElement.toggleAttribute('data-notch', true);
-    document.documentElement.style.setProperty('--notch-width', `${view.notch.width}px`);
-    document.documentElement.style.setProperty('--notch-height', `${view.notch.height}px`);
+  initDrag($('island'));
+  primaryNotch = await invoke('island_notch').catch(() => null);
+  if (primaryNotch) {
+    document.documentElement.style.setProperty('--notch-width', `${primaryNotch.width}px`);
+    document.documentElement.style.setProperty('--notch-height', `${primaryNotch.height}px`);
   }
-  render();
-  setInterval(() => view.open && tickTimes(), TICK_MS);
+  await window.__TAURI__.event.listen(LAYOUT_EVENT, (event) => setLayout(event.payload));
   await window.__TAURI__.event.listen(HOVER_EVENT, (event) => setOpen(Boolean(event.payload)));
+  setLayout(await invoke('island_layout').catch(() => ({ edge: 'top', offset: window.innerWidth / 2, notch: true })));
+  window.addEventListener('resize', fit);
+  setInterval(() => view.open && tickTimes(), TICK_MS);
   await invoke('island_attach', { channel: channel(onMessage) });
   if (document.fonts) document.fonts.ready.then(fit);
 }

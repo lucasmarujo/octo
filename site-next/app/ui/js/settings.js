@@ -198,7 +198,7 @@ function islandRow() {
   if (!current.islandAvailable) return null;
   return row(
     t('Island on the screen'),
-    t('A small pill on the top edge of the screen, above every window, shows what is working, done or waiting for you. Rest the mouse on it to see the agents of each project.'),
+    t('Hover over the island to see your agents. Drag the pill or the panel header to any edge of your screen.'),
     toggle(current.config.island, (on) => save({ island: on }), t('Island on the screen')),
   );
 }
