@@ -12,6 +12,7 @@ use crate::notify::Alert;
 use crate::paths::Home;
 use crate::pwa::bridge;
 use crate::pwa::protocol::Push;
+use crate::pwa::relay;
 
 pub const FILE: &str = "pwa-push.json";
 pub const EXPO_PUSH_URL: &str = "https://exp.host/--/api/v2/push/send";
@@ -35,6 +36,8 @@ pub struct Phone {
     pub client: String,
     pub token: String,
     pub device: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -113,7 +116,7 @@ fn valid_token(token: &str) -> bool {
         })
 }
 
-pub fn registered(list: &[Phone], client: &str, push: Option<&Push>) -> Vec<Phone> {
+pub fn registered(list: &[Phone], client: &str, push: Option<&Push>, address: Option<&str>) -> Vec<Phone> {
     let target = push.filter(|push| valid_token(&push.token) && plain_id(&push.device));
     let mut next: Vec<Phone> = list
         .iter()
@@ -121,7 +124,12 @@ pub fn registered(list: &[Phone], client: &str, push: Option<&Push>) -> Vec<Phon
         .cloned()
         .collect();
     if let Some(push) = target {
-        next.push(Phone { client: client.to_string(), token: push.token.clone(), device: push.device.clone() });
+        next.push(Phone {
+            client: client.to_string(),
+            token: push.token.clone(),
+            device: push.device.clone(),
+            address: address.map(str::to_string),
+        });
     }
     let excess = next.len().saturating_sub(MAX_PHONES);
     next.drain(..excess);
@@ -131,7 +139,7 @@ pub fn registered(list: &[Phone], client: &str, push: Option<&Push>) -> Vec<Phon
 pub fn register(home: &Home, client: Option<&str>, push: Option<&Push>) {
     let Some(client) = client.filter(|client| plain_id(client)) else { return };
     let current = phones(home);
-    let next = registered(&current, client, push);
+    let next = registered(&current, client, push, relay::address(home).as_deref());
     if next == current {
         return;
     }
@@ -159,6 +167,7 @@ pub fn messages(phones: &[Phone], alerts: &[Alert]) -> Vec<Message> {
 pub fn moved(phones: &[Phone], address: &str) -> Vec<Message> {
     phones
         .iter()
+        .filter(|phone| phone.address.as_deref() != Some(address))
         .map(|phone| Message {
             to: phone.token.clone(),
             body: MOVED_BODY.to_string(),
@@ -278,7 +287,7 @@ mod tests {
     }
 
     fn phone(client: &str, token: &str, device: &str) -> Phone {
-        Phone { client: client.into(), token: token.into(), device: device.into() }
+        Phone { client: client.into(), token: token.into(), device: device.into(), address: None }
     }
 
     fn alert(id: AgentId, name: &str, state: AgentState) -> Alert {
@@ -295,13 +304,13 @@ mod tests {
 
     #[test]
     fn a_phone_that_allows_notifications_is_kept_once_with_its_latest_token() {
-        let first = registered(&[], "c1", Some(&push(TOKEN, "d1")));
+        let first = registered(&[], "c1", Some(&push(TOKEN, "d1")), None);
         assert_eq!(first, [phone("c1", TOKEN, "d1")]);
-        let renewed = registered(&first, "c1", Some(&push(OTHER, "d1")));
+        let renewed = registered(&first, "c1", Some(&push(OTHER, "d1")), None);
         assert_eq!(renewed, [phone("c1", OTHER, "d1")], "a new token replaces the old one of the same app");
-        let both = registered(&renewed, "c2", Some(&push(TOKEN, "d9")));
+        let both = registered(&renewed, "c2", Some(&push(TOKEN, "d9")), None);
         assert_eq!(both, [phone("c1", OTHER, "d1"), phone("c2", TOKEN, "d9")]);
-        let reinstalled = registered(&both, "c3", Some(&push(OTHER, "d1")));
+        let reinstalled = registered(&both, "c3", Some(&push(OTHER, "d1")), None);
         assert_eq!(
             reinstalled,
             [phone("c2", TOKEN, "d9"), phone("c3", OTHER, "d1")],
@@ -312,19 +321,19 @@ mod tests {
     #[test]
     fn a_phone_that_turns_notifications_off_or_sends_junk_is_forgotten() {
         let list = [phone("c1", TOKEN, "d1"), phone("c2", OTHER, "d2")];
-        assert_eq!(registered(&list, "c1", None), [phone("c2", OTHER, "d2")]);
+        assert_eq!(registered(&list, "c1", None, None), [phone("c2", OTHER, "d2")]);
         for junk in [
             push("not-a-token", "d1"),
             push("ExponentPushToken[]", "d1"),
             push("ExponentPushToken[a b]", "d1"),
             push(TOKEN, ""),
         ] {
-            assert_eq!(registered(&list, "c1", Some(&junk)), [phone("c2", OTHER, "d2")], "{junk:?}");
+            assert_eq!(registered(&list, "c1", Some(&junk), None), [phone("c2", OTHER, "d2")], "{junk:?}");
         }
         let long = format!("ExponentPushToken[{}]", "a".repeat(MAX_TOKEN));
-        assert_eq!(registered(&list, "c1", Some(&push(&long, "d1"))), [phone("c2", OTHER, "d2")]);
+        assert_eq!(registered(&list, "c1", Some(&push(&long, "d1")), None), [phone("c2", OTHER, "d2")]);
         assert_eq!(
-            registered(&[], "c1", Some(&push("ExpoPushToken[abc-_9]", "d1"))),
+            registered(&[], "c1", Some(&push("ExpoPushToken[abc-_9]", "d1")), None),
             [phone("c1", "ExpoPushToken[abc-_9]", "d1")]
         );
     }
@@ -333,7 +342,12 @@ mod tests {
     fn the_list_of_phones_stays_bounded_dropping_the_oldest() {
         let mut list = Vec::new();
         for index in 0..MAX_PHONES + 3 {
-            list = registered(&list, &format!("c{index}"), Some(&push(&format!("ExponentPushToken[t{index}]"), "d")));
+            list = registered(
+                &list,
+                &format!("c{index}"),
+                Some(&push(&format!("ExponentPushToken[t{index}]"), "d")),
+                None,
+            );
         }
         assert_eq!(list.len(), MAX_PHONES);
         assert_eq!(list.first().unwrap().client, "c3");
@@ -465,6 +479,23 @@ mod tests {
             ])
         );
         assert!(moved(&[], "https://new.trycloudflare.com").is_empty());
+    }
+
+    #[test]
+    fn a_phone_that_already_knows_the_fixed_address_is_not_told_again() {
+        const FIXED: &str = "https://0123456789abcdef0123456789abcdef.octo.marujo.dev";
+        let settled = registered(&[], "c1", Some(&push(TOKEN, "d1")), Some(FIXED));
+        assert_eq!(settled[0].address.as_deref(), Some(FIXED), "a phone that connects came through this address");
+        let both = registered(&settled, "c2", Some(&push(OTHER, "d2")), None);
+        let told = moved(&both, FIXED);
+        assert_eq!(told.len(), 1, "only the phone still on an old address hears about the move");
+        assert_eq!(told[0].to, OTHER);
+        assert_eq!(moved(&both, "https://fedcba9876543210fedcba9876543210.octo.marujo.dev").len(), 2);
+        let saved = serde_json::to_string(&both).unwrap();
+        assert_eq!(serde_json::from_str::<Vec<Phone>>(&saved).unwrap(), both);
+        let before: Vec<Phone> =
+            serde_json::from_str(r#"[{"client":"c1","token":"ExponentPushToken[abc]","device":"d1"}]"#).unwrap();
+        assert_eq!(before[0].address, None, "a phone saved before fixed addresses is still told");
     }
 
     #[test]

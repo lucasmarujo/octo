@@ -25,7 +25,7 @@ const PROMPT_FILE: &str = "prompt.txt";
 const REVIEW_FILE: &str = "review.txt";
 const TURN_ENDED: &str = "ended its turn and went quiet";
 const REVIEW: &str = r#"{\"action\":\"done\",\"summary\":\"Ran the tests\",\"reason\":\"nothing is pending\",\"report\":\"The tests ran and nothing is pending.\"}"#;
-const VERDICT: &str = r#"{\"action\":\"answer\",\"keys\":null,\"text\":\"yes\",\"summary\":\"Told it to run the tests\",\"reason\":\"the task asks for them\",\"tag\":null,\"deny\":false}"#;
+const VERDICT: &str = r#"{\"action\":\"answer\",\"keys\":null,\"text\":\"yes\",\"summary\":\"Told it to run the tests\",\"reason\":\"the task asks for them\",\"tag\":null,\"deny\":false,\"report\":\"It asks to run the tests.\"}"#;
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 const FAKE_PS1_HEAD: &str = r#"
@@ -208,15 +208,21 @@ fn in_moderate_mode_octo_answers_a_paused_agent_through_the_engine_cli_and_logs_
     assert_eq!((entry.by, entry.outcome, entry.mode), (By::Octo, Outcome::Answered, Mode::Moderate));
     assert_eq!((entry.summary.as_str(), entry.question.as_str()), ("Told it to run the tests", QUESTION));
     assert_eq!(entry.kind, AgentKind::Kimi);
+    assert_eq!(
+        (entry.report.as_str(), entry.reason.as_str()),
+        ("It asks to run the tests.", "the task asks for them"),
+        "the log says in a few words what the agent wanted and why Octo answered so"
+    );
     assert!(handled.decisions.is_empty(), "an answered decision leaves the queue");
     assert_eq!(handled.handled_today, 1);
 
     let answer = cwd.join(ANSWER_FILE);
     let deadline = Instant::now() + TIMEOUT;
-    while !answer.exists() && Instant::now() < deadline {
+    let written = || std::fs::read_to_string(&answer).unwrap_or_default();
+    while written().is_empty() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert_eq!(std::fs::read_to_string(&answer).unwrap(), "yes", "the answer of the engine reached the agent");
+    assert_eq!(written(), "yes", "the answer of the engine reached the agent");
 
     let prompt = std::fs::read_to_string(fx.dir.join(PROMPT_FILE)).unwrap();
     assert!(prompt.contains("You are Octo") && prompt.contains("Mode: moderate."), "{prompt}");
@@ -239,6 +245,7 @@ fn in_moderate_mode_octo_answers_a_paused_agent_through_the_engine_cli_and_logs_
     let reviewed = view_where(&mut peer, &mut window, |view| view.handled.len() == 2);
     let ended = &reviewed.handled[0];
     assert_eq!((ended.by, ended.outcome, ended.summary.as_str()), (By::Octo, Outcome::Finished, "Ran the tests"));
+    assert_eq!(ended.report, "The tests ran and nothing is pending.", "what the agent delivered, not its raw output");
     assert!(reviewed.decisions.is_empty(), "an agent that really finished leaves nothing pending");
     assert_eq!(reviewed.handled_today, 1, "the pause Octo answered is not counted again when the turn ends");
     assert_eq!(reviewed.chat.len(), 1, "Octo tells the chat what the agent delivered");

@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Octo · the Agentic Development Environment</title>
+<meta name="description" content="Octo is the Agentic Development Environment: run Claude Code, Codex, Cursor and seven more AI coding agents across every project in one window, and let Octo orchestrate them for you.">
+<meta name="author" content="Lucas Marujo Amadeu">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="https://octo.marujo.dev/">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Octo">
+<meta property="og:locale" content="en_US">
+<meta property="og:url" content="https://octo.marujo.dev/">
+<meta property="og:title" content="Octo · the Agentic Development Environment">
+<meta property="og:description" content="Run Claude Code, Codex, Cursor and seven more AI coding agents side by side, see who needs you, and let Octo orchestrate the fleet. Free, for Windows, macOS and Linux.">
+<meta property="og:image" content="https://octo.marujo.dev/og-octo-kai.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Kai, the Octo octopus, next to the tagline: all your agents, one window.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Octo · the Agentic Development Environment">
+<meta name="twitter:description" content="Run Claude Code, Codex, Cursor and seven more AI coding agents side by side, see who needs you, and let Octo orchestrate the fleet. Free, for Windows, macOS and Linux.">
+<meta name="twitter:image" content="https://octo.marujo.dev/og-octo-kai.png">
+<meta name="twitter:image:alt" content="Kai, the Octo octopus, next to the tagline: all your agents, one window.">
+<link rel="icon" href="/octo-kai-peek.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/octo-kai-peek-touch-icon.png">
+<link rel="preload" href="/assets/fonts/Barlow-900.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/Barlow-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/hero-kraken.webp" as="image" type="image/webp" fetchpriority="high">
+<link rel="stylesheet" href="/assets/site.css">
+<script src="/assets/boot.js"></script>
+<script type="module" src="/assets/app.js"></script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://octo.marujo.dev/#website",
+      "url": "https://octo.marujo.dev/",
+      "name": "Octo",
+      "inLanguage": "en",
+      "publisher": { "@id": "https://marujo.dev/#person" }
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://octo.marujo.dev/#webpage",
+      "url": "https://octo.marujo.dev/",
+      "name": "Octo · the Agentic Development Environment",
+      "inLanguage": "en",
+      "dateModified": "2026-11-22T12:00:00-03:00",
+      "isPartOf": { "@id": "https://octo.marujo.dev/#website" },
+      "about": { "@id": "https://octo.marujo.dev/#software" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://octo.marujo.dev/#software",
+      "name": "Octo",
+      "description": "Agentic Development Environment: a desktop app that runs, monitors and orchestrates multiple AI coding agents (Claude Code, Codex, Cursor, OpenCode, Kilo, Antigravity, Grok, Qwen Code, Kimi Code and Pi) and plain terminals across multiple projects at once, with companion apps for iOS and Android.",
+      "brand": { "@type": "Brand", "name": "OctoAI" },
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Windows, Linux, macOS",
+      "url": "https://octo.marujo.dev/",
+      "downloadUrl": "https://github.com/lucasmarujo/octo/releases/latest",
+      "installUrl": "https://octo.marujo.dev/#download",
+      "image": "https://octo.marujo.dev/og-octo-kai.png",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@id": "https://marujo.dev/#person" },
+      "sameAs": ["https://github.com/lucasmarujo/octo"]
+    },
+    {
+      "@type": "Person",
+      "@id": "https://marujo.dev/#person",
+      "name": "Lucas Marujo Amadeu",
+      "alternateName": "Lucas Marujo",
+      "url": "https://marujo.dev/",
+      "sameAs": ["https://github.com/lucasmarujo"]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+
+<header class="nav" data-nav>
+  <div class="nav-in">
+    <a class="brand" href="#top" aria-label="Octo, back to top">
+      <span class="kai kai-brand" data-mood="idle" aria-hidden="true"><span class="kai-strip"></span></span>
+      <span class="wordmark" aria-hidden="true"><span class="mark wordmark-o"></span><svg class="wordmark-cto" viewBox="0 -32 282 134" fill="none" stroke="currentColor" stroke-width="15.2" focusable="false"><path d="M81.5 21.6A42.4 42.4 0 1 0 81.5 78.4"/><path d="M130 -32V62A30.4 30.4 0 0 0 160.4 92.4H170M104 7.6H170"/><circle cx="232" cy="50" r="42.4"/></svg></span>
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#ade">The ADE</a>
+      <a href="#environment">Environment</a>
+      <a href="#orchestrator">Orchestrator</a>
+      <a href="#mobile">Mobile</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="gh" href="https://github.com/lucasmarujo/octo" aria-label="Star Octo on GitHub">
+        <span class="gh-main"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></span>
+        <span class="gh-count" data-stars-box hidden><svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true" focusable="false"><path d="M5 0h2v3h5v2h-2v2h-1v2h1v3H8v-2H7V9H5v1H4v2H2V9h1V7H2V5H0V3h5z"/></svg><span data-stars></span></span>
+      </a>
+      <a class="btn btn-accent" href="#download">Download</a>
+    </div>
+  </div>
+</header>
+
+<main id="content">
+
+<section class="hero" id="top" aria-labelledby="hero-title" data-hero>
+  <div class="hero-art">
+    <img src="/assets/hero-kraken.webp" width="1672" height="941" decoding="async" fetchpriority="high" alt="A giant pink octopus rises from a stormy sea holding the icons of coding agents, facing a developer who stands on the deck of a ship.">
+  </div>
+
+  <div class="wrap hero-in">
+    <a class="pill" href="#orchestrator" data-rise="1"><b>New</b><span>Octo now orchestrates your agents for you</span><span aria-hidden="true">→</span></a>
+    <h1 class="display" id="hero-title" data-rise="2">
+      <span class="line">Your IDE was built for typing.</span>
+      <span class="line glow"><span class="sr">Octo</span><span class="wordmark wordmark-inline" aria-hidden="true"><span class="mark wordmark-o"></span><svg class="wordmark-cto" viewBox="0 -32 282 134" fill="none" stroke="currentColor" stroke-width="15.2" focusable="false"><path d="M81.5 21.6A42.4 42.4 0 1 0 81.5 78.4"/><path d="M130 -32V62A30.4 30.4 0 0 0 160.4 92.4H170M104 7.6H170"/><circle cx="232" cy="50" r="42.4"/></svg></span> is built for agents.</span>
+    </h1>
+    <p class="lead" data-rise="3">Octo is the <strong>Agentic Development Environment</strong>. Run Claude Code, Codex, Cursor and seven more side by side across every project, see exactly who is working and who needs you, and let Octo itself orchestrate the fleet.</p>
+    <div class="cta" data-rise="4">
+      <a class="btn btn-accent btn-lg" href="#download" data-os-cta><span data-os-label>Download Octo</span></a>
+      <a class="btn btn-ghost btn-lg" href="#orchestrator">Meet the orchestrator</a>
+    </div>
+    <p class="hero-note" data-rise="5">Free and open source · Windows, macOS and Linux · uses the AI plans you already pay for</p>
+  </div>
+
+  <div class="wrap stage-wrap" data-rise="6">
+    <div class="stage" data-stage>
+      <div class="perch" aria-hidden="true" data-perch>
+        <span class="kai" data-mood="working" data-perch-kai><span class="kai-strip"></span></span>
+        <p class="perch-say" data-perch-say></p>
+      </div>
+      <div class="app-fit" data-app-fit>
+        <iframe class="app-frame" data-app-frame src="/app/" width="1440" height="900" loading="lazy" tabindex="-1" title="A live preview of Octo: the real app running a simulated session, with the board, the list, the grid of terminals and the chat with the orchestrator."></iframe>
+      </div>
+    </div>
+    <p class="stage-cap"><span class="dot"></span>live preview · this is the real Octo app, running a simulated session</p>
+  </div>
+</section>
+
+<section class="section" id="flow" aria-labelledby="flow-title">
+  <div class="wrap">
+    <div class="guide" data-reveal data-guide>
+      <span class="kai" data-mood="working" aria-hidden="true"><span class="kai-strip"></span></span>
+      <p class="guide-say"><b>Kai</b><span data-say>I sit between you and your agents. Watch one request travel down and come back.</span></p>
+    </div>
+    <p class="eyebrow" data-reveal>How it flows</p>
+    <h2 class="h2" id="flow-title" data-reveal>
+      <span class="line">You talk to Octo.</span>
+      <span class="line glow">Octo runs the rest.</span>
+    </h2>
+    <div class="flow" data-reveal data-flow>
+      <div class="flow-scroll">
+        <div class="flow-art" data-flow-art role="img" aria-label="Diagram: you talk to Octo, the orchestrator. Octo starts Claude Code, Codex, OpenCode and Antigravity. Claude Code and Codex start subagents of their own. Questions travel back up to Octo, and only the ones that can not be undone reach you."></div>
+      </div>
+      <div class="flow-foot">
+        <ol class="flow-dots" data-flow-dots aria-hidden="true"></ol>
+        <p class="flow-say" data-flow-say></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section ade" id="ade" aria-labelledby="ade-title">
+  <div class="wrap">
+    <div class="guide" data-reveal data-guide>
+      <span class="kai" data-mood="idle" aria-hidden="true"><span class="kai-strip"></span></span>
+      <p class="guide-say"><b>Kai</b><span data-say>An editor waits for your keystrokes. An ADE waits for your decisions. Let me show you the difference.</span></p>
+    </div>
+    <p class="eyebrow" data-reveal>The category</p>
+    <h2 class="h2" id="ade-title" data-reveal>
+      <span class="line">Editors were for files.</span>
+      <span class="line glow">An ADE is for agents.</span>
+    </h2>
+    <p class="section-lead" data-reveal>The unit of work stopped being the line of code. It's the agent now, and ten of them don't fit in a chat panel bolted onto an editor. They need an environment of their own.</p>
+
+    <ol class="eras" data-reveal>
+      <li class="era">
+        <span class="era-tag">yesterday</span>
+        <div class="era-visual era-editor" aria-hidden="true"><span>const total = </span><i></i></div>
+        <h3 class="h3">The editor</h3>
+        <p>You write every line. The tool waits for your keystrokes.</p>
+      </li>
+      <li class="era">
+        <span class="era-tag">today</span>
+        <div class="era-visual era-ide" aria-hidden="true"><span class="era-bubble">refactor this file</span><span class="era-wait"><b data-spin>⠋</b> thinking…</span></div>
+        <h3 class="h3">The AI IDE</h3>
+        <p>You prompt one assistant and watch it. One task, one window, one of you.</p>
+      </li>
+      <li class="era era-now">
+        <span class="era-tag">now</span>
+        <div class="era-visual era-fleet" aria-hidden="true" data-fleet></div>
+        <h3 class="h3">The ADE</h3>
+        <p>You direct a fleet. Each agent works in its own branch and reports back when it needs you.</p>
+      </li>
+    </ol>
+
+    <div class="define" data-reveal>
+      <p class="define-word"><b>ADE</b> <span>/ˌeɪ.diːˈiː/</span> <em>noun</em></p>
+      <p class="define-text">An <strong>Agentic Development Environment</strong>: software where you launch, watch, answer and merge the work of many coding agents at once, instead of typing the code yourself.</p>
+      <ul class="verbs">
+        <li><b>Launch</b><span>Type a task, pick who runs it, press enter.</span></li>
+        <li><b>Watch</b><span>Exact status of every agent, live.</span></li>
+        <li><b>Answer</b><span>Jump to whoever is waiting, or let Octo reply.</span></li>
+        <li><b>Merge</b><span>Review the diff and bring it into your branch.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="environment" aria-labelledby="env-title">
+  <div class="wrap">
+    <div class="guide" data-reveal data-guide>
+      <span class="kai" data-mood="working" aria-hidden="true"><span class="kai-strip"></span></span>
+      <p class="guide-say"><b>Kai</b><span data-say>I have eight arms, so I know: running many agents only works if none of them trips over another.</span></p>
+    </div>
+    <p class="eyebrow" data-reveal>The environment</p>
+    <h2 class="h2" id="env-title" data-reveal>
+      <span class="line">Everything ten agents need.</span>
+      <span class="line glow">Nothing you have to babysit.</span>
+    </h2>
+
+    <ul class="bento">
+      <li class="cell cell-wide" data-reveal>
+        <div class="cell-visual v-status" aria-hidden="true">
+          <ol class="events" data-events>
+            <li><span>UserPromptSubmit</span><b class="t-working">working</b></li>
+            <li><span>PreToolUse · Bash</span><b class="t-working">working</b></li>
+            <li><span>PermissionRequest</span><b class="t-waiting">needs you</b></li>
+            <li><span>Stop</span><b class="t-done">done</b></li>
+          </ol>
+        </div>
+        <h3 class="h3">Exact status, never guessed</h3>
+        <p>Hooks, plugins and each agent's own protocol tell Octo when it is working, waiting for you or done. No reading the screen and hoping.</p>
+      </li>
+      <li class="cell" data-reveal>
+        <div class="cell-visual v-tree" aria-hidden="true">
+          <svg viewBox="0 0 320 150" fill="none">
+            <path class="tree-main" d="M20 118 H300"/>
+            <path class="tree-a" d="M60 118 C 90 118, 90 78, 120 78 H210 C 240 78, 240 118, 270 118"/>
+            <path class="tree-b" d="M60 118 C 100 118, 90 38, 130 38 H170 C 210 38, 200 118, 240 118"/>
+            <circle cx="60" cy="118" r="4" class="tree-dot"/>
+            <circle cx="240" cy="118" r="4" class="tree-dot"/>
+            <circle cx="270" cy="118" r="4" class="tree-dot"/>
+            <text x="134" y="30">octo/checkout-redesign</text>
+            <text x="124" y="70">octo/physics-merge</text>
+            <text x="20" y="140">main</text>
+          </svg>
+        </div>
+        <h3 class="h3">One repo, many agents</h3>
+        <p>Each agent gets its own git worktree and branch. They never step on each other, and <code>/merge</code> brings the work home.</p>
+      </li>
+      <li class="cell" data-reveal>
+        <div class="cell-visual v-race" aria-hidden="true" data-race>
+          <div class="race-row" style="--tone:var(--kind-claude);--to:100%"><span>claude</span><i><b></b></i><em>✔ 42 tests</em></div>
+          <div class="race-row" style="--tone:var(--kind-codex);--to:86%"><span>codex</span><i><b></b></i><em>✔ 42 tests</em></div>
+          <div class="race-row" style="--tone:var(--kind-opencode);--to:64%"><span>opencode</span><i><b></b></i><em>2 failing</em></div>
+        </div>
+        <h3 class="h3">Race them on one task</h3>
+        <p><code>/race</code> hands the same task to up to four agents, each in its own branch. Compare the diffs and tests, then keep the winner.</p>
+      </li>
+      <li class="cell" data-reveal>
+        <div class="cell-visual v-outlive" aria-hidden="true">
+          <div class="outlive-win" data-outlive><span></span><span></span><span></span><b>Octo</b></div>
+          <div class="outlive-agents"><span><b data-spin>⠋</b> claude</span><span><b data-spin>⠋</b> codex</span><span><b data-spin>⠋</b> cursor</span></div>
+        </div>
+        <h3 class="h3">Agents outlive the window</h3>
+        <p>Every agent runs in its own process. Close Octo, update it or crash it: nobody stops. After a reboot, one key resumes every conversation.</p>
+      </li>
+      <li class="cell" data-reveal>
+        <div class="cell-visual v-usage" aria-hidden="true">
+          <div class="usage-row" style="--tone:var(--kind-claude)"><span>claude · 5h</span><em>62%</em><i><b style="--pct:62%"></b></i></div>
+          <div class="usage-row" style="--tone:var(--kind-codex)"><span>codex · week</span><em class="t-waiting">76%</em><i><b class="is-warn" style="--pct:76%"></b></i></div>
+          <div class="usage-row" style="--tone:var(--kind-kimi)"><span>kimi · 5h</span><em class="t-lost">93%</em><i><b class="is-hot" style="--pct:93%"></b></i></div>
+        </div>
+        <h3 class="h3">Your plans, in plain sight</h3>
+        <p>Octo runs on the subscriptions you already have, and shows the 5-hour and weekly windows of each one with a countdown to the reset.</p>
+      </li>
+      <li class="cell cell-wide" data-reveal>
+        <div class="cell-visual v-keys" aria-hidden="true">
+          <div class="keys-row"><kbd>alt</kbd><kbd>N</kbd><span>next agent waiting for you</span></div>
+          <div class="keys-row"><kbd>ctrl</kbd><kbd>T</kbd><span>worktree for the next agents</span></div>
+          <div class="keys-row"><kbd>ctrl</kbd><kbd>R</kbd><span>recover everyone after a reboot</span></div>
+          <div class="keys-row"><kbd>/</kbd><span>commands and every agent's skills</span></div>
+        </div>
+        <h3 class="h3">Built for the keyboard</h3>
+        <p>Launch, jump, merge and recover without touching the mouse. Skills from one agent work in all the others.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section class="section orch" id="orchestrator" aria-labelledby="orch-title">
+  <div class="orch-halo" aria-hidden="true"></div>
+  <div class="wrap orch-grid">
+    <div class="orch-copy">
+      <div class="guide" data-reveal data-guide>
+        <span class="kai" data-mood="needs" aria-hidden="true"><span class="kai-strip"></span></span>
+        <p class="guide-say"><b>Kai</b><span data-say>Agents ask a lot of questions. Tell me how much I may answer for you, and I'll handle the rest.</span></p>
+      </div>
+      <p class="eyebrow" data-reveal>The orchestrator</p>
+      <h2 class="h2" id="orch-title" data-reveal>
+        <span class="line">Octo is an agent too.</span>
+        <span class="line glow">It runs the others.</span>
+      </h2>
+      <p class="section-lead" data-reveal>One chat that sees every agent in every project. Tell Octo what you want; it starts the agents, reads what they ask, answers what your rules settle and brings you only what is truly yours to decide.</p>
+
+      <div class="modes" data-reveal data-modes role="tablist" aria-label="Orchestrator mode">
+        <button class="mode" role="tab" type="button" data-mode="observe" aria-selected="false">Observe</button>
+        <button class="mode" role="tab" type="button" data-mode="moderate" aria-selected="true">Moderate</button>
+        <button class="mode" role="tab" type="button" data-mode="bypass" aria-selected="false">Bypass</button>
+      </div>
+      <p class="mode-text" data-reveal data-mode-text>Octo answers what your rules and the task settle. Anything open, irreversible or outside the task waits for you.</p>
+
+      <ul class="ticks" data-reveal>
+        <li>Any of the ten agents can be the engine, on the plan you already have</li>
+        <li>Starts, renames, restarts and removes agents from the chat</li>
+        <li>Your rules live in a plain <code>.md</code> file</li>
+        <li>Works from your phone too</li>
+      </ul>
+    </div>
+
+    <div class="chat" data-reveal data-chat aria-live="polite">
+      <div class="chat-head">
+        <span class="kai kai-chat" data-mood="idle" aria-hidden="true"><span class="kai-strip"></span></span>
+        <div class="chat-title"><b>Octo</b><span data-chat-sub>3 agents working · 1 needs you</span></div>
+        <span class="chat-engine"><i>engine</i> <b>claude</b> · sonnet</span>
+      </div>
+      <div class="chat-thread" data-chat-thread></div>
+      <div class="chat-composer"><span class="caret"></span><span class="chat-placeholder">Ask Octo, or tell it what to do…</span><span class="chat-send">↵</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="mobile" aria-labelledby="mobile-title">
+  <div class="wrap">
+    <div class="guide" data-reveal data-guide>
+      <span class="kai" data-mood="idle" aria-hidden="true"><span class="kai-strip"></span></span>
+      <p class="guide-say"><b>Kai</b><span data-say>Step away from the desk. If someone gets stuck, I'll tap you on the shoulder.</span></p>
+    </div>
+    <p class="eyebrow" data-reveal>Octo on your phone</p>
+    <h2 class="h2" id="mobile-title" data-reveal>
+      <span class="line">The agent needs you.</span>
+      <span class="line glow">Your desk doesn't.</span>
+    </h2>
+    <div class="m-track" data-m-track>
+      <div class="mobile" data-reveal data-mobile>
+        <div class="m-stage" aria-hidden="true">
+          <div class="m-phone">
+            <img class="m-screen is-on" data-m-screen="0" src="/assets/mobile/overview.webp" width="780" height="1688" alt="" loading="lazy" decoding="async">
+            <img class="m-screen" data-m-screen="1" src="/assets/mobile/chat.webp" width="780" height="1688" alt="" loading="lazy" decoding="async">
+            <img class="m-screen" data-m-screen="2" src="/assets/mobile/steps.webp" width="780" height="1688" alt="" loading="lazy" decoding="async">
+            <img class="m-screen" data-m-screen="3" src="/assets/mobile/permission.webp" width="780" height="1688" alt="" loading="lazy" decoding="async">
+            <img class="m-screen" data-m-screen="4" src="/assets/mobile/done.webp" width="780" height="1688" alt="" loading="lazy" decoding="async">
+            <img class="m-screen" data-m-screen="5" src="/assets/mobile/launch.webp" width="780" height="1688" alt="" loading="lazy" decoding="async">
+          </div>
+        </div>
+        <div class="m-side">
+          <div class="m-get">
+            <a class="store store-apple" href="https://apps.apple.com/us/app/octo-ai-agents/id6832724791"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><i>Download on the</i><b>App Store</b></span></a>
+            <a class="store store-play" href="https://play.google.com/store/apps/details?id=dev.marujo.octo"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="#00a0ff" d="M3.9 1.6 13.5 12 3.9 22.4C3.4 22.2 3 21.6 3 21V3c0-.6.4-1.2.9-1.4z"/><path fill="#00e676" d="M3.9 1.6 16.6 8.7 13.5 12z"/><path fill="#ff3a44" d="M3.9 22.4 16.6 15.3 13.5 12z"/><path fill="#ffd500" d="M16.6 8.7 20.6 11c.8.4.8 1.6 0 2l-4 2.3L13.5 12z"/></svg><span><i>Get it on</i><b>Google Play</b></span></a>
+          </div>
+          <ol class="m-feats" role="tablist" aria-label="What the phone app does">
+            <li><button class="m-feat" type="button" role="tab" aria-selected="true" data-m-feat="0"><i>01</i><b>Every agent, at a glance</b><span>Your sessions, plan usage and every agent in one scroll. Whoever needs you sits on top.</span></button></li>
+            <li><button class="m-feat" type="button" role="tab" aria-selected="false" data-m-feat="1"><i>02</i><b>A chat, not a tiny terminal</b><span>Each agent reads as a conversation, with the steps it took and how far along it is.</span></button></li>
+            <li><button class="m-feat" type="button" role="tab" aria-selected="false" data-m-feat="2"><i>03</i><b>Open any step</b><span>Tap a step to see what it did: the file it touched and the lines that changed.</span></button></li>
+            <li><button class="m-feat" type="button" role="tab" aria-selected="false" data-m-feat="3"><i>04</i><b>Answer in two taps</b><span>A push brings you here when an agent stops to ask. Allow it once, always, or tell it what to do instead.</span></button></li>
+            <li><button class="m-feat" type="button" role="tab" aria-selected="false" data-m-feat="4"><i>05</i><b>Review and merge</b><span>When the work is done you see the tests and the changes, open the diff and merge, all from the phone.</span></button></li>
+            <li><button class="m-feat" type="button" role="tab" aria-selected="false" data-m-feat="5"><i>06</i><b>Launch from anywhere</b><span>Write the task, pick the agent and the folder, give it its own worktree and send.</span></button></li>
+          </ol>
+          <p class="m-note">Then press <kbd>ctrl</kbd><kbd>P</kbd> on the desktop and scan the QR code: your phone is in, end-to-end encrypted.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="everywhere" aria-labelledby="every-title">
+  <div class="wrap">
+    <div class="guide" data-reveal data-guide>
+      <span class="kai" data-mood="working" aria-hidden="true"><span class="kai-strip"></span></span>
+      <p class="guide-say"><b>Kai</b><span data-say>More than one machine? I keep an eye on all of them from the same window.</span></p>
+    </div>
+    <p class="eyebrow" data-reveal>Everywhere</p>
+    <h2 class="h2" id="every-title" data-reveal>
+      <span class="line">Every computer you own.</span>
+      <span class="line glow">One window.</span>
+    </h2>
+
+    <ul class="reach">
+      <li class="reach-card" data-reveal>
+        <div class="reach-visual v-devices" aria-hidden="true">
+          <span class="dev dev-main"><span class="kai kai-dev" data-mood="working" aria-hidden="true"><span class="kai-strip"></span></span></span>
+          <span class="dev dev-a">macbook-air<i>4 agents</i></span>
+          <span class="dev dev-b">studio-pc<i>8 agents</i></span>
+          <span class="dev dev-c">build-server<i>ssh · 3 agents</i></span>
+          <svg viewBox="0 0 320 220" fill="none"><path d="M160 110 L62 48"/><path d="M160 110 L262 56"/><path d="M160 110 L170 190"/></svg>
+        </div>
+        <h3 class="h3">Every computer, one window</h3>
+        <p>Add your other machines by link and your Linux servers over SSH. Their agents show up in the same sidebar as the ones on your laptop.</p>
+      </li>
+      <li class="reach-card" data-reveal>
+        <div class="reach-visual v-island" aria-hidden="true">
+          <div class="island"><span class="mark mark-xs spin"></span><b>4</b><span>working</span><i></i><b class="t-waiting">1</b><span>needs you</span></div>
+          <div class="island-screen"></div>
+        </div>
+        <h3 class="h3">An island on your screen</h3>
+        <p>A small pill at the top of your display, on Windows and macOS, shows who is working and who is waiting while you do something else.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section class="section trust" id="security" aria-labelledby="trust-title">
+  <div class="wrap">
+    <div class="guide" data-reveal data-guide>
+      <span class="kai" data-mood="idle" aria-hidden="true"><span class="kai-strip"></span></span>
+      <p class="guide-say"><b>Kai</b><span data-say>Everything I do happens on your computer. I don't phone home, because there is no home to phone.</span></p>
+    </div>
+    <p class="eyebrow" data-reveal>Yours</p>
+    <h2 class="h2" id="trust-title" data-reveal>
+      <span class="line">Your code, your machine.</span>
+      <span class="line glow">Your subscriptions.</span>
+    </h2>
+    <ul class="stats" data-reveal>
+      <li><b>10</b><span>coding agents supported, plus your own shell</span></li>
+      <li><b>127.0.0.1</b><span>Agents listen on localhost only, on a random port, behind a 256-bit token</span></li>
+      <li><b>0</b><span>of your config files changed. Hooks apply only to the process Octo launched</span></li>
+      <li><b>MIT</b><span>Free and open source. No account, no Octo server between you and your code</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="section" id="download" aria-labelledby="download-title">
+  <div class="wrap">
+    <div class="guide" data-reveal data-guide>
+      <span class="kai" data-mood="done" aria-hidden="true"><span class="kai-strip"></span></span>
+      <p class="guide-say"><b>Kai</b><span data-say>That's the tour. One file and we can start.</span></p>
+    </div>
+    <p class="eyebrow" data-reveal>Download</p>
+    <h2 class="h2" id="download-title" data-reveal>
+      <span class="line">One file.</span>
+      <span class="line glow">No admin rights.</span>
+    </h2>
+    <p class="section-lead" data-reveal>Octo updates itself to every new version, checked by size and SHA-256, and closing it never stops an agent.</p>
+    <ul class="get" data-reveal data-get>
+      <li class="get-item" data-os="windows">
+        <a class="get-link" href="https://github.com/lucasmarujo/octo/releases/latest/download/Octo-setup.exe"><span class="get-meta">Windows 10 and 11 · x64</span><span class="get-os">Windows</span><code>Octo-setup.exe</code><span class="get-go" aria-hidden="true">↓</span></a>
+        <p>Installs for your user, with no admin rights. Not code signed yet: if SmartScreen warns, choose <b>More info</b> › <b>Run anyway</b>. Rather not install? <a href="https://github.com/lucasmarujo/octo/releases/latest/download/Octo.exe"><code>Octo.exe</code></a> runs from any folder.</p>
+      </li>
+      <li class="get-item" data-os="mac">
+        <a class="get-link" href="https://github.com/lucasmarujo/octo/releases/latest/download/Octo-macos.zip"><span class="get-meta">macOS 11+ · Apple silicon and Intel</span><span class="get-os">macOS</span><code>Octo-macos.zip</code><span class="get-go" aria-hidden="true">↓</span></a>
+        <p>Unzip and open Octo: it installs itself in Applications and updates on its own. Signed and notarized by Apple.</p>
+      </li>
+      <li class="get-item" data-os="linux">
+        <a class="get-link" href="https://github.com/lucasmarujo/octo/releases/latest/download/Octo-linux-x86_64"><span class="get-meta">Linux · x64</span><span class="get-os">Linux</span><code>Octo-linux-x86_64</code><span class="get-go" aria-hidden="true">↓</span></a>
+        <p>Needs WebKitGTK 4.1 (<code>libwebkit2gtk-4.1-0</code>, on Ubuntu 22.04 and newer). Make it executable with <code>chmod +x</code> and run it.</p>
+      </li>
+    </ul>
+    <p class="get-note" data-reveal>To use an agent, its CLI must be installed and on your <code>PATH</code>: <code>claude</code>, <code>codex</code>, <code>cursor-agent</code>, <code>opencode</code>, <code>kilo</code>, <code>agy</code>, <code>grok</code>, <code>qwen</code>, <code>kimi</code> or <code>pi</code>.</p>
+  </div>
+</section>
+
+<section class="section" id="faq" aria-labelledby="faq-title">
+  <div class="wrap faq-grid">
+    <div class="faq-side">
+      <div class="guide" data-reveal data-guide>
+        <span class="kai" data-mood="needs" aria-hidden="true"><span class="kai-strip"></span></span>
+        <p class="guide-say"><b>Kai</b><span data-say>Still curious? These are the questions I hear most.</span></p>
+      </div>
+      <p class="eyebrow" data-reveal>Before you install</p>
+      <h2 class="h2" id="faq-title" data-reveal>
+        <span class="line">A few</span>
+        <span class="line glow">answers.</span>
+      </h2>
+      <p class="section-lead" data-reveal>The short version: it's free, it runs on your machine, and it works with the agents you already use.</p>
+      <a class="faq-more" href="https://github.com/lucasmarujo/octo/issues" data-reveal>
+        <span class="faq-more-text"><b>Something else?</b><span>Ask on GitHub, a person answers.</span></span>
+        <span class="faq-more-go" aria-hidden="true">→</span>
+      </a>
+    </div>
+    <div class="faq" data-faq>
+      <details class="faq-item" data-reveal>
+        <summary><span class="faq-n">01</span><span class="faq-q">What is an ADE?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+        <div class="faq-a"><p>An Agentic Development Environment. Where an IDE is built around you editing files, an ADE is built around agents doing the work: you launch them, see their status, answer their questions and merge what they made.</p></div>
+      </details>
+      <details class="faq-item" data-reveal>
+        <summary><span class="faq-n">02</span><span class="faq-q">Is Octo free?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+        <div class="faq-a"><p>Yes. Octo is free and open source under the MIT license. The agents run on the subscriptions or API keys you already have, so their providers' charges still apply.</p></div>
+      </details>
+      <details class="faq-item" data-reveal>
+        <summary><span class="faq-n">03</span><span class="faq-q">Do I have to stop using my editor?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+        <div class="faq-a"><p>No. Octo doesn't replace your editor; it replaces the pile of terminals where your agents live. Every agent works in a normal folder or git worktree that any editor can open.</p></div>
+      </details>
+      <details class="faq-item" data-reveal>
+        <summary><span class="faq-n">04</span><span class="faq-q">What does the orchestrator do, exactly?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+        <div class="faq-a"><p>It is a chat that sees all your agents. In Observe it only reports. In Moderate it answers what your rules and the task settle and leaves the rest to you. In Bypass it decides everything. It is off until you turn it on.</p></div>
+      </details>
+      <details class="faq-item" data-reveal>
+        <summary><span class="faq-n">05</span><span class="faq-q">Where does my code go?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+        <div class="faq-a"><p>Nowhere new. Agents run on your machine and talk to their own providers, as they do in a terminal. Octo has no account and no server that sees your code, and never changes your agents' config files.</p></div>
+      </details>
+      <details class="faq-item" data-reveal>
+        <summary><span class="faq-n">06</span><span class="faq-q">Which agents are supported?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+        <div class="faq-a"><p>Claude Code, Codex, Cursor CLI, OpenCode, Kilo, Antigravity, Grok Build, Qwen Code, Kimi Code and Pi, plus plain terminals such as PowerShell, bash and zsh.</p></div>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot" data-ink>
+  <div class="foot-stage" data-ink-stage>
+    <span class="foot-scene" aria-hidden="true" data-scene></span>
+    <div class="foot-info">
+      <div class="wrap foot-in">
+        <div class="foot-brand">
+          <a class="brand" href="#top" aria-label="Octo, back to top">
+            <span class="kai kai-brand" data-mood="idle" aria-hidden="true"><span class="kai-strip"></span></span>
+            <span class="wordmark" aria-hidden="true"><span class="mark wordmark-o"></span><svg class="wordmark-cto" viewBox="0 -32 282 134" fill="none" stroke="currentColor" stroke-width="15.2" focusable="false"><path d="M81.5 21.6A42.4 42.4 0 1 0 81.5 78.4"/><path d="M130 -32V62A30.4 30.4 0 0 0 160.4 92.4H170M104 7.6H170"/><circle cx="232" cy="50" r="42.4"/></svg></span>
+          </a>
+          <p>Octo is the Agentic Development Environment: run and orchestrate AI coding agents across all your projects. Made by OctoAI, built in Rust by <a href="https://marujo.dev/">Lucas Marujo</a>.</p>
+        </div>
+        <nav class="foot-nav" aria-label="Footer">
+          <div>
+            <h2 class="foot-title">product</h2>
+            <a href="#ade">the ADE</a>
+            <a href="#environment">environment</a>
+            <a href="#orchestrator">orchestrator</a>
+            <a href="#mobile">mobile</a>
+            <a href="#download">download</a>
+          </div>
+          <div>
+            <h2 class="foot-title">project</h2>
+            <a href="https://github.com/lucasmarujo/octo">github</a>
+            <a href="https://github.com/lucasmarujo/octo/releases/latest">latest version</a>
+            <a href="https://github.com/lucasmarujo/octo/issues">report an issue</a>
+            <a href="https://github.com/lucasmarujo/octo#readme">documentation</a>
+            <a href="/privacy/">privacy policy</a>
+          </div>
+        </nav>
+      </div>
+      <div class="wrap foot-base"><span>© 2026 OctoAI · Lucas Marujo</span><span>octo.marujo.dev</span></div>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

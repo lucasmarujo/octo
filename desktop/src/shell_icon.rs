@@ -22,9 +22,9 @@ const NOTIFY_WAIT: Duration = Duration::from_secs(2);
 #[cfg(target_os = "macos")]
 const BUNDLE_ICON: &str = "Contents/Resources/icon.icns";
 #[cfg(target_os = "macos")]
-const BUNDLE_IDENTIFIER: &str = "dev.marujo.octo";
+pub const BUNDLE_IDENTIFIER: &str = "dev.marujo.octo";
 #[cfg(target_os = "macos")]
-const DEFAULTS: &str = "/usr/bin/defaults";
+pub const DEFAULTS: &str = "/usr/bin/defaults";
 #[cfg(target_os = "macos")]
 const GETCONF: &str = "/usr/bin/getconf";
 #[cfg(target_os = "macos")]
@@ -74,7 +74,7 @@ fn redraw_dock_tile() {
 }
 
 #[cfg(target_os = "macos")]
-fn output_of(program: &str, args: &[&str]) -> Option<String> {
+pub fn output_of(program: &str, args: &[&str]) -> Option<String> {
     let output = Command::new(program).args(args).stderr(Stdio::null()).output().ok()?;
     output.status.success().then(|| String::from_utf8_lossy(&output.stdout).into_owned())
 }

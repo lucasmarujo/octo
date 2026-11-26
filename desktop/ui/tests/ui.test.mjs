@@ -198,19 +198,12 @@ test('the agent screen leaves the agent title to the cards and keeps its status 
   assert.doesNotMatch(status, /activity/, 'the session title the agent gave itself is not repeated under its terminal');
 });
 
-test('Octo draws its own thin scrollbar in both themes, pink while it is dragged', () => {
+test('scrollbars stay invisible but scrolling still works', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
-  const [dark, light] = [css.split(':root {')[1].split('}')[0], css.split(':root[data-theme="light"] {')[1].split('}')[0]];
-  for (const token of ['--scroll-thumb', '--scroll-thumb-hover', '--scroll-thumb-grab']) {
-    assert.ok(dark.includes(`${token}:`), `dark ${token}`);
-    assert.ok(light.includes(`${token}:`), `light ${token}`);
-  }
+  assert.match(css, /::-webkit-scrollbar \{ width: 0; height: 0;/, 'no visible scrollbar gutter');
   assert.match(css, /::-webkit-scrollbar-button \{ display: none;/, 'no arrow buttons');
-  assert.match(css, /::-webkit-scrollbar-thumb \{[^}]*background: var\(--scroll-thumb\) padding-box;/);
-  assert.match(css, /:hover::-webkit-scrollbar-thumb \{ background-color: var\(--scroll-thumb-hover\);/);
-  assert.match(css, /::-webkit-scrollbar-thumb:active \{[^}]*background-color: var\(--color-accent\);/);
   assert.doesNotMatch(css, /scrollbar-(?:width|color)\s*:/, 'the standard properties make Chromium drop the custom scrollbar');
-  assert.match(css, /\.column-body \{[^}]*scrollbar-gutter: stable;/, 'cards keep one width whether their column scrolls or not');
+  assert.doesNotMatch(css, /\.column-body \{[^}]*scrollbar-gutter: stable;/, 'no reserved gutter without a visible bar');
 });
 
 test('agents are labelled like the CLI labels them', () => {
@@ -840,10 +833,16 @@ test('ctrl plus and ctrl minus zoom the agent screen, ctrl zero goes back to the
   assert.equal(keyRoute(key('=', { ctrlKey: true }), false, true), 'terminal', 'on a Mac ctrl stays a key of the agent');
   assert.equal(keyRoute(key('toString', { ctrlKey: true }), false), 'terminal', 'only the keys of the map zoom');
   const terminal = readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8');
-  assert.match(terminal, /if \(this\.zoomable && route\.startsWith\('zoom-'\)\) \{/, 'only the agent screen zooms, the grid keeps its own size');
+  assert.match(terminal, /if \(this\.zoomable && route\.startsWith\('zoom-'\)\) \{/, 'with focus in the terminal, zoom changes the font');
   assert.match(terminal, /const ZOOM_MIN = 9;\nconst ZOOM_MAX = 24;/);
   assert.match(terminal, /storage\.set\(ZOOM_KEY, String\(next\)\);/, 'the size is kept for the next agent');
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /new Terminal\(\$\('terminal'\), terminalHandlers\(appShortcut\), \{ zoomable: true \}\);/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /applyUiZoom\(zoom\)/, 'away from the terminal, the same keys zoom the whole window');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/uizoom.js'), 'utf8'), /--ui-zoom/, 'zoom fills the window instead of leaving a strip at the bottom');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /body \{[^}]*transform: scale\(var\(--ui-zoom\)\);/);
+  assert.match(css, /\.app \{[^}]*height: 100%;/);
 });
 
 test('files dropped on an agent terminal are typed as paths the way a native terminal types them', async () => {
@@ -1092,6 +1091,17 @@ test('a Mac keeps its own traffic lights and Octo draws window controls only whe
   const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
   assert.match(main, /win\.isDecorated\(\)\.catch\(\(\) => false\)\.then\(\(native\) => \{\n\s*document\.documentElement\.dataset\.windowControls = native \? 'native' : 'app';/);
   assert.ok(JSON.parse(rust('desktop/capabilities/default.json')).permissions.includes('core:default'), 'core:default lets the window ask whether the system decorates it');
+});
+
+test('the title bar always keeps a strip to drag the window by, before the window buttons or after the traffic lights', () => {
+  const MIN_DRAG_PX = 80;
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<button id="tabs-menu"[^>]*><\/button>\s*<div class="titlebar-drag" data-tauri-drag-region><\/div>\s*<div class="window-controls">/, 'an empty element, since a bare drag region only drags from itself');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.ok(Number(css.match(/--titlebar-drag: (\d+)px;/)[1]) >= MIN_DRAG_PX);
+  assert.match(css, /\.titlebar-drag \{ flex: 1 0 var\(--titlebar-drag\); align-self: stretch; \}/, 'it never shrinks, so the tabs give way to it however many are open');
+  assert.match(css, /\.tabs \{[^}]*flex: 0 1 auto;[^}]*min-width: 0;/);
+  assert.match(css, /:root\[data-window-controls="native"\] \.titlebar-drag \{ order: -1; flex-grow: 0; \}/, 'on a Mac it sits right after the traffic lights');
 });
 
 test('every text the app shows has a Portuguese version', async () => {
@@ -1631,8 +1641,10 @@ test('an open session in the sidebar lists every one of its agents, each followe
 test('a right click on a session in the sidebar offers to rename or delete that session', () => {
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebar, /oncontextmenu: \(event\) => sessionMenu\(event, session\.name\)/);
-  assert.match(sidebar, /openMenu\(event\.currentTarget, \[item\(t\('Rename'\), renameSession\), item\(t\('Delete'\), deleteSession\)\], false\);/);
-  assert.match(sidebar, /closeMenu\(\);\n\s*act\(name\);/, 'the menu closes before the question opens');
+  assert.match(sidebar, /openMenu\(event\.currentTarget, \[menuItem\(t\('Rename'\), \(\) => renameSession\(name\)\), menuItem\(t\('Delete'\), \(\) => deleteSession\(name\)\)\], false\);/);
+  assert.match(sidebar, /closeMenu\(\);\n\s*act\(\);/, 'the menu closes before the question opens');
+  assert.match(sidebar, /oncontextmenu: \(event\) => agentMenu\(event, agent\)/, 'each agent gets the same kind of menu');
+  assert.match(sidebar, /menuItem\(t\('Rename'\), \(\) => rename\(agent\)\)/);
   const commands = readFileSync(join(REPO, 'desktop/ui/js/commands.js'), 'utf8');
   assert.match(commands, /export async function renameSession\(name, arg\) \{[\s\S]*?value: name,[\s\S]*?if \(name === state\.session\) state\.pendingSession = to\.trim\(\);\n\s*send\(\{ type: 'renameSession', name, to \}\);/, 'renaming another session keeps the one on screen');
   assert.match(commands, /export async function deleteSession\(name\) \{[\s\S]*?send\(\{ type: 'deleteSession', name \}\)/);
@@ -1665,7 +1677,7 @@ test('a code agent behind its release shows a card that updates it, and a dismis
   const toast = readFileSync(join(REPO, 'desktop/ui/js/toast.js'), 'utf8');
   assert.match(toast, /const passing = \(\) => host\.querySelectorAll\('\.toast:not\(\.agent-update\)'\);\n\s*while \(passing\(\)\.length > LIMIT\) passing\(\)\[0\]\.remove\(\);/, 'a burst of toasts never pushes an update card away');
   const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
-  assert.match(main, /connect\(onMessage\)[^\n]*\n\s*checkAgentUpdates\(openAgent\);/, 'checked every time Octo opens, without holding up the first paint');
+  assert.match(main, /connect\(onMessage, REMOTE\)[\s\S]*?\}\);\n\s*if \(!REMOTE\) checkAgentUpdates\(openAgent\);/, 'checked every time Octo opens, without holding up the first paint');
   assert.match(main, /watchInstalls\(message\.agents\);\n\s*watchAgentUpdates\(message\.agents\);/);
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.match(css, /\.agent-update \{ position: relative; display: flex;[^}]*pointer-events: auto; \}/, 'the card takes clicks inside the toast column');
@@ -1822,19 +1834,52 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.equal(canMove(null, 'work'), false);
   assert.equal(canMove(agent({}), null), false);
   const drag = readFileSync(join(REPO, 'desktop/ui/js/drag.js'), 'utf8');
-  assert.match(drag, /send\(\{ type: 'moveAgent', agent: moving\.agent\.id, session \}\)/);
+  assert.match(drag, /if \(session\) send\(\{ type: 'moveAgent', agent: agent\.id, session \}\);/);
   assert.match(drag, /#board \.card, #list-body \.row, #grid \.tile-head, #sessions \.summary/, 'a tile drags by its head: its screen is a terminal to select from');
   assert.match(drag, /closest\('\.session'\)\?\.querySelector\('\.session-row\[data-session\]'\)/, 'a drop counts anywhere on an expanded session, not only on its row');
   assert.doesNotMatch(drag, /addEventListener\('blur'/, 'the capture of the pointer says when a drag is lost');
   const sidebarCode = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
-  assert.match(sidebarCode, /class: `summary\$\{waiting \? ' waiting' : ''\}`, dataset: \{ agent: String\(agent\.id\) \}/, 'an agent listed in the sidebar drags from there too');
+  assert.match(sidebarCode, /dataset: \{ agent: String\(agent\.id\) \}/, 'an agent listed in the sidebar drags from there too');
   assert.match(sidebarCode, /\[agent\.id, agent\.name, agent\.state, agent\.starting, agent\.kind, agent\.model, \(agent\.subagents \|\| \[\]\)\.map\(\(sub\) => \[sub\.role, sub\.description, sub\.startedAt\]\)\]/, 'a line never keeps the id of another agent with the same name, nor an old provider or model');
   assert.match(drag, /\.xterm/, 'nothing drags out of a terminal');
   assert.match(drag, /addEventListener\('click', swallow, \{ capture: true, once: true \}\)/);
   assert.match(drag, /event\.key === 'Escape'/, 'a drag can be called off');
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8'), /class: 'session-row', type: 'button', dataset: \{ session: session\.name \}/);
-  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initAgentDrag\(\);/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initAgentDrag\(render\);/);
   assert.match(rust('src/pwa/actions.rs'), /PhoneMsg::MoveAgent \{ agent, session \} => move_agent\(hub, agent, &session, reply\)/);
+});
+
+test('the agents of a session keep the order the user drags them to in the sidebar, and only the sidebar follows it', async () => {
+  const { inOrder, placeAgent } = await import('../js/format.js');
+  const list = [1, 2, 3, 4].map((id) => agent({ id }));
+  const ids = (agents) => agents.map((item) => item.id);
+  assert.deepEqual(ids(inOrder(list, undefined)), [1, 2, 3, 4], 'nothing saved keeps the order the core sends');
+  assert.deepEqual(ids(inOrder(list, 'junk')), [1, 2, 3, 4]);
+  assert.deepEqual(ids(inOrder(list, [3, 1])), [3, 1, 2, 4], 'an agent never placed follows the placed ones, in the order of the core');
+  assert.deepEqual(ids(inOrder(list, [9, 4, 2])), [4, 2, 1, 3], 'a removed agent leaves no gap');
+  assert.deepEqual(ids(list), [1, 2, 3, 4], 'the list of the core is left as it was');
+  assert.deepEqual(placeAgent([1, 2, 3, 4], 4, 0), [4, 1, 2, 3]);
+  assert.deepEqual(placeAgent([1, 2, 3, 4], 1, 3), [2, 3, 4, 1]);
+  assert.deepEqual(placeAgent([1, 2, 3, 4], 2, 99), [1, 3, 4, 2]);
+  assert.deepEqual(placeAgent([1, 2, 3, 4], 2, -1), [2, 1, 3, 4]);
+  const drag = readFileSync(join(REPO, 'desktop/ui/js/drag.js'), 'utf8');
+  assert.match(drag, /const SIDEBAR_LINE = '#sessions \.summary\[data-agent\]';/);
+  assert.match(drag, /sidebar: source\.matches\(SIDEBAR_LINE\)/, 'a card of the board, a row or a tile only moves between sessions');
+  assert.match(drag, /if \(!session \|\| under\.closest\('\.session-row'\) \|\| session\.querySelector\('\.session-row\[data-session\]'\)\?\.dataset\.session !== moving\.agent\.session\) return null;/, 'only inside its own session, below its title');
+  assert.match(drag, /line\.dataset\.agent !== String\(moving\.agent\.id\)/, 'a sidebar redrawn under the drag still leaves the agent out of its own count');
+  assert.match(drag, /else if \(slot\) reorder\(agent, slot\.at\);/, 'another session under the pointer still moves the agent there');
+  assert.match(drag, /orderSession\(agent\.session, next\);\n\s*reordered\(\);/);
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /initAgentDrag\(render\);/, 'the new order shows as soon as the agent is dropped');
+  const state = readFileSync(join(REPO, 'desktop/ui/js/state.js'), 'utf8');
+  assert.match(state, /const ORDER_KEY = 'octo\.agentOrder';/);
+  assert.match(state, /storage\.set\(ORDER_KEY, JSON\.stringify\(state\.order\)\);/, 'kept per device, like the tabs');
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /function sessionItem\(session, onSelect, onOpen\) \{\n\s*const agents = sessionAgents\(session\.name\);/);
+  assert.match(sidebar, /session\.agents, sessionAgents\(session\.name\)\.map\(agentSignature\)/, 'a new order redraws the sidebar');
+  for (const file of ['board.js', 'list.js', 'grid.js']) assert.doesNotMatch(readFileSync(join(REPO, 'desktop/ui/js', file), 'utf8'), /sessionAgents/, file);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.summary\.drop-before \{ box-shadow: inset 0 2px 0 var\(--color-accent\); \}/, 'a line shows where the agent lands');
+  assert.match(css, /\.summary\.drop-after \{ box-shadow: inset 0 -2px 0 var\(--color-accent\); \}/);
 });
 
 test('an agent on screen only stays silent while the window has the focus', () => {
@@ -2113,7 +2158,7 @@ test('a collapsed sidebar keeps every session as a chip, and hovering one lists 
   assert.equal(sessionMark('🚀launch'), '🚀L', 'an emoji is one letter, never half of one');
   assert.equal(sessionMark(''), '');
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
-  assert.match(html, /<\/section>\s*<nav id="session-rail" class="session-rail" aria-label="Sessions" data-i18n-label="Sessions"><\/nav>\s*<\/div>\s*<section id="usage" class="usage" hidden><\/section>/, 'the list of sessions scrolls in its own area, and the plan usage stays out of it');
+  assert.match(html, /<\/section>\s*<nav id="session-rail" class="session-rail" aria-label="Sessions" data-i18n-label="Sessions"><\/nav>\s*<section class="sessions">[\s\S]*?<\/section>\s*<nav id="device-rail"[^>]*><\/nav>\s*<\/div>\s*<section id="usage" class="usage" hidden><\/section>/, 'the list of sessions scrolls in its own area, and the plan usage stays out of it');
   assert.match(html, /<aside class="sidebar">\s*<div id="sidebar-scroll" class="sidebar-scroll">\s*<div class="brand">/, 'everything above the usage is the scrolling area');
   const sidebarJs = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebarJs, /onToggle: \(\) => \{\n\s+\$\('sidebar-scroll'\)\.scrollTop = 0;\n\s+onToggle\(\);\n\s+\},/, 'collapsing or expanding shows the top of the sidebar, where the orchestrator is');
@@ -2319,6 +2364,7 @@ test('the bar under the window counts every agent, the ones working and the ones
   assert.ok(html.indexOf('id="statusbar"') > html.indexOf('id="agent-view"'), 'under the whole window, after every view');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.match(css, /\.statusbar-brand \{[^}]*background: var\(--color-accent\); color: var\(--color-accent-ink\);/);
+  assert.match(css, /\.statusbar \{[^}]*container-type: inline-size;/, 'the bar adapts when the window or zoom shrinks it');
   const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
   assert.match(main, /initStatusBar\(\{ attention: openNextAttention, phone: openPairing, updates: openUpdates \}\);/, 'each part of the bar opens what it counts');
   const bar = readFileSync(join(REPO, 'desktop/ui/js/statusbar.js'), 'utf8');
@@ -2611,6 +2657,66 @@ test('the rail lists what Octo settled, not what it left for you or what you ans
   assert.match(page, /const recent = handledByOcto\(current\)\.slice\(0, RAIL_HANDLED\);/);
 });
 
+test('the rail of Octo sums up in a few words what the agent said and why Octo decided, instead of its raw screen', async () => {
+  const { PT } = await import('../js/i18n.js');
+  const { activitySignature, decisionSignature, entryTip, orchestratorView, reportOf, whyText } = await import('../js/orchestrator.js');
+  const decision = { id: 7, agent: 2, status: 'needsYou', question: 'esperado. Entro em credentials.json', report: 'It needs the login of the account to go on.' };
+  const entry = handledEntry({ seq: 9, question: 'Run npm test?', report: 'It wanted to run the suite.', reason: 'the task asks for it' });
+  const view = orchestratorView(octoMessage({ decisions: [decision], handled: [entry] }));
+  assert.equal(view.decisions[0].report, decision.report, 'the window keeps the report the core sends');
+  assert.deepEqual([view.handled[0].report, view.handled[0].reason], [entry.report, entry.reason]);
+  const older = orchestratorView(octoMessage({ decisions: [{ ...decision, report: undefined }], handled: [{ ...entry, report: undefined, reason: undefined }] }));
+  assert.deepEqual([older.decisions[0].report, older.handled[0].report, older.handled[0].reason], ['', '', ''], 'a core from before reads too');
+  assert.equal(reportOf(view.decisions[0]), decision.report, 'the summary instead of the last line on the screen');
+  assert.equal(reportOf(older.decisions[0]), decision.question, 'until Octo has judged it');
+  assert.equal(whyText(''), '');
+  assert.equal(whyText('the task asks for it'), 'Why: the task asks for it');
+  assert.equal(entryTip(view.handled[0]), 'Run npm test?\nIt wanted to run the suite.\nWhy: the task asks for it');
+  assert.notEqual(activitySignature(view.handled[0]), activitySignature(older.handled[0]), 'a new report repaints the row');
+  assert.notEqual(decisionSignature(view.decisions[0]), decisionSignature(older.decisions[0]));
+  const page = readFileSync(join(REPO, 'desktop/ui/js/octo.js'), 'utf8');
+  assert.match(page, /h\('span', \{ class: 'octo-need-question' \}, reportOf\(decision\)\),/);
+  assert.match(page, /suggestion \? h\('span', \{ class: 'octo-need-would' \}, h\('span', \{ class: 't-working' \}, t\('Octo would answer'\)\), ' ', suggestionText\(suggestion\)\) : null,/, 'what Octo would answer, to approve it or not');
+  assert.match(page, /entry\.report \? h\('span', \{ class: 'octo-done-report' \}, entry\.report\) : null,\n\s*entry\.reason \? h\('span', \{ class: 'octo-why' \}, whyText\(entry\.reason\)\) : null,/);
+  assert.match(page, /decision\.report \? h\('div', \{ class: 'octo-detail-part' \}, caps\(t\('In short'\)\)/, 'the decision opens with the summary, before the screen');
+  assert.match(page, /decision\.report \? h\('div', \{ class: 'octo-asks' \}, caps\(t\('In short'\)\), h\('div', \{ class: 'octo-asks-report' \}, decision\.report\)\) : null,/, 'the card in the chat too');
+  assert.match(page, /h\('span', \{ class: 'octo-decision-question', title: decision\.question \}, reportOf\(decision\)\),/, 'and the queue of decisions');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.octo-done-report \{[^}]*-webkit-line-clamp: 3;/, 'a few words, never the whole output');
+  assert.match(css, /\.octo-why \{[^}]*-webkit-line-clamp: 2;/);
+  assert.equal(PT['Why: {reason}'], 'Por quê: {reason}');
+  assert.equal(PT['In short'], 'Em resumo');
+  assert.match(rust('src/orchestrator/prompt.rs'), /"deny":true\|false,"report":"\.\.\."\}/, 'the engine reports on a question too, not only when a turn ends');
+  assert.match(rust('src/orchestrator/mod.rs'), /pub mode: Mode,\n\s*#\[serde\(default\)\]\n\s*pub report: String,\n\s*#\[serde\(default\)\]\n\s*pub reason: String,/, 'the journal written before still reads');
+});
+
+test('the panel beside the chat of Octo folds away from the head and is as wide as the user left it', async () => {
+  const { OCTO_RAIL_DEFAULT, OCTO_RAIL_MAX, OCTO_RAIL_MIN, octoRailWidth } = await import('../js/format.js');
+  const { PT } = await import('../js/i18n.js');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  const rule = (selector) => css.split(`\n${selector} {`)[1].split('}')[0];
+  assert.equal(OCTO_RAIL_DEFAULT, Number(css.match(/--octo-rail: (\d+)px;/)[1]), 'the first paint has the same width');
+  assert.equal(octoRailWidth(null), OCTO_RAIL_DEFAULT);
+  assert.equal(octoRailWidth('nope'), OCTO_RAIL_DEFAULT);
+  assert.equal(octoRailWidth('400'), 400);
+  assert.equal(octoRailWidth(0), OCTO_RAIL_MIN);
+  assert.equal(octoRailWidth(9999), OCTO_RAIL_MAX);
+  assert.match(rule('.octo-rail'), /width: var\(--octo-rail\); max-width: 50%;/, 'the chat keeps its room on a small window');
+  assert.match(rule('.octo-rail'), /overflow-x: hidden;/);
+  assert.match(css, /:root\[data-octo-rail="collapsed"\] \.octo-rail, :root\[data-octo-rail="collapsed"\] \.octo-rail-resize,/);
+  assert.match(css, /:root\[data-octo-rail="closing"\] \.octo-rail \{ width: 0;[^}]*transition: width var\(--motion-slow\)/, 'it slides like the panel of an agent');
+  assert.match(css, /:root\[data-octo-rail="opening"\] \.octo-rail \{ animation: details-in var\(--motion-slow\)/);
+  const page = readFileSync(join(REPO, 'desktop/ui/js/octo.js'), 'utf8');
+  assert.match(page, /chatComposer\(\)\), handle, h\('aside', \{ class: 'octo-rail' \}\)\);\n\s*initOctoRail\(handle, railToggle\);/, 'the handle sits between the chat and the panel');
+  assert.match(page, /class: 'sidebar-resize octo-rail-resize',\n\s*role: 'separator',\n\s*'aria-orientation': 'vertical',\n\s*tabindex: '0',/);
+  assert.match(page, /place\(host, \[headline, engine, mode, shownView === 'chat' \? railToggle : null\]\.filter\(Boolean\)\);/, 'the button is in the head of the chat, where the panel is');
+  const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
+  assert.match(sidebar, /export function initOctoRail\(handle, button\) \{\n\s*initPanelWidth\(\{[\s\S]*?property: '--octo-rail',[\s\S]*?growKey: 'ArrowLeft',\n\s*\}\);\n\s*initPanelToggle\(\{[\s\S]*?name: 'octoRail',/, 'the same resize and fold as the other panels');
+  assert.equal(PT['Collapse the Octo panel'], 'Recolher o painel do Octo');
+  assert.equal(PT['Expand the Octo panel'], 'Expandir o painel do Octo');
+  assert.equal(PT['Resize the Octo panel'], 'Redimensionar o painel do Octo');
+});
+
 test('the Octo tab, the sidebar and the bar under the window count the decisions that need you', async () => {
   const { MODE_WORDS, deciding, navCounts, needsCount, needsYou, octoStatus, orchestratorView } = await import('../js/orchestrator.js');
   const view = orchestratorView(octoMessage());
@@ -2621,7 +2727,8 @@ test('the Octo tab, the sidebar and the bar under the window count the decisions
   assert.deepEqual(octoStatus(view), { mode: 'moderate', handled: 212 });
   assert.equal(MODE_WORDS[octoStatus(view).mode], 'moderate');
   const bar = readFileSync(join(REPO, 'desktop/ui/js/statusbar.js'), 'utf8');
-  assert.match(bar, /octo \? h\('span', \{ class: 'statusbar-item' \}, t\('octo: \{mode\} · \{count\} handled today', \{ mode: MODE_WORDS\[octo\.mode\], count: octo\.handled \}\)\) : null,/);
+  assert.match(bar, /statusbar-octo/, 'orchestrator status is still shown in the bar');
+  assert.match(bar, /octo: \{mode\} · \{count\} handled today/);
   assert.match(bar, /JSON\.stringify\(\[counts, usage, phone, octo, state\.version/, 'the bar repaints when the mode or the count changes');
   const tabs = readFileSync(join(REPO, 'desktop/ui/js/tabs.js'), 'utf8');
   assert.match(tabs, /if \(Object\.hasOwn\(actions\.pages, id\)\) return \[id, pageBadge\(id\)\];/, 'the tab strip repaints when the count changes');
@@ -3120,7 +3227,7 @@ test('the island is a page of its own that only asks the core for what the core 
   assert.match(core, /const HOVER_EVENT: &str = "island-hover";/);
   assert.match(page, /const HOVER_EVENT = 'island-hover';/);
   assert.match(core, /const OPEN_EVENT: &str = "island-open";/);
-  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /listen\('island-open', \(event\) => openAgent\(findAgent\(event\.payload\)\)\);/, 'a click on the island opens that agent in the app');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /listen\('island-open', \(event\) => \{\n\s*if \(REMOTE\) switchDevice\(null, event\.payload\);\n\s*else openAgent\(findAgent\(event\.payload\)\);\n\s*\}\);/, 'a click on the island opens that agent in the app, back on this computer when the window is on another one');
   assert.match(core, /const PAGE: &str = "island\.html";/);
   assert.doesNotMatch(page, /from '\.\/(state|settings|main|sidebar|terminal)\.js'/, 'the island loads none of the app');
   assert.match(page, /if \(message\.type !== 'state'\) return;/, 'it only reads the overview');
@@ -3221,4 +3328,181 @@ test('the island wears the theme, stays flat against its edge and moves like one
   const rules = css.split('\n').filter((line) => /^(\.island|:root\[data-(island|notch)\])/.test(line));
   assert.ok(rules.length > 35, `only ${rules.length} rules found`);
   for (const rule of rules) assert.doesNotMatch(rule.replace(/box-shadow: [^;]+;/g, ''), /#[0-9a-fA-F]{3,8}\b|rgba?\(/, `only theme tokens, so every theme works: ${rule.slice(0, 60)}`);
+});
+
+test('the sidebar lists the devices below the sessions, with a way to add one', async () => {
+  const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
+  assert.match(html, /<nav id="session-rail"[^>]*><\/nav>\s*<section class="sessions">\s*<span class="caps" data-i18n="Devices">Devices<\/span>\s*<div id="devices" class="session-list"><\/div>\s*<\/section>/, 'right below the sessions');
+  const { PT } = await import('../js/i18n.js');
+  assert.equal(PT.Devices, 'Dispositivos');
+  assert.equal(PT['Add a device'], 'Adicionar dispositivo');
+  const devices = readFileSync(join(REPO, 'desktop/ui/js/devices.js'), 'utf8');
+  assert.match(devices, /onclick: \(\) => openAddDevice\(\) \},\s*h\('span', \{ class: 'chevron' \}, svg\(ICON_PLUS\)\)/, 'a plus opens the dialog that takes the link');
+  assert.match(devices, /invoke\('add_device', \{ pairing \}\)/);
+  assert.match(devices, /const device = await adding;\n\s*closeDialog\(\);\n\s*switchDevice\(device\.id\);/, 'an added device always takes the window to it, on its new connection');
+  const handlers = rust('desktop/src/link.rs').match(/generate_handler!\[([\s\S]*?)\]/)[1];
+  for (const name of ['devices', 'add_device', 'add_server', 'unlock_device', 'rename_device', 'forget_device', 'retry_device']) {
+    assert.ok(handlers.includes(`devices::${name}`), `${name} is registered`);
+    assert.ok(devices.includes(`invoke('${name}'`), `${name} is used by the window`);
+  }
+  const core = rust('desktop/src/devices.rs');
+  assert.doesNotMatch(core.match(/pub struct DeviceInfo \{[\s\S]*?\n\}/)[0], /key|secret/, 'what the window lists never carries the key of a device');
+});
+
+test('another Octo connected to this one is listed as a computer, not as a phone in a browser', async () => {
+  const { describeDevice } = await import('../js/pair.js');
+  const agent = rust('desktop/src/remote.rs').match(/format!\("(Octo\/)\{\} \(\{PLATFORM\}\)"/)[1];
+  assert.equal(agent, 'Octo/');
+  for (const [platform, name] of [['Windows', 'Windows computer'], ['Macintosh', 'macOS computer'], ['Linux', 'Linux computer']]) {
+    assert.ok(rust('desktop/src/remote.rs').includes(`const PLATFORM: &str = "${platform}";`), platform);
+    assert.equal(describeDevice({ agent: `${agent}0.2.45 (${platform})`, model: 'Octo desktop' }).name, name);
+  }
+  const pair = readFileSync(join(REPO, 'desktop/ui/js/pair.js'), 'utf8');
+  assert.match(pair, /const OCTO_AGENT = 'Octo\/';/);
+  assert.match(pair, /device\.agent\.startsWith\(OCTO_AGENT\) \? t\('Octo on the desktop'\)/);
+});
+
+test('a device says how it is doing in a few words', async () => {
+  const { deviceError, deviceNote, deviceTone, linkProblem } = await import('../js/devices.js');
+  assert.equal(deviceTone('live'), 'live');
+  assert.equal(deviceTone('connecting'), 'pending');
+  for (const phase of ['offline', 'unpaired', 'outdated', 'replaced']) assert.equal(deviceTone(phase), 'down', phase);
+  assert.equal(deviceNote({ phase: 'live', agents: 3, waiting: 0 }), '3 agents');
+  assert.equal(deviceNote({ phase: 'live', agents: 1, waiting: 1 }), '1 agent · 1 waiting for you');
+  assert.equal(deviceNote({ phase: 'connecting' }), 'Connecting…');
+  assert.equal(deviceNote({ phase: 'offline' }), 'Offline · trying again');
+  assert.match(deviceNote({ phase: 'unpaired' }), /paste a new one/);
+  assert.equal(linkProblem('unpaired').action, 'link', 'a link that stopped working asks for a new one');
+  assert.equal(linkProblem('offline').action, 'link', 'a quick tunnel that restarted has a new address');
+  assert.equal(linkProblem('outdated').action, 'retry');
+  assert.equal(linkProblem('connecting').action, null);
+  const phases = rust('desktop/src/remote.rs').match(/pub enum Phase \{([\s\S]*?)\}/)[1].match(/[A-Z]\w+/g).map((name) => name.toLowerCase());
+  assert.deepEqual(phases, ['connecting', 'live', 'offline', 'unpaired', 'outdated', 'replaced', 'installing', 'password', 'unsupported', 'changed']);
+  for (const phase of phases) assert.ok(deviceNote({ phase, agents: 0, waiting: 0 }) && linkProblem(phase).title, phase);
+  assert.match(deviceError('that is not a pairing link of Octo; copy it'), /not an Octo pairing link/);
+  assert.match(deviceError('Octo keeps up to 16 devices; forget one first'), /full/);
+  assert.equal(deviceError('boom'), 'boom');
+  const core = rust('desktop/src/devices.rs');
+  assert.ok(core.includes('that is not a pairing link of Octo'), 'the text the window looks for is the one the core says');
+  assert.ok(core.includes('forget one first'));
+});
+
+test('a server is added by ssh with its host, port and user, and the password is never kept by the window', async () => {
+  const { deviceError, deviceNote, deviceTone, linkProblem, linkStopped, serverFields } = await import('../js/devices.js');
+  assert.deepEqual(serverFields(' 10.0.0.7 ', '', ' root '), { host: '10.0.0.7', port: 22, user: 'root' }, 'an empty port is the port of ssh');
+  assert.deepEqual(serverFields('build.example', '2222', 'deploy'), { host: 'build.example', port: 2222, user: 'deploy' });
+  for (const [host, port, user] of [['', '22', 'root'], ['host', '22', ''], ['host', '0', 'root'], ['host', '70000', 'root'], ['host', 'ssh', 'root'], ['host', '2.5', 'root']]) {
+    assert.equal(serverFields(host, port, user), null, `${host}:${port} ${user}`);
+  }
+  assert.equal(deviceTone('installing'), 'pending');
+  for (const phase of ['password', 'unsupported', 'changed']) {
+    assert.equal(deviceTone(phase), 'down', phase);
+    assert.ok(linkStopped(phase), `${phase} waits for the person`);
+  }
+  assert.ok(!linkStopped('offline') && !linkStopped('installing') && !linkStopped('live'));
+  assert.equal(deviceNote({ phase: 'password' }), 'Needs the password');
+  assert.equal(linkProblem('password', 'ssh').action, 'password');
+  assert.match(linkProblem('password', 'ssh').text, /memory only and is never saved/);
+  assert.equal(linkProblem('offline', 'ssh').action, 'retry', 'a server has no link to paste');
+  assert.equal(linkProblem('offline', 'link').action, 'link');
+  assert.match(linkProblem('installing', 'ssh').text, /~\/\.octo\/bin.*SHA-256/);
+  assert.match(deviceError('that is not a host name or an address'), /host name/);
+  assert.match(deviceError('that is not a user name'), /user name/);
+  const stopped = rust('desktop/src/remote.rs').match(/pub fn stopped\(self\) -> bool \{[\s\S]*?\n    \}/)[0].match(/Phase::(\w+)/g).map((name) => name.slice(7).toLowerCase());
+  for (const phase of stopped) assert.ok(linkStopped(phase), `${phase} stops in the core and in the window`);
+  const devices = readFileSync(join(REPO, 'desktop/ui/js/devices.js'), 'utf8');
+  assert.match(devices, /const secret = password\.value;\n\s*password\.value = '';\n\s*return invoke\('add_server', \{ \.\.\.server, password: secret \|\| null \}\);/, 'the field is emptied as soon as the password is handed over');
+  assert.match(devices, /const password = field\.value;\n\s*if \(!password\) return;\n\s*field\.value = '';\n\s*invoke\('unlock_device', \{ id, password \}\)/);
+  assert.match(devices, /type: 'password', autocomplete: 'off'/);
+  assert.doesNotMatch(devices, /storage\.set\([^)]*password/i, 'no password in the storage of the window');
+  assert.match(devices, /into ~\/\.octo\/bin on that machine, checks its SHA-256 and runs it as your user\. No sudo, nothing outside your home folder\./, 'the dialog says what is installed and where');
+  const core = rust('desktop/src/ssh.rs');
+  assert.match(core, /pub const INSTALL_DIR: &str = "\.octo\/bin";/, 'and that is where the core installs it');
+  assert.ok(core.includes('that is not a host name or an address') && core.includes('that is not a user name') && core.includes('that is not a port'));
+  const saved = rust('desktop/src/devices.rs').match(/struct Saved \{[\s\S]*?\n\}/)[0];
+  assert.doesNotMatch(saved, /password/, 'what is written to disk has no password');
+  assert.doesNotMatch(rust('desktop/src/ssh.rs').match(/pub struct Server \{[\s\S]*?\n\}/)[0], /password/);
+  const workflow = readFileSync(join(REPO, '.github/workflows/ci.yml'), 'utf8');
+  for (const [key, name] of [...core.matchAll(/pub const ASSET_\w+: &str = "([^"]+)";/g)].map((match) => [match[1], match[1].includes('aarch64') ? 'octo-server-linux-aarch64' : 'octo-server-linux-x86_64'])) {
+    assert.ok(workflow.includes(`"${key}": "${name}"`), `the release publishes ${key}`);
+  }
+});
+
+test('each device keeps its own session, tabs and folders in the window', async () => {
+  const { scopedKey, scopedKeysOf } = await import('../js/device.js');
+  assert.equal(scopedKey('orkai.tabs', null), 'orkai.tabs', 'this computer keeps the keys it always had');
+  assert.equal(scopedKey('orkai.tabs', 'abc'), 'orkai.tabs@abc');
+  assert.deepEqual(scopedKeysOf(['orkai.tabs', 'orkai.tabs@abc', 'orkai.session@abc', 'orkai.session@abcd', 'octo.device'], 'abc'), ['orkai.tabs@abc', 'orkai.session@abc']);
+  assert.deepEqual(scopedKeysOf(['orkai.tabs'], null), [], 'forgetting nothing never touches this computer');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/state.js'), 'utf8'), /^import \{ deviceStorage as storage \} from '\.\/device\.js';/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /const REMOTE = activeDevice\(\);/);
+  assert.match(main, /connect\(onMessage, REMOTE\)\.catch\(\(err\) => \{\n\s*if \(REMOTE\) switchDevice\(null\);/, 'a device that is gone sends the window back to this computer');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/transport.js'), 'utf8'), /invoke\('attach', \{ channel: channel\(onMessage\), device \}\)/);
+  assert.match(rust('desktop/src/link.rs'), /fn attach\(link: State<'_, Link>, channel: Channel, device: Option<String>\)/);
+});
+
+test('the screen another Octo sends is drawn by the same terminal, row by row', async () => {
+  const { screenAnsi, screenFrame, wheelLines } = await import('../js/remoteterm.js');
+  const { decodeFrame } = await import('../js/termwire.js');
+  const screen = { agent: 7, rows: 30, cols: 300, full: true, cursor: [1, 4], scroll: 0, lines: [[0, [['ab', -1, -1, 0], ['cd', 1, -1, 1]]], [1, [['x', 256 + 0xff5f87, 4, 16 | 8]]]] };
+  const ansi = screenAnsi(screen);
+  assert.ok(ansi.startsWith('\x1b[?25l\x1b[?7l\x1b[0m\x1b[2J'), 'a full screen starts from a clean one, with no wrap to scroll it');
+  assert.ok(ansi.includes('\x1b[1;1H\x1b[0m\x1b[2K\x1b[0mab\x1b[0;1;38;5;1mcd'));
+  assert.ok(ansi.includes('\x1b[2;1H\x1b[0m\x1b[2K\x1b[0;4;7;38;2;255;95;135;48;5;4mx'));
+  assert.ok(ansi.endsWith('\x1b[0m\x1b[2;5H\x1b[?25h'), 'the cursor ends where the agent has it');
+  const full = decodeFrame(screenFrame(screen));
+  assert.deepEqual([full.kind, full.rows, full.cols], ['snapshot', 30, 300]);
+  assert.equal(new TextDecoder().decode(full.data), ansi);
+  const partial = { ...screen, full: false, cursor: null, lines: [[2, [['ç', -1, -1, 0]]]] };
+  const frame = decodeFrame(screenFrame(partial));
+  assert.equal(frame.kind, 'output', 'a change repaints only its rows');
+  assert.equal(new TextDecoder().decode(frame.data), '\x1b[?25l\x1b[?7l\x1b[3;1H\x1b[0m\x1b[2K\x1b[0mç\x1b[0m');
+  assert.deepEqual([wheelLines(-120), wheelLines(53), wheelLines(0)], [3, -3, 0], 'the wheel up shows older lines');
+  const flags = rust('src/pwa/screen.rs');
+  for (const [name, value] of [['BOLD', 1], ['DIM', 2], ['ITALIC', 4], ['UNDERLINE', 8], ['INVERSE', 16]]) assert.match(flags, new RegExp(`pub const ${name}: u8 = ${value};`));
+});
+
+test('a terminal on another Octo opens, types, pastes, scrolls and closes through the link', async () => {
+  const { RemoteView } = await import('../js/remoteterm.js');
+  const sent = [];
+  let running = true;
+  const view = new RemoteView((message) => sent.push(message), () => running);
+  const frames = [];
+  const handlers = view.handlers({ copy: 'kept', image: 'kept' });
+  assert.equal(handlers.copy, 'kept', 'what does not travel stays as the window had it');
+  const first = await handlers.open(7, { rows: 30, cols: 100 }, (frame) => frames.push(frame));
+  handlers.input(first, new TextEncoder().encode('ls ção\r'));
+  handlers.paste(first, 'two\nlines');
+  handlers.resize(first, { rows: 40, cols: 120 });
+  handlers.wheel(first, -100);
+  handlers.wheel(first, 0);
+  assert.deepEqual(sent, [
+    { type: 'open', agent: 7, rows: 30, cols: 100 },
+    { type: 'keys', data: 'ls ção\r' },
+    { type: 'paste', text: 'two\nlines' },
+    { type: 'size', rows: 40, cols: 120 },
+    { type: 'scroll', lines: 3 },
+  ]);
+  const screen = { agent: 7, rows: 30, cols: 100, full: true, cursor: null, scroll: 0, lines: [] };
+  view.onScreen({ ...screen, agent: 8 });
+  assert.equal(frames.length, 0, 'the screen of another agent is not drawn here');
+  view.onScreen(screen);
+  assert.equal(frames.length, 1);
+  running = false;
+  view.settle();
+  view.settle();
+  assert.deepEqual(frames.slice(1).map((frame) => Array.from(frame)), [[2]], 'an agent that stopped ends the terminal once, so it reopens when the agent is back');
+  sent.length = 0;
+  const second = await handlers.open(9, { rows: 30, cols: 100 }, () => {});
+  handlers.input(first, new TextEncoder().encode('late'));
+  handlers.close(first);
+  assert.deepEqual(sent, [{ type: 'open', agent: 9, rows: 30, cols: 100 }], 'a terminal that was replaced no longer types or closes the new one');
+  handlers.close(second);
+  assert.deepEqual(sent.at(-1), { type: 'close' });
+  const names = [...rust('src/pwa/protocol.rs').matchAll(/^    (Open|Keys|Paste|Size|Scroll|Close)\b/gm)].map((match) => match[1].toLowerCase());
+  assert.deepEqual([...new Set(names)].sort(), ['close', 'keys', 'open', 'paste', 'scroll', 'size'], 'every message is one the other Octo knows');
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /case 'screen':\n\s*if \(remoteView\) remoteView\.onScreen\(message\);/);
+  assert.match(main, /return remoteView \? remoteView\.handlers\(\{ \.\.\.local, image: onlyHere, drops: \(\) => \{\} \}\) : local;/);
 });

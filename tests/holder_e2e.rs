@@ -432,12 +432,38 @@ fn a_terminal_reports_the_claude_session_started_inside_it() {
         })
     });
 
+    wait_until(|| fx.store.read_nested(record.id).unwrap().is_some_and(|saved| saved.agent.conversation_id.is_some()));
+    let saved = fx.store.read_nested(record.id).unwrap().unwrap();
+    assert_eq!((saved.agent.kind, saved.agent.pid), (AgentKind::Claude, pid));
+    assert_eq!(saved.agent.conversation_id.as_deref(), Some(session));
+    assert_eq!(program_name(&saved.command[0]), program, "{:?}", saved.command);
+    let arguments: &[&str] = if cfg!(windows) { &["-n", "120", "127.0.0.1"] } else { &["120"] };
+    assert_eq!(&saved.command[1..], arguments);
+
     std::fs::remove_file(&file).unwrap();
     wait_for_nested(&rx, |nested| nested.is_none());
 
     conn.send(&ClientMsg::Kill).unwrap();
     wait_for_exit(&rx);
     let _ = holder.wait();
+    assert_eq!(
+        fx.store.read_nested(record.id).unwrap(),
+        Some(saved),
+        "a terminal that dies right after its agent still knows what ran in it"
+    );
+
+    let (shell, shell_args) = crate::shell();
+    let config = Config { shell: Some(shell.to_string_lossy().into_owned()), shell_args, ..Config::default() };
+    let launcher = Launcher::new(fx.store.clone(), config, Path::new(env!("CARGO_BIN_EXE_orkai"))).unwrap();
+    let mut record = record;
+    launcher.start(&mut record, LaunchMode::Resume, TermSize::new(24, 100)).unwrap();
+    let relaunched = fx.store.read_launch(record.id).unwrap().unwrap();
+    let typed = if cfg!(windows) { "ping -n 120" } else { "sleep" };
+    assert_eq!(relaunched.initial_input.as_deref(), Some(typed), "the agent is started again, not the first task");
+    let runtime = wait_for_runtime(&fx.store, record.id, TIMEOUT).unwrap();
+    let (conn, rx) = open(&runtime);
+    conn.send(&ClientMsg::Kill).unwrap();
+    wait_for_exit(&rx);
     if cfg!(unix) {
         let _ = std::process::Command::new("kill").arg(pid.to_string()).status();
     } else {

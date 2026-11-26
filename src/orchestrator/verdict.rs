@@ -67,6 +67,8 @@ pub struct Verdict {
     pub tag: Option<String>,
     #[serde(default)]
     pub deny: bool,
+    #[serde(default, deserialize_with = "null_as_empty")]
+    pub report: String,
 }
 
 #[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,6 +178,7 @@ pub fn review(mode: Mode, review: Review) -> Judged {
         reason: review.reason,
         tag: review.tag,
         deny: false,
+        report: String::new(),
     };
     Judged { ruling: rule(mode, verdict), question, report }
 }
@@ -183,7 +186,8 @@ pub fn review(mode: Mode, review: Review) -> Judged {
 pub fn judge(mode: Mode, opinion: Opinion) -> Judged {
     match opinion {
         Opinion::Asked(verdict) => {
-            Judged { ruling: rule(mode, verdict), question: String::new(), report: String::new() }
+            let report = cut(verdict.report.trim(), MAX_REPORT_CHARS);
+            Judged { ruling: rule(mode, verdict), question: String::new(), report }
         }
         Opinion::Ended(ended) => review(mode, ended),
     }
@@ -295,6 +299,25 @@ mod tests {
     }
 
     #[test]
+    fn a_verdict_reports_in_a_few_words_what_the_agent_asks_and_what_octo_decides() {
+        let said = r#"{"action":"answer","keys":["1"],"summary":"Allowed npm test","reason":"safe","report":"  It wants to run the suite; Octo lets it.  "}"#;
+        let read = verdict(said).unwrap();
+        let judged = judge(Mode::Moderate, Opinion::Asked(read));
+        assert_eq!(judged.report, "It wants to run the suite; Octo lets it.");
+        let long = format!(r#"{{"action":"answer","keys":["1"],"report":"{}"}}"#, "r".repeat(MAX_REPORT_CHARS * 2));
+        assert_eq!(
+            judge(Mode::Bypass, Opinion::Asked(verdict(&long).unwrap())).report.chars().count(),
+            MAX_REPORT_CHARS
+        );
+        let older = verdict(r#"{"action":"answer","keys":["1"],"report":null}"#).unwrap();
+        assert_eq!(
+            judge(Mode::Moderate, Opinion::Asked(older)).report,
+            "",
+            "an engine that writes no report still answers"
+        );
+    }
+
+    #[test]
     fn braces_inside_strings_and_nested_objects_do_not_end_the_object() {
         let tricky =
             r#"{"action":"escalate","text":"use {a} and \"}\" and \\","summary":"s","extra":{"deep":{"x":1}}}"#;
@@ -351,6 +374,7 @@ mod tests {
             reason: "the task\nasks for it".into(),
             tag: Some(" no rule yet ".into()),
             deny: false,
+            report: String::new(),
         }
     }
 

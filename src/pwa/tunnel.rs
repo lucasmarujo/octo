@@ -125,7 +125,7 @@ pub fn resolves(answer: &[u8]) -> bool {
     })
 }
 
-fn published(hostname: &str) -> bool {
+pub fn published(hostname: &str) -> bool {
     cloudflared::agent(DNS_TIMEOUT)
         .get(format!("{DNS_QUERY}?name={hostname}&type=A"))
         .header("Accept", "application/dns-json")

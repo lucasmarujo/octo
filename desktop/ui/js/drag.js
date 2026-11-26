@@ -1,10 +1,11 @@
 import { $, h } from './dom.js';
-import { canMove, moveTab } from './format.js';
+import { canMove, moveTab, placeAgent } from './format.js';
 import { glide, motion } from './motion.js';
-import { findAgent, saveTabs, state } from './state.js';
+import { findAgent, orderSession, saveTabs, sessionAgents, state } from './state.js';
 import { send } from './transport.js';
 
 const HANDLES = '#board .card, #list-body .row, #grid .tile-head, #sessions .summary';
+const SIDEBAR_LINE = '#sessions .summary[data-agent]';
 const NOT_HANDLES = 'button, input, textarea, a, .xterm';
 const TAB_CONTROLS = '.tab-close, .tab-pin';
 const START_AFTER_PX = 6;
@@ -13,6 +14,7 @@ const CLICK_GUARD_MS = 50;
 
 let press = null;
 let moving = null;
+let reordered = () => {};
 let tabPress = null;
 let tabMoving = null;
 
@@ -26,6 +28,21 @@ function sessionAt(x, y) {
   return row && canMove(moving.agent, row.dataset.session) ? row : null;
 }
 
+function slotAt(x, y) {
+  if (!moving.sidebar) return null;
+  const under = document.elementFromPoint(x, y);
+  const session = under?.closest('.session');
+  if (!session || under.closest('.session-row') || session.querySelector('.session-row[data-session]')?.dataset.session !== moving.agent.session) return null;
+  const others = [...session.querySelectorAll('.summary[data-agent]')].filter((line) => line.dataset.agent !== String(moving.agent.id));
+  if (!others.length) return null;
+  const at = others.filter((line) => {
+    const box = line.getBoundingClientRect();
+    return box.top + box.height / 2 < y;
+  }).length;
+  const lines = [...session.querySelectorAll('.summary')];
+  return at < others.length ? { at, line: others[at], edge: 'drop-before' } : { at, line: lines[lines.length - 1], edge: 'drop-after' };
+}
+
 function mark(row) {
   if (moving.target === row) return;
   moving.target?.classList.remove('drop-target');
@@ -33,9 +50,20 @@ function mark(row) {
   moving.target = row;
 }
 
+function markSlot(slot) {
+  if (moving.slot?.line === slot?.line && moving.slot?.edge === slot?.edge) {
+    moving.slot = slot;
+    return;
+  }
+  moving.slot?.line.classList.remove(moving.slot.edge);
+  slot?.line.classList.add(slot.edge);
+  moving.slot = slot;
+}
+
 function follow(event) {
   moving.ghost.style.transform = `translate(${event.clientX + GHOST_OFFSET_PX}px, ${event.clientY + GHOST_OFFSET_PX}px)`;
   mark(sessionAt(event.clientX, event.clientY));
+  markSlot(slotAt(event.clientX, event.clientY));
 }
 
 function begin(event) {
@@ -45,7 +73,7 @@ function begin(event) {
   press = null;
   if (!agent || agent.starting) return;
   const ghost = h('div', { class: 'drag-ghost' }, h('span', { class: 'swatch', style: `background:${agent.color}` }), h('span', { class: 'drag-ghost-name' }, agent.name));
-  moving = { agent, ghost, source, target: null };
+  moving = { agent, ghost, source, sidebar: source.matches(SIDEBAR_LINE), target: null, slot: null };
   source.classList.add('moving-source');
   document.body.append(ghost);
   document.documentElement.classList.add('moving-agent');
@@ -55,10 +83,11 @@ function begin(event) {
 }
 
 function finish() {
-  const { ghost, source, target } = moving;
+  const { ghost, source, target, slot } = moving;
   ghost.remove();
   source.classList.remove('moving-source');
   target?.classList.remove('drop-target');
+  slot?.line.classList.remove(slot.edge);
   document.documentElement.classList.remove('moving-agent');
   moving = null;
 }
@@ -68,10 +97,21 @@ function guardClick() {
   setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), CLICK_GUARD_MS);
 }
 
+function reorder(agent, at) {
+  const ids = sessionAgents(agent.session).map((other) => other.id);
+  const next = placeAgent(ids, agent.id, at);
+  if (next.every((id, index) => id === ids[index])) return;
+  orderSession(agent.session, next);
+  reordered();
+}
+
 function drop(event) {
   const session = sessionAt(event.clientX, event.clientY)?.dataset.session;
-  if (session) send({ type: 'moveAgent', agent: moving.agent.id, session });
+  const slot = slotAt(event.clientX, event.clientY);
+  const agent = moving.agent;
   finish();
+  if (session) send({ type: 'moveAgent', agent: agent.id, session });
+  else if (slot) reorder(agent, slot.at);
   guardClick();
 }
 
@@ -188,7 +228,8 @@ export function initTabDrag(render) {
   );
 }
 
-export function initAgentDrag() {
+export function initAgentDrag(onReorder) {
+  reordered = onReorder;
   document.addEventListener('pointerdown', onPointerDown);
   document.addEventListener('pointermove', onPointerMove);
   document.addEventListener('pointerup', onPointerUp);

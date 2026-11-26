@@ -24,8 +24,7 @@ Octo shows every agent on a board by status (needs you, working, done, idle), wi
 
 - Windows 10 and 11 x64 installer: https://github.com/lucasmarujo/octo/releases/latest/download/Octo-setup.exe
 - Windows 10 and 11 x64, without installing: https://github.com/lucasmarujo/octo/releases/latest/download/Octo.exe
-- macOS Apple Silicon: https://github.com/lucasmarujo/octo/releases/latest/download/Octo-macos-apple-silicon.zip
-- macOS Intel: https://github.com/lucasmarujo/octo/releases/latest/download/Octo-macos-intel.zip
+- macOS 11+ (Apple Silicon and Intel): https://github.com/lucasmarujo/octo/releases/latest/download/Octo-macos.zip
 - Linux x64 (WebKitGTK 4.1): https://github.com/lucasmarujo/octo/releases/latest/download/Octo-linux-x86_64
 
 ## Links

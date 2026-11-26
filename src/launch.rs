@@ -13,8 +13,9 @@ use serde::Deserialize;
 use crate::config::Config;
 use crate::fsutil;
 use crate::hooks;
-use crate::model::{AgentId, AgentKind, AgentRecord, LaunchSpec, NewAgent, RuntimeInfo, TestTarget};
+use crate::model::{AgentId, AgentKind, AgentRecord, LaunchSpec, NewAgent, RuntimeInfo, SavedNested, TestTarget};
 use crate::models;
+use crate::nested_resume;
 use crate::paths::{HOME_ENV, Home, normalize_for_compare, user_home};
 use crate::protocol::TermSize;
 use crate::store::Store;
@@ -29,6 +30,7 @@ pub const AGENT_ID_ENV: &str = "ORKAI_AGENT_ID";
 const RUNTIME_POLL: Duration = Duration::from_millis(25);
 const DAY_MS: u64 = 86_400_000;
 const SESSION_CLOCK_SKEW_MS: u64 = 60_000;
+const NESTED_DETECT_LAG_MS: u64 = 5_000;
 const OUTPUT_POLL: Duration = Duration::from_millis(20);
 const MAX_OUTPUT_BYTES: u64 = 4 * 1024 * 1024;
 const OUTPUT_DRAIN: Duration = Duration::from_secs(2);
@@ -302,12 +304,19 @@ pub fn without_console(command: &mut Command) -> &mut Command {
 }
 
 pub fn command_output(command: &mut Command, timeout: Duration) -> Option<String> {
-    capped_output(command, None, MAX_OUTPUT_BYTES, timeout, |_| {}).map(|reply| reply.output)
+    capped_output(command, None, MAX_OUTPUT_BYTES, timeout, |_| {}).ok().map(|reply| reply.output)
 }
 
 pub struct Reply {
     pub output: String,
     pub errors: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum NoReply {
+    NotStarted(String),
+    TimedOut,
+    Unreadable,
 }
 
 pub fn command_reply(
@@ -316,7 +325,7 @@ pub fn command_reply(
     limit: u64,
     timeout: Duration,
     spawned: impl FnOnce(u32),
-) -> Option<Reply> {
+) -> Result<Reply, NoReply> {
     capped_output(command, Some(input), limit, timeout, spawned)
 }
 
@@ -340,16 +349,16 @@ fn capped_output(
     limit: u64,
     timeout: Duration,
     spawned: impl FnOnce(u32),
-) -> Option<Reply> {
+) -> Result<Reply, NoReply> {
     let piped = |wanted: bool| if wanted { Stdio::piped() } else { Stdio::null() };
     let fed = input.is_some();
     let command = without_console(command).stdin(piped(fed)).stdout(Stdio::piped()).stderr(piped(fed));
     if fed {
         lead_own_group(command);
     }
-    let mut child = command.spawn().ok()?;
+    let mut child = command.spawn().map_err(|err| NoReply::NotStarted(err.to_string()))?;
     spawned(child.id());
-    let stdout = child.stdout.take()?;
+    let stdout = child.stdout.take().ok_or(NoReply::Unreadable)?;
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         thread::spawn(move || {
             let _ = io::Write::write_all(&mut stdin, &input);
@@ -370,23 +379,26 @@ fn capped_output(
     });
     let deadline = Instant::now() + timeout;
     loop {
-        match child.try_wait() {
+        let failure = match child.try_wait() {
             Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => thread::sleep(OUTPUT_POLL),
-            _ => {
-                if fed {
-                    kill_process_group(child.id())
-                } else {
-                    kill_process_tree(child.id())
-                }
-                let _ = child.wait();
-                return None;
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(OUTPUT_POLL);
+                continue;
             }
+            Ok(None) => NoReply::TimedOut,
+            Err(_) => NoReply::Unreadable,
+        };
+        if fed {
+            kill_process_group(child.id())
+        } else {
+            kill_process_tree(child.id())
         }
+        let _ = child.wait();
+        return Err(failure);
     }
-    let output = received.recv_timeout(OUTPUT_DRAIN).ok()??;
+    let output = received.recv_timeout(OUTPUT_DRAIN).ok().flatten().ok_or(NoReply::Unreadable)?;
     let errors = errors.and_then(|received| received.recv_timeout(OUTPUT_DRAIN).ok()).unwrap_or_default();
-    Some(Reply { output, errors })
+    Ok(Reply { output, errors })
 }
 
 fn sorted_dir_names(path: &Path) -> Vec<String> {
@@ -727,7 +739,7 @@ fn chosen_session_exists(kind: AgentKind, homes: &Homes, session_id: &str) -> bo
     }
 }
 
-fn chosen_session_args(kind: AgentKind, session_id: &str, resume: bool) -> Vec<String> {
+pub(crate) fn chosen_session_args(kind: AgentKind, session_id: &str, resume: bool) -> Vec<String> {
     match (kind, resume) {
         (AgentKind::Grok, true) => vec![format!("--resume={session_id}")],
         (AgentKind::Qwen, true) => vec!["--resume".to_string(), session_id.to_string()],
@@ -735,7 +747,7 @@ fn chosen_session_args(kind: AgentKind, session_id: &str, resume: bool) -> Vec<S
     }
 }
 
-fn resume_args(kind: AgentKind, session_id: &str) -> Vec<String> {
+pub(crate) fn resume_args(kind: AgentKind, session_id: &str) -> Vec<String> {
     match kind {
         AgentKind::Antigravity => vec![format!("--conversation={session_id}")],
         AgentKind::Cursor => vec!["--resume".to_string(), session_id.to_string()],
@@ -743,7 +755,7 @@ fn resume_args(kind: AgentKind, session_id: &str) -> Vec<String> {
     }
 }
 
-fn bypass_flag(kind: AgentKind) -> Option<&'static str> {
+pub(crate) fn bypass_flag(kind: AgentKind) -> Option<&'static str> {
     match kind {
         AgentKind::Claude | AgentKind::Antigravity => Some("--dangerously-skip-permissions"),
         AgentKind::Codex => Some("--dangerously-bypass-approvals-and-sandbox"),
@@ -908,6 +920,23 @@ pub fn build_spec(
             .filter(|_| record.kind.is_ai())
             .map(|worktree| TestTarget { repo: worktree.repo.clone(), dir: worktree.path.clone() }),
     })
+}
+
+pub fn nested_session(saved: &SavedNested, homes: &Homes, discover: impl FnOnce() -> Option<String>) -> Option<String> {
+    let kind = saved.agent.kind;
+    let known = saved.agent.conversation_id.clone().filter(|id| is_safe_session_id(id));
+    match kind {
+        AgentKind::Claude | AgentKind::Qwen | AgentKind::Grok | AgentKind::Pi => {
+            known.filter(|id| chosen_session_exists(kind, homes, id))
+        }
+        AgentKind::Codex
+        | AgentKind::Kilo
+        | AgentKind::Opencode
+        | AgentKind::Antigravity
+        | AgentKind::Kimi
+        | AgentKind::Cursor => known.or_else(discover).filter(|id| is_safe_session_id(id)),
+        AgentKind::Terminal => None,
+    }
 }
 
 pub fn has_task_in_args(spec: &LaunchSpec) -> bool {
@@ -1302,9 +1331,15 @@ impl Launcher {
         if mode == LaunchMode::Resume {
             self.stop_stale_holder(record.id);
             if record.conversation_id.is_none() {
-                record.conversation_id = self.discover_session(record)?;
+                record.conversation_id =
+                    self.discover_session(record.kind, &record.cwd, record.created_at_ms, record.id)?;
             }
         }
+        let homes = Homes::detect();
+        let nested = match (mode, record.kind) {
+            (LaunchMode::Resume, AgentKind::Terminal) => self.nested_resume(record, &homes),
+            _ => None,
+        };
         let exe = holder_executable(self.store.home(), &self.source).unwrap_or_else(|_| self.exe.clone());
         let home = self.store.home();
         let setup = HookSetup {
@@ -1314,7 +1349,11 @@ impl Launcher {
             plugin: home.plugin_file(record.id),
             codex_home: codex_home(),
         };
-        let spec = build_spec(&self.config, record, mode, size, &Homes::detect(), Some(&setup))?;
+        let mut spec = build_spec(&self.config, record, mode, size, &homes, Some(&setup))?;
+        if let Some((input, cwd)) = nested {
+            spec.initial_input = Some(input);
+            spec.cwd = cwd;
+        }
         record.launches = record.launches.saturating_add(1);
         self.store.save_agent(record)?;
         self.store.clear_runtime_markers(record.id)?;
@@ -1322,9 +1361,35 @@ impl Launcher {
         spawn_holder(self.store.home(), record.id, &exe)
     }
 
-    fn discover_session(&self, record: &AgentRecord) -> io::Result<Option<String>> {
+    fn nested_resume(&self, record: &AgentRecord, homes: &Homes) -> Option<(String, PathBuf)> {
+        let mut saved = self.store.read_nested(record.id).ok().flatten()?;
+        let kind = saved.agent.kind;
+        let cwd = saved.agent.cwd.clone().filter(|dir| dir.is_dir()).unwrap_or_else(|| record.cwd.clone());
+        let since = saved.agent.since_ms.saturating_sub(NESTED_DETECT_LAG_MS);
+        let session = nested_session(&saved, homes, || self.discover_session(kind, &cwd, since, record.id).ok()?);
+        if session.is_some() && session != saved.agent.conversation_id {
+            saved.agent.conversation_id = session.clone();
+            let _ = self.store.write_nested(record.id, &saved);
+        }
+        let (shell, _) = default_shell(&self.config);
+        nested_resume::command(&saved, session.as_deref(), &shell).map(|input| (input, cwd))
+    }
+
+    fn claimed_sessions(&self, kind: AgentKind, own: AgentId) -> io::Result<Vec<String>> {
+        let others: Vec<AgentRecord> = self.store.list_agents()?.into_iter().filter(|r| r.id != own).collect();
+        let nested = others
+            .iter()
+            .filter(|r| r.kind == AgentKind::Terminal)
+            .filter_map(|r| self.store.read_nested(r.id).ok().flatten())
+            .filter(|saved| saved.agent.kind == kind)
+            .filter_map(|saved| saved.agent.conversation_id)
+            .collect::<Vec<String>>();
+        Ok(others.into_iter().filter(|r| r.kind == kind).filter_map(|r| r.conversation_id).chain(nested).collect())
+    }
+
+    fn discover_session(&self, kind: AgentKind, cwd: &Path, since: u64, own: AgentId) -> io::Result<Option<String>> {
         let discovers = matches!(
-            record.kind,
+            kind,
             AgentKind::Codex
                 | AgentKind::Kilo
                 | AgentKind::Opencode
@@ -1335,15 +1400,8 @@ impl Launcher {
         if !discovers {
             return Ok(None);
         }
-        let claimed: Vec<String> = self
-            .store
-            .list_agents()?
-            .into_iter()
-            .filter(|r| r.id != record.id && r.kind == record.kind)
-            .filter_map(|r| r.conversation_id)
-            .collect();
-        let (cwd, since) = (&record.cwd, record.created_at_ms);
-        Ok(match record.kind {
+        let claimed = self.claimed_sessions(kind, own)?;
+        Ok(match kind {
             AgentKind::Codex => codex_home().and_then(|home| find_codex_session(&home, cwd, since, &claimed)),
             AgentKind::Kimi => kimi_home().and_then(|home| find_kimi_session(&home, cwd, since, &claimed)),
             AgentKind::Cursor => cursor_home().and_then(|home| find_cursor_chat(&home, cwd, since, &claimed)),
@@ -1351,8 +1409,8 @@ impl Launcher {
                 antigravity_home().and_then(|home| find_antigravity_conversation(&home, cwd, &claimed))
             }
             AgentKind::Kilo | AgentKind::Opencode => {
-                let (program, _) = agent_command(&self.config, record.kind);
-                listed_sessions(record.kind, &program, cwd)
+                let (program, _) = agent_command(&self.config, kind);
+                listed_sessions(kind, &program, cwd)
                     .and_then(|listing| pick_listed_session(&listing, cwd, since, &claimed))
             }
             _ => None,
@@ -2139,6 +2197,49 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    fn nested(kind: AgentKind, conversation: Option<&str>) -> SavedNested {
+        SavedNested {
+            agent: crate::model::NestedAgent {
+                kind,
+                pid: 9,
+                conversation_id: conversation.map(str::to_string),
+                cwd: None,
+                since_ms: 1,
+            },
+            command: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn an_agent_started_inside_a_terminal_resumes_the_conversation_it_was_on() {
+        const SESSION: &str = "2f6d8a51-9c1e-4b55-8c3e-0d6a1f2b3c4d";
+        let dir = temp_dir("nested-session");
+        let claude_home = dir.join("claude-home");
+        let homes = Homes { claude: Some(claude_home.clone()), ..Homes::default() };
+        let never = || -> Option<String> { panic!("claude names its own conversation") };
+
+        let claude = nested(AgentKind::Claude, Some(SESSION));
+        assert_eq!(nested_session(&claude, &homes, never), None, "nothing was said in it yet");
+        let project = claude_home.join("projects").join("C--work");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(project.join(format!("{SESSION}.jsonl")), "{}\n").unwrap();
+        assert_eq!(nested_session(&claude, &homes, never).as_deref(), Some(SESSION));
+        assert_eq!(nested_session(&nested(AgentKind::Claude, None), &homes, never), None);
+        assert_eq!(nested_session(&nested(AgentKind::Claude, Some("a b; rm")), &homes, never), None);
+
+        let found = || Some("thread-new".to_string());
+        assert_eq!(nested_session(&nested(AgentKind::Codex, None), &homes, found).as_deref(), Some("thread-new"));
+        assert_eq!(
+            nested_session(&nested(AgentKind::Codex, Some("thread-kept")), &homes, found).as_deref(),
+            Some("thread-kept"),
+            "the conversation it was brought back on wins over a search by folder"
+        );
+        assert_eq!(nested_session(&nested(AgentKind::Kimi, None), &homes, || None), None);
+        assert_eq!(nested_session(&nested(AgentKind::Codex, None), &homes, || Some("$(calc)".into())), None);
+        assert_eq!(nested_session(&nested(AgentKind::Terminal, Some(SESSION)), &homes, found), None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn discovered_sessions_are_resumed_with_each_agent_flag_after_its_own_args() {
         let dir = temp_dir("discovered-sessions");
@@ -2613,10 +2714,11 @@ mod tests {
             Duration::from_millis(300),
             |_| {},
         );
-        assert!(hung.is_none());
+        assert_eq!(hung.err(), Some(NoReply::TimedOut), "a program that hangs is told apart");
         assert!(started.elapsed() < Duration::from_secs(20));
         let missing = &mut Command::new("orkai-definitely-missing-program");
-        assert!(command_reply(missing, Vec::new(), 1024, Duration::from_secs(1), |_| {}).is_none());
+        let not_started = command_reply(missing, Vec::new(), 1024, Duration::from_secs(1), |_| {}).err();
+        assert!(matches!(not_started, Some(NoReply::NotStarted(reason)) if !reason.is_empty()), "with its reason");
     }
 
     #[test]
@@ -2633,6 +2735,7 @@ mod tests {
             command_reply(&mut command, Vec::new(), 1024, Duration::from_secs(50), |spawned| {
                 let _ = started.send(spawned);
             })
+            .ok()
             .map(|reply| reply.output)
         });
         let pid = pid.recv_timeout(Duration::from_secs(20)).unwrap();
@@ -2677,7 +2780,7 @@ mod tests {
     #[test]
     fn no_program_the_core_runs_opens_a_console_window_on_windows() {
         const SAFE: [&str; 4] = ["without_console(", "command_output(", "command_reply(", "spawn_detached("];
-        const ALLOWED: [(&str, &str, &str); 7] = [
+        const ALLOWED: [(&str, &str, &str); 8] = [
             ("browser.rs", "Command::new(program).args(args).arg(url)", "the openers are windowed programs"),
             (
                 "clipboard.rs",
@@ -2688,6 +2791,7 @@ mod tests {
             ("usage.rs", "Command::new(\"/usr/bin/security\")", "macOS only"),
             ("update.rs", "Command::new(exe);", "the updated CLI takes over its own terminal on purpose"),
             ("update.rs", "Command::new(DITTO)", "macOS only"),
+            ("update.rs", "Command::new(XATTR)", "macOS only"),
             ("gate.rs", "Command::new(", "shell_command is wrapped by its only caller"),
         ];
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

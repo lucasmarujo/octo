@@ -7,6 +7,124 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.53',
+    date: '2026-11-26',
+    en: [
+      'Drag the Dynamic Island by its pill or header to dock it along any screen edge. It expands inward and remembers its position when Octo reopens.',
+      'The island now shows plan usage as rings around each provider icon, both in the pill and beside Octo in the expanded header.',
+      'Dragging recovers when the page reloads or the mouse is released, keeps the notch when returned to the top centre, and follows the scale of each monitor.',
+    ],
+    'pt-BR': [
+      'Arraste o Dynamic Island pela pílula ou pelo cabeçalho para encaixá-lo em qualquer borda da tela. Ele expande para dentro e lembra a posição quando o Octo reabre.',
+      'A ilha agora mostra o consumo do plano em anéis ao redor do ícone de cada provedor, tanto na pílula quanto ao lado do Octo no cabeçalho expandido.',
+      'O arrasto se recupera quando a página recarrega ou o mouse é solto, mantém o notch ao voltar ao topo central e acompanha a escala de cada monitor.',
+    ],
+  },
+  {
+    version: '0.2.52',
+    date: '2026-11-25',
+    en: [
+      'On a Mac, Octo now installs itself in Applications: opened from Downloads, or from wherever the zip was unpacked, it copies itself there and reopens, so it updates on its own from then on. Before, macOS ran it from a read-only copy and every new version had to be downloaded by hand.',
+      'The Mac has a single download, Octo-macos.zip, with one app for Apple Silicon and Intel.',
+    ],
+    'pt-BR': [
+      'No Mac, o Octo agora se instala sozinho em Aplicativos: aberto de Downloads, ou de onde o zip foi descompactado, ele se copia para lá e reabre, e daí em diante se atualiza sozinho. Antes, o macOS o rodava de uma cópia somente leitura e cada versão nova tinha de ser baixada à mão.',
+      'O Mac tem um único download, Octo-macos.zip, com um app só para Apple Silicon e Intel.',
+    ],
+  },
+  {
+    version: '0.2.51',
+    date: '2026-11-24',
+    en: [
+      'An agent you start inside a terminal now survives a restart of the computer: when Octo recovers the terminal, Claude, Codex or any other agent typed into it comes back on the same conversation, with the options you started it with.',
+      'This also covers an agent started from the task box of a terminal, which used to open a new, empty conversation after a restart.',
+    ],
+    'pt-BR': [
+      'Um agente iniciado dentro de um terminal agora sobrevive ao reinício do computador: quando o Octo recupera o terminal, o Claude, o Codex ou qualquer outro agente digitado nele volta na mesma conversa, com as opções com que você o iniciou.',
+      'Isso vale também para o agente iniciado pela caixa de tarefa de um terminal, que antes abria uma conversa nova e vazia depois de um reinício.',
+    ],
+  },
+  {
+    version: '0.2.50',
+    date: '2026-11-23',
+    en: [
+      'Octo decides again on computers where an ANTHROPIC_API_KEY that no longer works is set: when Claude refuses that key, Octo asks it again with your claude.ai login and keeps the key out from then on.',
+      'When an engine gives no reply, Octo now says whether it did not answer in time, could not start, or printed something it could not read, instead of only "did not answer".',
+    ],
+    'pt-BR': [
+      'O Octo volta a decidir nos computadores com uma ANTHROPIC_API_KEY que não vale mais: quando o Claude recusa essa chave, o Octo pergunta de novo com o seu login do claude.ai e deixa a chave de fora dali em diante.',
+      'Quando um motor não responde, o Octo agora diz se ele não respondeu a tempo, não conseguiu iniciar ou mostrou algo que não deu para ler, em vez de só "did not answer".',
+    ],
+  },
+  {
+    version: '0.2.49',
+    date: '2026-11-23',
+    en: [
+      'The title bar always keeps a free strip to drag the window by, however many tabs are open: before the window buttons on Windows, and right after the traffic lights on a Mac.',
+      'Drag an agent up or down inside its session in the sidebar to put the agents in the order you want. Dropping it on another session still moves it there.',
+      'Octo now sums up in a few words what each agent said and why it decided what it did, in the panel beside the chat, in the decisions and in the activity, instead of showing the raw output of the agent.',
+      'The panel beside the chat of Octo can be folded from the button at the top right and resized by dragging its edge, like the panel of an agent.',
+    ],
+    'pt-BR': [
+      'A barra de título sempre deixa uma faixa livre para arrastar a janela, não importa quantas abas estejam abertas: antes dos botões da janela no Windows e logo depois dos semáforos no Mac.',
+      'Arraste um agente para cima ou para baixo dentro da sessão na barra lateral para deixar os agentes na ordem que quiser. Soltar em outra sessão continua movendo para lá.',
+      'O Octo agora resume em poucas palavras o que cada agente disse e por que decidiu o que decidiu, no painel ao lado do chat, nas decisões e na atividade, em vez de mostrar a saída crua do agente.',
+      'O painel ao lado do chat do Octo pode ser recolhido pelo botão no canto superior direito e redimensionado arrastando a borda, como o painel de um agente.',
+    ],
+  },
+  {
+    version: '0.2.48',
+    date: '2026-11-23',
+    en: [
+      'Pair phone no longer keeps loading for minutes when Octo needs a new tunnel. The code used to wait until this computer itself could look up the new tunnel, and a "not found" it had cached a moment too early held it back; now it shows as soon as Cloudflare publishes the tunnel.',
+    ],
+    'pt-BR': [
+      'Parear celular não fica mais carregando por minutos quando o Octo precisa de um túnel novo. O código esperava até este computador conseguir encontrar o túnel novo, e um "não encontrado" guardado cedo demais o segurava; agora ele aparece assim que a Cloudflare publica o túnel.',
+    ],
+  },
+  {
+    version: '0.2.47',
+    date: '2026-11-22',
+    en: [
+      'A paired phone stays paired when the computer restarts. The code in Pair phone now carries a fixed address of this computer, so restarting it, or turning phone access off and on, no longer asks for a new scan: the phone reconnects by itself.',
+      'The address is random, made on this computer and locked to a secret only it has, so nobody else can take it or be given the same one. It only points the phone to the tunnel: everything still travels straight through Cloudflare, end-to-end encrypted, never through an Octo server.',
+      'A phone you already paired is told the fixed address by a notification the first time this version runs. If that notification is gone, scan the code once more and it is the last time. A device added by link in Devices needs its new link pasted once, for the same reason.',
+    ],
+    'pt-BR': [
+      'O celular pareado continua pareado quando o computador reinicia. O código em Parear celular agora leva um endereço fixo deste computador, então reiniciar, ou desligar e ligar o acesso pelo celular, não pede mais um novo escaneamento: o celular reconecta sozinho.',
+      'O endereço é aleatório, criado neste computador e preso a um segredo que só ele tem, então ninguém consegue tomá-lo nem receber um igual. Ele só aponta o celular para o túnel: tudo continua indo direto pela Cloudflare, criptografado de ponta a ponta, nunca por um servidor do Octo.',
+      'Um celular que você já pareou recebe o endereço fixo por uma notificação na primeira vez que esta versão roda. Se essa notificação se perdeu, escaneie o código mais uma vez e será a última. Um dispositivo adicionado por link em Dispositivos precisa do link novo colado uma vez, pelo mesmo motivo.',
+    ],
+  },
+  {
+    version: '0.2.46',
+    date: '2026-11-21',
+    en: [
+      'Devices takes Linux servers over SSH: Add a device > SSH server, with the host, the port, the user and, if the server asks, the password. Agents run there with what is installed on the server, and it works like any other device.',
+      'On the first connection Octo downloads its server (one file, about 8 MB) into ~/.octo/bin on that machine, checks its SHA-256 and runs it as your user. No sudo, nothing outside your home folder. Linux x86_64 and arm64.',
+      'The password is never saved: it stays in memory and Octo asks again after it restarts. With an SSH key or agent it never asks. A connection that drops comes back by itself, and the agents keep running meanwhile.',
+    ],
+    'pt-BR': [
+      'Dispositivos aceita servidores Linux por SSH: Adicionar dispositivo > Servidor SSH, com o host, a porta, o usuário e, se o servidor pedir, a senha. Os agentes rodam lá com o que está instalado no servidor, e ele funciona como qualquer outro dispositivo.',
+      'Na primeira conexão o Octo baixa o servidor dele (um arquivo, cerca de 8 MB) em ~/.octo/bin naquela máquina, confere o SHA-256 e executa como o seu usuário. Sem sudo, nada fora da sua pasta pessoal. Linux x86_64 e arm64.',
+      'A senha nunca é salva: fica na memória e o Octo pede de novo depois de reiniciar. Com chave SSH ou agente ele nem pergunta. Uma conexão que cai volta sozinha, e os agentes continuam rodando enquanto isso.',
+    ],
+  },
+  {
+    version: '0.2.45',
+    date: '2026-11-21',
+    en: [
+      'The sidebar has Devices, below the sessions: add another computer running Octo and work on it from this window. Add a device takes the pairing link the other Octo shows in Pair phone, the same one the phone uses, end-to-end encrypted.',
+      'Click a device and the whole window goes there: its sessions, board, task box, folders and the terminal of each agent. This computer brings you back. Each device shows whether it is live and how many agents are waiting for you.',
+      'Right click a device to rename it, paste a new link or forget it. If the other Octo restarted its tunnel, pasting the new link updates the same device.',
+    ],
+    'pt-BR': [
+      'A barra lateral tem Dispositivos, abaixo das sessões: adicione outro computador com o Octo e trabalhe nele a partir desta janela. Adicionar dispositivo recebe o link de pareamento que o outro Octo mostra em Parear celular, o mesmo do celular, criptografado de ponta a ponta.',
+      'Clique num dispositivo e a janela inteira vai para lá: as sessões, o quadro, a caixa de tarefa, as pastas e o terminal de cada agente. Este computador traz você de volta. Cada dispositivo mostra se está no ar e quantos agentes esperam você.',
+      'Clique com o botão direito num dispositivo para renomear, colar um link novo ou esquecer. Se o outro Octo reiniciou o túnel, colar o link novo atualiza o mesmo dispositivo.',
+    ],
+  },
+  {
     version: '0.2.44',
     date: '2026-11-18',
     en: [
@@ -25,13 +143,13 @@ export const NOTES = [
       'Settings > Appearance has Kai in the sidebar: turn it on and the animated Kai takes the place of the Octo mark in any theme.',
       'Kai takes the accent color you pick, in the sidebar, the empty board and the states, so you can have a Kai in any color.',
       'The plan usage stays at the bottom of the sidebar while the sessions scroll, and Chat, Decisions, Activity and Projects stay as icons when the sidebar is collapsed.',
-      'Ctrl = and Ctrl - zoom the agent screen, Ctrl 0 goes back to the default size; on a Mac use Cmd. The size is kept for the next agent.',
+      'Ctrl = and Ctrl - zoom the Octo window from the overview, Ctrl 0 goes back to the default size; with an agent open they zoom the terminal instead. On a Mac use Cmd. Each size is remembered.',
     ],
     'pt-BR': [
       'Configurações > Aparência tem o Kai na barra lateral: ligue e o Kai animado toma o lugar da marca do Octo em qualquer tema.',
       'O Kai usa a cor de destaque que você escolher, na barra lateral, no quadro vazio e nos estados, então dá para ter o Kai em qualquer cor.',
       'O uso do plano fica no fim da barra lateral enquanto as sessões rolam, e Conversa, Decisões, Atividade e Projetos continuam como ícones quando a barra está recolhida.',
-      'Ctrl = e Ctrl - ampliam e reduzem a tela do agente, Ctrl 0 volta ao tamanho padrão; no Mac use Cmd. O tamanho fica para o próximo agente.',
+      'Ctrl = e Ctrl - ampliam e reduzem a janela do Octo na visão geral, Ctrl 0 volta ao tamanho padrão; com um agente aberto eles ampliam o terminal. No Mac use Cmd. Cada tamanho é lembrado.',
     ],
   },
   {

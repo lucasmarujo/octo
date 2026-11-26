@@ -279,6 +279,14 @@ pub struct NestedAgent {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct SavedNested {
+    #[serde(flatten)]
+    pub agent: NestedAgent,
+    #[serde(default)]
+    pub command: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct StatusReport {
     pub state: AgentState,
     pub state_since_ms: u64,

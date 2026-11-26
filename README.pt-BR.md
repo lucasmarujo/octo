@@ -40,8 +40,7 @@ sozinho, e fechá-lo nunca para um agente. Baixe na
 | --- | --- |
 | Windows 10 e 11 x64 (instalador) | `Octo-setup.exe` |
 | Windows 10 e 11 x64 (sem instalar) | `Octo.exe` |
-| macOS Apple Silicon | `Octo-macos-apple-silicon.zip` |
-| macOS Intel | `Octo-macos-intel.zip` |
+| macOS 11+ (Apple Silicon e Intel) | `Octo-macos.zip` |
 | Linux x64 (WebKitGTK 4.1) | `Octo-linux-x86_64` |
 
 O `Octo-setup.exe` instala o Octo para o seu usuário em `%LOCALAPPDATA%\Programs\Octo`, sem pedir administrador,
@@ -531,7 +530,7 @@ mesmo tempo.
 3. Opcional: *compartilhar › adicionar à tela de início* deixa o orkai a um toque, como um app.
 
 A lateral mostra `off`, `on` ou quantos celulares estão conectados (`● 2`). Na tela do PWA, `d` desliga e `n`
-gera um código e um endereço novos, o que desconecta e esquece os celulares já pareados. Desligar numa janela
+gera um código novo, o que desconecta e esquece os celulares já pareados. Desligar numa janela
 do orkai desliga em todas, e ele fica desligado até você ligar de novo. A ponte registra o que acontece com o
 túnel e os celulares em `pwa.log`, na pasta de dados.
 
@@ -553,19 +552,24 @@ overview quando um estado muda e, no terminal, só as linhas da tela que mudaram
 
 Para funcionar fora de casa sem abrir portas no roteador, o orkai usa um túnel que só transporta bytes:
 
-- **cloudflare** (padrão, sem conta): um *quick tunnel* da Cloudflare. Na primeira vez, o orkai baixa o
-  `cloudflared` oficial de `github.com/cloudflare/cloudflared` para a pasta `bin/` e confere o SHA-256
-  publicado antes de usar. Se o `cloudflared` já estiver no `PATH`, usa esse. O túnel fica salvo em
-  `pwa-tunnel.json`, então o endereço continua o mesmo quando a internet cai e volta, quando o
-  `cloudflared` ou a ponte reiniciam e quando o PWA é desligado e ligado de novo em poucos minutos: o
-  celular reconecta sozinho, mesmo fora de casa. A Cloudflare apaga um quick tunnel que fica offline por
-  mais tempo (algo entre 5 e 20 minutos), por exemplo com o computador desligado ou dormindo; aí o orkai
-  abre outro e o QR code novo aparece sozinho, como depois de `n`/`--new-code`. Para um endereço que nunca
-  muda, use o tailscale.
+- **cloudflare** (padrão, sem conta): um *quick tunnel* da Cloudflare atrás de um **endereço fixo**. Na
+  primeira vez, o orkai baixa o `cloudflared` oficial de `github.com/cloudflare/cloudflared` para a pasta
+  `bin/` e confere o SHA-256 publicado antes de usar. Se o `cloudflared` já estiver no `PATH`, usa esse. O
+  túnel fica salvo em `pwa-tunnel.json` e é reaproveitado, mas a Cloudflare apaga um quick tunnel que fica
+  offline por um tempo (algo entre 5 e 20 minutos), por exemplo com o computador desligado ou dormindo, e aí
+  o orkai abre outro. O celular nem percebe: o QR code leva o endereço fixo deste computador,
+  `https://<id>.octo.marujo.dev`, que só responde com um redirecionamento para o túnel do momento. Reinicie
+  o computador ou desligue e ligue o PWA, e o celular reconecta sozinho, sem escanear de novo. O id são 128
+  bits aleatórios criados neste computador e guardados em `pwa-relay.json` junto de um segredo; só esse
+  segredo muda para onde o endereço aponta, então ninguém consegue tomá-lo nem receber um igual. O serviço
+  por trás dele (`relay/` neste repositório) não carrega tráfego: ele vê o id, o endereço do túnel e o IP de
+  quem pergunta, e não guarda registro deles. Um celular pareado antes de existir o endereço fixo é avisado
+  dele uma vez, por notificação.
 - **tailscale**: o celular fala com o computador **ponto a ponto** pela sua tailnet (`tailscale serve`),
   com endereço fixo. O celular precisa estar na mesma tailnet.
 
-Nenhum servidor seu ou do orkai fica no meio.
+Nenhum servidor seu ou do orkai carrega o que o celular e o computador dizem um ao outro: o endereço fixo só
+aponta o celular para o túnel.
 
 ### Segurança
 
@@ -761,7 +765,7 @@ cada pedido de assinatura será aprovado à mão.
 - Committers e revisores: [Lucas Marujo](https://github.com/lucasmarujo)
 - Aprovadores: [Lucas Marujo](https://github.com/lucasmarujo)
 
-O `Octo.app`, no `Octo-macos-apple-silicon.zip` e no `Octo-macos-intel.zip`, é assinado com um certificado
+O `Octo.app`, no `Octo-macos.zip` para Apple Silicon e Intel, é assinado com um certificado
 Developer ID Application (time `8VRVBA2X7C`), com o hardened runtime, e notarizado pela Apple, com o ticket
 grampeado no app. Só o CI assina, a partir de builds deste repositório; `codesign -dv /Applications/Octo.app`
 mostra o time.
@@ -779,8 +783,9 @@ completa está em [octo.marujo.dev/privacy](https://octo.marujo.dev/privacy/). E
 - consumo dos planos: o token de login de cada agente vai só para o serviço que o emitiu (veja Segurança,
   acima);
 - o orkai PWA, só depois que você o liga: o quick tunnel da Cloudflare, com o `cloudflared` baixado da release
-  da Cloudflare no GitHub, e uma consulta a `cloudflare-dns.com` que espera o endereço do túnel existir antes
-  de mostrar o QR code; ou o `tailscale serve`;
+  da Cloudflare no GitHub, uma consulta a `cloudflare-dns.com` que espera o endereço do túnel existir antes
+  de mostrar o QR code, e o `octo-relay.marujo.dev`, que recebe o endereço do túnel para o endereço fixo
+  deste computador apontar para ele; ou o `tailscale serve`;
 - o perfil do Windows Terminal, cujo ícone o Windows Terminal carrega de `https://octo.marujo.dev/orkai.ico`.
 
 ## Desenvolvimento

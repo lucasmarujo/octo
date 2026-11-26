@@ -1,0 +1,535 @@
+import { rename } from './agent.js';
+import { stopOrRemove } from './board.js';
+import { deleteSession, renameSession } from './commands.js';
+import { $, h, keep, place, storage, svg } from './dom.js';
+import { ask, closeMenu, openMenu } from './dialogs.js';
+import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, OCTO_RAIL_DEFAULT, OCTO_RAIL_MAX, OCTO_RAIL_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentTip, alive, detailsWidth, duration, flyoutPlace, glyph, kindColor, kindMark, label, octoRailWidth, plural, sessionMark, shortModel, sidebarWidth, subagentLine, usageColor, usageOrder, usageShown } from './format.js';
+import { t } from './i18n.js';
+import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_DETAILS_COLLAPSE, ICON_DETAILS_EXPAND, ICON_PLUS, ICON_SIDEBAR_COLLAPSE, ICON_SIDEBAR_EXPAND, providerIcon } from './icons.js';
+import { hideTip, motionMs } from './motion.js';
+import { agents, inSession, now, selectSession, sessionAgents, state, toggleExpanded, toggleUsage } from './state.js';
+import { send } from './transport.js';
+import { ringTip, usageRing } from './usageview.js';
+
+const WIDTH_KEY = 'octo.sidebar';
+const DETAILS_WIDTH_KEY = 'octo.details';
+const SIDEBAR_COLLAPSED_KEY = 'octo.sidebarCollapsed';
+const DETAILS_COLLAPSED_KEY = 'octo.detailsCollapsed';
+const OCTO_RAIL_WIDTH_KEY = 'octo.octoRail';
+const OCTO_RAIL_COLLAPSED_KEY = 'octo.octoRailCollapsed';
+const WIDTH_STEP = 16;
+const DETAILS_HANDLE_GAP = 8;
+const FLYOUT_CLOSE_MS = 160;
+
+let flyoutOpen = null;
+let flyoutTimer = 0;
+
+const needsYou = (agent) => agent.state === 'paused' && !agent.starting;
+const agentSignature = (agent) => [agent.id, agent.name, agent.state, agent.starting, agent.kind, agent.model, (agent.subagents || []).map((sub) => [sub.role, sub.description, sub.startedAt])];
+
+function tickResets(host) {
+  for (const node of host.querySelectorAll('[data-resets]')) {
+    node.textContent = t('resets in {time}', { time: duration(Number(node.dataset.resets) - now()) });
+  }
+}
+
+function closeFlyout() {
+  clearTimeout(flyoutTimer);
+  flyoutOpen = null;
+  $('flyout').hidden = true;
+}
+
+function closeFlyoutSoon() {
+  clearTimeout(flyoutTimer);
+  flyoutTimer = setTimeout(closeFlyout, FLYOUT_CLOSE_MS);
+}
+
+function paintFlyout() {
+  if (!flyoutOpen) return;
+  const { anchor, read } = flyoutOpen;
+  const content = anchor.offsetWidth ? read() : null;
+  if (!content) {
+    closeFlyout();
+    return;
+  }
+  const host = $('flyout');
+  if (flyoutOpen.signature !== content.signature) {
+    flyoutOpen.signature = content.signature;
+    host.replaceChildren(...content.build());
+  }
+  host.hidden = false;
+  tickResets(host);
+  const edge = { right: anchor.closest('.sidebar').getBoundingClientRect().right, top: anchor.getBoundingClientRect().top };
+  const spot = flyoutPlace(edge, { width: host.offsetWidth, height: host.offsetHeight }, { width: window.innerWidth, height: window.innerHeight });
+  host.style.left = `${spot.left}px`;
+  host.style.top = `${spot.top}px`;
+}
+
+function openFlyout(anchor, read) {
+  clearTimeout(flyoutTimer);
+  hideTip();
+  flyoutOpen = { anchor, read, signature: null };
+  paintFlyout();
+}
+
+function hoverFlyout(anchor, read) {
+  anchor.addEventListener('pointerenter', () => openFlyout(anchor, read));
+  anchor.addEventListener('pointerleave', closeFlyoutSoon);
+  anchor.addEventListener('focus', () => {
+    if (anchor.matches(':focus-visible')) openFlyout(anchor, read);
+  });
+  anchor.addEventListener('blur', () => {
+    if (!anchor.matches(':hover')) closeFlyoutSoon();
+  });
+  return anchor;
+}
+
+export function initFlyout() {
+  const host = $('flyout');
+  host.addEventListener('pointerenter', () => clearTimeout(flyoutTimer));
+  host.addEventListener('pointerleave', closeFlyoutSoon);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeFlyout();
+  });
+  window.addEventListener('blur', closeFlyout);
+}
+
+function summaryIcon(kind) {
+  const icon = providerIcon(kind);
+  return h('span', { class: 'summary-icon' }, icon ? svg(icon) : h('span', { class: 'summary-mark', style: `color:${kindColor(kind)}` }, kindMark(kind)));
+}
+
+function summaryLine(agent, onOpen) {
+  const mark = glyph(agent, state.frame);
+  const waiting = needsYou(agent);
+  const model = shortModel(agent.model);
+  return h(
+    'div',
+    {
+      class: `summary${waiting ? ' waiting' : ''}`,
+      dataset: { agent: String(agent.id) },
+      title: agentTip(agent),
+      onclick: () => onOpen(agent),
+      oncontextmenu: (event) => agentMenu(event, agent),
+    },
+    h('span', { class: `glyph ${mark.tone}`, dataset: mark.spin ? { spin: '1' } : {} }, mark.text),
+    summaryIcon(agent.kind),
+    h('span', { class: 'summary-text' }, agent.name),
+    model ? h('span', { class: 'summary-model' }, model) : null,
+  );
+}
+
+function subagentSummary(sub, agent, onOpen) {
+  const line = subagentLine(sub, now());
+  return h(
+    'div',
+    { class: 'summary sub', title: [line.role, line.text].filter(Boolean).join('\n'), onclick: () => onOpen(agent) },
+    h('span', { class: 'glyph t-faint' }, '↳'),
+    h('span', { class: 'summary-text' }, line.role, sub.description ? h('span', { class: 'summary-detail' }, ` · ${sub.description}`) : null),
+  );
+}
+
+function menuItem(text, act) {
+  return h(
+    'button',
+    {
+      class: 'menu-item',
+      type: 'button',
+      role: 'menuitem',
+      onclick: () => {
+        closeMenu();
+        act();
+      },
+    },
+    h('span', null, text),
+  );
+}
+
+function sessionMenu(event, name) {
+  event.preventDefault();
+  openMenu(event.currentTarget, [menuItem(t('Rename'), () => renameSession(name)), menuItem(t('Delete'), () => deleteSession(name))], false);
+}
+
+function agentMenu(event, agent) {
+  event.preventDefault();
+  event.stopPropagation();
+  const removeLabel = alive(agent) ? t('Stop') : t('Remove');
+  openMenu(event.currentTarget, [menuItem(t('Rename'), () => rename(agent)), menuItem(removeLabel, () => stopOrRemove(agent))], false);
+}
+
+function sessionItem(session, onSelect, onOpen) {
+  const agents = sessionAgents(session.name);
+  const selected = session.name === state.session;
+  const expanded = state.expanded.has(session.name);
+  const working = agents.filter((agent) => agent.state === 'working').length;
+  const chevron = h(
+    'span',
+    {
+      class: 'chevron',
+      role: 'button',
+      'aria-label': expanded ? t('Collapse') : t('Expand'),
+      onclick: (event) => {
+        event.stopPropagation();
+        toggleExpanded(session.name);
+        renderSidebar(onSelect, onOpen);
+      },
+    },
+    svg(expanded ? ICON_CHEVRON_DOWN : ICON_CHEVRON_RIGHT),
+  );
+  const hint = !expanded && working ? h('span', { class: 'session-hint' }, `${SPINNER[1]}${working}`) : null;
+  const row = h(
+    'button',
+    { class: 'session-row', type: 'button', dataset: { session: session.name }, onclick: () => onSelect(session.name), oncontextmenu: (event) => sessionMenu(event, session.name) },
+    chevron,
+    h('span', { class: 'session-name' }, session.name),
+    hint,
+    h('span', { class: 'session-count' }, String(session.agents)),
+  );
+  const lines = expanded ? agents.flatMap((agent) => [summaryLine(agent, onOpen), ...(agent.subagents || []).map((sub) => subagentSummary(sub, agent, onOpen))]) : [];
+  const classes = ['session', selected ? 'selected' : '', expanded && lines.length ? 'expanded' : ''].filter(Boolean);
+  return h('div', { class: classes.join(' ') }, row, lines);
+}
+
+function sessionFlyout(name, onOpen) {
+  const session = state.overview ? state.overview.sessions.find((item) => item.name === name) : null;
+  if (!session) return null;
+  const list = sessionAgents(name);
+  const open = (agent) => {
+    closeFlyout();
+    onOpen(agent);
+  };
+  return {
+    signature: JSON.stringify([name, session.agents, list.map(agentSignature)]),
+    build: () => [
+      h('div', { class: 'flyout-head' }, h('span', { class: 'flyout-title' }, name), h('span', { class: 'flyout-count' }, plural(session.agents, t('agent'), t('agents')))),
+      list.length
+        ? list.flatMap((agent) => [summaryLine(agent, open), ...(agent.subagents || []).map((sub) => subagentSummary(sub, agent, open))])
+        : [h('span', { class: 'flyout-note' }, t('No agents yet'))],
+    ].flat(),
+  };
+}
+
+function railChip(name, onSelect, onOpen) {
+  const chip = h(
+    'button',
+    {
+      type: 'button',
+      'aria-label': name,
+      dataset: { session: name },
+      onclick: () => onSelect(name),
+      oncontextmenu: (event) => {
+        closeFlyout();
+        sessionMenu(event, name);
+      },
+    },
+    sessionMark(name),
+  );
+  return hoverFlyout(chip, () => sessionFlyout(name, onOpen));
+}
+
+function renderRail(sessions, onSelect, onOpen) {
+  const names = new Set(sessions.map((session) => session.name));
+  for (const name of [...railChips.keys()]) if (!names.has(name)) railChips.delete(name);
+  const chips = sessions.map((session) => {
+    const chip = keep(railChips, session.name, '', () => railChip(session.name, onSelect, onOpen));
+    const classes = ['rail-chip', session.name === state.session ? 'selected' : '', inSession(session.name).some(needsYou) ? 'waiting' : ''];
+    chip.className = classes.filter(Boolean).join(' ');
+    return chip;
+  });
+  place($('session-rail'), chips);
+}
+
+async function newSession(onSelect) {
+  const name = await ask({ title: t('New session'), text: t('A session groups agents you work on together.'), action: t('Create'), placeholder: t('session name') });
+  if (!name) return;
+  state.pendingSession = name;
+  send({ type: 'session', name });
+  onSelect(name);
+}
+
+const UNFOLD_MS = 320;
+const usageCards = new Map();
+const usageFrame = new Map();
+const usageRings = new Map();
+const railChips = new Map();
+let ringEntries = [];
+
+function usageRow(window) {
+  const used = Math.max(0, Math.min(100, window.used));
+  return h(
+    'div',
+    { class: 'usage-row' },
+    h(
+      'div',
+      { class: 'usage-line' },
+      h('span', { class: 'usage-label' }, t(window.label)),
+      h('span', { class: 'usage-reset', dataset: window.resetsAt ? { resets: String(window.resetsAt) } : {} }),
+      h('span', { class: 'usage-pct', style: `color:${window.used >= USAGE_WARN ? usageColor(window.used) : 'var(--color-text)'}` }, `${Math.round(window.used)}%`),
+    ),
+    h('div', { class: 'usage-bar' }, h('div', { class: 'usage-fill', style: `width:${used}%;--fill:${usageColor(window.used)}` })),
+  );
+}
+
+function usageCard(entry) {
+  const icon = providerIcon(entry.kind);
+  const funds = entry.credits !== null && entry.credits !== undefined
+    ? h('span', { class: 'usage-funds' }, t('funds {amount}', { amount: `$${entry.credits.toFixed(2)}` }))
+    : null;
+  return h(
+    'div',
+    { class: 'usage-card', style: `--tone:${kindColor(entry.kind)}` },
+    h('div', { class: 'usage-provider' }, h('span', { class: 'usage-icon' }, icon ? svg(icon) : null), h('span', { class: 'usage-kind' }, label(entry.kind)), funds),
+    entry.windows.map(usageRow),
+    entry.problem ? h('span', { class: 'usage-note' }, t(entry.problem)) : null,
+  );
+}
+
+function usageFlyout(kind) {
+  const entry = ringEntries.find((item) => item.kind === kind);
+  return entry ? { signature: JSON.stringify(entry), build: () => [usageCard(entry)] } : null;
+}
+
+function renderRings(entries) {
+  const host = $('usage-rings');
+  host.hidden = !entries.length;
+  ringEntries = entries;
+  const rings = entries.map((entry) => {
+    const ring = keep(usageRings, entry.kind, JSON.stringify(entry), () => hoverFlyout(usageRing(entry), () => usageFlyout(entry.kind)));
+    ring.setAttribute('aria-label', ringTip(entry, now()));
+    return ring;
+  });
+  place(host, rings);
+}
+
+function unfold() {
+  const host = $('usage');
+  host.classList.add('unfolding');
+  setTimeout(() => host.classList.remove('unfolding'), UNFOLD_MS);
+}
+
+function usageHead(total, hidden) {
+  const open = state.usageOpen;
+  const toggle = total > USAGE_FOLDED
+    ? h(
+        'button',
+        {
+          class: 'usage-toggle',
+          type: 'button',
+          'aria-expanded': String(open),
+          title: open ? t('Show fewer') : t('Show {count} more', { count: hidden }),
+          onclick: () => {
+            toggleUsage();
+            if (state.usageOpen) unfold();
+            renderUsage();
+          },
+        },
+        open ? null : h('span', null, `+${hidden}`),
+        svg(ICON_CHEVRON_DOWN),
+      )
+    : null;
+  return h('div', { class: 'usage-head' }, h('span', { class: 'caps' }, t('Plan usage')), h('span', { class: 'usage-note usage-ago' }), toggle);
+}
+
+function renderUsage() {
+  const host = $('usage');
+  const entries = usageOrder(state.usage || [], agents().map((agent) => agent.kind));
+  if (!entries.length) {
+    host.hidden = true;
+    renderRings([]);
+    return;
+  }
+  host.hidden = false;
+  const shown = usageShown(entries, state.usageOpen);
+  renderRings(shown);
+  const hidden = entries.length - shown.length;
+  const head = keep(usageFrame, 'head', JSON.stringify([state.usageOpen, entries.length, hidden]), () => usageHead(entries.length, hidden));
+  head.querySelector('.usage-ago').textContent = state.usageAt ? t('{time} ago', { time: duration(Date.now() - state.usageAt) }) : '';
+  const cards = shown.map((entry, index) => {
+    const card = keep(usageCards, entry.kind, JSON.stringify(entry), () => usageCard(entry));
+    card.classList.toggle('extra', index >= USAGE_FOLDED);
+    return card;
+  });
+  const list = keep(usageFrame, 'list', '', () => h('div', { class: 'usage-list' }));
+  place(list, cards);
+  place(host, [head, list]);
+  host.classList.toggle('open', state.usageOpen);
+  tickResets(host);
+}
+
+export function renderSidebar(onSelect, onOpen) {
+  $('host').textContent = state.host;
+  const overview = state.overview;
+  const host = $('sessions');
+  const signature = overview
+    ? JSON.stringify([
+        state.session,
+        [...state.expanded],
+        overview.sessions.map((session) => [session.name, session.agents, sessionAgents(session.name).map(agentSignature)]),
+      ])
+    : '';
+  if (overview && host.dataset.signature !== signature) {
+    host.dataset.signature = signature;
+    const items = overview.sessions.map((session) => sessionItem(session, onSelect, onOpen));
+    const create = h(
+      'button',
+      { class: 'session-row new-session', type: 'button', onclick: () => newSession(onSelect) },
+      h('span', { class: 'chevron' }, svg(ICON_PLUS)),
+      h('span', { class: 'session-name' }, t('New session')),
+      h('span', { class: 'kbd' }, 'ctrl N'),
+    );
+    host.replaceChildren(...items, create);
+    renderRail(overview.sessions, onSelect, onOpen);
+  }
+  renderUsage();
+  paintFlyout();
+}
+
+export function spinSidebar() {
+  for (const node of document.querySelectorAll('#sessions [data-spin], #flyout [data-spin]')) node.textContent = SPINNER[state.frame % SPINNER.length];
+}
+
+export function promptNewSession(onSelect) {
+  return newSession(onSelect);
+}
+
+function initPanelWidth({ handle, key, property, clamp, fallback, min, max, fromPointer, growKey }) {
+  let width = clamp(storage.get(key));
+  const apply = (value) => {
+    width = clamp(value);
+    document.documentElement.style.setProperty(property, `${width}px`);
+    handle.setAttribute('aria-valuenow', String(width));
+  };
+  const save = () => storage.set(key, width === fallback ? null : String(width));
+  handle.setAttribute('aria-valuemin', String(min));
+  handle.setAttribute('aria-valuemax', String(max));
+  apply(width);
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add('resizing');
+    document.documentElement.classList.add('resizing-panel');
+  });
+  handle.addEventListener('pointermove', (event) => {
+    if (handle.hasPointerCapture(event.pointerId)) apply(fromPointer(event));
+  });
+  handle.addEventListener('lostpointercapture', () => {
+    handle.classList.remove('resizing');
+    document.documentElement.classList.remove('resizing-panel');
+    save();
+  });
+  handle.addEventListener('dblclick', () => {
+    apply(fallback);
+    save();
+  });
+  handle.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    apply(width + (event.key === growKey ? WIDTH_STEP : -WIDTH_STEP));
+    save();
+  });
+}
+
+function initPanelToggle({ button, key, name, collapseText, expandText, collapseIcon, expandIcon, onToggle }) {
+  let collapsed = storage.get(key) === 'on';
+  let settling = 0;
+  const paint = () => {
+    const text = collapsed ? expandText : collapseText;
+    document.documentElement.dataset[name] = collapsed ? 'collapsed' : 'open';
+    button.setAttribute('aria-expanded', String(!collapsed));
+    button.setAttribute('aria-label', text);
+    button.title = text;
+    button.replaceChildren(svg(collapsed ? expandIcon : collapseIcon));
+  };
+  paint();
+  button.addEventListener('click', () => {
+    collapsed = !collapsed;
+    storage.set(key, collapsed ? 'on' : null);
+    clearTimeout(settling);
+    const ms = motionMs('--motion-slow');
+    paint();
+    if (ms) {
+      document.documentElement.dataset[name] = collapsed ? 'closing' : 'opening';
+      settling = setTimeout(paint, ms);
+    }
+    onToggle();
+  });
+}
+
+export function initPanelToggles(onToggle) {
+  initPanelToggle({
+    button: $('sidebar-toggle'),
+    key: SIDEBAR_COLLAPSED_KEY,
+    name: 'sidebar',
+    collapseText: t('Collapse the sidebar'),
+    expandText: t('Expand the sidebar'),
+    collapseIcon: ICON_SIDEBAR_COLLAPSE,
+    expandIcon: ICON_SIDEBAR_EXPAND,
+    onToggle: () => {
+      $('sidebar-scroll').scrollTop = 0;
+      onToggle();
+    },
+  });
+  initPanelToggle({
+    button: $('details-toggle'),
+    key: DETAILS_COLLAPSED_KEY,
+    name: 'details',
+    collapseText: t('Collapse the agent panel'),
+    expandText: t('Expand the agent panel'),
+    collapseIcon: ICON_DETAILS_COLLAPSE,
+    expandIcon: ICON_DETAILS_EXPAND,
+    onToggle,
+  });
+}
+
+export function initSidebarWidth() {
+  initPanelWidth({
+    handle: $('sidebar-resize'),
+    key: WIDTH_KEY,
+    property: '--sidebar',
+    clamp: sidebarWidth,
+    fallback: SIDEBAR_DEFAULT,
+    min: SIDEBAR_MIN,
+    max: SIDEBAR_MAX,
+    fromPointer: (event) => event.clientX,
+    growKey: 'ArrowRight',
+  });
+}
+
+export function initDetailsWidth() {
+  initPanelWidth({
+    handle: $('details-resize'),
+    key: DETAILS_WIDTH_KEY,
+    property: '--details',
+    clamp: detailsWidth,
+    fallback: DETAILS_DEFAULT,
+    min: DETAILS_MIN,
+    max: DETAILS_MAX,
+    fromPointer: (event) => $('details').getBoundingClientRect().right - event.clientX - DETAILS_HANDLE_GAP,
+    growKey: 'ArrowLeft',
+  });
+}
+
+export function initOctoRail(handle, button) {
+  initPanelWidth({
+    handle,
+    key: OCTO_RAIL_WIDTH_KEY,
+    property: '--octo-rail',
+    clamp: octoRailWidth,
+    fallback: OCTO_RAIL_DEFAULT,
+    min: OCTO_RAIL_MIN,
+    max: OCTO_RAIL_MAX,
+    fromPointer: (event) => handle.parentElement.getBoundingClientRect().right - event.clientX,
+    growKey: 'ArrowLeft',
+  });
+  initPanelToggle({
+    button,
+    key: OCTO_RAIL_COLLAPSED_KEY,
+    name: 'octoRail',
+    collapseText: t('Collapse the Octo panel'),
+    expandText: t('Expand the Octo panel'),
+    collapseIcon: ICON_DETAILS_COLLAPSE,
+    expandIcon: ICON_DETAILS_EXPAND,
+    onToggle: () => {},
+  });
+}

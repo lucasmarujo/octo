@@ -132,7 +132,7 @@ pub fn welcome(hub: &Hub) -> BridgeMsg {
     BridgeMsg::Welcome { host: hub.host().to_string(), version: env!("CARGO_PKG_VERSION").into() }
 }
 
-fn is_tick(err: &tungstenite::Error) -> bool {
+pub fn is_tick(err: &tungstenite::Error) -> bool {
     matches!(err, tungstenite::Error::Io(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut))
 }
 

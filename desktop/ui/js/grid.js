@@ -1,4 +1,5 @@
-import { $, h, keep, place, storage, svg } from './dom.js';
+import { deviceStorage } from './device.js';
+import { $, h, keep, place, svg } from './dom.js';
 import { tools } from './board.js';
 import { activity, alive, arrangeGrid, column, elapsed, glyph, gridShape, kindColor, label, previewRows } from './format.js';
 import { t } from './i18n.js';
@@ -12,7 +13,7 @@ const LINE_HEIGHT = 15;
 const LIVE_FONT_SIZE = 12;
 const ORDER_KEY = 'octo.gridOrder';
 
-const savedOrder = storage.json(ORDER_KEY, []);
+const savedOrder = deviceStorage.json(ORDER_KEY, []);
 let arrangement = { order: Array.isArray(savedOrder) ? savedOrder : [], columns: new Map() };
 const tiles = new Map();
 const shownPreviews = new Map();
@@ -21,7 +22,7 @@ let addTile = null;
 
 export function gridAgents() {
   const next = arrangeGrid(arrangement.order, arrangement.columns, agents());
-  if (next.order.join() !== arrangement.order.join()) storage.set(ORDER_KEY, JSON.stringify(next.order));
+  if (next.order.join() !== arrangement.order.join()) deviceStorage.set(ORDER_KEY, JSON.stringify(next.order));
   arrangement = next;
   const position = new Map(next.order.map((id, index) => [id, index]));
   return [...visible()].sort((a, b) => position.get(a.id) - position.get(b.id));

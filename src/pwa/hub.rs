@@ -2978,9 +2978,9 @@ mod tests {
             let (id, holder) = fx.agent("alpha", AgentKind::Codex, 100);
             fx.hub.orchestrate(false);
             let pending = view_where(&mut peer, &mut phone, |view| {
-                view.decisions
-                    .iter()
-                    .any(|decision| decision.agent == id && decision.status == DecisionStatus::NeedsYou)
+                view.decisions.iter().any(|decision| {
+                    decision.agent == id && decision.status == DecisionStatus::NeedsYou && !decision.question.is_empty()
+                })
             });
             let decision = pending.decisions[0].clone();
             assert_eq!(decision.question, QUESTION);

@@ -153,6 +153,54 @@ fn a_tab_replaced_by_another_tab_of_the_same_browser_is_told_so_and_the_new_one_
     assert_eq!(models, ["second"]);
 }
 
+#[test]
+fn a_server_without_a_window_serves_its_agents_on_loopback_until_whoever_started_it_goes_away() {
+    use std::io::BufRead;
+    use std::process::{Command, Stdio};
+
+    let dir = std::env::temp_dir().join(format!(
+        "orkai-serve-e2e-{}-{}-{}",
+        std::process::id(),
+        orkai::util::now_ms(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut server = Command::new(env!("CARGO_BIN_EXE_orkai"))
+        .args(["__serve", "--port", "0"])
+        .env(orkai::paths::HOME_ENV, dir.join("home"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(server.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let (port, secret) = orkai::pwa::serve::parse_ready(&line).expect("the server says where it listens and its key");
+    let mut phone = Phone::pair(port, &secret);
+    phone.until(|message| matches!(message, BridgeMsg::Welcome { .. }).then_some(()));
+    let overview = phone.overview_where(|_| true);
+    assert!(overview.sessions.iter().any(|session| session.name == "default"));
+
+    let taken = Command::new(env!("CARGO_BIN_EXE_orkai"))
+        .args(["__serve", "--port", &port.to_string()])
+        .env(orkai::paths::HOME_ENV, dir.join("home"))
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!taken.status.success());
+    assert_eq!(String::from_utf8_lossy(&taken.stdout).trim(), "octo-error port", "a taken port is said in one line");
+
+    drop(server.stdin.take());
+    let deadline = Instant::now() + TIMEOUT;
+    while server.try_wait().unwrap().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let ended = server.try_wait().unwrap();
+    let _ = server.kill();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(ended.is_some_and(|status| status.success()), "the server leaves when its input closes");
+}
+
 fn socket(port: u16) -> WebSocket<TcpStream> {
     let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
     stream.set_read_timeout(Some(TIMEOUT)).unwrap();

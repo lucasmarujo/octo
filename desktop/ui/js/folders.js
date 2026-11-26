@@ -1,4 +1,5 @@
 import { closeDialog, openDialog } from './dialogs.js';
+import { deviceStorage } from './device.js';
 import { $, h, storage, svg } from './dom.js';
 import { t } from './i18n.js';
 import {
@@ -116,7 +117,7 @@ export function folderNote(repo, missing, worktree) {
 
 function recentFolders() {
   const overview = state.overview || {};
-  const saved = storage.json(RECENT_KEY, []);
+  const saved = deviceStorage.json(RECENT_KEY, []);
   const seen = [...(Array.isArray(saved) ? saved : []), overview.whereDir, ...Object.values(state.where), ...Object.values(overview.dirs || {})];
   const unique = [];
   for (const path of seen) if (typeof path === 'string' && path && path !== '~' && !unique.some((known) => samePath(known, path))) unique.push(path);
@@ -124,9 +125,9 @@ function recentFolders() {
 }
 
 function remember(path) {
-  const saved = storage.json(RECENT_KEY, []);
+  const saved = deviceStorage.json(RECENT_KEY, []);
   const list = [path, ...(Array.isArray(saved) ? saved : []).filter((known) => typeof known === 'string' && !samePath(known, path))];
-  storage.set(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_FOLDERS)));
+  deviceStorage.set(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_FOLDERS)));
 }
 
 function keyHints() {
