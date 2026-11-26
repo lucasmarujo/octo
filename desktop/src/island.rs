@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use orkai::fsutil;
 use orkai::model::AgentId;
@@ -26,6 +26,7 @@ const OPEN_EVENT: &str = "island-open";
 const CANVAS: Extent = Extent { width: 440.0, height: 480.0 };
 const POLL: Duration = Duration::from_millis(40);
 const DRAG_POLL: Duration = Duration::from_millis(16);
+const DRAG_TIMEOUT: Duration = Duration::from_secs(30);
 const ENTER_POLLS: u8 = 3;
 const LEAVE_POLLS: u8 = 4;
 const PLACE_POLLS: u32 = 50;
@@ -70,6 +71,15 @@ struct Canvas {
     width: f64,
     height: f64,
     scale: f64,
+}
+
+impl Canvas {
+    fn physical_size(self, coordinate_scale: f64) -> tauri::PhysicalSize<u32> {
+        tauri::PhysicalSize::new(
+            (self.width * coordinate_scale).round() as u32,
+            (self.height * coordinate_scale).round() as u32,
+        )
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
@@ -122,6 +132,18 @@ enum DragEvent {
     Cancel,
 }
 
+struct Drag {
+    cursor: PhysicalPosition<f64>,
+    origin: PhysicalPosition<f64>,
+    started: Instant,
+}
+
+impl Drag {
+    fn active(&self, now: Instant, pressed: bool) -> bool {
+        pressed && now.duration_since(self.started) < DRAG_TIMEOUT
+    }
+}
+
 #[derive(Default)]
 struct Hover {
     inside: bool,
@@ -158,6 +180,21 @@ impl Island {
         let shape = lock(&self.shape);
         if inside { shape.expanded } else { shape.collapsed }
     }
+
+    fn set_layout(&self, layout: Layout) -> bool {
+        let previous = std::mem::replace(&mut *lock(&self.layout), layout);
+        if previous == layout {
+            return false;
+        }
+        *lock(&self.shape) = Shape::default();
+        true
+    }
+
+    fn reset_drag(&self) {
+        let mut events = lock(&self.drag_events);
+        events.clear();
+        events.push(DragEvent::Cancel);
+    }
 }
 
 fn covers(region: Region, canvas: Canvas, cursor: PhysicalPosition<f64>) -> bool {
@@ -188,9 +225,41 @@ fn canvas_at(area: Region, scale: f64, edge: Edge, fraction: f64, notch: bool) -
     (Canvas { x, y, width, height, scale }, Layout { edge, offset: (center - start) / scale, notch })
 }
 
+fn canvas_for_dock(
+    area: Region,
+    work: Region,
+    scale: f64,
+    dock: Option<&Dock>,
+    notch: Option<Extent>,
+) -> (Canvas, Layout) {
+    let (edge, fraction) = dock.map_or((Edge::Top, 0.5), |dock| (dock.edge, dock.fraction));
+    let notch = dock.is_none()
+        || (edge == Edge::Top && notch.is_some_and(|notch| ((fraction - 0.5) * area.width).abs() <= notch.width / 2.0));
+    canvas_at(if notch { area } else { work }, scale, edge, if notch { 0.5 } else { fraction }, notch)
+}
+
 fn desktop_scale(scale: f64) -> f64 {
-    // macOS monitor and window coordinates use each screen's scale. Use desktop points there.
     if cfg!(target_os = "macos") { scale } else { 1.0 }
+}
+
+#[cfg(windows)]
+fn mouse_pressed() -> bool {
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetAsyncKeyState(key: i32) -> i16;
+    }
+    const LEFT_BUTTON: i32 = 0x01;
+    unsafe { GetAsyncKeyState(LEFT_BUTTON) < 0 }
+}
+
+#[cfg(target_os = "macos")]
+fn mouse_pressed() -> bool {
+    mac::mouse_pressed()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn mouse_pressed() -> bool {
+    true
 }
 
 fn monitor_area(monitor: &Monitor, work_area: bool) -> Region {
@@ -256,21 +325,24 @@ fn place(window: &WebviewWindow, island: &Island, dock: Option<&Dock>) -> Option
                 .or_else(|| monitors.iter().find(|m| dock.monitor.is_some() && matches(m)))
                 .cloned()
         })
-        .unwrap_or(primary);
-    let (edge, fraction) = dock.map_or((Edge::Top, 0.5), |dock| (dock.edge, dock.fraction));
+        .unwrap_or_else(|| primary.clone());
+    let notch = (monitor.position() == primary.position()).then(island_notch).flatten();
     let scale = monitor.scale_factor() / desktop_scale(monitor.scale_factor());
-    let (canvas, layout) = canvas_at(monitor_area(&monitor, dock.is_some()), scale, edge, fraction, dock.is_none());
-    let size = window.inner_size().ok()?.to_logical::<f64>(window.scale_factor().ok()?);
-    let wanted = tauri::LogicalSize::new(canvas.width / scale, canvas.height / scale);
-    if (size.width - wanted.width).abs() >= 1.0 || (size.height - wanted.height).abs() >= 1.0 {
+    let (canvas, layout) =
+        canvas_for_dock(monitor_area(&monitor, false), monitor_area(&monitor, true), scale, dock, notch);
+    let spot = position(window).ok()?;
+    if (spot.x - canvas.x).abs() >= 0.5 || (spot.y - canvas.y).abs() >= 0.5 {
+        move_window(window, canvas.x, canvas.y).ok()?;
+    }
+    let wanted = canvas.physical_size(desktop_scale(monitor.scale_factor()));
+    if window.inner_size().ok()? != wanted {
         window.set_size(wanted).ok()?;
     }
     let spot = position(window).ok()?;
     if (spot.x - canvas.x).abs() >= 0.5 || (spot.y - canvas.y).abs() >= 0.5 {
         move_window(window, canvas.x, canvas.y).ok()?;
     }
-    let previous = std::mem::replace(&mut *lock(&island.layout), layout);
-    if previous != layout {
+    if island.set_layout(layout) {
         let _ = window.emit_to(LABEL, LAYOUT_EVENT, layout);
     }
     Some(canvas)
@@ -281,15 +353,20 @@ fn track(app: AppHandle, epoch: u64, path: PathBuf, mut dock: Option<Dock>, mut 
     let mut hover = Hover::default();
     let mut interactive = false;
     let mut polls = if canvas.is_some() { 1u32 } else { 0 };
-    let mut drag = None;
+    let mut drag: Option<Drag> = None;
     let mut last_cursor = None;
     while island.epoch.load(Ordering::SeqCst) == epoch {
         let Some(window) = app.get_webview_window(LABEL) else { break };
-        let events = std::mem::take(&mut *lock(&island.drag_events));
+        let pointer = cursor(&window).ok();
+        let mut events = std::mem::take(&mut *lock(&island.drag_events));
+        let pressed = mouse_pressed();
+        if drag.as_ref().is_some_and(|drag| !drag.active(Instant::now(), pressed)) {
+            events.push(if pressed { DragEvent::Cancel } else { pointer.map_or(DragEvent::Cancel, DragEvent::Drop) });
+        }
         for event in events {
             match event {
                 DragEvent::Start { cursor, origin } => {
-                    drag = Some((cursor, origin));
+                    drag = Some(Drag { cursor, origin, started: Instant::now() });
                     last_cursor = Some(cursor);
                 }
                 DragEvent::Drop(_) | DragEvent::Cancel => {
@@ -310,8 +387,7 @@ fn track(app: AppHandle, epoch: u64, path: PathBuf, mut dock: Option<Dock>, mut 
                 }
             }
         }
-        let pointer = cursor(&window).ok();
-        if let Some((start, origin)) = drag {
+        if let Some(Drag { cursor: start, origin, .. }) = &drag {
             if let Some(point) = pointer.filter(|point| Some(*point) != last_cursor) {
                 let _ = move_window(&window, origin.x + point.x - start.x, origin.y + point.y - start.y);
                 last_cursor = Some(point);
@@ -323,6 +399,10 @@ fn track(app: AppHandle, epoch: u64, path: PathBuf, mut dock: Option<Dock>, mut 
             canvas = place(&window, &island, dock.as_ref());
         }
         polls = polls.wrapping_add(1);
+        if island.region(false) == Region::default() && hover.inside {
+            hover = Hover::default();
+            let _ = app.emit_to(LABEL, HOVER_EVENT, false);
+        }
         let over =
             canvas.zip(pointer).is_some_and(|(canvas, cursor)| covers(island.region(hover.inside), canvas, cursor));
         if let Some(inside) = hover.step(over) {
@@ -416,6 +496,7 @@ fn notch_of(top_inset: f64, screen_width: f64, left_width: f64, right_width: f64
 
 #[tauri::command]
 pub fn island_attach(link: State<'_, Link>, island: State<'_, Island>, channel: Channel) -> Result<(), String> {
+    island.reset_drag();
     link::watch(link.shared_hub(), &island.feed, channel).map(drop)
 }
 
@@ -427,6 +508,7 @@ pub fn island_shape(island: State<'_, Island>, shape: Shape) {
 
 #[tauri::command]
 pub fn island_layout(island: State<'_, Island>) -> Layout {
+    island.reset_drag();
     *lock(&island.layout)
 }
 
@@ -562,6 +644,12 @@ mod mac {
             super::notch_of(insets.top, frame.size.width, left.size.width, right.size.width)
         }
     }
+
+    pub fn mouse_pressed() -> bool {
+        const LEFT_BUTTON: usize = 1;
+        let buttons: usize = unsafe { msg_send![class!(NSEvent), pressedMouseButtons] };
+        buttons & LEFT_BUTTON != 0
+    }
 }
 
 #[cfg(test)]
@@ -574,6 +662,66 @@ mod tests {
 
     fn at(x: f64, y: f64) -> PhysicalPosition<f64> {
         PhysicalPosition::new(x, y)
+    }
+
+    #[test]
+    fn returning_to_the_notch_restores_the_full_screen_layout_even_with_a_saved_dock() {
+        let area = Region { width: 1512.0, height: 982.0, ..Region::default() };
+        let work = Region { y: 38.0, height: 944.0, ..area };
+        let notch = Some(Extent { width: 184.0, height: 38.0 });
+        let mut dock = Dock { edge: Edge::Top, fraction: 0.5 + 10.0 / area.width, monitor: None, origin: [0, 0] };
+        let (canvas, layout) = canvas_for_dock(area, work, 1.0, Some(&dock), notch);
+        assert_eq!(canvas.y, 0.0);
+        assert_eq!(layout, Layout::default());
+        let saved = serde_json::to_string(&dock).unwrap();
+        let restored: Dock = serde_json::from_str(&saved).unwrap();
+        assert_eq!(canvas_for_dock(area, work, 1.0, Some(&restored), notch), (canvas, layout));
+        dock.fraction = 0.2;
+        assert_eq!(canvas_for_dock(area, work, 1.0, Some(&dock), notch).0.y, work.y);
+        dock.fraction = 0.5;
+        for edge in [Edge::Bottom, Edge::Left, Edge::Right] {
+            dock.edge = edge;
+            assert!(!canvas_for_dock(area, work, 1.0, Some(&dock), notch).1.notch);
+        }
+        dock.edge = Edge::Top;
+        assert!(!canvas_for_dock(area, work, 1.0, Some(&dock), None).1.notch);
+    }
+
+    #[test]
+    fn a_layout_change_discards_the_previous_edges_mouse_regions() {
+        let island = Island::default();
+        let shape = Shape { collapsed: PILL, expanded: PANEL };
+        *lock(&island.shape) = shape;
+        assert!(!island.set_layout(Layout::default()));
+        assert_eq!(*lock(&island.shape), shape);
+        let layout = Layout { edge: Edge::Left, offset: 100.0, notch: false };
+        assert!(island.set_layout(layout));
+        assert_eq!(*lock(&island.layout), layout);
+        assert_eq!(*lock(&island.shape), Shape::default());
+        assert!(!covers(island.region(false), SCREEN, at(960.0, 10.0)));
+    }
+
+    #[test]
+    fn releasing_the_mouse_or_reaching_the_deadline_ends_a_drag_without_a_page_event() {
+        let started = Instant::now();
+        let drag = Drag { cursor: at(10.0, 10.0), origin: at(0.0, 0.0), started };
+        assert!(drag.active(started + DRAG_POLL, true));
+        assert!(!drag.active(started + DRAG_POLL, false));
+        assert!(!drag.active(started + DRAG_TIMEOUT, true));
+        let island = Island::default();
+        lock(&island.drag_events).push(DragEvent::Start { cursor: drag.cursor, origin: drag.origin });
+        island.reset_drag();
+        assert!(matches!(&lock(&island.drag_events)[..], [DragEvent::Cancel]));
+    }
+
+    #[test]
+    fn the_destination_monitor_determines_the_physical_window_size() {
+        let area = Region { x: 1920.0, width: 2560.0, height: 1440.0, ..Region::default() };
+        let (canvas, _) = canvas_at(area, 1.5, Edge::Right, 0.5, false);
+        assert_eq!(canvas.physical_size(1.0), tauri::PhysicalSize::new(660, 720));
+        assert_eq!(canvas.x, 3820.0);
+        let (retina, _) = canvas_at(area, 1.0, Edge::Top, 0.5, true);
+        assert_eq!(retina.physical_size(2.0), tauri::PhysicalSize::new(880, 960));
     }
 
     #[test]

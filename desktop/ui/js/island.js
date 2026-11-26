@@ -1,12 +1,13 @@
 import { mark, spinner, usesKai } from './brand.js';
 import { $, h, svg } from './dom.js';
-import { SPINNER, activity, elapsed, glyph, kindColor, kindMark, nameTone, plural } from './format.js';
+import { SPINNER, activity, elapsed, glyph, kindColor, kindMark, nameTone, plural, usageOrder, usageShown } from './format.js';
 import { applyStatic, language, languageStale, t } from './i18n.js';
 import { providerIcon } from './icons.js';
 import { islandAgents, islandCounts, islandGroups, islandShape } from './islandview.js';
 import { glyph as kai, moodOf } from './kai.js';
 import { applyTheme } from './theme.js';
 import { channel, invoke } from './transport.js';
+import { ringTip, usageRing } from './usageview.js';
 
 const SPIN_MS = 100;
 const TICK_MS = 1000;
@@ -18,7 +19,7 @@ const IDLE_MARK = '●';
 const MAX_STAGGER = 12;
 const START_AFTER_PX = 6;
 
-const view = { overview: null, skew: 0, frame: 0, open: false, notch: null, layout: null, shape: '', spinning: 0 };
+const view = { overview: null, usage: [], skew: 0, frame: 0, open: false, notch: null, layout: null, shape: '', spinning: 0 };
 let primaryNotch;
 
 const now = () => Date.now() - view.skew;
@@ -50,9 +51,23 @@ function paint(host, signature, build) {
   host.replaceChildren(...build());
 }
 
-function renderPill(counts, mood, look) {
-  paint($('island-pill'), JSON.stringify([counts, mood, look]), () => [
-    h('span', { class: 'island-mark' }, brand(mood)),
+function usageRings(entries) {
+  const usage = usageShown(entries, false);
+  return usage.length ? h('span', { class: 'island-usage-rings' }, usage.map((entry) => {
+    const ring = usageRing(entry);
+    const tip = ringTip(entry, now());
+    ring.setAttribute('aria-label', tip);
+    ring.title = tip;
+    return ring;
+  })) : null;
+}
+
+function renderPill(counts, mood, look, entries) {
+  paint($('island-pill'), JSON.stringify([counts, mood, look, entries]), () => [
+    h('span', { class: 'island-leading' },
+      h('span', { class: 'island-mark' }, brand(mood)),
+      usageRings(entries),
+    ),
     view.notch ? h('span', { class: 'island-gap' }) : null,
     h('span', { class: 'island-chips' }, chips(counts)),
   ].filter(Boolean));
@@ -63,10 +78,10 @@ function summary(counts, projects) {
   return t('{agents} across {projects}', { agents: plural(counts.total, t('agent'), t('agents')), projects: plural(projects, t('project'), t('projects')) });
 }
 
-function renderHead(counts, mood, look, projects) {
-  paint($('island-head'), JSON.stringify([counts, mood, look, projects]), () => [
+function renderHead(counts, mood, look, projects, entries) {
+  paint($('island-head'), JSON.stringify([counts, mood, look, projects, entries]), () => [
     h('span', { class: 'island-mark' }, brand(mood)),
-    h('span', { class: 'island-heading' }, h('span', { class: 'island-title' }, 'Octo'), h('span', { class: 'island-sub' }, summary(counts, projects))),
+    h('span', { class: 'island-heading' }, h('span', { class: 'island-title-line' }, h('span', { class: 'island-title' }, 'Octo'), usageRings(entries)), h('span', { class: 'island-sub' }, summary(counts, projects))),
     h('span', { class: 'island-chips' }, chips(counts)),
   ]);
 }
@@ -158,9 +173,10 @@ function render() {
   const mood = moodOf(agents);
   const layout = islandGroups(agents);
   const look = [usesKai(), document.documentElement.dataset.theme, language()];
+  const usage = usageOrder(view.usage, agents.map((agent) => agent.kind));
   $('island').dataset.mood = mood;
-  renderPill(counts, mood, look);
-  renderHead(counts, mood, look, layout.projects);
+  renderPill(counts, mood, look, usage);
+  renderHead(counts, mood, look, layout.projects, usage);
   renderList(layout);
   keepSpinning(counts.working > 0);
   fit();
@@ -184,6 +200,7 @@ function setOpen(on) {
 
 function setLayout(layout) {
   view.layout = layout;
+  view.shape = '';
   view.notch = layout.notch ? primaryNotch : null;
   const island = $('island');
   if (island.hasAttribute('data-ready')) {
@@ -236,6 +253,11 @@ function initDrag(island) {
 }
 
 function onMessage(message) {
+  if (message.type === 'usage') {
+    view.usage = message.entries;
+    render();
+    return;
+  }
   if (message.type !== 'state') return;
   view.skew = Date.now() - message.now;
   view.overview = message;
@@ -266,7 +288,7 @@ async function start() {
   }
   await window.__TAURI__.event.listen(LAYOUT_EVENT, (event) => setLayout(event.payload));
   await window.__TAURI__.event.listen(HOVER_EVENT, (event) => setOpen(Boolean(event.payload)));
-  setLayout(await invoke('island_layout'));
+  setLayout(await invoke('island_layout').catch(() => ({ edge: 'top', offset: window.innerWidth / 2, notch: true })));
   window.addEventListener('resize', fit);
   setInterval(() => view.open && tickTimes(), TICK_MS);
   await invoke('island_attach', { channel: channel(onMessage) });

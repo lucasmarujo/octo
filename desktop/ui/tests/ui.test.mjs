@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { COLUMNS, USAGE_ALERT, USAGE_WARN, column, duration, elapsed, glyph, kindColor, kindHex, label, usageColor } from '../js/format.js';
 import { MOODS, moodOf } from '../js/kai.js';
 
@@ -2050,17 +2051,18 @@ test('the volume lives in Settings and in a popover over the bell, and both stay
 
 test('a collapsed sidebar keeps the plan usage as one ring per window around the icon of each provider', () => {
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
-  assert.match(sidebar, /const USAGE_RINGS = 2;/, 'the session and the week, the windows every provider has');
-  assert.match(sidebar, /const radius = RING_OUTER - index \* RING_STEP;/, 'the first window outside, the next one inside it');
-  assert.match(sidebar, /const used = usedPercent\(window\);/, 'a ring fills as the plan is used, so a fresh plan is an empty ring');
-  assert.doesNotMatch(sidebar, /100 - usedPercent\(window\)/, 'never the part that is left, which drew a fresh plan as a full ring');
-  assert.match(sidebar, /const dash = used < 100 \? ` pathLength="100" stroke-dasharray="\$\{used\} 100"` : '';/, 'a used-up ring is drawn whole, without a seam at the top');
-  assert.match(sidebar, /style="stroke:\$\{usageColor\(window\.used\)\}"/, 'in the same green, yellow and red as the bars');
+  const usage = readFileSync(join(REPO, 'desktop/ui/js/usageview.js'), 'utf8');
+  assert.match(usage, /const USAGE_RINGS = 2;/, 'the session and the week, the windows every provider has');
+  assert.match(usage, /const radius = RING_OUTER - index \* RING_STEP;/, 'the first window outside, the next one inside it');
+  assert.match(usage, /const used = usedPercent\(window\);/, 'a ring fills as the plan is used, so a fresh plan is an empty ring');
+  assert.doesNotMatch(usage, /100 - usedPercent\(window\)/, 'never the part that is left, which drew a fresh plan as a full ring');
+  assert.match(usage, /const dash = used < 100 \? ` pathLength="100" stroke-dasharray="\$\{used\} 100"` : '';/, 'a used-up ring is drawn whole, without a seam at the top');
+  assert.match(usage, /style="stroke:\$\{usageColor\(window\.used\)\}"/, 'in the same green, yellow and red as the bars');
   assert.match(sidebar, /const shown = usageShown\(entries, state\.usageOpen\);\n\s*renderRings\(shown\);/, 'the same providers the open sidebar shows');
   assert.match(sidebar, /host\.hidden = true;\n\s*renderRings\(\[\]\);/, 'no rings when there is no usage');
-  assert.match(sidebar, /ring\.setAttribute\('aria-label', ringTip\(entry\)\);/, 'a screen reader still hears the numbers and the resets');
+  assert.match(sidebar, /ring\.setAttribute\('aria-label', ringTip\(entry, now\(\)\)\);/, 'a screen reader still hears the numbers and the resets');
   assert.doesNotMatch(sidebar, /ring\.dataset\.tip/, 'the plain tooltip opened under the ring, over the next one');
-  assert.match(sidebar, /return \[label\(entry\.kind\), \.\.\.lines\]\.join\('\\n'\);/);
+  assert.match(usage, /return \[label\(entry\.kind\), \.\.\.lines\]\.join\('\\n'\);/);
   const html = readFileSync(join(REPO, 'desktop/ui/index.html'), 'utf8');
   assert.match(html, /<section id="usage" class="usage" hidden><\/section>\s*<section id="usage-rings" class="usage-rings" hidden><\/section>\s*<footer class="sidebar-footer">/, 'right above the icons of the footer');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
@@ -2078,7 +2080,7 @@ test('hovering a ring of the collapsed sidebar opens the usage of that provider 
   assert.equal(flyoutPlace({ right: 290, top: 10 }, size, { width: 400, height: 800 }).left, 400 - 240 - FLYOUT_MARGIN, 'a narrow window never cuts it');
   assert.equal(flyoutPlace({ right: 56, top: 10 }, size, { width: 200, height: 800 }).left, FLYOUT_MARGIN);
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
-  assert.match(sidebar, /return hoverFlyout\(ring, \(\) => usageFlyout\(entry\.kind\)\);/);
+  assert.match(sidebar, /hoverFlyout\(usageRing\(entry\), \(\) => usageFlyout\(entry\.kind\)\)/);
   assert.match(sidebar, /return entry \? \{ signature: JSON\.stringify\(entry\), build: \(\) => \[usageCard\(entry\)\] \} : null;/, 'the same card the open sidebar shows, with every window and its percentage');
   assert.match(sidebar, /ringEntries = entries;/, 'read again on every paint, so the numbers follow the plan');
   const paint = sidebar.match(/function paintFlyout\(\) \{[\s\S]*?\n\}/)[0];
@@ -3031,6 +3033,76 @@ test('the island opens inward at all four edges and keeps the panel on screen ne
   }
 });
 
+test('the shared usage rings clamp percentages, keep two windows and preserve the provider icon', () => {
+  const source = readFileSync(join(REPO, 'desktop/ui/js/usageview.js'), 'utf8').replace(/^import .*;\n/gm, '').replaceAll('export ', '');
+  const context = {
+    h: (tag, props, ...children) => ({ tag, props, children }),
+    svg: (markup) => ({ markup }),
+    providerIcon: () => '<svg data-provider="claude"/>',
+    kindColor, kindMark: () => 'C', usageColor,
+  };
+  const build = runInNewContext(`${source}\nusageRing;`, context);
+  const entry = { kind: 'claude', windows: [{ used: -5 }, { used: 125 }, { used: 40 }] };
+  const ring = build(entry);
+  const markup = ring.children[0].markup;
+  assert.equal((markup.match(/class="ring-fill"/g) || []).length, 2, 'the compact ring is bounded to two windows');
+  assert.match(markup, /stroke-dasharray="0 100"/);
+  assert.doesNotMatch(markup, /stroke-dasharray="125|stroke-dasharray="100 100"/);
+  assert.match(markup, /var\(--color-lost\)/);
+  assert.match(ring.children[1].children[0].markup, /data-provider="claude"/);
+  assert.equal((build({ ...entry, windows: [] }).children[0].markup.match(/<circle/g) || []).length, 0);
+});
+
+test('the island receives plan usage without replacing its fleet or polling another endpoint', () => {
+  const page = readFileSync(join(REPO, 'desktop/ui/js/island.js'), 'utf8');
+  const view = { overview: { agents: [agent({})] }, skew: 0, usage: [] };
+  let renders = 0;
+  const handler = runInNewContext(`${page.slice(page.indexOf('function onMessage('), page.indexOf('function onStorage('))}\nonMessage;`, { view, render: () => { renders += 1; }, Date });
+  const entries = [{ kind: 'claude', windows: [{ label: 'session', used: 42, resetsAt: NOW }] }];
+  handler({ type: 'usage', entries });
+  assert.equal(view.usage, entries);
+  assert.equal(view.overview.agents.length, 1);
+  assert.equal(renders, 1);
+  handler({ type: 'welcome' });
+  assert.equal(renders, 1);
+  handler({ type: 'usage', entries: [] });
+  assert.equal(view.usage.length, 0);
+  assert.equal(renders, 2, 'signed-out providers disappear on the next usage update');
+  assert.match(page, /from '\.\/usageview\.js'/);
+  assert.match(page, /usageShown\(entries, false\)/, 'the pill uses the same bounded selection as the collapsed sidebar');
+});
+
+test('the expanded island keeps only compact usage rings beside its title', () => {
+  const page = readFileSync(join(REPO, 'desktop/ui/js/island.js'), 'utf8');
+  let children;
+  const ring = { class: 'island-usage-rings' };
+  const render = runInNewContext(`${page.slice(page.indexOf('function renderHead('), page.indexOf('function icon('))}\nrenderHead;`, {
+    $: () => ({}),
+    paint: (_, signature, build) => { children = build(); },
+    h: (tag, props, ...children) => ({ tag, props, children }),
+    brand: () => 'O',
+    summary: () => 'No agents yet',
+    chips: () => [],
+    usageRings: (entries) => entries.length ? ring : null,
+  });
+  const entry = { kind: 'codex', windows: [] };
+  render({}, 'idle', ['octo'], 0, [entry]);
+  const title = children[1].children[0];
+  assert.equal(title.props.class, 'island-title-line');
+  assert.equal(title.children[0].children[0], 'Octo');
+  assert.equal(title.children[1], ring);
+  assert.doesNotMatch(page, /usageCard|island-usage-cards/);
+  render({}, 'idle', ['octo'], 0, []);
+  assert.equal(children[1].children[0].children[1], null);
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /\.island-head \.island-mark, \.island-head \.usage-ring \{ width: 28px; height: 28px; \}/);
+  for (const root of [':root[data-kai]', ':root[data-theme="old"]']) {
+    assert.ok(css.includes(`${root} .island-head .usage-ring`), 'the rings also follow the larger Kai icon');
+  }
+  assert.match(css, /\.island-head \.usage-ring-icon \{ width: 50%; height: 50%; \}/);
+  assert.match(css, /\.island-usage-rings \.usage-ring \{ width: 24px; height: 24px; \}/, 'the collapsed pill keeps its compact size');
+});
+
 test('the island is a page of its own that only asks the core for what the core offers', () => {
   const html = readFileSync(join(REPO, 'desktop/ui/island.html'), 'utf8');
   assert.match(html, /<html lang="en" data-island>/);
@@ -3077,6 +3149,62 @@ test('the island is turned on in Appearance, saved with the settings, and only o
   const page = readFileSync(join(REPO, 'desktop/ui/js/island.js'), 'utf8');
   for (const [, text] of [...page.matchAll(/\bt\('((?:[^'\\]|\\.)+)'/g), ...settings.match(/function islandRow\(\) \{[\s\S]*?\n\}/)[0].matchAll(/\bt\('((?:[^'\\]|\\.)+)'/g)]) {
     assert.ok(Object.hasOwn(PT, text), `in Portuguese: ${text}`);
+  }
+});
+
+test('the island still attaches and fits when its initial layout request fails', async () => {
+  const page = readFileSync(join(REPO, 'desktop/ui/js/island.js'), 'utf8');
+  const calls = [];
+  let layout;
+  const context = {
+    applyStatic() {}, applyTheme() {}, onStorage() {}, render() {}, open() {}, initDrag() {}, fit() {}, tickTimes() {}, onMessage() {},
+    MutationObserver: class { observe() {} },
+    document: { documentElement: {}, addEventListener() {} },
+    window: {
+      innerWidth: 440,
+      matchMedia: () => ({ addEventListener() {} }),
+      addEventListener() {},
+      __TAURI__: { event: { listen: async () => {} } },
+    },
+    $: () => ({ addEventListener() {} }),
+    setInterval: () => calls.push('tick'),
+    setLayout: (value) => { layout = value; },
+    channel: () => 'channel',
+    invoke: async (command) => {
+      calls.push(command);
+      if (command !== 'island_attach') throw new Error('IPC unavailable');
+    },
+    HOVER_EVENT: 'island-hover', LAYOUT_EVENT: 'island-layout', TICK_MS: 1000,
+    primaryNotch: null,
+  };
+  await runInNewContext(page.slice(page.indexOf('async function start()')), context);
+  assert.deepEqual(JSON.parse(JSON.stringify(layout)), { edge: 'top', offset: 220, notch: true });
+  assert.deepEqual(calls, ['island_notch', 'island_layout', 'tick', 'island_attach']);
+});
+
+test('every layout update reports the shape again even if its rectangles have not changed', () => {
+  const page = readFileSync(join(REPO, 'desktop/ui/js/island.js'), 'utf8');
+  const view = { shape: 'previous rectangles' };
+  const island = { dataset: {}, hasAttribute: () => false };
+  let reports = 0;
+  const context = {
+    view,
+    primaryNotch: null,
+    $: () => island,
+    document: { documentElement: { toggleAttribute() {} } },
+    render: () => { assert.equal(view.shape, ''); reports += 1; view.shape = 'same rectangles'; },
+  };
+  const setLayout = runInNewContext(`${page.slice(page.indexOf('function setLayout('), page.indexOf('function initDrag('))}\nsetLayout;`, context);
+  const layout = { edge: 'top', offset: 220, notch: false };
+  setLayout(layout);
+  setLayout(layout);
+  assert.equal(reports, 2);
+});
+
+test('the island outline only hides the line against its screen edge', () => {
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  for (const [edge, inset] of [['bottom', '0 0 -1px'], ['left', '0 0 0 -1px'], ['right', '0 -1px 0 0']]) {
+    assert.ok(css.includes(`.island[data-edge="${edge}"]::after { inset: ${inset}; }`), edge);
   }
 });
 
