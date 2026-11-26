@@ -129,7 +129,7 @@ export const NOTES = [
       'Settings > Appearance has Kai in the sidebar: turn it on and the animated Kai takes the place of the Octo mark in any theme.',
       'Kai takes the accent color you pick, in the sidebar, the empty board and the states, so you can have a Kai in any color.',
       'The plan usage stays at the bottom of the sidebar while the sessions scroll, and Chat, Decisions, Activity and Projects stay as icons when the sidebar is collapsed.',
-      'Ctrl = and Ctrl - zoom the agent screen, Ctrl 0 goes back to the default size; on a Mac use Cmd. The size is kept for the next agent.',
+      'Ctrl = and Ctrl - zoom the Octo window from the overview, Ctrl 0 goes back to the default size; with an agent open they zoom the terminal instead. On a Mac use Cmd. Each size is remembered.',
     ],
     'pt-BR': [
       'Configurações > Aparência tem o Kai na barra lateral: ligue e o Kai animado toma o lugar da marca do Octo em qualquer tema.',

@@ -72,13 +72,20 @@ export function pastedImage(clipboard) {
   return null;
 }
 
+export function zoomRoute(event, mac = false) {
+  const ctrl = event.ctrlKey && !event.altKey && !event.metaKey;
+  const zoom = mac ? event.metaKey && !event.ctrlKey && !event.altKey : ctrl;
+  if (zoom && Object.hasOwn(ZOOM_KEYS, event.key)) return ZOOM_KEYS[event.key];
+  return null;
+}
+
 export function keyRoute(event, hasSelection, mac = false) {
   const ctrl = event.ctrlKey && !event.altKey && !event.metaKey;
   const key = event.key.toLowerCase();
   if (ctrl && !event.shiftKey && key === 'c' && hasSelection) return 'copy';
   if ((ctrl && key === 'v' && !mac) || (event.shiftKey && event.key === 'Insert')) return 'paste';
-  const zoom = mac ? event.metaKey && !event.ctrlKey && !event.altKey : ctrl;
-  if (zoom && Object.hasOwn(ZOOM_KEYS, event.key)) return ZOOM_KEYS[event.key];
+  const route = zoomRoute(event, mac);
+  if (route) return route;
   return 'terminal';
 }
 

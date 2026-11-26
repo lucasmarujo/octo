@@ -1,7 +1,9 @@
+import { rename } from './agent.js';
+import { stopOrRemove } from './board.js';
 import { deleteSession, renameSession } from './commands.js';
 import { $, h, keep, place, storage, svg } from './dom.js';
 import { ask, closeMenu, openMenu } from './dialogs.js';
-import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, OCTO_RAIL_DEFAULT, OCTO_RAIL_MAX, OCTO_RAIL_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentTip, detailsWidth, duration, flyoutPlace, glyph, kindColor, kindMark, label, octoRailWidth, plural, sessionMark, shortModel, sidebarWidth, subagentLine, usageColor, usageOrder, usageShown } from './format.js';
+import { DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, OCTO_RAIL_DEFAULT, OCTO_RAIL_MAX, OCTO_RAIL_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, SPINNER, USAGE_FOLDED, USAGE_WARN, agentTip, alive, detailsWidth, duration, flyoutPlace, glyph, kindColor, kindMark, label, octoRailWidth, plural, sessionMark, shortModel, sidebarWidth, subagentLine, usageColor, usageOrder, usageShown } from './format.js';
 import { t } from './i18n.js';
 import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_DETAILS_COLLAPSE, ICON_DETAILS_EXPAND, ICON_PLUS, ICON_SIDEBAR_COLLAPSE, ICON_SIDEBAR_EXPAND, providerIcon } from './icons.js';
 import { hideTip, motionMs } from './motion.js';
@@ -102,7 +104,13 @@ function summaryLine(agent, onOpen) {
   const model = shortModel(agent.model);
   return h(
     'div',
-    { class: `summary${waiting ? ' waiting' : ''}`, dataset: { agent: String(agent.id) }, title: agentTip(agent), onclick: () => onOpen(agent) },
+    {
+      class: `summary${waiting ? ' waiting' : ''}`,
+      dataset: { agent: String(agent.id) },
+      title: agentTip(agent),
+      onclick: () => onOpen(agent),
+      oncontextmenu: (event) => agentMenu(event, agent),
+    },
     h('span', { class: `glyph ${mark.tone}`, dataset: mark.spin ? { spin: '1' } : {} }, mark.text),
     summaryIcon(agent.kind),
     h('span', { class: 'summary-text' }, agent.name),
@@ -120,23 +128,32 @@ function subagentSummary(sub, agent, onOpen) {
   );
 }
 
+function menuItem(text, act) {
+  return h(
+    'button',
+    {
+      class: 'menu-item',
+      type: 'button',
+      role: 'menuitem',
+      onclick: () => {
+        closeMenu();
+        act();
+      },
+    },
+    h('span', null, text),
+  );
+}
+
 function sessionMenu(event, name) {
   event.preventDefault();
-  const item = (text, act) =>
-    h(
-      'button',
-      {
-        class: 'menu-item',
-        type: 'button',
-        role: 'menuitem',
-        onclick: () => {
-          closeMenu();
-          act(name);
-        },
-      },
-      h('span', null, text),
-    );
-  openMenu(event.currentTarget, [item(t('Rename'), renameSession), item(t('Delete'), deleteSession)], false);
+  openMenu(event.currentTarget, [menuItem(t('Rename'), () => renameSession(name)), menuItem(t('Delete'), () => deleteSession(name))], false);
+}
+
+function agentMenu(event, agent) {
+  event.preventDefault();
+  event.stopPropagation();
+  const removeLabel = alive(agent) ? t('Stop') : t('Remove');
+  openMenu(event.currentTarget, [menuItem(t('Rename'), () => rename(agent)), menuItem(removeLabel, () => stopOrRemove(agent))], false);
 }
 
 function sessionItem(session, onSelect, onOpen) {

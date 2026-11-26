@@ -32,8 +32,10 @@ import { initTabs, renderTabs, tabShown } from './tabs.js';
 import { Terminal } from './terminal.js';
 import { toast } from './toast.js';
 import { channel, connect, currentWindow, invoke, onFileDrop, send } from './transport.js';
+import { applyUiZoom, initUiZoom, uiZoomRoute } from './uizoom.js';
 
 const SPIN_MS = 100;
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const TICK_MS = 1000;
 const MAX_TAB_KEY = 9;
 const PEEK_MS = 1000;
@@ -521,6 +523,14 @@ function overviewShortcut(event) {
 
 function onShortcut(event) {
   if (event.defaultPrevented || $('dialog').open) return;
+  if (!(event.target instanceof Element && event.target.closest('.xterm'))) {
+    const zoom = uiZoomRoute(event, MAC);
+    if (zoom) {
+      applyUiZoom(zoom);
+      event.preventDefault();
+      return;
+    }
+  }
   if (event.target instanceof Element && event.target.closest('.xterm')) return;
   if (appShortcut(event)) {
     event.preventDefault();
@@ -647,6 +657,7 @@ function start() {
   initAgentDrag(render);
   initTerminal();
   initComposer();
+  initUiZoom();
   initTooltips();
   initFlyout();
   setCommandRunner((text) => runCommand(text, commands));
