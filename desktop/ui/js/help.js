@@ -16,7 +16,7 @@ export const HELP = {
     ],
     groups: [
       ['Launching', [['enter', 'Launch the agent'], ['shift enter', 'New line in the task'], ['ctrl ↑', 'Tasks you already sent'], ['tab', 'Change who runs it'], ['ctrl L', 'Change the folder'], ['ctrl T', 'One worktree per agent'], ['/', 'Commands and skills'], ['!command', 'Run it in a new terminal']]],
-      ['Agents', [['alt N', 'Open who needs you'], ['ctrl ]', 'Back to the overview'], ['alt 1…9', 'Jump to an open tab'], ['ctrl E', 'Rename the agent'], ['delete', 'Stop and remove it'], ['ctrl R', 'Recover interrupted'], ['ctrl P', 'Pair your phone'], ['ctrl = ctrl -', 'Zoom the agent screen'], ['ctrl click', 'Open a link in the terminal']]],
+      ['Agents', [['alt N', 'Open who needs you'], ['ctrl ]', 'Back to the overview'], ['alt 1…9', 'Jump to an open tab'], ['ctrl E', 'Rename the agent'], ['delete', 'Stop and remove it'], ['ctrl R', 'Recover interrupted'], ['ctrl P', 'Pair your phone'], ['ctrl = ctrl -', 'Zoom the window, or the agent terminal when it has focus'], ['ctrl click', 'Open a link in the terminal']]],
       ['Sessions & app', [['ctrl N', 'New session'], ['alt ↑↓', 'Switch session'], ['drag', 'Move an agent to a session, it keeps working'], ['drag a tab', 'Change the order of the tabs'], ['right click a tab', 'Pin, move or close it'], ['F1', 'This screen'], ['ctrl Q', 'Quit, agents keep going']]],
     ],
     states: 'States',

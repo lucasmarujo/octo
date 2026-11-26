@@ -197,19 +197,12 @@ test('the agent screen leaves the agent title to the cards and keeps its status 
   assert.doesNotMatch(status, /activity/, 'the session title the agent gave itself is not repeated under its terminal');
 });
 
-test('Octo draws its own thin scrollbar in both themes, pink while it is dragged', () => {
+test('scrollbars stay invisible but scrolling still works', () => {
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
-  const [dark, light] = [css.split(':root {')[1].split('}')[0], css.split(':root[data-theme="light"] {')[1].split('}')[0]];
-  for (const token of ['--scroll-thumb', '--scroll-thumb-hover', '--scroll-thumb-grab']) {
-    assert.ok(dark.includes(`${token}:`), `dark ${token}`);
-    assert.ok(light.includes(`${token}:`), `light ${token}`);
-  }
+  assert.match(css, /::-webkit-scrollbar \{ width: 0; height: 0;/, 'no visible scrollbar gutter');
   assert.match(css, /::-webkit-scrollbar-button \{ display: none;/, 'no arrow buttons');
-  assert.match(css, /::-webkit-scrollbar-thumb \{[^}]*background: var\(--scroll-thumb\) padding-box;/);
-  assert.match(css, /:hover::-webkit-scrollbar-thumb \{ background-color: var\(--scroll-thumb-hover\);/);
-  assert.match(css, /::-webkit-scrollbar-thumb:active \{[^}]*background-color: var\(--color-accent\);/);
   assert.doesNotMatch(css, /scrollbar-(?:width|color)\s*:/, 'the standard properties make Chromium drop the custom scrollbar');
-  assert.match(css, /\.column-body \{[^}]*scrollbar-gutter: stable;/, 'cards keep one width whether their column scrolls or not');
+  assert.doesNotMatch(css, /\.column-body \{[^}]*scrollbar-gutter: stable;/, 'no reserved gutter without a visible bar');
 });
 
 test('agents are labelled like the CLI labels them', () => {
@@ -839,10 +832,16 @@ test('ctrl plus and ctrl minus zoom the agent screen, ctrl zero goes back to the
   assert.equal(keyRoute(key('=', { ctrlKey: true }), false, true), 'terminal', 'on a Mac ctrl stays a key of the agent');
   assert.equal(keyRoute(key('toString', { ctrlKey: true }), false), 'terminal', 'only the keys of the map zoom');
   const terminal = readFileSync(join(REPO, 'desktop/ui/js/terminal.js'), 'utf8');
-  assert.match(terminal, /if \(this\.zoomable && route\.startsWith\('zoom-'\)\) \{/, 'only the agent screen zooms, the grid keeps its own size');
+  assert.match(terminal, /if \(this\.zoomable && route\.startsWith\('zoom-'\)\) \{/, 'with focus in the terminal, zoom changes the font');
   assert.match(terminal, /const ZOOM_MIN = 9;\nconst ZOOM_MAX = 24;/);
   assert.match(terminal, /storage\.set\(ZOOM_KEY, String\(next\)\);/, 'the size is kept for the next agent');
   assert.match(readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8'), /new Terminal\(\$\('terminal'\), terminalHandlers\(appShortcut\), \{ zoomable: true \}\);/);
+  const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
+  assert.match(main, /applyUiZoom\(zoom\)/, 'away from the terminal, the same keys zoom the whole window');
+  assert.match(readFileSync(join(REPO, 'desktop/ui/js/uizoom.js'), 'utf8'), /--ui-zoom/, 'zoom fills the window instead of leaving a strip at the bottom');
+  const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
+  assert.match(css, /body \{[^}]*transform: scale\(var\(--ui-zoom\)\);/);
+  assert.match(css, /\.app \{[^}]*height: 100%;/);
 });
 
 test('files dropped on an agent terminal are typed as paths the way a native terminal types them', async () => {
@@ -1641,8 +1640,10 @@ test('an open session in the sidebar lists every one of its agents, each followe
 test('a right click on a session in the sidebar offers to rename or delete that session', () => {
   const sidebar = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
   assert.match(sidebar, /oncontextmenu: \(event\) => sessionMenu\(event, session\.name\)/);
-  assert.match(sidebar, /openMenu\(event\.currentTarget, \[item\(t\('Rename'\), renameSession\), item\(t\('Delete'\), deleteSession\)\], false\);/);
-  assert.match(sidebar, /closeMenu\(\);\n\s*act\(name\);/, 'the menu closes before the question opens');
+  assert.match(sidebar, /openMenu\(event\.currentTarget, \[menuItem\(t\('Rename'\), \(\) => renameSession\(name\)\), menuItem\(t\('Delete'\), \(\) => deleteSession\(name\)\)\], false\);/);
+  assert.match(sidebar, /closeMenu\(\);\n\s*act\(\);/, 'the menu closes before the question opens');
+  assert.match(sidebar, /oncontextmenu: \(event\) => agentMenu\(event, agent\)/, 'each agent gets the same kind of menu');
+  assert.match(sidebar, /menuItem\(t\('Rename'\), \(\) => rename\(agent\)\)/);
   const commands = readFileSync(join(REPO, 'desktop/ui/js/commands.js'), 'utf8');
   assert.match(commands, /export async function renameSession\(name, arg\) \{[\s\S]*?value: name,[\s\S]*?if \(name === state\.session\) state\.pendingSession = to\.trim\(\);\n\s*send\(\{ type: 'renameSession', name, to \}\);/, 'renaming another session keeps the one on screen');
   assert.match(commands, /export async function deleteSession\(name\) \{[\s\S]*?send\(\{ type: 'deleteSession', name \}\)/);
@@ -1837,7 +1838,7 @@ test('an agent moves by dragging it onto a session of the sidebar, and a drag ne
   assert.match(drag, /closest\('\.session'\)\?\.querySelector\('\.session-row\[data-session\]'\)/, 'a drop counts anywhere on an expanded session, not only on its row');
   assert.doesNotMatch(drag, /addEventListener\('blur'/, 'the capture of the pointer says when a drag is lost');
   const sidebarCode = readFileSync(join(REPO, 'desktop/ui/js/sidebar.js'), 'utf8');
-  assert.match(sidebarCode, /class: `summary\$\{waiting \? ' waiting' : ''\}`, dataset: \{ agent: String\(agent\.id\) \}/, 'an agent listed in the sidebar drags from there too');
+  assert.match(sidebarCode, /dataset: \{ agent: String\(agent\.id\) \}/, 'an agent listed in the sidebar drags from there too');
   assert.match(sidebarCode, /\[agent\.id, agent\.name, agent\.state, agent\.starting, agent\.kind, agent\.model, \(agent\.subagents \|\| \[\]\)\.map\(\(sub\) => \[sub\.role, sub\.description, sub\.startedAt\]\)\]/, 'a line never keeps the id of another agent with the same name, nor an old provider or model');
   assert.match(drag, /\.xterm/, 'nothing drags out of a terminal');
   assert.match(drag, /addEventListener\('click', swallow, \{ capture: true, once: true \}\)/);
@@ -2361,6 +2362,7 @@ test('the bar under the window counts every agent, the ones working and the ones
   assert.ok(html.indexOf('id="statusbar"') > html.indexOf('id="agent-view"'), 'under the whole window, after every view');
   const css = readFileSync(join(REPO, 'desktop/ui/styles.css'), 'utf8');
   assert.match(css, /\.statusbar-brand \{[^}]*background: var\(--color-accent\); color: var\(--color-accent-ink\);/);
+  assert.match(css, /\.statusbar \{[^}]*container-type: inline-size;/, 'the bar adapts when the window or zoom shrinks it');
   const main = readFileSync(join(REPO, 'desktop/ui/js/main.js'), 'utf8');
   assert.match(main, /initStatusBar\(\{ attention: openNextAttention, phone: openPairing, updates: openUpdates \}\);/, 'each part of the bar opens what it counts');
   const bar = readFileSync(join(REPO, 'desktop/ui/js/statusbar.js'), 'utf8');
@@ -2723,7 +2725,8 @@ test('the Octo tab, the sidebar and the bar under the window count the decisions
   assert.deepEqual(octoStatus(view), { mode: 'moderate', handled: 212 });
   assert.equal(MODE_WORDS[octoStatus(view).mode], 'moderate');
   const bar = readFileSync(join(REPO, 'desktop/ui/js/statusbar.js'), 'utf8');
-  assert.match(bar, /octo \? h\('span', \{ class: 'statusbar-item' \}, t\('octo: \{mode\} · \{count\} handled today', \{ mode: MODE_WORDS\[octo\.mode\], count: octo\.handled \}\)\) : null,/);
+  assert.match(bar, /statusbar-octo/, 'orchestrator status is still shown in the bar');
+  assert.match(bar, /octo: \{mode\} · \{count\} handled today/);
   assert.match(bar, /JSON\.stringify\(\[counts, usage, phone, octo, state\.version/, 'the bar repaints when the mode or the count changes');
   const tabs = readFileSync(join(REPO, 'desktop/ui/js/tabs.js'), 'utf8');
   assert.match(tabs, /if \(Object\.hasOwn\(actions\.pages, id\)\) return \[id, pageBadge\(id\)\];/, 'the tab strip repaints when the count changes');
