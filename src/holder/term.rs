@@ -5,6 +5,7 @@ use crate::model::{AgentKind, ExitInfo, NestedAgent, StatusReport};
 use crate::protocol::TermSize;
 use crate::termfmt;
 use crate::termlink::LinkTracker;
+use crate::tui::keys::encode_paste;
 
 pub const HOLDER_SCROLLBACK: usize = 1_000;
 pub const INPUT_QUIET_MS: u64 = 900;
@@ -73,6 +74,7 @@ pub struct TermState {
     nested: Option<NestedAgent>,
     detector: Detector,
     signals: Signals,
+    codex_status: Option<HookSignal>,
     dirty: bool,
     started_at: u64,
     last_output_at: u64,
@@ -102,6 +104,7 @@ impl TermState {
             nested: None,
             detector,
             signals: Signals::default(),
+            codex_status: None,
             dirty: false,
             started_at,
             last_output_at: 0,
@@ -118,7 +121,12 @@ impl TermState {
         self.parser.process(bytes);
         self.links.feed(bytes);
         for signal in std::mem::take(&mut self.parser.callbacks_mut().signals) {
-            self.apply_hook(signal, now);
+            if self.kind == AgentKind::Codex {
+                self.codex_status = Some(signal);
+                self.detector.hook(signal, now);
+            } else {
+                self.apply_hook(signal, now);
+            }
         }
         self.last_output_at = now;
         if self.echoed_at.is_none() && self.submit_after.is_some_and(|typed_at| now >= typed_at) {
@@ -174,13 +182,17 @@ impl TermState {
         if self.kind == AgentKind::Terminal {
             self.tracker.feed(bytes);
         }
-        if is_answer(bytes) {
+        if self.kind == AgentKind::Codex && !self.signals.waiting && matches!(bytes, b"\r" | b"\n") {
+            self.submit_after = None;
+            self.echoed_at = None;
+        }
+        if self.codex_status.is_none() && is_answer(bytes) {
             self.detector.user_answered();
         }
     }
 
     pub fn apply_hook(&mut self, signal: HookSignal, at: u64) -> bool {
-        if self.nested.is_some() || !self.kind.is_ai() {
+        if self.nested.is_some() || !self.kind.is_ai() || self.codex_status.is_some() {
             return false;
         }
         self.detector.hook(signal, at)
@@ -198,8 +210,17 @@ impl TermState {
     pub fn evaluate(&mut self, now: u64) -> bool {
         if self.dirty {
             self.dirty = false;
-            let tail = termfmt::screen_tail(self.parser.screen(), TAIL_ROWS);
-            self.signals = detect::analyze(self.running_kind(), self.title(), &tail);
+            self.signals = match self.codex_status {
+                Some(signal) => Signals {
+                    busy: signal == HookSignal::Busy,
+                    waiting: signal == HookSignal::Waiting,
+                    ..Signals::default()
+                },
+                None => {
+                    let tail = termfmt::screen_tail(self.parser.screen(), TAIL_ROWS);
+                    detect::analyze(self.running_kind(), self.title(), &tail)
+                }
+            };
         }
         self.detector.observe(self.running_kind(), self.signals, self.last_output_at, now)
     }
@@ -252,7 +273,12 @@ impl TermState {
         let text = self.pending_input.take()?;
         self.submit_after = Some(now);
         self.detector.task_typed(now);
-        Some(encode_typed_text(&text, self.parser.screen().bracketed_paste()))
+        let bracketed = self.parser.screen().bracketed_paste();
+        Some(if self.kind == AgentKind::Codex && bracketed {
+            encode_paste(text.trim_end_matches(['\r', '\n']), true)
+        } else {
+            encode_typed_text(&text, bracketed)
+        })
     }
 
     fn input_ready(&self, now: u64) -> bool {
@@ -268,6 +294,9 @@ impl TermState {
         let Some(typed_at) = self.submit_after else {
             return false;
         };
+        if self.kind == AgentKind::Codex && (self.signals.waiting || self.signals.busy) {
+            return false;
+        }
         let elapsed = now.saturating_sub(typed_at);
         let ready = match self.echoed_at {
             Some(echoed_at) => {
@@ -293,6 +322,14 @@ impl TermState {
 
 fn is_answer(bytes: &[u8]) -> bool {
     bytes == [0x1b] || bytes.iter().any(|b| matches!(b, b'\r' | b'\n' | b'1'..=b'9'))
+}
+
+pub fn codex_submit_keys(app_cursor: bool) -> &'static [u8] {
+    match (cfg!(windows), app_cursor) {
+        (true, true) => b"\x1bOF\r",
+        (true, false) => b"\x1b[F\r",
+        (false, _) => b"\r",
+    }
 }
 
 pub fn encode_typed_text(text: &str, bracketed_paste: bool) -> Vec<u8> {
@@ -358,6 +395,58 @@ mod tests {
         let mut terminal = state(AgentKind::Terminal);
         terminal.process(b"\x1b]7501;state=working\x07", 1_000);
         assert_eq!(terminal.report(None).state, AgentState::Idle, "only ai agents follow status reports");
+    }
+
+    #[test]
+    fn codex_program_status_persists_across_redraws_and_beats_a_delayed_completion_hook() {
+        let mut t = state(AgentKind::Codex);
+        t.process(b"Press enter to confirm\r\n\x1b]7501;state=working:app=codex\x1b\\", 1_000);
+        assert_eq!(t.report(None).state, AgentState::Working);
+        t.evaluate(1_000);
+        t.apply_hook(HookSignal::Finished, 1_500);
+        t.process(b"\x1b[2J\x1b[H", 2_000);
+        t.evaluate(2_000 + DONE_GRACE_MS);
+        assert_eq!(t.report(None).state, AgentState::Working);
+
+        t.process(b"\x1b]7501;state=blocked:kind=question:app=codex\x1b\\", 5_000);
+        t.evaluate(5_000);
+        assert_eq!(t.report(None).state, AgentState::Paused);
+        t.note_input(b"\r", 5_100);
+        t.evaluate(5_100 + DONE_GRACE_MS);
+        assert_eq!(t.report(None).state, AgentState::Paused);
+
+        t.process(b"\x1b]7501;state=working:app=codex\x1b\\", 8_000);
+        t.process(b"\x1b]7501;state=done:app=codex\x1b\\", 12_000);
+        t.evaluate(12_000);
+        assert_eq!(t.report(None).state, AgentState::Done);
+    }
+
+    #[test]
+    fn codex_launch_does_not_submit_the_paste_into_an_intervening_modal() {
+        let mut t = with_task(AgentKind::Codex);
+        t.process(PROMPT, 1_000);
+        t.evaluate(1_000);
+        let typed_at = 1_000 + INPUT_QUIET_MS;
+        assert_eq!(t.take_ready_input(typed_at).unwrap(), b"\x1b[200~fix the bug\x1b[201~");
+        t.process(b"\x1b]7501;state=blocked:kind=question:app=codex\x07", typed_at + 1);
+        t.evaluate(typed_at + 1);
+        assert!(!t.take_submit(typed_at + SUBMIT_NO_ECHO_TIMEOUT_MS));
+        t.process(b"\x1b]7501;state=idle:app=codex\x07", typed_at + SUBMIT_NO_ECHO_TIMEOUT_MS + 1);
+        t.evaluate(typed_at + SUBMIT_NO_ECHO_TIMEOUT_MS + 1);
+        let submit_at = typed_at + SUBMIT_NO_ECHO_TIMEOUT_MS + SUBMIT_QUIET_MS + 1;
+        assert!(t.take_submit(submit_at));
+        assert!(!t.take_submit(submit_at + SUBMIT_MIN_MS));
+    }
+
+    #[test]
+    fn manually_submitting_the_codex_launch_draft_cancels_the_automatic_enter() {
+        let mut t = with_task(AgentKind::Codex);
+        t.process(PROMPT, 1_000);
+        let typed_at = 1_000 + INPUT_QUIET_MS;
+        t.evaluate(typed_at);
+        assert!(t.take_ready_input(typed_at).is_some());
+        t.note_input(b"\r", typed_at + 1);
+        assert!(!t.take_submit(typed_at + SUBMIT_NO_ECHO_TIMEOUT_MS));
     }
 
     #[test]
@@ -454,7 +543,7 @@ mod tests {
         t.process(b"\x1b[?2004hready", 1_000);
         t.evaluate(1_000);
         let typed = t.take_ready_input(5_000).unwrap();
-        assert_eq!(typed, b"x");
+        assert_eq!(typed, b"\x1b[200~x\x1b[201~");
         let echoed_at = 5_100;
         t.process(b"x", echoed_at);
         t.process(b"spinner", echoed_at + SUBMIT_MAX_MS - 1);
@@ -503,7 +592,7 @@ mod tests {
         t.process(b"\x1b[?2004hready", 1_000);
         t.evaluate(1_000);
         let typed_at = 1_000 + INPUT_QUIET_MS;
-        assert_eq!(t.take_ready_input(typed_at).unwrap(), b"x");
+        assert_eq!(t.take_ready_input(typed_at).unwrap(), b"\x1b[200~x\x1b[201~");
         assert!(!t.take_submit(typed_at + SUBMIT_NO_ECHO_TIMEOUT_MS - 1));
         assert!(t.take_submit(typed_at + SUBMIT_NO_ECHO_TIMEOUT_MS));
     }

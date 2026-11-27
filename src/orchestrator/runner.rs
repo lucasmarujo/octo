@@ -12,7 +12,7 @@ use crate::cli::{DEFAULT_SIZE, SUBMIT_DELAY};
 use crate::client;
 use crate::config::Config;
 use crate::holder::detect::DONE_GRACE_MS;
-use crate::holder::term::encode_typed_text;
+use crate::holder::term::{codex_submit_keys, encode_typed_text};
 use crate::hooks;
 use crate::launch::LaunchMode;
 use crate::model::{AgentId, AgentKind, AgentRecord, AgentState};
@@ -448,7 +448,14 @@ fn is_still(hub: &Hub, agent: AgentId, sight: Sight) -> bool {
     hub.sight(agent) == Some(sight)
 }
 
-fn type_input(hub: &Hub, agent: AgentId, input: &Input, app_cursor: bool, bracketed: bool) -> io::Result<()> {
+fn type_input(
+    hub: &Hub,
+    agent: AgentId,
+    input: &Input,
+    app_cursor: bool,
+    bracketed: bool,
+    submit: &[u8],
+) -> io::Result<()> {
     match input {
         Input::Keys(names) => {
             let keys = encode_keys(names, app_cursor)
@@ -467,24 +474,30 @@ fn type_input(hub: &Hub, agent: AgentId, input: &Input, app_cursor: bool, bracke
                 hub.send(agent, &ClientMsg::Input(bytes))?;
                 thread::sleep(SUBMIT_DELAY);
             }
-            hub.send(agent, &ClientMsg::Input(SUBMIT.to_vec()))
+            hub.send(agent, &ClientMsg::Input(submit.to_vec()))
         }
     }
 }
 
 struct Target {
     agent: AgentId,
+    kind: AgentKind,
     sight: Sight,
     app_cursor: bool,
     bracketed: bool,
 }
 
 fn deliver(hub: &Hub, target: &Target, input: &Input) -> Answered {
-    let Target { agent, sight, app_cursor, bracketed } = *target;
+    let Target { agent, kind, sight, app_cursor, bracketed } = *target;
     if !is_still(hub, agent, sight) {
         return Answered::Stale;
     }
-    match type_input(hub, agent, input, app_cursor, bracketed) {
+    let submit = if kind == AgentKind::Codex && matches!(sight, Sight::Ended(_)) {
+        codex_submit_keys(app_cursor)
+    } else {
+        SUBMIT
+    };
+    match type_input(hub, agent, input, app_cursor, bracketed, submit) {
         Ok(()) => Answered::Sent,
         Err(err) => Answered::Failed(format!("the answer did not reach the agent: {err}")),
     }
@@ -1095,6 +1108,7 @@ impl Orchestrator {
                 let handled = open.handled(credit, settings.mode_for(&open.decision.project));
                 let target = Target {
                     agent: open.decision.agent,
+                    kind: open.decision.kind,
                     sight: open.sight,
                     app_cursor: open.app_cursor,
                     bracketed: open.bracketed,
@@ -1251,13 +1265,18 @@ impl Orchestrator {
             None => WRONG_ACTION.to_string(),
             Some(ChatAction::Send { agent, text }) => {
                 let name = name_of(agent);
-                if !hub.state(agent).is_some_and(AgentState::is_alive) {
+                let Some(view) = hub.agent_view(agent).filter(|view| view.state.is_alive()) else {
                     return format!("Could not send to {name}: it is not running");
-                }
+                };
                 let text = cut(text.trim(), MAX_CHAT_CHARS);
                 let (app_cursor, bracketed) = read_screen(hub.store(), agent)
                     .map_or((false, false), |screen| (screen.app_cursor, screen.bracketed));
-                match type_input(hub, agent, &Input::Text(text.clone()), app_cursor, bracketed) {
+                let submit = if view.kind == AgentKind::Codex && view.state != AgentState::Paused {
+                    codex_submit_keys(app_cursor)
+                } else {
+                    SUBMIT
+                };
+                match type_input(hub, agent, &Input::Text(text.clone()), app_cursor, bracketed, submit) {
                     Ok(()) => sent_line(&name, &text),
                     Err(err) => format!("Could not send to {name}: {err}"),
                 }
@@ -1405,6 +1424,11 @@ impl Orchestrator {
             let state = &mut *guard;
             let Some(open) = find(&mut state.decisions, id).filter(|open| !open.is_taken()) else {
                 return notice(reply, Tone::Warn, NOT_PENDING);
+            };
+            let how = if how == How::Allow && open.decision.kind == AgentKind::Codex && open.decision.ended {
+                How::Suggestion
+            } else {
+                how
             };
             let typed = match typed_by(how, text, keys, open.decision.suggestion.as_ref()) {
                 Ok(typed) => typed,

@@ -1439,6 +1439,7 @@ mod tests {
         const REPLY: &str = r#"{"action":"reply","text":"use postgres and go on","question":"Which database should it use?","summary":"Chose postgres","reason":"the task says so","tag":null,"report":"It asked which database; I told it postgres."}"#;
         const FINISHED: &str = r#"{"action":"done","summary":"Fixed the login","reason":"nothing is pending","report":"The login fix is done and tested."}"#;
         const KILLED: &[u8] = b"<kill>";
+        const CODEX_SUBMIT: &[u8] = if cfg!(windows) { b"\x1b[F\r" } else { b"\r" };
         const WAIT: Duration = Duration::from_secs(60);
         const SETTLE: Duration = Duration::from_millis(300);
 
@@ -2319,7 +2320,7 @@ mod tests {
             let first = now_ms() + 1;
             fx.ended(id, first);
             fx.hub.orchestrate(true);
-            assert_eq!(typed_into(&holder, 2), sent(&[b"use postgres and go on", b"\r"]));
+            assert_eq!(typed_into(&holder, 2), sent(&[b"use postgres and go on", CODEX_SUBMIT]));
             let told = until("the chat is told", || Some(fx.view().chat).filter(|chat| chat.len() == 1));
             assert_eq!(told[0].role, ChatRole::Octo);
             assert_eq!(told[0].text, format!("alpha (#{id}): It asked which database; I told it postgres."));
@@ -2367,7 +2368,7 @@ mod tests {
             fx.hub.orchestrate(true);
             assert_eq!(
                 typed_into(&holder, 2),
-                sent(&[b"\x1b[200~1) use @postgres\n2) then deploy\x1b[201~", b"\r"]),
+                sent(&[b"\x1b[200~1) use @postgres\n2) then deploy\x1b[201~", CODEX_SUBMIT]),
                 "nothing in it is read as a key, and it is submitted once"
             );
             let told = until("the chat is told", || Some(fx.view().chat).filter(|chat| chat.len() == 1));
@@ -2392,10 +2393,9 @@ mod tests {
             let view = fx.view();
             assert_eq!(view.chat[0].actions, ["Left for you: Which database should it use?"]);
             assert_eq!((view.handled[0].by, view.handled[0].outcome), (By::Octo, Outcome::Escalated));
-            let answer =
-                UserAnswer { decision: decision.id, how: How::Suggestion, text: None, keys: None, remember: None };
+            let answer = UserAnswer { decision: decision.id, how: How::Allow, text: None, keys: None, remember: None };
             fx.octo().answer_from_user(&fx.hub, answer, &fx.reply);
-            assert_eq!(typed_into(&holder, 2), sent(&[b"use postgres and go on", b"\r"]));
+            assert_eq!(typed_into(&holder, 2), sent(&[b"use postgres and go on", CODEX_SUBMIT]));
             thread::sleep(FOLLOW_AFTER + SETTLE);
             let stuck = fx.waits_for_you(id);
             assert_eq!(
@@ -2528,7 +2528,7 @@ mod tests {
                     "Skipped an action Octo wrote wrongly".to_string(),
                 ]
             );
-            assert_eq!(typed_into(&alpha_holder, 2), sent(&[b"run the tests", b"\r"]));
+            assert_eq!(typed_into(&alpha_holder, 2), sent(&[b"run the tests", CODEX_SUBMIT]));
             assert_eq!(typed_into(&beta_holder, 1), sent(&[b"1"]));
             assert_eq!(typed_into(&gamma_holder, 1), sent(&[KILLED]));
             assert_eq!(fx.decision_of(beta), None);

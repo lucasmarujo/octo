@@ -27,6 +27,19 @@ const WAITING_MARKERS: &[&str] = &[
 ];
 
 const CLAUDE_WAITING_MARKERS: &[&str] = &["running in bypass permissions mode"];
+const CODEX_ACTION_REQUIRED: &[&str] = &["[ ! ] Action Required", "[ . ] Action Required"];
+const CODEX_WAITING_LINES: &[&str] = &[
+    "would you like to run the following command?",
+    "would you like to make the following edits?",
+    "do you trust",
+    "continue anyway? [y/n]",
+    "press enter to confirm",
+    "enter to confirm",
+    "enter to submit answer",
+    "enter to submit all",
+    "enter select · esc back",
+];
+const CODEX_FOOTER_ROWS: usize = 8;
 const OPENCODE_BUSY_MARKERS: &[&str] = &["esc interrupt", "esc again to interrupt"];
 const OPENCODE_WAITING_MARKERS: &[&str] = &["permission required", "type your own answer"];
 const ANTIGRAVITY_WAITING_MARKERS: &[&str] = &[
@@ -150,11 +163,37 @@ pub fn analyze(kind: AgentKind, title: &str, tail: &str) -> Signals {
     if !kind.is_ai() {
         return Signals::default();
     }
+    if kind == AgentKind::Codex {
+        return analyze_codex(title, tail);
+    }
     let lower = tail.to_lowercase();
     let title = title_signals(kind, title);
     let waiting = title.waiting || WAITING_MARKERS.iter().chain(waiting_markers(kind)).any(|m| lower.contains(m));
     let busy = !waiting && (title.busy || BUSY_MARKERS.iter().chain(busy_markers(kind)).any(|m| lower.contains(m)));
     Signals { busy, waiting, background: runs_in_background(kind, tail) }
+}
+
+fn analyze_codex(title: &str, tail: &str) -> Signals {
+    let title = title.trim_start().trim_start_matches('●').trim_start();
+    if CODEX_ACTION_REQUIRED.iter().any(|prefix| title.starts_with(prefix)) {
+        return Signals { waiting: true, ..Signals::default() };
+    }
+    let footer = tail.lines().rev().map(str::trim).filter(|row| !row.is_empty()).take(CODEX_FOOTER_ROWS);
+    let waiting = footer.clone().take_while(|row| !codex_composer(row)).any(|row| {
+        let row = row.split_whitespace().collect::<Vec<_>>().join(" ").to_ascii_lowercase();
+        CODEX_WAITING_LINES.iter().any(|marker| row.starts_with(marker))
+    });
+    let busy = !waiting
+        && (title.chars().next().is_some_and(is_braille_spinner)
+            || footer.filter(|row| !codex_composer(row)).any(|row| {
+                let row = row.split_whitespace().collect::<Vec<_>>().join(" ").to_ascii_lowercase();
+                row.contains(" (") && row.contains(" to interrupt)")
+            }));
+    Signals { busy, waiting, ..Signals::default() }
+}
+
+fn codex_composer(row: &str) -> bool {
+    row.strip_prefix('›').is_some_and(|text| !text.trim_start().as_bytes().first().is_some_and(u8::is_ascii_digit))
 }
 
 fn runs_in_background(kind: AgentKind, tail: &str) -> bool {
@@ -563,6 +602,22 @@ mod tests {
     fn codex_markers_are_detected() {
         assert!(analyze(AgentKind::Codex, "", "• Working (3s • Esc to interrupt)").busy);
         assert!(analyze(AgentKind::Codex, "", "Would you like to run the following command?").waiting);
+    }
+
+    #[test]
+    fn codex_distinguishes_a_live_prompt_from_text_in_the_transcript() {
+        let history =
+            "• Would you like to continue?\n  Press Enter to confirm the change.\n\n› Ask Codex to do anything";
+        assert_eq!(analyze(AgentKind::Codex, "octo", history), Signals::default());
+        assert!(analyze(AgentKind::Codex, "⠙ Fix login | octo", history).busy);
+        assert!(analyze(AgentKind::Codex, "", "◦ Working (1s •  esc  to interrupt) · Running hook\n› Ask Codex").busy);
+        for title in ["[ ! ] Action Required | octo", "[ . ] Action Required | octo"] {
+            assert!(analyze(AgentKind::Codex, title, history).waiting);
+        }
+        assert!(analyze(AgentKind::Codex, "", "Continue anyway? [y/N]:").waiting);
+        assert!(
+            analyze(AgentKind::Codex, "", "Implement this plan?\n› 1. Yes\n  2. No\nenter select · esc back").waiting
+        );
     }
 
     #[test]

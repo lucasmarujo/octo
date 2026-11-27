@@ -482,13 +482,21 @@ fn tick(shared: &Arc<Shared>, mut watch: Option<Watch>, mut inbox: Option<HookIn
                 term.apply_hook(event.signal, event.at_ms);
             }
             term.evaluate(now);
-            (term.take_ready_input(now), term.take_submit(now))
+            let typed = term.take_ready_input(now);
+            let submit = term.take_submit(now).then(|| {
+                if term.running_kind() == AgentKind::Codex {
+                    term::codex_submit_keys(term.screen().application_cursor())
+                } else {
+                    b"\r"
+                }
+            });
+            (typed, submit)
         };
         if let Some(bytes) = typed {
             shared.write_pty(&bytes);
         }
-        if submit {
-            shared.write_pty(b"\r");
+        if let Some(keys) = submit {
+            shared.write_pty(keys);
         }
         let report = shared.status();
         if let Some(gate) = &shared.gate

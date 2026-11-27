@@ -7,6 +7,18 @@ const SEEN_KEY = 'octo.notesSeen';
 
 export const NOTES = [
   {
+    version: '0.2.54',
+    date: '2026-11-27',
+    en: [
+      'Octo keeps Codex marked as working until it finishes or asks for input, even when earlier questions are still visible in the terminal.',
+      'Octo submits the initial Codex task as a separate action from pasting it. Allow it sends the suggested reply when Codex ended its turn with a question.',
+    ],
+    'pt-BR': [
+      'O Octo mantém o Codex em andamento até ele terminar ou pedir uma resposta, mesmo quando perguntas anteriores ainda estão visíveis no terminal.',
+      'O Octo cola e confirma a tarefa inicial do Codex em etapas distintas. Permitir envia a resposta sugerida quando o Codex terminou o turno com uma pergunta.',
+    ],
+  },
+  {
     version: '0.2.53',
     date: '2026-11-26',
     en: [
